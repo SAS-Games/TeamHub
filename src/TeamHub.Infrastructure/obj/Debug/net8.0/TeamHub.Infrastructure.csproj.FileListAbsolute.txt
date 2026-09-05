@@ -45,3 +45,11 @@ D:\WorkFlowHub\artifacts\studio-id-build-check\TeamHub.Infrastructure.deps.json
 D:\WorkFlowHub\artifacts\studio-id-build-check\TeamHub.Infrastructure.runtimeconfig.json
 D:\WorkFlowHub\artifacts\studio-id-build-check\TeamHub.Infrastructure.dll
 D:\WorkFlowHub\artifacts\studio-id-build-check\TeamHub.Infrastructure.pdb
+D:\WorkFlowHub\artifacts\studio-no-seed-build-check\TeamHub.Infrastructure.deps.json
+D:\WorkFlowHub\artifacts\studio-no-seed-build-check\TeamHub.Infrastructure.runtimeconfig.json
+D:\WorkFlowHub\artifacts\studio-no-seed-build-check\TeamHub.Infrastructure.dll
+D:\WorkFlowHub\artifacts\studio-no-seed-build-check\TeamHub.Infrastructure.pdb
+D:\WorkFlowHub\artifacts\studio-jira-build-check\TeamHub.Infrastructure.deps.json
+D:\WorkFlowHub\artifacts\studio-jira-build-check\TeamHub.Infrastructure.runtimeconfig.json
+D:\WorkFlowHub\artifacts\studio-jira-build-check\TeamHub.Infrastructure.dll
+D:\WorkFlowHub\artifacts\studio-jira-build-check\TeamHub.Infrastructure.pdb

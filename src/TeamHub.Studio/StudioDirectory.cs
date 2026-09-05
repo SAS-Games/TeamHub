@@ -11,6 +11,7 @@ public sealed class StudioDetails
     public string ProjectName { get; set; } = string.Empty;
     public string Location { get; set; } = string.Empty;
     public List<StudioTeamMember> TeamMembers { get; set; } = [];
+    public List<StudioDevelopmentTool> DevelopmentTools { get; set; } = [];
     public List<StudioImportantLink> ImportantLinks { get; set; } = [];
 }
 
@@ -21,16 +22,16 @@ public sealed class StudioTeamMember
     public string? EmailId { get; set; }
 }
 
+public sealed class StudioDevelopmentTool
+{
+    public string Name { get; set; } = string.Empty;
+    public string Description { get; set; } = string.Empty;
+}
+
 public sealed class StudioImportantLink
 {
     public string Label { get; set; } = string.Empty;
     public string Url { get; set; } = string.Empty;
-    public string Description { get; set; } = string.Empty;
-}
-
-public sealed class StudioDevelopmentTools
-{
-    public string Label { get; set; } = string.Empty;
     public string Description { get; set; } = string.Empty;
 }
 
@@ -56,6 +57,7 @@ internal sealed class StudioRecord
     public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
     public DateTime UpdatedAtUtc { get; set; } = DateTime.UtcNow;
     public ICollection<StudioTeamMemberRecord> TeamMembers { get; set; } = new List<StudioTeamMemberRecord>();
+    public ICollection<StudioDevelopmentToolsRecord> DevelopmentTools { get; set; } = new List<StudioDevelopmentToolsRecord>();
     public ICollection<StudioImportantLinkRecord> ImportantLinks { get; set; } = new List<StudioImportantLinkRecord>();
 }
 
@@ -67,6 +69,16 @@ internal sealed class StudioTeamMemberRecord
     public string Name { get; set; } = string.Empty;
     public string RolesAndResponsibilities { get; set; } = string.Empty;
     public string? EmailId { get; set; }
+    public StudioRecord Studio { get; set; } = null!;
+}
+
+internal sealed class StudioDevelopmentToolsRecord
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public Guid StudioRecordId { get; set; }
+    public int DisplayOrder { get; set; }
+    public string Name { get; set; } = string.Empty;
+    public string Description { get; set; } = string.Empty;
     public StudioRecord Studio { get; set; } = null!;
 }
 
@@ -85,6 +97,7 @@ internal sealed class StudioDbContext(DbContextOptions<StudioDbContext> options)
 {
     public DbSet<StudioRecord> Studios => Set<StudioRecord>();
     public DbSet<StudioTeamMemberRecord> StudioTeamMembers => Set<StudioTeamMemberRecord>();
+    public DbSet<StudioDevelopmentToolsRecord> StudioDevelopmentTools => Set<StudioDevelopmentToolsRecord>();
     public DbSet<StudioImportantLinkRecord> StudioImportantLinks => Set<StudioImportantLinkRecord>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -106,6 +119,17 @@ internal sealed class StudioDbContext(DbContextOptions<StudioDbContext> options)
             entity.HasIndex(x => new { x.StudioRecordId, x.DisplayOrder });
             entity.HasOne(x => x.Studio)
                 .WithMany(x => x.TeamMembers)
+                .HasForeignKey(x => x.StudioRecordId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<StudioDevelopmentToolsRecord>(entity =>
+        {
+            entity.ToTable("StudioDevelopmentTools");
+            entity.Property(x => x.Name).HasMaxLength(256);
+            entity.HasIndex(x => new { x.StudioRecordId, x.DisplayOrder });
+            entity.HasOne(x => x.Studio)
+                .WithMany(x => x.DevelopmentTools)
                 .HasForeignKey(x => x.StudioRecordId)
                 .OnDelete(DeleteBehavior.Cascade);
         });
@@ -166,6 +190,23 @@ internal sealed class SqliteStudioDatabaseInitializer(StudioDbContext dbContext)
                 """, cancellationToken);
 
             await dbContext.Database.ExecuteSqlRawAsync("""
+                CREATE TABLE IF NOT EXISTS StudioDevelopmentTools (
+                    Id TEXT NOT NULL CONSTRAINT PK_StudioDevelopmentTools PRIMARY KEY,
+                    StudioRecordId TEXT NOT NULL,
+                    DisplayOrder INTEGER NOT NULL,
+                    Name TEXT NOT NULL,
+                    Description TEXT NOT NULL,
+                    CONSTRAINT FK_StudioDevelopmentTools_Studios_StudioRecordId
+                        FOREIGN KEY (StudioRecordId) REFERENCES Studios (Id) ON DELETE CASCADE
+                );
+                """, cancellationToken);
+
+            await dbContext.Database.ExecuteSqlRawAsync("""
+                CREATE INDEX IF NOT EXISTS IX_StudioDevelopmentTools_StudioRecordId_DisplayOrder
+                ON StudioDevelopmentTools (StudioRecordId, DisplayOrder);
+                """, cancellationToken);
+
+            await dbContext.Database.ExecuteSqlRawAsync("""
                 CREATE TABLE IF NOT EXISTS StudioImportantLinks (
                     Id TEXT NOT NULL CONSTRAINT PK_StudioImportantLinks PRIMARY KEY,
                     StudioRecordId TEXT NOT NULL,
@@ -183,56 +224,11 @@ internal sealed class SqliteStudioDatabaseInitializer(StudioDbContext dbContext)
                 ON StudioImportantLinks (StudioRecordId, DisplayOrder);
                 """, cancellationToken);
 
-            if (!await dbContext.Studios.AnyAsync(cancellationToken))
-            {
-                dbContext.Studios.Add(CreateSeedStudio());
-                await dbContext.SaveChangesAsync(cancellationToken);
-            }
         }
         finally
         {
             await dbContext.Database.CloseConnectionAsync();
         }
-    }
-
-    private static StudioRecord CreateSeedStudio()
-    {
-        var studio = new StudioRecord
-        {
-            StudioName = "Pixel Forge Studio",
-            ProjectName = "Nebula Rush",
-            Location = "Bengaluru, India"
-        };
-        studio.TeamMembers.Add(new StudioTeamMemberRecord
-        {
-            DisplayOrder = 0,
-            Name = "Aarav Mehta",
-            RolesAndResponsibilities = "Producer - delivery planning, milestone tracking, stakeholder updates",
-            EmailId = "aarav.mehta@example.com"
-        });
-        studio.TeamMembers.Add(new StudioTeamMemberRecord
-        {
-            DisplayOrder = 1,
-            Name = "Maya Rao",
-            RolesAndResponsibilities = "QA Lead - test strategy, release sign-off, defect triage",
-            EmailId = "maya.rao@example.com"
-        });
-        studio.ImportantLinks.Add(new StudioImportantLinkRecord
-        {
-            DisplayOrder = 0,
-            Label = "Project Brief",
-            Url = "https://example.com/project-brief",
-            Description = "Current project scope, delivery goals, and assumptions."
-        });
-        studio.ImportantLinks.Add(new StudioImportantLinkRecord
-        {
-            DisplayOrder = 1,
-            Label = "Build Drop Folder",
-            Url = "https://example.com/builds",
-            Description = "Latest playable builds and release candidates."
-        });
-
-        return studio;
     }
 }
 
@@ -243,6 +239,7 @@ internal sealed class SqliteStudioDirectoryService(StudioDbContext dbContext) : 
         var studios = await dbContext.Studios
             .AsNoTracking()
             .Include(studio => studio.TeamMembers)
+            .Include(studio => studio.DevelopmentTools)
             .Include(studio => studio.ImportantLinks)
             .OrderBy(studio => studio.StudioName)
             .ToListAsync(cancellationToken);
@@ -260,6 +257,7 @@ internal sealed class SqliteStudioDirectoryService(StudioDbContext dbContext) : 
         var studio = await dbContext.Studios
             .AsNoTracking()
             .Include(item => item.TeamMembers)
+            .Include(item => item.DevelopmentTools)
             .Include(item => item.ImportantLinks)
             .FirstOrDefaultAsync(item => item.Id == studioId, cancellationToken);
 
@@ -296,11 +294,15 @@ internal sealed class SqliteStudioDirectoryService(StudioDbContext dbContext) : 
         await dbContext.StudioTeamMembers
             .Where(member => member.StudioRecordId == record.Id)
             .ExecuteDeleteAsync(cancellationToken);
+        await dbContext.StudioDevelopmentTools
+            .Where(tool => tool.StudioRecordId == record.Id)
+            .ExecuteDeleteAsync(cancellationToken);
         await dbContext.StudioImportantLinks
             .Where(link => link.StudioRecordId == record.Id)
             .ExecuteDeleteAsync(cancellationToken);
 
         dbContext.StudioTeamMembers.AddRange(CreateTeamMemberRecords(record.Id, studio.TeamMembers));
+        dbContext.StudioDevelopmentTools.AddRange(CreateDevelopmentToolsRecords(record.Id, studio.DevelopmentTools));
         dbContext.StudioImportantLinks.AddRange(CreateImportantLinkRecords(record.Id, studio.ImportantLinks));
         await dbContext.SaveChangesAsync(cancellationToken);
 
@@ -341,6 +343,14 @@ internal sealed class SqliteStudioDirectoryService(StudioDbContext dbContext) : 
                     EmailId = member.EmailId
                 })
                 .ToList(),
+            DevelopmentTools = studio.DevelopmentTools
+                .OrderBy(tool => tool.DisplayOrder)
+                .Select(tool => new StudioDevelopmentTool
+                {
+                    Name = tool.Name,
+                    Description = tool.Description
+                })
+                .ToList(),
             ImportantLinks = studio.ImportantLinks
                 .OrderBy(link => link.DisplayOrder)
                 .Select(link => new StudioImportantLink
@@ -365,6 +375,22 @@ internal sealed class SqliteStudioDirectoryService(StudioDbContext dbContext) : 
                 Name = member.Name.Trim(),
                 RolesAndResponsibilities = member.RolesAndResponsibilities.Trim(),
                 EmailId = string.IsNullOrWhiteSpace(member.EmailId) ? null : member.EmailId.Trim()
+            };
+            displayOrder++;
+        }
+    }
+
+    private static IEnumerable<StudioDevelopmentToolsRecord> CreateDevelopmentToolsRecords(Guid studioRecordId, IEnumerable<StudioDevelopmentTool> developmentTools)
+    {
+        var displayOrder = 0;
+        foreach (var tool in developmentTools.Where(HasDevelopmentToolValue))
+        {
+            yield return new StudioDevelopmentToolsRecord
+            {
+                StudioRecordId = studioRecordId,
+                DisplayOrder = displayOrder,
+                Name = tool.Name.Trim(),
+                Description = tool.Description.Trim()
             };
             displayOrder++;
         }
@@ -396,12 +422,16 @@ internal sealed class SqliteStudioDirectoryService(StudioDbContext dbContext) : 
         => !string.IsNullOrWhiteSpace(link.Label)
             || !string.IsNullOrWhiteSpace(link.Url)
             || !string.IsNullOrWhiteSpace(link.Description);
+    private static bool HasDevelopmentToolValue(StudioDevelopmentTool tool)
+        => !string.IsNullOrWhiteSpace(tool.Name)
+            || !string.IsNullOrWhiteSpace(tool.Description);
 }
 
 public static class StudioDirectoryServiceCollectionExtensions
 {
     public static IServiceCollection AddStudioDirectory(this IServiceCollection services, IConfiguration configuration)
     {
+        services.AddSingleton(configuration);
         services.AddDbContext<StudioDbContext>(options =>
         {
             var connectionString = configuration.GetConnectionString("WorkflowDb") ?? "Data Source=data/workflow.db";
@@ -409,6 +439,7 @@ public static class StudioDirectoryServiceCollectionExtensions
         });
         services.AddScoped<IStudioDatabaseInitializer, SqliteStudioDatabaseInitializer>();
         services.AddScoped<IStudioDirectoryService, SqliteStudioDirectoryService>();
+        services.AddHttpClient<IStudioJiraTicketService, JiraStudioTicketService>();
         return services;
     }
 }

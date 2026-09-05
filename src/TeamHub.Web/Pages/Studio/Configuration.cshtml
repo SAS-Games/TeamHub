@@ -96,7 +96,28 @@
                         </tbody>
                     </table>
                 </div>
-
+                <div class="d-flex justify-content-between align-items-center gap-3 mb-2">
+                    <h3 class="h6 mb-0">Development Tools</h3>
+                    <button type="button" class="btn btn-sm btn-outline-primary" data-add-row="development-tools">Add Development Tool</button>
+                </div>
+                <div class="table-responsive mb-4">
+                    <table class="table styled-table align-middle">
+                        <thead><tr><th>Name</th><th>Description</th><th>Actions</th></tr></thead>
+                        <tbody data-collection="development-tools" data-prefix="Input.DevelopmentTools">
+                        @for (var index = 0; index < Model.Input.DevelopmentTools.Count; index++)
+                        {
+                            <tr data-row>
+                                <td><input asp-for="Input.DevelopmentTools[index].Name" class="form-control" data-field="Name" /></td>
+                                <td><textarea asp-for="Input.DevelopmentTools[index].Description" class="form-control" rows="2" data-field="Description"></textarea></td>
+                                <td class="studio-actions">
+                                    <input asp-for="Input.DevelopmentTools[index].Remove" type="hidden" data-field="Remove" value="false" />
+                                    <button type="button" class="btn btn-sm btn-outline-danger" data-remove-row>Remove</button>
+                                </td>
+                            </tr>
+                        }
+                        </tbody>
+                    </table>
+                </div>
                 <div class="d-flex justify-content-between align-items-center gap-3 mb-2">
                     <h3 class="h6 mb-0">Important Links</h3>
                     <button type="button" class="btn btn-sm btn-outline-primary" data-add-row="important-links">Add Important Link</button>

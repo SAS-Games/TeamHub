@@ -197,3 +197,4 @@ D:\WorkFlowHub\artifacts\solution-build-check\TeamHub.Tests.dll
 D:\WorkFlowHub\artifacts\solution-build-check\TeamHub.Tests.pdb
 D:\WorkFlowHub\tests\TeamHub.Tests\bin\Debug\net8.0\TeamHub.Studio.dll
 D:\WorkFlowHub\tests\TeamHub.Tests\bin\Debug\net8.0\TeamHub.Studio.pdb
+D:\WorkFlowHub\tests\TeamHub.Tests\bin\Debug\net8.0\Microsoft.Extensions.Http.dll

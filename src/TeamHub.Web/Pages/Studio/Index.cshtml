@@ -12,6 +12,10 @@
         <div class="eyebrow">Studio</div>
         <h1>@dashboardTitle</h1>
     </div>
+    @if (item is not null)
+    {
+        <div><a class="btn btn-primary" asp-page="/Studio/Support" asp-route-studioId="@item.Studio.Id">Jira Tickets</a></div>
+    }
 </div>
 
 @if (!string.IsNullOrWhiteSpace(Model.ErrorMessage))
@@ -97,6 +101,22 @@ else if (item is not null)
             </table>
         </div>
     </section>
+
+    @if (studio.DevelopmentTools.Count > 0)
+    {
+        <section class="content-section">
+            <div class="section-heading"><div><span>Tools</span><h2>Development Tools</h2></div></div>
+            <div class="section-body row g-3">
+                @foreach (var tool in studio.DevelopmentTools)
+                {
+                    <div class="col-md-4">
+                        <h3 class="h6">@tool.Name</h3>
+                        <p class="mb-0 small text-muted">@tool.Description</p>
+                    </div>
+                }
+            </div>
+        </section>
+    }
 
     @if (studio.ImportantLinks.Count > 0)
     {

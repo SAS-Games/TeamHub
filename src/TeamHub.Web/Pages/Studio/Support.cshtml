@@ -1,0 +1,90 @@
+@page "/Studio/Support"
+@model TeamHub.Web.Pages.Studio.SupportModel
+@{
+    var title = Model.Studio is null ? "Studio Jira Tickets" : $"{Model.Studio.StudioName} Jira Tickets";
+    ViewData["Title"] = title;
+}
+
+<div class="page-hero">
+    <div>
+        <div class="eyebrow">Studio support</div>
+        <h1>@title</h1>
+    </div>
+    @if (Model.Studio is not null)
+    {
+        <div><a class="btn btn-outline-secondary" asp-page="/Studio/Index" asp-route-studioId="@Model.Studio.Id">Back to Dashboard</a></div>
+    }
+</div>
+
+@if (!string.IsNullOrWhiteSpace(Model.ErrorMessage))
+{
+    <div class="alert alert-info mt-3">@Model.ErrorMessage</div>
+}
+else if (Model.Studio is not null)
+{
+    <section class="content-section">
+        <div class="section-heading"><div><span>Filters</span><h2>Ticket Search</h2></div></div>
+        <div class="section-body">
+            <form method="get" class="row g-3 align-items-end">
+                <input type="hidden" asp-for="StudioId" value="@Model.Studio.Id" />
+                <div class="col-md-3">
+                    <label asp-for="ActiveSprintOnly" class="form-label">Sprint</label>
+                    <select asp-for="ActiveSprintOnly" class="form-select">
+                        <option value="true">Active sprint</option>
+                        <option value="false">All matching tickets</option>
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <label asp-for="StartDate" class="form-label">Start Date</label>
+                    <input asp-for="StartDate" type="date" class="form-control" />
+                </div>
+                <div class="col-md-3">
+                    <label asp-for="EndDate" class="form-label">End Date</label>
+                    <input asp-for="EndDate" type="date" class="form-control" />
+                </div>
+                <div class="col-md-3">
+                    <button type="submit" class="btn btn-primary">Apply Filters</button>
+                </div>
+            </form>
+        </div>
+    </section>
+
+    @if (!string.IsNullOrWhiteSpace(Model.TicketResult.Message))
+    {
+        <div class="alert @(Model.TicketResult.IsConfigured ? "alert-warning" : "alert-info")">@Model.TicketResult.Message</div>
+    }
+
+    @if (Model.TicketResult.Groups.Count > 0)
+    {
+        @foreach (var group in Model.TicketResult.Groups)
+        {
+            <section class="content-section">
+                <div class="section-heading"><div><span>@group.Tickets.Count ticket(s)</span><h2>@group.Name</h2></div></div>
+                @if (group.Tickets.Count == 0)
+                {
+                    <div class="section-body text-muted">No tickets found.</div>
+                }
+                else
+                {
+                    <div class="table-responsive">
+                        <table class="table styled-table">
+                            <thead><tr><th>Ticket Id</th><th>Summary</th><th>Assigned User</th><th>Status</th><th>Priority</th></tr></thead>
+                            <tbody>
+                            @foreach (var ticket in group.Tickets)
+                            {
+                                <tr>
+                                    <td><a href="@ticket.Url" target="_blank" rel="noopener">@ticket.TicketId</a></td>
+                                    <td><a href="@ticket.Url" target="_blank" rel="noopener">@ticket.Summary</a></td>
+                                    <td>@ticket.AssignedUser</td>
+                                    <td>@ticket.Status</td>
+                                    <td>@ticket.Priority</td>
+                                </tr>
+                            }
+                            </tbody>
+                        </table>
+                    </div>
+                }
+            </section>
+        }
+    }
+}

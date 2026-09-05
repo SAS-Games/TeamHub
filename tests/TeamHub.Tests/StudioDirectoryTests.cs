@@ -9,6 +9,44 @@ namespace TeamHub.Tests;
 public sealed class StudioDirectoryTests
 {
     [Fact]
+    public async Task GetTicketsAsync_ReturnsConfigurationMessage_WhenJiraIntegrationIsDisabled()
+    {
+        var dbPath = Path.Combine(Path.GetTempPath(), $"teamhub-studio-{Guid.NewGuid():N}.db");
+        var configPath = Path.Combine(Path.GetTempPath(), $"teamhub-jira-{Guid.NewGuid():N}.json");
+        try
+        {
+            await File.WriteAllTextAsync(configPath, """
+                {
+                  "enabled": false,
+                  "baseUrl": "https://example.atlassian.net",
+                  "studioMappings": []
+                }
+                """);
+
+            await using var provider = CreateServices(dbPath, configPath);
+            var service = provider.GetRequiredService<IStudioJiraTicketService>();
+
+            var result = await service.GetTicketsAsync(new StudioJiraTicketQuery { StudioProjectName = "Project Zero" });
+
+            result.IsConfigured.Should().BeFalse();
+            result.Message.Should().Contain("disabled");
+            result.Groups.Should().BeEmpty();
+        }
+        finally
+        {
+            SqliteConnection.ClearAllPools();
+            if (File.Exists(dbPath))
+            {
+                File.Delete(dbPath);
+            }
+            if (File.Exists(configPath))
+            {
+                File.Delete(configPath);
+            }
+        }
+    }
+
+    [Fact]
     public async Task SaveStudioAsync_CreatesStudio_WhenTeamMembersAndLinksAreEmpty()
     {
         var dbPath = Path.Combine(Path.GetTempPath(), $"teamhub-studio-{Guid.NewGuid():N}.db");
@@ -100,12 +138,13 @@ public sealed class StudioDirectoryTests
         }
     }
 
-    private static ServiceProvider CreateServices(string dbPath)
+    private static ServiceProvider CreateServices(string dbPath, string? jiraConfigPath = null)
     {
         var configuration = new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?>
             {
-                ["ConnectionStrings:WorkflowDb"] = $"Data Source={dbPath}"
+                ["ConnectionStrings:WorkflowDb"] = $"Data Source={dbPath}",
+                ["StudioJiraConfiguration:ConfigPath"] = jiraConfigPath
             })
             .Build();
 

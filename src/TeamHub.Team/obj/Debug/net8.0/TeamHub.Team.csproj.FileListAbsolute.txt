@@ -31,3 +31,9 @@ D:\WorkFlowHub\artifacts\studio-empty-save-build-check\TeamHub.Team.pdb
 D:\WorkFlowHub\artifacts\studio-id-build-check\TeamHub.Team.deps.json
 D:\WorkFlowHub\artifacts\studio-id-build-check\TeamHub.Team.dll
 D:\WorkFlowHub\artifacts\studio-id-build-check\TeamHub.Team.pdb
+D:\WorkFlowHub\artifacts\studio-no-seed-build-check\TeamHub.Team.deps.json
+D:\WorkFlowHub\artifacts\studio-no-seed-build-check\TeamHub.Team.dll
+D:\WorkFlowHub\artifacts\studio-no-seed-build-check\TeamHub.Team.pdb
+D:\WorkFlowHub\artifacts\studio-jira-build-check\TeamHub.Team.deps.json
+D:\WorkFlowHub\artifacts\studio-jira-build-check\TeamHub.Team.dll
+D:\WorkFlowHub\artifacts\studio-jira-build-check\TeamHub.Team.pdb

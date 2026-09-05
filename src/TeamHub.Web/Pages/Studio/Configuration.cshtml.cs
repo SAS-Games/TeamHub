@@ -85,6 +85,10 @@ public class ConfigurationModel(IStudioDirectoryService studioDirectoryService) 
             .Where(member => !member.Remove)
             .Where(member => !string.IsNullOrWhiteSpace(member.Name) || !string.IsNullOrWhiteSpace(member.RolesAndResponsibilities) || !string.IsNullOrWhiteSpace(member.EmailId))
             .ToList();
+        Input.DevelopmentTools = (Input.DevelopmentTools ?? [])
+            .Where(tool => !tool.Remove)
+            .Where(tool => !string.IsNullOrWhiteSpace(tool.Name) || !string.IsNullOrWhiteSpace(tool.Description))
+            .ToList();
         Input.ImportantLinks = (Input.ImportantLinks ?? [])
             .Where(link => !link.Remove)
             .Where(link => !string.IsNullOrWhiteSpace(link.Label) || !string.IsNullOrWhiteSpace(link.Url) || !string.IsNullOrWhiteSpace(link.Description))
@@ -94,6 +98,7 @@ public class ConfigurationModel(IStudioDirectoryService studioDirectoryService) 
     private void EnsureEditableRows()
     {
         Input.TeamMembers.Add(new StudioTeamMemberInput());
+        Input.DevelopmentTools.Add(new StudioDevelopmentToolInput());
         Input.ImportantLinks.Add(new StudioImportantLinkInput());
     }
 
@@ -111,6 +116,7 @@ public class ConfigurationModel(IStudioDirectoryService studioDirectoryService) 
         public string Location { get; set; } = string.Empty;
 
         public List<StudioTeamMemberInput> TeamMembers { get; set; } = [];
+        public List<StudioDevelopmentToolInput> DevelopmentTools { get; set; } = [];
         public List<StudioImportantLinkInput> ImportantLinks { get; set; } = [];
 
         public static StudioInput FromStudio(StudioDetails studio)
@@ -126,6 +132,11 @@ public class ConfigurationModel(IStudioDirectoryService studioDirectoryService) 
                     Name = member.Name,
                     RolesAndResponsibilities = member.RolesAndResponsibilities,
                     EmailId = member.EmailId ?? string.Empty
+                }).ToList(),
+                DevelopmentTools = studio.DevelopmentTools.Select(tool => new StudioDevelopmentToolInput
+                {
+                    Name = tool.Name,
+                    Description = tool.Description
                 }).ToList(),
                 ImportantLinks = studio.ImportantLinks.Select(link => new StudioImportantLinkInput
                 {
@@ -150,6 +161,11 @@ public class ConfigurationModel(IStudioDirectoryService studioDirectoryService) 
                     RolesAndResponsibilities = member.RolesAndResponsibilities ?? string.Empty,
                     EmailId = member.EmailId
                 }).ToList(),
+                DevelopmentTools = DevelopmentTools.Select(tool => new StudioDevelopmentTool
+                {
+                    Name = tool.Name ?? string.Empty,
+                    Description = tool.Description ?? string.Empty
+                }).ToList(),
                 ImportantLinks = ImportantLinks.Select(link => new StudioImportantLink
                 {
                     Label = link.Label ?? string.Empty,
@@ -165,6 +181,13 @@ public class ConfigurationModel(IStudioDirectoryService studioDirectoryService) 
         public string? Name { get; set; }
         public string? RolesAndResponsibilities { get; set; }
         public string? EmailId { get; set; }
+        public bool Remove { get; set; }
+    }
+
+    public sealed class StudioDevelopmentToolInput
+    {
+        public string? Name { get; set; }
+        public string? Description { get; set; }
         public bool Remove { get; set; }
     }
 
