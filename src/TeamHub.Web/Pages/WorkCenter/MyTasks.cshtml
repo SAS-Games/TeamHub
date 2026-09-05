@@ -1,0 +1,59 @@
+@page "/WorkCenter/MyTasks"
+@model TeamHub.Web.Pages.WorkCenter.MyTasksModel
+@{
+    ViewData["Title"] = "My Tasks";
+    ViewData["WorkCenterTab"] = "MyTasks";
+}
+
+<div class="page-hero">
+    <div>
+        <div class="eyebrow">Work Center</div>
+        <h1>My Tasks</h1>
+        <p>Signed in as <strong>@Model.Owner</strong></p>
+    </div>
+</div>
+<partial name="_WorkCenterNav" />
+
+@if (!string.IsNullOrWhiteSpace(Model.ResultMessage))
+{
+    <div class="alert alert-success">@Model.ResultMessage</div>
+}
+
+<section class="content-section">
+    <div class="table-responsive">
+    <table class="table styled-table">
+    <thead>
+        <tr>
+            <th>Instance</th>
+            <th>Workflow</th>
+            <th>Task</th>
+            <th>Owner</th>
+            <th>Due (UTC)</th>
+            <th>Status</th>
+            <th></th>
+        </tr>
+    </thead>
+    <tbody>
+    @foreach (var task in Model.Tasks)
+    {
+        <tr>
+            <td>@task.InstanceName</td>
+            <td>@task.WorkflowName</td>
+            <td>@task.StepName</td>
+            <td>@task.Owner</td>
+            <td>@(task.DueAtUtc?.ToString("yyyy-MM-dd HH:mm") ?? "-")</td>
+            <td>@(task.IsOverdue ? "Overdue" : "InProgress")</td>
+            <td>
+                <form method="post" asp-page-handler="Complete">
+                    <input type="hidden" name="Owner" value="@Model.Owner" />
+                    <input type="hidden" name="stepInstanceId" value="@task.StepInstanceId" />
+                    <textarea name="Comment" class="form-control form-control-sm mb-2" rows="2" maxlength="2000" placeholder="Optional comment"></textarea>
+                    <button type="submit" class="btn btn-sm btn-success">Complete</button>
+                </form>
+            </td>
+        </tr>
+    }
+    </tbody>
+    </table>
+    </div>
+</section>

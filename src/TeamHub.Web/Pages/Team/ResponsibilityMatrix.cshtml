@@ -1,0 +1,45 @@
+@page "/Team/ResponsibilityMatrix"
+@model TeamHub.Web.Pages.Team.ResponsibilityMatrixModel
+@{
+    ViewData["Title"] = "Responsibility Matrix";
+    ViewData["TeamTab"] = "ResponsibilityMatrix";
+}
+
+<div class="page-hero">
+    <div>
+        <h1>Responsibility Matrix</h1>
+        <p>Pods, focus areas, and the engineers who own each specialization.</p>
+    </div>
+</div>
+<partial name="_TeamNav" />
+
+@if (!string.IsNullOrWhiteSpace(Model.ErrorMessage))
+{
+    <div class="alert alert-warning">@Model.ErrorMessage</div>
+}
+else
+{
+    <section class="content-section">
+        <div class="table-responsive">
+        <table class="table styled-table">
+            <thead>
+                <tr>
+                    <th>Pod</th>
+                    <th>Sub-Categories / Focus Areas</th>
+                    <th>Engineers / Members</th>
+                </tr>
+            </thead>
+            <tbody>
+            @foreach (var spec in Model.Directory.Specializations)
+            {
+                <tr>
+                    <td>@spec.Pod</td>
+                    <td>@spec.FocusAreas</td>
+                    <td>@spec.Members</td>
+                </tr>
+            }
+            </tbody>
+        </table>
+        </div>
+    </section>
+}

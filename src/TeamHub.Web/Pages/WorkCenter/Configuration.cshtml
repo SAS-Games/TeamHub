@@ -1,0 +1,62 @@
+@page "/WorkCenter/Configuration"
+@model TeamHub.Web.Pages.WorkCenter.ConfigurationModel
+@{
+    ViewData["Title"] = "Configuration";
+    ViewData["WorkCenterTab"] = "Configuration";
+}
+
+<div class="page-hero">
+    <div>
+        <div class="eyebrow">Work Center</div>
+        <h1>Configuration</h1>
+        <p>Workflow definition sync and notification settings.</p>
+    </div>
+</div>
+<partial name="_WorkCenterNav" />
+
+<section class="content-section">
+<div class="section-body">
+    <p class="mb-2"><strong>Excel Path:</strong> @Model.ExcelPath</p>
+    <p class="mb-2"><strong>Email:</strong> @(Model.EmailEnabled ? "Enabled" : "Disabled")</p>
+    <p class="mb-2"><strong>SMTP Host:</strong> @Model.EmailHost</p>
+    <p class="mb-2"><strong>From Address:</strong> @Model.FromAddress</p>
+    <form method="post" asp-page-handler="Sync">
+        <button type="submit" class="btn btn-primary">Sync Configuration</button>
+    </form>
+</div>
+</section>
+
+@if (!string.IsNullOrWhiteSpace(Model.LastResult))
+{
+    <div class="alert alert-info">@Model.LastResult</div>
+}
+
+<section class="content-section">
+    <div class="table-responsive">
+    <table class="table styled-table">
+    <thead>
+        <tr>
+            <th>Workflow Key</th>
+            <th>Name</th>
+            <th>Version</th>
+            <th>Enabled</th>
+            <th>Imported (UTC)</th>
+            <th>Hash</th>
+        </tr>
+    </thead>
+    <tbody>
+    @foreach (var def in Model.Definitions)
+    {
+        <tr>
+            <td>@def.WorkflowKey</td>
+            <td>@def.Name</td>
+            <td>@def.Version</td>
+            <td>@def.Enabled</td>
+            <td>@def.ImportedAtUtc.ToString("yyyy-MM-dd HH:mm")</td>
+            <td>@def.ConfigHash[..Math.Min(10, def.ConfigHash.Length)]...</td>
+        </tr>
+    }
+    </tbody>
+    </table>
+    </div>
+</section>

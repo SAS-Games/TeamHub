@@ -1,0 +1,199 @@
+@page "/Studio/Configuration"
+@model TeamHub.Web.Pages.Studio.ConfigurationModel
+@{
+    ViewData["Title"] = "Studio Configuration";
+}
+
+<div class="page-hero">
+    <div>
+        <div class="eyebrow">Admin</div>
+        <h1>Studio Configuration</h1>
+        <p>Add, update, or delete studio details used by the dashboard.</p>
+    </div>
+    <div><a class="btn btn-primary" asp-page="/Studio/Configuration" asp-route-create="true">Add Studio</a></div>
+</div>
+
+@if (!string.IsNullOrWhiteSpace(Model.StatusMessage))
+{
+    <div class="alert alert-info mt-3">@Model.StatusMessage</div>
+}
+
+@if (!Model.ShowForm)
+{
+    <section class="content-section">
+        <div class="section-heading"><div><span>Configured studios</span><h2>Studio Records</h2></div></div>
+        <div class="table-responsive">
+            <table class="table styled-table">
+                <thead><tr><th>Studio</th><th>Project</th><th>Location</th><th>Team Members</th><th>Actions</th></tr></thead>
+                <tbody>
+                @foreach (var studio in Model.Studios)
+                {
+                    <tr>
+                        <td>@studio.StudioName</td>
+                        <td>@studio.ProjectName</td>
+                        <td>@studio.Location</td>
+                        <td>@studio.TeamMembers.Count</td>
+                        <td class="studio-actions">
+                            <a class="btn btn-sm btn-outline-primary" asp-page="/Studio/Configuration" asp-route-studioId="@studio.Id">Edit</a>
+                            <form method="post" asp-page-handler="Delete" asp-route-studioId="@studio.Id" class="d-inline">
+                                <button type="submit" class="btn btn-sm btn-outline-danger">Delete</button>
+                            </form>
+                        </td>
+                    </tr>
+                }
+                </tbody>
+            </table>
+        </div>
+    </section>
+}
+
+@if (Model.ShowForm)
+{
+    <section class="content-section">
+        <div class="section-heading"><div><span>@(string.IsNullOrWhiteSpace(Model.Input.Id) ? "Add" : "Update")</span><h2>Studio Details</h2></div></div>
+        <div class="section-body">
+            <form method="post" asp-page-handler="Save">
+                <input type="hidden" asp-for="Input.Id" />
+                <div asp-validation-summary="All" class="text-danger"></div>
+                <div class="row g-3 mb-4">
+                    <div class="col-md-4">
+                        <label asp-for="Input.StudioName" class="form-label">Studio Name</label>
+                        <input asp-for="Input.StudioName" class="form-control" />
+                        <span asp-validation-for="Input.StudioName" class="text-danger"></span>
+                    </div>
+                    <div class="col-md-4">
+                        <label asp-for="Input.ProjectName" class="form-label">Project Name</label>
+                        <input asp-for="Input.ProjectName" class="form-control" />
+                        <span asp-validation-for="Input.ProjectName" class="text-danger"></span>
+                    </div>
+                    <div class="col-md-4">
+                        <label asp-for="Input.Location" class="form-label">Location</label>
+                        <input asp-for="Input.Location" class="form-control" />
+                        <span asp-validation-for="Input.Location" class="text-danger"></span>
+                    </div>
+                </div>
+
+                <div class="d-flex justify-content-between align-items-center gap-3 mb-2">
+                    <h3 class="h6 mb-0">Team Members</h3>
+                    <button type="button" class="btn btn-sm btn-outline-primary" data-add-row="team-members">Add Team Member</button>
+                </div>
+                <div class="table-responsive mb-4">
+                    <table class="table styled-table align-middle">
+                        <thead><tr><th>Name</th><th>Roles & Responsibilities</th><th>Email Id</th><th>Actions</th></tr></thead>
+                        <tbody data-collection="team-members" data-prefix="Input.TeamMembers">
+                        @for (var index = 0; index < Model.Input.TeamMembers.Count; index++)
+                        {
+                            <tr data-row>
+                                <td><input asp-for="Input.TeamMembers[index].Name" class="form-control" data-field="Name" /></td>
+                                <td><textarea asp-for="Input.TeamMembers[index].RolesAndResponsibilities" class="form-control" rows="2" data-field="RolesAndResponsibilities"></textarea></td>
+                                <td><input asp-for="Input.TeamMembers[index].EmailId" class="form-control" data-field="EmailId" /></td>
+                                <td class="studio-actions">
+                                    <input asp-for="Input.TeamMembers[index].Remove" type="hidden" data-field="Remove" value="false" />
+                                    <button type="button" class="btn btn-sm btn-outline-danger" data-remove-row>Remove</button>
+                                </td>
+                            </tr>
+                        }
+                        </tbody>
+                    </table>
+                </div>
+
+                <div class="d-flex justify-content-between align-items-center gap-3 mb-2">
+                    <h3 class="h6 mb-0">Important Links</h3>
+                    <button type="button" class="btn btn-sm btn-outline-primary" data-add-row="important-links">Add Important Link</button>
+                </div>
+                <div class="table-responsive mb-4">
+                    <table class="table styled-table align-middle">
+                        <thead><tr><th>Label</th><th>Url</th><th>Description</th><th>Actions</th></tr></thead>
+                        <tbody data-collection="important-links" data-prefix="Input.ImportantLinks">
+                        @for (var index = 0; index < Model.Input.ImportantLinks.Count; index++)
+                        {
+                            <tr data-row>
+                                <td><input asp-for="Input.ImportantLinks[index].Label" class="form-control" data-field="Label" /></td>
+                                <td><input asp-for="Input.ImportantLinks[index].Url" class="form-control" data-field="Url" /></td>
+                                <td><textarea asp-for="Input.ImportantLinks[index].Description" class="form-control" rows="2" data-field="Description"></textarea></td>
+                                <td class="studio-actions">
+                                    <input asp-for="Input.ImportantLinks[index].Remove" type="hidden" data-field="Remove" value="false" />
+                                    <button type="button" class="btn btn-sm btn-outline-danger" data-remove-row>Remove</button>
+                                </td>
+                            </tr>
+                        }
+                        </tbody>
+                    </table>
+                </div>
+
+                <button type="submit" class="btn btn-primary">Save Studio</button>
+                <a class="btn btn-outline-secondary" asp-page="/Studio/Configuration">Cancel</a>
+            </form>
+        </div>
+    </section>
+}
+
+@section Scripts {
+    <partial name="_ValidationScriptsPartial" />
+    <script>
+        (() => {
+            const templates = {
+                "team-members": ["Name", "RolesAndResponsibilities", "EmailId"],
+                "important-links": ["Label", "Url", "Description"]
+            };
+
+            const createCell = (prefix, index, field, multiline = false) => {
+                const cell = document.createElement("td");
+                const input = document.createElement(multiline ? "textarea" : "input");
+                input.className = "form-control";
+                input.dataset.field = field;
+                input.name = `${prefix}[${index}].${field}`;
+                input.id = `${prefix}_${index}__${field}`.replaceAll(".", "_");
+                if (multiline) {
+                    input.rows = 2;
+                }
+                cell.append(input);
+                return cell;
+            };
+
+            const reindex = (body) => {
+                const prefix = body.dataset.prefix;
+                body.querySelectorAll("tr[data-row]").forEach((row, index) => {
+                    row.querySelectorAll("[data-field]").forEach((field) => {
+                        field.name = `${prefix}[${index}].${field.dataset.field}`;
+                        field.id = `${prefix}_${index}__${field.dataset.field}`.replaceAll(".", "_");
+                    });
+                });
+            };
+
+            const addRow = (collection) => {
+                const body = document.querySelector(`[data-collection='${collection}']`);
+                if (!body) {
+                    return;
+                }
+
+                const prefix = body.dataset.prefix;
+                const row = document.createElement("tr");
+                row.dataset.row = "";
+                const index = body.querySelectorAll("tr[data-row]").length;
+                templates[collection].forEach((field) => row.append(createCell(prefix, index, field, field === "RolesAndResponsibilities" || field === "Description")));
+
+                const actionCell = document.createElement("td");
+                actionCell.className = "studio-actions";
+                actionCell.innerHTML = `<input type="hidden" name="${prefix}[${index}].Remove" id="${prefix}_${index}__Remove" data-field="Remove" value="false" /><button type="button" class="btn btn-sm btn-outline-danger" data-remove-row>Remove</button>`;
+                row.append(actionCell);
+                body.append(row);
+            };
+
+            document.addEventListener("click", (event) => {
+                const addButton = event.target.closest("[data-add-row]");
+                if (addButton) {
+                    addRow(addButton.dataset.addRow);
+                    return;
+                }
+
+                const removeButton = event.target.closest("[data-remove-row]");
+                if (removeButton) {
+                    const body = removeButton.closest("tbody[data-collection]");
+                    removeButton.closest("tr[data-row]")?.remove();
+                    reindex(body);
+                }
+            });
+        })();
+    </script>
+}

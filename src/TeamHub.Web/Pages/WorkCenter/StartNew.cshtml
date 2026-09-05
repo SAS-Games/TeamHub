@@ -1,0 +1,47 @@
+@page "/WorkCenter/StartNew"
+@model TeamHub.Web.Pages.WorkCenter.StartNewModel
+@{
+    ViewData["Title"] = "Start New";
+    ViewData["WorkCenterTab"] = "StartNew";
+}
+
+<div class="page-hero">
+    <div>
+        <div class="eyebrow">Work Center</div>
+        <h1>Start New</h1>
+        <p>Kick off a new workflow instance.</p>
+    </div>
+</div>
+<partial name="_WorkCenterNav" />
+
+@if (!string.IsNullOrWhiteSpace(Model.ResultMessage))
+{
+    <div class="alert alert-success">@Model.ResultMessage</div>
+}
+
+<section class="content-section">
+<form method="post" class="section-body">
+    <div class="mb-3">
+        <label class="form-label">Workflow Key</label>
+        <select asp-for="Input.WorkflowKey" class="form-select" required>
+            <option value="">Select workflow</option>
+            @foreach (var key in Model.WorkflowKeys)
+            {
+                <option value="@key">@key</option>
+            }
+        </select>
+    </div>
+
+    <div class="mb-3">
+        <label class="form-label">Instance Name</label>
+        <input asp-for="Input.InstanceName" class="form-control" required />
+    </div>
+
+    <div class="mb-3">
+        <label class="form-label">Description</label>
+        <textarea asp-for="Input.Description" class="form-control"></textarea>
+    </div>
+
+    <button type="submit" class="btn btn-primary">Start Workflow</button>
+</form>
+</section>

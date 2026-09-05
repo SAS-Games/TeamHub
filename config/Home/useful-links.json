@@ -1,0 +1,17 @@
+[
+  {
+    "label": "Team Wiki",
+    "url": "https://example.com/wiki",
+    "description": "Onboarding guides, coding standards, and process docs."
+  },
+  {
+    "label": "Project Board",
+    "url": "https://example.com/board",
+    "description": "Sprint planning and issue tracking."
+  },
+  {
+    "label": "Source Repository",
+    "url": "https://example.com/repo",
+    "description": "TeamHub source code and pull requests."
+  }
+]

@@ -1,0 +1,49 @@
+@page "/Team/Directory"
+@model TeamHub.Web.Pages.Team.DirectoryModel
+@{
+    ViewData["Title"] = "Team Directory";
+    ViewData["TeamTab"] = "Directory";
+}
+
+<div class="page-hero">
+    <div>
+        <h1>Team Directory</h1>
+        <p>Roles, responsibilities, and contact info for everyone on the project.</p>
+    </div>
+</div>
+<partial name="_TeamNav" />
+
+@if (!string.IsNullOrWhiteSpace(Model.ErrorMessage))
+{
+    <div class="alert alert-warning">@Model.ErrorMessage</div>
+}
+else
+{
+    <section class="content-section">
+        <div class="table-responsive">
+        <table class="table styled-table">
+            <thead>
+                <tr>
+                    <th>Employee Name</th>
+                    <th>Role</th>
+                    <th>GID</th>
+                    <th>Email</th>
+                    <th>Contact Number</th>
+                </tr>
+            </thead>
+            <tbody>
+            @foreach (var member in Model.Directory.Members)
+            {
+                <tr>
+                    <td>@member.EmployeeName</td>
+                    <td>@member.Role</td>
+                    <td>@member.Gid</td>
+                    <td><a href="mailto:@member.Email">@member.Email</a></td>
+                    <td>@member.ContactNumber</td>
+                </tr>
+            }
+            </tbody>
+        </table>
+        </div>
+    </section>
+}

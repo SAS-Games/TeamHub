@@ -1,0 +1,88 @@
+@page
+@model TeamHub.Web.Pages.MilestonesModel
+@{
+    ViewData["Title"] = "Milestone Tracker";
+}
+
+<div class="page-hero">
+    <div>
+        <div class="eyebrow">Delivery control room</div>
+        <h1>Milestone Tracker</h1>
+        <p>Follow every game from delivery through approval to release.</p>
+    </div>
+    <div class="page-hero-meta">Today<br /><strong>@Model.TodayUtc.ToString("dd MMM yyyy")</strong></div>
+</div>
+
+<nav class="page-switcher" aria-label="Milestone views">
+    <a class="@(Model.View == "table" ? "active" : "")" asp-page="/Milestones" asp-route-view="table">Table view</a>
+    <a class="@(Model.View == "roadmap" ? "active" : "")" asp-page="/Milestones" asp-route-view="roadmap">Game roadmap</a>
+</nav>
+
+@if (!string.IsNullOrWhiteSpace(Model.ErrorMessage))
+{
+    <div class="alert alert-warning">@Model.ErrorMessage</div>
+}
+else if (Model.Milestones.Count == 0)
+{
+    <div class="alert alert-info">No milestones found.</div>
+}
+else
+{
+    var groups = Model.Milestones
+        .Where(x => !x.Milestone.StartsWith("Total MS", StringComparison.OrdinalIgnoreCase))
+        .GroupBy(x => new { x.Program, x.Title, x.Developer });
+    if (Model.View == "roadmap")
+    {
+        <div class="roadmap-list">
+        @foreach (var group in groups)
+        {
+            var datedMilestones = group.Where(x => x.DeliveryDate.HasValue).OrderBy(x => x.DeliveryDate).ToList();
+            var nextMilestone = datedMilestones.FirstOrDefault(x => x.DeliveryDate!.Value.Date >= Model.TodayUtc);
+            <section class="roadmap-card">
+                <header class="roadmap-header">
+                    <div>
+                        <div class="roadmap-kicker">@group.Key.Program</div>
+                        <h2>@group.Key.Title</h2>
+                        <p>@group.Key.Developer</p>
+                    </div>
+                </header>
+                <div class="roadmap-track">
+                @foreach (var milestone in group)
+                {
+                    var isCompleted = milestone.DeliveryDate.HasValue && milestone.DeliveryDate.Value.Date < Model.TodayUtc;
+                    var isNext = nextMilestone == milestone;
+                    var state = isCompleted ? "completed" : isNext ? "next" : milestone.DeliveryDate.HasValue ? "upcoming" : "planned";
+                    <article class="roadmap-step @state">
+                        <div class="roadmap-date">@(milestone.DeliveryDate?.ToString("dd MMM yyyy") ?? "Date to be confirmed")</div>
+                        <div class="roadmap-marker"></div>
+                        <div class="roadmap-step-content">
+                            <div class="roadmap-step-top"><strong>@milestone.Description</strong></div>
+                        </div>
+                    </article>
+                }
+                </div>
+            </section>
+        }
+        </div>
+    }
+    else
+    {
+        @foreach (var group in groups)
+        {
+            <section class="content-section">
+                <div class="section-heading"><div><span>Program @group.Key.Program</span><h2>@group.Key.Title</h2></div><strong>@group.Key.Developer</strong></div>
+                <div class="table-responsive">
+                <table class="table styled-table">
+                    <thead><tr><th>Milestone</th><th>Delivery Date</th><th>MS Approval Date</th><th>Release Date</th></tr></thead>
+                    <tbody>
+                    @foreach (var milestone in group)
+                    {
+                        <tr><td><strong>@milestone.Description</strong></td><td>@(milestone.DeliveryDate?.ToString("yyyy-MM-dd") ?? "-")</td><td>@(milestone.MsApprovalDate?.ToString("yyyy-MM-dd") ?? "-")</td><td>@(milestone.ReleaseDate?.ToString("yyyy-MM-dd") ?? "-")</td></tr>
+                    }
+                    </tbody>
+                </table>
+                </div>
+            </section>
+        }
+    }
+}

@@ -1,0 +1,86 @@
+﻿@page
+@model IndexModel
+@{
+    ViewData["Title"] = "Home";
+    var content = Model.HomeContent;
+}
+
+<div class="home-hero mb-4" style="background-image: url('@content.BackgroundImage');">
+    <div class="home-hero-overlay p-4 p-md-5">
+        <div class="eyebrow">@content.Eyebrow</div>
+        <h1 class="display-5">@content.ProjectName</h1>
+        <p class="lead mb-0">@content.Tagline</p>
+    </div>
+</div>
+
+<section class="content-section">
+    <div class="section-heading">
+        <div><span>@content.VisionMissionKicker</span><h2>@content.VisionMissionTitle</h2></div>
+    </div>
+    <div class="section-body row g-4">
+        <div class="col-md-6">
+            <h3 class="h6">@content.VisionLabel</h3>
+            <p class="mb-0">@content.Vision</p>
+        </div>
+        <div class="col-md-6">
+            <h3 class="h6">@content.MissionLabel</h3>
+            <p class="mb-0">@content.Mission</p>
+        </div>
+    </div>
+</section>
+
+<section class="content-section">
+    <div class="section-heading">
+        <div><span>@content.AboutKicker</span><h2>@content.AboutTitle</h2></div>
+    </div>
+    <div class="section-body">
+        <p class="mb-0">@content.Description</p>
+    </div>
+</section>
+
+@if (content.Highlights.Count > 0)
+{
+    <section class="content-section">
+        <div class="section-heading">
+            <div><span>@content.HighlightsKicker</span><h2>@content.HighlightsTitle</h2></div>
+        </div>
+        <div class="section-body row g-3">
+            @foreach (var highlight in content.Highlights)
+            {
+                <div class="col-md-4">
+                    <h3 class="h6">@highlight.Title</h3>
+                    <p class="mb-0 small text-muted">@highlight.Detail</p>
+                </div>
+            }
+        </div>
+    </section>
+}
+
+@if (content.Links.Count > 0)
+{
+    <div class="d-flex flex-wrap gap-2 mb-4">
+        @foreach (var link in content.Links)
+        {
+            <a class="btn btn-primary" asp-page="@link.Page">@link.Label</a>
+        }
+    </div>
+}
+
+@if (content.UsefulLinks.Count > 0)
+{
+    <section class="content-section">
+        <div class="section-heading">
+            <div><span>@content.UsefulLinksKicker</span><h2>@content.UsefulLinksTitle</h2></div>
+        </div>
+        <div class="section-body row g-3">
+            @foreach (var link in content.UsefulLinks)
+            {
+                <div class="col-md-4">
+                    <h3 class="h6"><a href="@link.Url" target="_blank" rel="noopener">@link.Label</a></h3>
+                    <p class="mb-0 small text-muted">@link.Description</p>
+                </div>
+            }
+        </div>
+    </section>
+}
+

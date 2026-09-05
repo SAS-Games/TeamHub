@@ -1,0 +1,12 @@
+@{
+    var current = (string)ViewData["WorkCenterTab"]!;
+}
+<nav class="page-switcher" aria-label="Work Center views">
+    <a class="@(current == "Overview" ? "active" : "")" asp-page="/WorkCenter/Overview">Overview</a>
+    <a class="@(current == "MyTasks" ? "active" : "")" asp-page="/WorkCenter/MyTasks">My Tasks</a>
+    @if (User.IsInRole("Admin"))
+    {
+        <a class="@(current == "StartNew" ? "active" : "")" asp-page="/WorkCenter/StartNew">Start New</a>
+        <a class="@(current == "Configuration" ? "active" : "")" asp-page="/WorkCenter/Configuration">Configuration</a>
+    }
+</nav>

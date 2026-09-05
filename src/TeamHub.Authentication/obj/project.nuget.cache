@@ -1,0 +1,12 @@
+{
+  "version": 2,
+  "dgSpecHash": "Gap6Hg2b9O0=",
+  "success": true,
+  "projectFilePath": "D:\\WorkFlowHub\\src\\TeamHub.Authentication\\TeamHub.Authentication.csproj",
+  "expectedPackageFiles": [
+    "C:\\Users\\7000036664\\.nuget\\packages\\microsoft.extensions.configuration.abstractions\\8.0.0\\microsoft.extensions.configuration.abstractions.8.0.0.nupkg.sha512",
+    "C:\\Users\\7000036664\\.nuget\\packages\\microsoft.extensions.dependencyinjection.abstractions\\8.0.0\\microsoft.extensions.dependencyinjection.abstractions.8.0.0.nupkg.sha512",
+    "C:\\Users\\7000036664\\.nuget\\packages\\microsoft.extensions.primitives\\8.0.0\\microsoft.extensions.primitives.8.0.0.nupkg.sha512"
+  ],
+  "logs": []
+}

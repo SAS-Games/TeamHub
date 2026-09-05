@@ -1,0 +1,73 @@
+@page "/WorkCenter/Overview"
+@model OverviewModel
+@{
+    ViewData["Title"] = "Work Center";
+    ViewData["WorkCenterTab"] = "Overview";
+}
+
+<div class="page-hero">
+    <div>
+        <div class="eyebrow">Work Center</div>
+        <h1>Overview</h1>
+        <p>Live status across every active workflow instance.</p>
+    </div>
+</div>
+<partial name="_WorkCenterNav" />
+
+<section class="content-section">
+    <div class="stat-tiles">
+        <div class="stat-tile">
+            <div class="stat-label">Active Workflows</div>
+            <div class="stat-value">@Model.Summary.ActiveWorkflows</div>
+        </div>
+        <div class="stat-tile">
+            <div class="stat-label">Overdue Steps</div>
+            <div class="stat-value">@Model.Summary.OverdueSteps</div>
+        </div>
+        <div class="stat-tile">
+            <div class="stat-label">Completed This Week</div>
+            <div class="stat-value">@Model.Summary.CompletedThisWeek</div>
+        </div>
+        <div class="stat-tile">
+            <div class="stat-label">Active Steps</div>
+            <div class="stat-value">@Model.Summary.ActiveSteps</div>
+        </div>
+    </div>
+</section>
+
+<section class="content-section">
+    <div class="section-heading">
+        <div><span>Instances</span><h2>Active Workflows</h2></div>
+    </div>
+    <div class="table-responsive">
+    <table class="table styled-table">
+        <thead>
+            <tr>
+                <th>Instance</th>
+                <th>Workflow</th>
+                <th>Status</th>
+                <th>Progress</th>
+                <th>Active Step(s)</th>
+                <th>Owner(s)</th>
+                <th>Next Due (UTC)</th>
+                <th>Overdue</th>
+            </tr>
+        </thead>
+        <tbody>
+        @foreach (var row in Model.Workflows)
+        {
+            <tr>
+                <td><a asp-page="/Workflows/Details" asp-route-id="@row.Id">@row.InstanceName</a></td>
+                <td>@row.WorkflowName</td>
+                <td>@row.Status</td>
+                <td>@row.ProgressPercent%</td>
+                <td>@row.ActiveSteps</td>
+                <td>@row.ActiveOwners</td>
+                <td>@(row.NextDueAtUtc?.ToString("yyyy-MM-dd HH:mm") ?? "-")</td>
+                <td>@row.OverdueCount</td>
+            </tr>
+        }
+        </tbody>
+    </table>
+    </div>
+</section>

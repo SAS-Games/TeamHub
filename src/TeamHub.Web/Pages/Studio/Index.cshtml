@@ -1,0 +1,116 @@
+@page "/Studio"
+@model TeamHub.Web.Pages.Studio.IndexModel
+@{
+    var item = Model.SelectedStudio;
+    var studioName = item?.Studio.StudioName;
+    var dashboardTitle = string.IsNullOrWhiteSpace(studioName) ? "Studio Dashboard" : $"{studioName} Dashboard";
+    ViewData["Title"] = dashboardTitle;
+}
+
+<div class="page-hero">
+    <div>
+        <div class="eyebrow">Studio</div>
+        <h1>@dashboardTitle</h1>
+    </div>
+</div>
+
+@if (!string.IsNullOrWhiteSpace(Model.ErrorMessage))
+{
+    <div class="alert alert-warning mt-3">@Model.ErrorMessage</div>
+}
+
+@if (!string.IsNullOrWhiteSpace(Model.SelectionMessage))
+{
+    <div class="alert alert-info mt-3">@Model.SelectionMessage</div>
+}
+
+@if (Model.Studios.Count == 0)
+{
+    <div class="alert alert-info mt-3">No studios have been configured yet.</div>
+}
+else if (item is not null)
+{
+    var studio = item.Studio;
+    var nextMilestone = item.Milestones.FirstOrDefault(milestone => milestone.DeliveryDate.HasValue && milestone.DeliveryDate.Value.Date >= Model.TodayUtc);
+    <section class="content-section">
+        <div class="stat-tiles">
+            <div class="stat-tile"><div class="stat-label">Studio Name</div><div class="stat-value text-break">@studio.StudioName</div></div>
+            <div class="stat-tile"><div class="stat-label">Project</div><div class="stat-value text-break">@studio.ProjectName</div></div>
+            <div class="stat-tile"><div class="stat-label">Location</div><div class="stat-value text-break">@studio.Location</div></div>
+        </div>
+    </section>
+
+    <section class="roadmap-card">
+        <header class="roadmap-header">
+            <div>
+                <div class="roadmap-kicker">Game roadmap</div>
+            </div>
+        </header>
+        @if (item.Milestones.Count == 0)
+        {
+            <div class="section-body text-muted">No roadmap milestones found for this project yet.</div>
+        }
+        else
+        {
+            <div class="roadmap-track">
+            @foreach (var milestone in item.Milestones)
+            {
+                var isCompleted = milestone.DeliveryDate.HasValue && milestone.DeliveryDate.Value.Date < Model.TodayUtc;
+                var isNext = nextMilestone == milestone;
+                var state = isCompleted ? "completed" : isNext ? "next" : milestone.DeliveryDate.HasValue ? "upcoming" : "planned";
+                <article class="roadmap-step @state">
+                    <div class="roadmap-date">@(milestone.DeliveryDate?.ToString("dd MMM yyyy") ?? "Date to be confirmed")</div>
+                    <div class="roadmap-marker"></div>
+                    <div class="roadmap-step-content">
+                        <div class="roadmap-step-top"><strong>@milestone.Description</strong></div>
+                    </div>
+                </article>
+            }
+            </div>
+        }
+    </section>
+
+    <section class="content-section">
+        <div class="section-heading"><div><span>Team</span><h2>Roles & Responsibilities</h2></div></div>
+        <div class="table-responsive">
+            <table class="table styled-table">
+                <thead><tr><th>Name</th><th>Roles & Responsibilities</th><th>Email</th></tr></thead>
+                <tbody>
+                @foreach (var member in studio.TeamMembers)
+                {
+                    <tr>
+                        <td>@member.Name</td>
+                        <td>@member.RolesAndResponsibilities</td>
+                        <td>
+                            @if (!string.IsNullOrWhiteSpace(member.EmailId))
+                            {
+                                <a href="mailto:@member.EmailId">@member.EmailId</a>
+                            }
+                            else
+                            {
+                                <span>-</span>
+                            }
+                        </td>
+                    </tr>
+                }
+                </tbody>
+            </table>
+        </div>
+    </section>
+
+    @if (studio.ImportantLinks.Count > 0)
+    {
+        <section class="content-section">
+            <div class="section-heading"><div><span>Quick access</span><h2>Important Links</h2></div></div>
+            <div class="section-body row g-3">
+                @foreach (var link in studio.ImportantLinks)
+                {
+                    <div class="col-md-4">
+                        <h3 class="h6"><a href="@link.Url" target="_blank" rel="noopener">@link.Label</a></h3>
+                        <p class="mb-0 small text-muted">@link.Description</p>
+                    </div>
+                }
+            </div>
+        </section>
+    }
+}

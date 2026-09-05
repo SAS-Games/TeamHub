@@ -1,0 +1,39 @@
+{
+  "projectName": "Hero Project Game Dev Support",
+  "eyebrow": "Team overview",
+  "tagline": "Enlighten. Elevate. Empower.",
+  "backgroundImage": "/images/home/project-background.svg",
+  "vision": "To establish Sony India as the trusted PlayStation support partner for game developers globally.​",
+  "mission": "To be a trusted support partner for Hero Project Studios, helping them achieve success and long-term satisfaction.",
+  "visionMissionKicker": "Why we exist",
+  "visionMissionTitle": "Vision & Mission",
+  "visionLabel": "Vision",
+  "missionLabel": "Mission",
+  "aboutKicker": "Overview",
+  "aboutTitle": "About Hero Project",
+  "description": "An incubator program founded by SIE for identifying and empoweringtalented developers around the world​",
+  "highlightsKicker": "What's inside",
+  "highlightsTitle": "Highlights",
+  "highlights": [
+    {
+      "title": "Team Directory",
+      "detail": "Roles, responsibilities, and contact info for everyone on the project."
+    },
+    {
+      "title": "Responsibility Matrix",
+      "detail": "Pods, focus areas, and the engineers who own each specialization."
+    },
+    {
+      "title": "Workflow Tracking",
+      "detail": "Live dashboard of active workflows, overdue steps, and milestones."
+    }
+  ],
+  "links": [
+    { "label": "Work Center", "page": "/WorkCenter/Overview" },
+    { "label": "Team Directory", "page": "/Team/Directory" },
+    { "label": "Responsibility Matrix", "page": "/Team/ResponsibilityMatrix" },
+    { "label": "Milestone Tracker", "page": "/Milestones" }
+  ],
+  "usefulLinksKicker": "Quick access",
+  "usefulLinksTitle": "Useful Links"
+}
