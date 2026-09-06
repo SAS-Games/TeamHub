@@ -9,54 +9,220 @@
     <div>
         <div class="eyebrow">Work Center</div>
         <h1>Configuration</h1>
-        <p>Workflow definition sync and notification settings.</p>
+        <p>Create workflow drafts from the page and publish them when the setup is ready.</p>
     </div>
+    <div><a class="btn btn-primary" asp-page="/WorkCenter/Configuration" asp-route-create="true">Create Work</a></div>
 </div>
 <partial name="_WorkCenterNav" />
 
-<section class="content-section">
-<div class="section-body">
-    <p class="mb-2"><strong>Excel Path:</strong> @Model.ExcelPath</p>
-    <p class="mb-2"><strong>Email:</strong> @(Model.EmailEnabled ? "Enabled" : "Disabled")</p>
-    <p class="mb-2"><strong>SMTP Host:</strong> @Model.EmailHost</p>
-    <p class="mb-2"><strong>From Address:</strong> @Model.FromAddress</p>
-    <form method="post" asp-page-handler="Sync">
-        <button type="submit" class="btn btn-primary">Sync Configuration</button>
-    </form>
-</div>
-</section>
-
-@if (!string.IsNullOrWhiteSpace(Model.LastResult))
+@if (!string.IsNullOrWhiteSpace(Model.StatusMessage))
 {
-    <div class="alert alert-info">@Model.LastResult</div>
+    <div class="alert alert-info mt-3">@Model.StatusMessage</div>
 }
 
-<section class="content-section">
-    <div class="table-responsive">
-    <table class="table styled-table">
-    <thead>
-        <tr>
-            <th>Workflow Key</th>
-            <th>Name</th>
-            <th>Version</th>
-            <th>Enabled</th>
-            <th>Imported (UTC)</th>
-            <th>Hash</th>
-        </tr>
-    </thead>
-    <tbody>
-    @foreach (var def in Model.Definitions)
-    {
-        <tr>
-            <td>@def.WorkflowKey</td>
-            <td>@def.Name</td>
-            <td>@def.Version</td>
-            <td>@def.Enabled</td>
-            <td>@def.ImportedAtUtc.ToString("yyyy-MM-dd HH:mm")</td>
-            <td>@def.ConfigHash[..Math.Min(10, def.ConfigHash.Length)]...</td>
-        </tr>
-    }
-    </tbody>
-    </table>
-    </div>
-</section>
+@if (!Model.ShowForm)
+{
+    <section class="content-section">
+        <div class="section-heading"><div><span>Saved drafts</span><h2>Work Configuration</h2></div></div>
+        <div class="table-responsive">
+            <table class="table styled-table">
+                <thead><tr><th>Workflow Key</th><th>Name</th><th>Steps</th><th>Updated</th><th>Actions</th></tr></thead>
+                <tbody>
+                @foreach (var draft in Model.Drafts)
+                {
+                    <tr>
+                        <td>@draft.WorkflowKey</td>
+                        <td>@draft.WorkflowName</td>
+                        <td>@draft.StepCount</td>
+                        <td>@draft.UpdatedAtUtc.ToString("yyyy-MM-dd HH:mm")</td>
+                        <td class="studio-actions">
+                            <a class="btn btn-sm btn-outline-primary" asp-page="/WorkCenter/Configuration" asp-route-draftId="@draft.Id">Edit</a>
+                            <form method="post" asp-page-handler="Delete" asp-route-draftId="@draft.Id" class="d-inline">
+                                <button type="submit" class="btn btn-sm btn-outline-danger">Delete</button>
+                            </form>
+                        </td>
+                    </tr>
+                }
+                </tbody>
+            </table>
+        </div>
+    </section>
+
+    <section class="content-section">
+        <div class="section-heading"><div><span>Published</span><h2>Active Workflows</h2></div></div>
+        <div class="table-responsive">
+            <table class="table styled-table">
+                <thead><tr><th>Workflow Key</th><th>Name</th><th>Version</th><th>Enabled</th><th>Published</th></tr></thead>
+                <tbody>
+                @foreach (var definition in Model.PublishedDefinitions)
+                {
+                    <tr>
+                        <td>@definition.WorkflowKey</td>
+                        <td>@definition.Name</td>
+                        <td>@definition.Version</td>
+                        <td>@definition.Enabled</td>
+                        <td>@definition.ImportedAtUtc.ToString("yyyy-MM-dd HH:mm")</td>
+                    </tr>
+                }
+                </tbody>
+            </table>
+        </div>
+    </section>
+}
+
+@if (Model.ShowForm)
+{
+    <section class="content-section">
+        <div class="section-heading"><div><span>@(Model.Input.Id.HasValue ? "Edit draft" : "New draft")</span><h2>Workflow Details</h2></div></div>
+        <div class="section-body">
+            <form method="post">
+                <input type="hidden" asp-for="Input.Id" />
+                <div asp-validation-summary="All" class="text-danger"></div>
+                <div class="row g-3 mb-4">
+                    <div class="col-md-3">
+                        <label asp-for="Input.WorkflowKey" class="form-label">Workflow Key</label>
+                        <input asp-for="Input.WorkflowKey" class="form-control" />
+                        <span asp-validation-for="Input.WorkflowKey" class="text-danger"></span>
+                    </div>
+                    <div class="col-md-3">
+                        <label asp-for="Input.WorkflowName" class="form-label">Workflow Name</label>
+                        <input asp-for="Input.WorkflowName" class="form-control" />
+                        <span asp-validation-for="Input.WorkflowName" class="text-danger"></span>
+                    </div>
+                    <div class="col-md-4">
+                        <label asp-for="Input.Description" class="form-label">Description</label>
+                        <input asp-for="Input.Description" class="form-control" />
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label">Enabled</label>
+                        <div class="form-check mt-2"><input asp-for="Input.Enabled" class="form-check-input" /><label asp-for="Input.Enabled" class="form-check-label">Enabled</label></div>
+                    </div>
+                </div>
+
+                <div class="d-flex justify-content-between align-items-center gap-3 mb-2">
+                    <h3 class="h6 mb-0">Workflow Steps</h3>
+                    <button type="button" class="btn btn-sm btn-outline-primary" data-add-row>Add Step</button>
+                </div>
+                <div class="table-responsive mb-4">
+                    <table class="table styled-table align-middle">
+                        <thead><tr><th>Step Key</th><th>Name</th><th>Owner</th><th>Hours</th><th>Depends On</th><th>Flags</th><th>Actions</th></tr></thead>
+                        <tbody data-steps data-prefix="Input.Steps">
+                        @for (var index = 0; index < Model.Input.Steps.Count; index++)
+                        {
+                            <tr data-row>
+                                <td><input asp-for="Input.Steps[index].StepKey" class="form-control" data-field="StepKey" /></td>
+                                <td>
+                                    <input asp-for="Input.Steps[index].StepName" class="form-control mb-2" data-field="StepName" />
+                                    <textarea asp-for="Input.Steps[index].Description" class="form-control" rows="2" data-field="Description" placeholder="Description"></textarea>
+                                </td>
+                                <td>
+                                    <input asp-for="Input.Steps[index].Owner" class="form-control mb-2" data-field="Owner" />
+                                    <input asp-for="Input.Steps[index].OwnerType" class="form-control" data-field="OwnerType" />
+                                </td>
+                                <td>
+                                    <input asp-for="Input.Steps[index].ExpectedDurationHours" type="number" min="0" step="0.5" class="form-control" data-field="ExpectedDurationHours" />
+                                    <input asp-for="Input.Steps[index].ReminderAfterHours" type="number" min="0" step="0.5" class="form-control mt-2" data-field="ReminderAfterHours" placeholder="Reminder" />
+                                </td>
+                                <td><input asp-for="Input.Steps[index].DependsOnCsv" class="form-control" data-field="DependsOnCsv" placeholder="STEP_A, STEP_B" /></td>
+                                <td>
+                                    <input asp-for="Input.Steps[index].SortOrder" type="hidden" data-field="SortOrder" />
+                                    <input asp-for="Input.Steps[index].EscalationAfterHours" type="hidden" data-field="EscalationAfterHours" />
+                                    <input asp-for="Input.Steps[index].EscalationOwner" type="hidden" data-field="EscalationOwner" />
+                                    <div class="form-check"><input asp-for="Input.Steps[index].Required" class="form-check-input" data-field="Required" /><label asp-for="Input.Steps[index].Required" class="form-check-label">Required</label></div>
+                                    <div class="form-check"><input asp-for="Input.Steps[index].Enabled" class="form-check-input" data-field="Enabled" /><label asp-for="Input.Steps[index].Enabled" class="form-check-label">Enabled</label></div>
+                                </td>
+                                <td class="studio-actions">
+                                    <input asp-for="Input.Steps[index].Remove" type="hidden" value="false" data-field="Remove" />
+                                    <button type="button" class="btn btn-sm btn-outline-danger" data-remove-row>Remove</button>
+                                </td>
+                            </tr>
+                        }
+                        </tbody>
+                    </table>
+                </div>
+
+                <button type="submit" asp-page-handler="Save" class="btn btn-outline-primary">Save Draft</button>
+                <button type="submit" asp-page-handler="Publish" class="btn btn-primary">Publish</button>
+                <a class="btn btn-outline-secondary" asp-page="/WorkCenter/Configuration">Cancel</a>
+            </form>
+        </div>
+    </section>
+}
+
+@section Scripts {
+    <partial name="_ValidationScriptsPartial" />
+    <script>
+        (() => {
+            const setName = (field, prefix, index) => {
+                field.name = `${prefix}[${index}].${field.dataset.field}`;
+                field.id = `${prefix}_${index}__${field.dataset.field}`.replaceAll(".", "_");
+            };
+
+            const reindex = (body) => {
+                const prefix = body.dataset.prefix;
+                body.querySelectorAll("tr[data-row]").forEach((row, index) => {
+                    row.querySelectorAll("[data-field]").forEach((field) => setName(field, prefix, index));
+                    const sortOrder = row.querySelector("[data-field='SortOrder']");
+                    if (sortOrder && !sortOrder.value) {
+                        sortOrder.value = index + 1;
+                    }
+                });
+            };
+
+            const makeInput = (prefix, index, field, options = {}) => {
+                const element = document.createElement(options.multiline ? "textarea" : "input");
+                element.className = options.checkbox ? "form-check-input" : "form-control";
+                element.dataset.field = field;
+                if (options.type) {
+                    element.type = options.type;
+                }
+                if (options.placeholder) {
+                    element.placeholder = options.placeholder;
+                }
+                if (options.value !== undefined) {
+                    element.value = options.value;
+                }
+                if (options.checked) {
+                    element.checked = true;
+                }
+                if (options.multiline) {
+                    element.rows = 2;
+                }
+                setName(element, prefix, index);
+                return element;
+            };
+
+            const addStep = () => {
+                const body = document.querySelector("tbody[data-steps]");
+                const prefix = body.dataset.prefix;
+                const index = body.querySelectorAll("tr[data-row]").length;
+                const row = document.createElement("tr");
+                row.dataset.row = "";
+                row.innerHTML = `<td></td><td></td><td></td><td></td><td></td><td></td><td class="studio-actions"></td>`;
+                row.children[0].append(makeInput(prefix, index, "StepKey"));
+                row.children[1].append(makeInput(prefix, index, "StepName"), makeInput(prefix, index, "Description", { multiline: true, placeholder: "Description" }));
+                row.children[2].append(makeInput(prefix, index, "Owner"), makeInput(prefix, index, "OwnerType", { value: "Email" }));
+                row.children[3].append(makeInput(prefix, index, "ExpectedDurationHours", { type: "number", value: "0" }), makeInput(prefix, index, "ReminderAfterHours", { type: "number", placeholder: "Reminder" }));
+                row.children[4].append(makeInput(prefix, index, "DependsOnCsv", { placeholder: "STEP_A, STEP_B" }));
+                row.children[5].append(makeInput(prefix, index, "SortOrder", { type: "hidden", value: `${index + 1}` }), makeInput(prefix, index, "EscalationAfterHours", { type: "hidden" }), makeInput(prefix, index, "EscalationOwner", { type: "hidden" }), makeInput(prefix, index, "Required", { type: "checkbox", checkbox: true, checked: true }), makeInput(prefix, index, "Enabled", { type: "checkbox", checkbox: true, checked: true }));
+                row.children[6].append(makeInput(prefix, index, "Remove", { type: "hidden", value: "false" }));
+                row.children[6].insertAdjacentHTML("beforeend", `<button type="button" class="btn btn-sm btn-outline-danger" data-remove-row>Remove</button>`);
+                body.append(row);
+            };
+
+            document.addEventListener("click", (event) => {
+                if (event.target.closest("[data-add-row]")) {
+                    addStep();
+                    return;
+                }
+
+                const removeButton = event.target.closest("[data-remove-row]");
+                if (removeButton) {
+                    const body = removeButton.closest("tbody[data-steps]");
+                    removeButton.closest("tr[data-row]")?.remove();
+                    reindex(body);
+                }
+            });
+        })();
+    </script>
+}

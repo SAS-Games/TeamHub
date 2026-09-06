@@ -36,3 +36,6 @@ D:\WorkFlowHub\artifacts\studio-no-seed-build-check\TeamHub.Domain.pdb
 D:\WorkFlowHub\artifacts\studio-jira-build-check\TeamHub.Domain.deps.json
 D:\WorkFlowHub\artifacts\studio-jira-build-check\TeamHub.Domain.dll
 D:\WorkFlowHub\artifacts\studio-jira-build-check\TeamHub.Domain.pdb
+D:\WorkFlowHub\artifacts\workcenter-config-build-check\TeamHub.Domain.deps.json
+D:\WorkFlowHub\artifacts\workcenter-config-build-check\TeamHub.Domain.dll
+D:\WorkFlowHub\artifacts\workcenter-config-build-check\TeamHub.Domain.pdb

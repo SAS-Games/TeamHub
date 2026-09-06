@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>@ViewData["Title"] · Flow Designer</title>
+    <link rel="stylesheet" href="~/_content/TeamHub.FlowDesigner.Web/vendor/bootstrap/bootstrap.min.css" asp-append-version="true" />
+    @await RenderSectionAsync("Styles", required: false)
+</head>
+<body class="fd-standalone-body">
+    <header class="fd-app-header">
+        <nav class="navbar navbar-expand-sm">
+            <div class="container-fluid px-4">
+                <a class="navbar-brand d-flex align-items-center gap-2" asp-page="/Flows/Index">
+                    <span class="fd-brand-mark" aria-hidden="true">◆</span>
+                    <span>Flow Designer</span>
+                </a>
+                <span class="fd-header-badge">Diagram workspace</span>
+            </div>
+        </nav>
+    </header>
+    <main>
+        @RenderBody()
+    </main>
+    <script src="~/_content/TeamHub.FlowDesigner.Web/vendor/bootstrap/bootstrap.bundle.min.js" asp-append-version="true"></script>
+    @await RenderSectionAsync("Scripts", required: false)
+</body>
+</html>

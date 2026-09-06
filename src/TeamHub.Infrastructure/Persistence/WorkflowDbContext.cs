@@ -13,6 +13,8 @@ public sealed class WorkflowDbContext(DbContextOptions<WorkflowDbContext> option
     public DbSet<WorkflowStepInstanceDependency> WorkflowStepInstanceDependencies => Set<WorkflowStepInstanceDependency>();
     public DbSet<NotificationLog> NotificationLogs => Set<NotificationLog>();
     public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
+    public DbSet<WorkflowDraftDefinition> WorkflowDraftDefinitions => Set<WorkflowDraftDefinition>();
+    public DbSet<WorkflowDraftStepDefinition> WorkflowDraftStepDefinitions => Set<WorkflowDraftStepDefinition>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -94,6 +96,26 @@ public sealed class WorkflowDbContext(DbContextOptions<WorkflowDbContext> option
             e.Property(x => x.EventType).HasMaxLength(64);
             e.Property(x => x.Actor).HasMaxLength(256);
             e.HasIndex(x => new { x.WorkflowInstanceId, x.TimestampUtc });
+        });
+
+        modelBuilder.Entity<WorkflowDraftDefinition>(e =>
+        {
+            e.Property(x => x.WorkflowKey).HasMaxLength(128);
+            e.Property(x => x.Name).HasMaxLength(256);
+            e.HasIndex(x => x.PublishedAtUtc);
+        });
+
+        modelBuilder.Entity<WorkflowDraftStepDefinition>(e =>
+        {
+            e.Property(x => x.StepKey).HasMaxLength(128);
+            e.Property(x => x.Name).HasMaxLength(256);
+            e.Property(x => x.Owner).HasMaxLength(256);
+            e.Property(x => x.OwnerType).HasMaxLength(64);
+            e.HasIndex(x => new { x.WorkflowDraftDefinitionId, x.SortOrder });
+            e.HasOne(x => x.WorkflowDraftDefinition)
+                .WithMany(x => x.Steps)
+                .HasForeignKey(x => x.WorkflowDraftDefinitionId)
+                .OnDelete(DeleteBehavior.Cascade);
         });
     }
 }

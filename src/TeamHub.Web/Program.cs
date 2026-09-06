@@ -1,6 +1,9 @@
 using System.IO;
 using Microsoft.AspNetCore.Authorization;
 using TeamHub.Authentication;
+using TeamHub.FlowDesigner.Core.Contracts;
+using TeamHub.FlowDesigner.DependencyInjection;
+using TeamHub.FlowDesigner.Web;
 using TeamHub.Infrastructure;
 using TeamHub.Infrastructure.Persistence;
 using TeamHub.Milestones;
@@ -9,14 +12,17 @@ using TeamHub.Team;
 using TeamHub.Web.Home;
 using TeamHub.Web.Navigation;
 using TeamHub.Web.Options;
+using TeamHub.Web.FlowDesigner;
 
 var builder = WebApplication.CreateBuilder(args);
+builder.WebHost.UseStaticWebAssets();
 
 var dataDir = Path.Combine(AppContext.BaseDirectory, "data");
 Directory.CreateDirectory(dataDir);
 
 builder.Configuration["ConnectionStrings:WorkflowDb"] =
     $"Data Source={Path.Combine(dataDir, "workflow.db")}";
+var flowDesignerDatabasePath = Path.Combine(dataDir, "flowdesigner.db");
 
 // Add services to the container.
 builder.Services.AddRazorPages();
@@ -28,6 +34,10 @@ builder.Services.AddAuthorizationBuilder()
         .RequireAuthenticatedUser()
         .Build());
 builder.Services.AddWorkflowInfrastructure(builder.Configuration);
+builder.Services.AddHttpContextAccessor();
+builder.Services.AddScoped<ICurrentUserProvider, TeamHubFlowCurrentUserProvider>();
+builder.Services.AddScoped<IFlowPermissionService, TeamHubFlowPermissionService>();
+builder.Services.AddFlowDesigner(options => options.ConnectionString = $"Data Source={flowDesignerDatabasePath}");
 builder.Services.AddMilestoneTracker(builder.Configuration);
 builder.Services.AddTeamDirectory(builder.Configuration);
 builder.Services.AddStudioDirectory(builder.Configuration);
@@ -43,6 +53,7 @@ using (var scope = app.Services.CreateScope())
     var studioDatabase = scope.ServiceProvider.GetRequiredService<IStudioDatabaseInitializer>();
     studioDatabase.InitializeAsync().GetAwaiter().GetResult();
 }
+await app.Services.InitializeFlowDesignerAsync();
 
 // Configure the HTTP request pipeline.
 if (!app.Environment.IsDevelopment())
@@ -60,5 +71,6 @@ app.UseAuthentication();
 app.UseAuthorization();
 
 app.MapRazorPages();
+app.MapFlowDesignerApi().RequireAuthorization();
 
 app.Run();

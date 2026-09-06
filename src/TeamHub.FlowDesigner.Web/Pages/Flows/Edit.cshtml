@@ -1,0 +1,109 @@
+@page "/flows/{id:guid}/edit"
+@model TeamHub.FlowDesigner.Web.Pages.Flows.EditModel
+@{
+    ViewData["Title"] = Model.FlowName;
+    ViewData["FullBleed"] = true;
+}
+
+@section Styles {
+    <link rel="stylesheet" href="~/_content/TeamHub.FlowDesigner.Web/vendor/drawflow/drawflow.min.css" asp-append-version="true" />
+    <link rel="stylesheet" href="~/_content/TeamHub.FlowDesigner.Web/css/flowdesigner.css" asp-append-version="true" />
+}
+
+<div class="fd-designer" id="flowDesigner" data-flow-id="@Model.FlowId">
+    <div class="fd-designer-toolbar">
+        <div class="d-flex align-items-center gap-2 min-w-0">
+            <a class="btn btn-sm btn-light fd-icon-button" asp-page="/Flows/Index" aria-label="Back to diagrams" title="Back to diagrams">←</a>
+            <div class="min-w-0">
+                <label class="visually-hidden" for="flowName">Flow name</label>
+                <input id="flowName" class="fd-flow-title" maxlength="200" value="@Model.FlowName" />
+                <div class="fd-save-state" id="saveState"><span class="fd-status-dot"></span><span>Loading…</span></div>
+            </div>
+        </div>
+        <div class="fd-toolbar-actions">
+            <button class="btn btn-sm btn-light fd-mobile-panel-button" id="toggleToolbox" type="button">Nodes</button>
+            <button class="btn btn-sm btn-light" id="undoButton" type="button" title="Undo (Ctrl+Z)" disabled>↶ <span class="d-none d-lg-inline">Undo</span></button>
+            <button class="btn btn-sm btn-light" id="redoButton" type="button" title="Redo (Ctrl+Y)" disabled>↷ <span class="d-none d-lg-inline">Redo</span></button>
+            <div class="dropdown">
+                <button class="btn btn-sm btn-light dropdown-toggle" data-bs-toggle="dropdown" type="button">Export</button>
+                <ul class="dropdown-menu dropdown-menu-end shadow-sm">
+                    <li><button class="dropdown-item" id="exportSvg" type="button">Download SVG</button></li>
+                    <li><button class="dropdown-item" id="exportPng" type="button">Download PNG</button></li>
+                </ul>
+            </div>
+            <button class="btn btn-sm btn-primary" id="saveButton" type="button"><span id="saveButtonText">Save</span></button>
+            <button class="btn btn-sm btn-light fd-mobile-panel-button" id="toggleProperties" type="button">Properties</button>
+        </div>
+    </div>
+
+    <div class="fd-designer-main">
+        <aside class="fd-toolbox" id="toolbox" aria-label="Node toolbox">
+            <div class="fd-panel-heading">
+                <div><div class="fd-eyebrow">Build</div><h2>Nodes</h2></div>
+                <button class="btn-close fd-panel-close" id="closeToolbox" type="button" aria-label="Close toolbox"></button>
+            </div>
+            <p class="fd-panel-help">Drag onto the canvas or click to add.</p>
+            <div class="fd-tool-list">
+                <button class="fd-tool" draggable="true" data-node-type="Start" type="button"><span class="fd-tool-icon fd-type-start">▶</span><span><strong>Start</strong><small>Entry point</small></span></button>
+                <button class="fd-tool" draggable="true" data-node-type="Task" type="button"><span class="fd-tool-icon fd-type-task">□</span><span><strong>Task</strong><small>Work step</small></span></button>
+                <button class="fd-tool" draggable="true" data-node-type="Decision" type="button"><span class="fd-tool-icon fd-type-decision">◇</span><span><strong>Decision</strong><small>Branch paths</small></span></button>
+                <button class="fd-tool" draggable="true" data-node-type="Approval" type="button"><span class="fd-tool-icon fd-type-approval">✓</span><span><strong>Approval</strong><small>Review gate</small></span></button>
+                <button class="fd-tool" draggable="true" data-node-type="Parallel" type="button"><span class="fd-tool-icon fd-type-parallel">⑂</span><span><strong>Parallel</strong><small>Split work</small></span></button>
+                <button class="fd-tool" draggable="true" data-node-type="Wait" type="button"><span class="fd-tool-icon fd-type-wait">◷</span><span><strong>Wait / Delay</strong><small>Pause point</small></span></button>
+                <button class="fd-tool" draggable="true" data-node-type="Notification" type="button"><span class="fd-tool-icon fd-type-notification">✉</span><span><strong>Notification</strong><small>Send update</small></span></button>
+                <button class="fd-tool" draggable="true" data-node-type="AutomatedAction" type="button"><span class="fd-tool-icon fd-type-automatedaction">⚡</span><span><strong>Automated action</strong><small>System step</small></span></button>
+                <button class="fd-tool" draggable="true" data-node-type="End" type="button"><span class="fd-tool-icon fd-type-end">■</span><span><strong>End</strong><small>Exit point</small></span></button>
+                <button class="fd-tool" draggable="true" data-node-type="Custom" type="button"><span class="fd-tool-icon fd-type-custom">＋</span><span><strong>Custom</strong><small>Generic node</small></span></button>
+            </div>
+        </aside>
+
+        <section class="fd-canvas-shell" aria-label="Flow canvas">
+            <div id="drawflow" class="fd-canvas"></div>
+            <div class="fd-canvas-hint" id="canvasHint"><strong>Start building</strong><span>Drag a node here from the toolbox</span></div>
+            <div class="fd-canvas-controls" aria-label="Canvas controls">
+                <button class="btn btn-sm btn-light" id="zoomOut" type="button" title="Zoom out">−</button>
+                <button class="btn btn-sm btn-light fd-zoom-value" id="zoomReset" type="button" title="Reset zoom">100%</button>
+                <button class="btn btn-sm btn-light" id="zoomIn" type="button" title="Zoom in">＋</button>
+                <button class="btn btn-sm btn-light" id="fitView" type="button" title="Fit to view">Fit</button>
+                <button class="btn btn-sm btn-light active" id="gridToggle" type="button" title="Toggle grid">Grid</button>
+            </div>
+        </section>
+
+        <aside class="fd-properties" id="propertiesPanel" aria-label="Properties">
+            <div class="fd-panel-heading">
+                <div><div class="fd-eyebrow">Inspector</div><h2>Properties</h2></div>
+                <button class="btn-close fd-panel-close" id="closeProperties" type="button" aria-label="Close properties"></button>
+            </div>
+            <div id="emptyProperties" class="fd-properties-empty"><span>◇</span><p>Select a node or connection to edit its details.</p></div>
+            <form id="nodeProperties" class="d-none" autocomplete="off">
+                <div class="fd-selection-label">Selected node</div>
+                <div class="mb-3"><label class="form-label" for="nodeTitle">Title</label><input class="form-control" id="nodeTitle" maxlength="160" /></div>
+                <div class="mb-3"><label class="form-label" for="nodeDescription">Description</label><textarea class="form-control" id="nodeDescription" rows="3" maxlength="1000"></textarea></div>
+                <div class="mb-3"><label class="form-label" for="nodeType">Type</label><select class="form-select" id="nodeType"></select></div>
+                <div class="row g-2 mb-3">
+                    <div class="col-7"><label class="form-label" for="nodeOwner">Owner</label><input class="form-control" id="nodeOwner" maxlength="160" placeholder="Optional" /></div>
+                    <div class="col-5"><label class="form-label" for="nodeDuration">Duration</label><input class="form-control" id="nodeDuration" maxlength="50" placeholder="2 days" /></div>
+                </div>
+                <div class="mb-3"><label class="form-label" for="nodeNotes">Notes</label><textarea class="form-control" id="nodeNotes" rows="2" maxlength="1000" placeholder="Optional"></textarea></div>
+                <button class="btn btn-sm btn-outline-danger w-100" id="deleteNode" type="button">Delete node</button>
+            </form>
+            <form id="connectionProperties" class="d-none" autocomplete="off">
+                <div class="fd-selection-label">Selected connection</div>
+                <div class="mb-3"><label class="form-label" for="connectionLabel">Label</label><input class="form-control" id="connectionLabel" maxlength="120" placeholder="e.g. Yes" /></div>
+                <p class="small text-secondary" id="connectionSummary"></p>
+                <button class="btn btn-sm btn-outline-danger w-100" id="deleteConnection" type="button">Delete connection</button>
+            </form>
+        </aside>
+    </div>
+
+    <div class="fd-statusbar">
+        <button class="fd-validation-button" id="validationButton" type="button"><span id="validationIcon">✓</span><span id="validationSummary">Ready</span></button>
+        <span class="ms-auto d-none d-md-inline">Double-click canvas to add a task · Del removes selection · Ctrl+C / Ctrl+V duplicates</span>
+    </div>
+    <div class="fd-validation-popover d-none" id="validationPopover"><div class="d-flex justify-content-between align-items-center"><strong>Diagram check</strong><button class="btn-close" id="closeValidation" type="button"></button></div><div id="validationIssues" class="mt-3"></div></div>
+    <div class="fd-toast" id="toast" role="status" aria-live="polite"></div>
+</div>
+
+<script src="~/_content/TeamHub.FlowDesigner.Web/vendor/drawflow/drawflow.min.js" asp-append-version="true"></script>
+<script src="~/_content/TeamHub.FlowDesigner.Web/js/drawflow-adapter.js" asp-append-version="true"></script>
+<script src="~/_content/TeamHub.FlowDesigner.Web/js/flow-designer.js" asp-append-version="true"></script>

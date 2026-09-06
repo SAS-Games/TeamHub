@@ -1788,6 +1788,46 @@
           "bin/placeholder/TeamHub.Domain.dll": {}
         }
       },
+      "TeamHub.FlowDesigner/1.0.0": {
+        "type": "project",
+        "framework": ".NETCoreApp,Version=v8.0",
+        "dependencies": {
+          "Microsoft.EntityFrameworkCore.Sqlite": "9.0.8",
+          "TeamHub.FlowDesigner.Core": "1.0.0"
+        },
+        "compile": {
+          "bin/placeholder/TeamHub.FlowDesigner.dll": {}
+        },
+        "runtime": {
+          "bin/placeholder/TeamHub.FlowDesigner.dll": {}
+        }
+      },
+      "TeamHub.FlowDesigner.Core/1.0.0": {
+        "type": "project",
+        "framework": ".NETCoreApp,Version=v8.0",
+        "compile": {
+          "bin/placeholder/TeamHub.FlowDesigner.Core.dll": {}
+        },
+        "runtime": {
+          "bin/placeholder/TeamHub.FlowDesigner.Core.dll": {}
+        }
+      },
+      "TeamHub.FlowDesigner.Web/1.0.0": {
+        "type": "project",
+        "framework": ".NETCoreApp,Version=v8.0",
+        "dependencies": {
+          "TeamHub.FlowDesigner": "1.0.0"
+        },
+        "compile": {
+          "bin/placeholder/TeamHub.FlowDesigner.Web.dll": {}
+        },
+        "runtime": {
+          "bin/placeholder/TeamHub.FlowDesigner.Web.dll": {}
+        },
+        "frameworkReferences": [
+          "Microsoft.AspNetCore.App"
+        ]
+      },
       "TeamHub.Infrastructure/1.0.0": {
         "type": "project",
         "framework": ".NETCoreApp,Version=v8.0",
@@ -4755,6 +4795,21 @@
       "path": "../TeamHub.Domain/TeamHub.Domain.csproj",
       "msbuildProject": "../TeamHub.Domain/TeamHub.Domain.csproj"
     },
+    "TeamHub.FlowDesigner/1.0.0": {
+      "type": "project",
+      "path": "../TeamHub.FlowDesigner/TeamHub.FlowDesigner.csproj",
+      "msbuildProject": "../TeamHub.FlowDesigner/TeamHub.FlowDesigner.csproj"
+    },
+    "TeamHub.FlowDesigner.Core/1.0.0": {
+      "type": "project",
+      "path": "../TeamHub.FlowDesigner.Core/TeamHub.FlowDesigner.Core.csproj",
+      "msbuildProject": "../TeamHub.FlowDesigner.Core/TeamHub.FlowDesigner.Core.csproj"
+    },
+    "TeamHub.FlowDesigner.Web/1.0.0": {
+      "type": "project",
+      "path": "../TeamHub.FlowDesigner.Web/TeamHub.FlowDesigner.Web.csproj",
+      "msbuildProject": "../TeamHub.FlowDesigner.Web/TeamHub.FlowDesigner.Web.csproj"
+    },
     "TeamHub.Infrastructure/1.0.0": {
       "type": "project",
       "path": "../TeamHub.Infrastructure/TeamHub.Infrastructure.csproj",
@@ -4781,6 +4836,7 @@
       "Microsoft.EntityFrameworkCore.Design >= 9.0.8",
       "TeamHub.Application >= 1.0.0",
       "TeamHub.Authentication >= 1.0.0",
+      "TeamHub.FlowDesigner.Web >= 1.0.0",
       "TeamHub.Infrastructure >= 1.0.0",
       "TeamHub.Milestones >= 1.0.0",
       "TeamHub.Studio >= 1.0.0",
@@ -4788,23 +4844,23 @@
     ]
   },
   "packageFolders": {
-    "C:\\Users\\7000036664\\.nuget\\packages\\": {},
+    "C:\\Users\\asus\\.nuget\\packages\\": {},
     "C:\\Program Files (x86)\\Microsoft Visual Studio\\Shared\\NuGetPackages": {}
   },
   "project": {
     "version": "1.0.0",
     "restore": {
-      "projectUniqueName": "D:\\WorkFlowHub\\src\\TeamHub.Web\\TeamHub.Web.csproj",
+      "projectUniqueName": "D:\\WorkflowHub\\src\\TeamHub.Web\\TeamHub.Web.csproj",
       "projectName": "TeamHub.Web",
-      "projectPath": "D:\\WorkFlowHub\\src\\TeamHub.Web\\TeamHub.Web.csproj",
-      "packagesPath": "C:\\Users\\7000036664\\.nuget\\packages\\",
-      "outputPath": "D:\\WorkFlowHub\\src\\TeamHub.Web\\obj\\",
+      "projectPath": "D:\\WorkflowHub\\src\\TeamHub.Web\\TeamHub.Web.csproj",
+      "packagesPath": "C:\\Users\\asus\\.nuget\\packages\\",
+      "outputPath": "D:\\WorkflowHub\\src\\TeamHub.Web\\obj\\",
       "projectStyle": "PackageReference",
       "fallbackFolders": [
         "C:\\Program Files (x86)\\Microsoft Visual Studio\\Shared\\NuGetPackages"
       ],
       "configFilePaths": [
-        "C:\\Users\\7000036664\\AppData\\Roaming\\NuGet\\NuGet.Config",
+        "C:\\Users\\asus\\AppData\\Roaming\\NuGet\\NuGet.Config",
         "C:\\Program Files (x86)\\NuGet\\Config\\Microsoft.VisualStudio.FallbackLocation.config",
         "C:\\Program Files (x86)\\NuGet\\Config\\Microsoft.VisualStudio.Offline.config"
       ],
@@ -4813,30 +4869,32 @@
       ],
       "sources": {
         "C:\\Program Files (x86)\\Microsoft SDKs\\NuGetPackages\\": {},
-        "C:\\Program Files\\dotnet\\library-packs": {},
         "https://api.nuget.org/v3/index.json": {}
       },
       "frameworks": {
         "net8.0": {
           "targetAlias": "net8.0",
           "projectReferences": {
-            "D:\\WorkFlowHub\\src\\TeamHub.Application\\TeamHub.Application.csproj": {
-              "projectPath": "D:\\WorkFlowHub\\src\\TeamHub.Application\\TeamHub.Application.csproj"
+            "D:\\WorkflowHub\\src\\TeamHub.Application\\TeamHub.Application.csproj": {
+              "projectPath": "D:\\WorkflowHub\\src\\TeamHub.Application\\TeamHub.Application.csproj"
             },
-            "D:\\WorkFlowHub\\src\\TeamHub.Authentication\\TeamHub.Authentication.csproj": {
-              "projectPath": "D:\\WorkFlowHub\\src\\TeamHub.Authentication\\TeamHub.Authentication.csproj"
+            "D:\\WorkflowHub\\src\\TeamHub.Authentication\\TeamHub.Authentication.csproj": {
+              "projectPath": "D:\\WorkflowHub\\src\\TeamHub.Authentication\\TeamHub.Authentication.csproj"
             },
-            "D:\\WorkFlowHub\\src\\TeamHub.Infrastructure\\TeamHub.Infrastructure.csproj": {
-              "projectPath": "D:\\WorkFlowHub\\src\\TeamHub.Infrastructure\\TeamHub.Infrastructure.csproj"
+            "D:\\WorkflowHub\\src\\TeamHub.FlowDesigner.Web\\TeamHub.FlowDesigner.Web.csproj": {
+              "projectPath": "D:\\WorkflowHub\\src\\TeamHub.FlowDesigner.Web\\TeamHub.FlowDesigner.Web.csproj"
             },
-            "D:\\WorkFlowHub\\src\\TeamHub.Milestones\\TeamHub.Milestones.csproj": {
-              "projectPath": "D:\\WorkFlowHub\\src\\TeamHub.Milestones\\TeamHub.Milestones.csproj"
+            "D:\\WorkflowHub\\src\\TeamHub.Infrastructure\\TeamHub.Infrastructure.csproj": {
+              "projectPath": "D:\\WorkflowHub\\src\\TeamHub.Infrastructure\\TeamHub.Infrastructure.csproj"
             },
-            "D:\\WorkFlowHub\\src\\TeamHub.Studio\\TeamHub.Studio.csproj": {
-              "projectPath": "D:\\WorkFlowHub\\src\\TeamHub.Studio\\TeamHub.Studio.csproj"
+            "D:\\WorkflowHub\\src\\TeamHub.Milestones\\TeamHub.Milestones.csproj": {
+              "projectPath": "D:\\WorkflowHub\\src\\TeamHub.Milestones\\TeamHub.Milestones.csproj"
             },
-            "D:\\WorkFlowHub\\src\\TeamHub.Team\\TeamHub.Team.csproj": {
-              "projectPath": "D:\\WorkFlowHub\\src\\TeamHub.Team\\TeamHub.Team.csproj"
+            "D:\\WorkflowHub\\src\\TeamHub.Studio\\TeamHub.Studio.csproj": {
+              "projectPath": "D:\\WorkflowHub\\src\\TeamHub.Studio\\TeamHub.Studio.csproj"
+            },
+            "D:\\WorkflowHub\\src\\TeamHub.Team\\TeamHub.Team.csproj": {
+              "projectPath": "D:\\WorkflowHub\\src\\TeamHub.Team\\TeamHub.Team.csproj"
             }
           }
         }
@@ -4851,7 +4909,7 @@
         "auditLevel": "low",
         "auditMode": "direct"
       },
-      "SdkAnalysisLevel": "9.0.200"
+      "SdkAnalysisLevel": "9.0.300"
     },
     "frameworks": {
       "net8.0": {
@@ -4883,7 +4941,7 @@
             "privateAssets": "all"
           }
         },
-        "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\9.0.204/PortableRuntimeIdentifierGraph.json"
+        "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\9.0.312/PortableRuntimeIdentifierGraph.json"
       }
     }
   }

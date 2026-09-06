@@ -7,6 +7,7 @@
     <ProjectReference Include="..\TeamHub.Studio\TeamHub.Studio.csproj" />
     <ProjectReference Include="..\TeamHub.Authentication\TeamHub.Authentication.csproj" />
     <ProjectReference Include="..\TeamHub.Team\TeamHub.Team.csproj" />
+    <ProjectReference Include="..\TeamHub.FlowDesigner.Web\TeamHub.FlowDesigner.Web.csproj" />
   </ItemGroup>
 
   <ItemGroup>

@@ -9,6 +9,42 @@ namespace TeamHub.Tests;
 public class WorkflowConfigurationVersioningTests
 {
     [Fact]
+    public async Task PublishDraft_CreatesActiveWorkflowDefinition_AndRemovesDraftFromSavedList()
+    {
+        await using var context = CreateDbContext();
+        var service = new WorkflowConfigurationService(context, new TestProvider([]), new TestClock(DateTime.UtcNow));
+
+        var draftId = await service.SaveDraftAsync(new WorkflowDraftDto
+        {
+            WorkflowKey = "GAME_RELEASE",
+            WorkflowName = "Game Release",
+            Enabled = true,
+            Steps =
+            [
+                new WorkflowDraftStepDto
+                {
+                    StepKey = "QA_SIGNOFF",
+                    StepName = "QA Signoff",
+                    Owner = "qa@example.com",
+                    ExpectedDurationHours = 8,
+                    Required = true,
+                    Enabled = true,
+                    SortOrder = 1
+                }
+            ]
+        });
+
+        var result = await service.PublishDraftAsync(draftId, "admin");
+
+        Assert.True(result.Success, string.Join("; ", result.Errors));
+        Assert.Empty(await service.GetDraftsAsync());
+        var definition = await context.WorkflowDefinitions.Include(x => x.Steps).SingleAsync(x => x.WorkflowKey == "GAME_RELEASE");
+        Assert.True(definition.IsActive);
+        Assert.Equal("Game Release", definition.Name);
+        Assert.Equal("QA_SIGNOFF", Assert.Single(definition.Steps).StepKey);
+    }
+
+    [Fact]
     public async Task CreatesVersionOnlyWhenConfigurationChanges()
     {
         await using var context = CreateDbContext();

@@ -11,6 +11,7 @@
           "Microsoft.EntityFrameworkCore.Design": "9.0.8",
           "TeamHub.Application": "1.0.0",
           "TeamHub.Authentication": "1.0.0",
+          "TeamHub.FlowDesigner.Web": "1.0.0",
           "TeamHub.Infrastructure": "1.0.0",
           "TeamHub.Milestones": "1.0.0",
           "TeamHub.Studio": "1.0.0",
@@ -1137,6 +1138,37 @@
           }
         }
       },
+      "TeamHub.FlowDesigner/1.0.0": {
+        "dependencies": {
+          "Microsoft.EntityFrameworkCore.Sqlite": "9.0.8",
+          "TeamHub.FlowDesigner.Core": "1.0.0"
+        },
+        "runtime": {
+          "TeamHub.FlowDesigner.dll": {
+            "assemblyVersion": "1.0.0.0",
+            "fileVersion": "1.0.0.0"
+          }
+        }
+      },
+      "TeamHub.FlowDesigner.Core/1.0.0": {
+        "runtime": {
+          "TeamHub.FlowDesigner.Core.dll": {
+            "assemblyVersion": "1.0.0.0",
+            "fileVersion": "1.0.0.0"
+          }
+        }
+      },
+      "TeamHub.FlowDesigner.Web/1.0.0": {
+        "dependencies": {
+          "TeamHub.FlowDesigner": "1.0.0"
+        },
+        "runtime": {
+          "TeamHub.FlowDesigner.Web.dll": {
+            "assemblyVersion": "1.0.0.0",
+            "fileVersion": "1.0.0.0"
+          }
+        }
+      },
       "TeamHub.Infrastructure/1.0.0": {
         "dependencies": {
           "ClosedXML": "0.104.0",
@@ -1768,6 +1800,21 @@
       "sha512": ""
     },
     "TeamHub.Domain/1.0.0": {
+      "type": "project",
+      "serviceable": false,
+      "sha512": ""
+    },
+    "TeamHub.FlowDesigner/1.0.0": {
+      "type": "project",
+      "serviceable": false,
+      "sha512": ""
+    },
+    "TeamHub.FlowDesigner.Core/1.0.0": {
+      "type": "project",
+      "serviceable": false,
+      "sha512": ""
+    },
+    "TeamHub.FlowDesigner.Web/1.0.0": {
       "type": "project",
       "serviceable": false,
       "sha512": ""

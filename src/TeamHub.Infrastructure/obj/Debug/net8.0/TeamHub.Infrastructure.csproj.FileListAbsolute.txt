@@ -53,3 +53,7 @@ D:\WorkFlowHub\artifacts\studio-jira-build-check\TeamHub.Infrastructure.deps.jso
 D:\WorkFlowHub\artifacts\studio-jira-build-check\TeamHub.Infrastructure.runtimeconfig.json
 D:\WorkFlowHub\artifacts\studio-jira-build-check\TeamHub.Infrastructure.dll
 D:\WorkFlowHub\artifacts\studio-jira-build-check\TeamHub.Infrastructure.pdb
+D:\WorkFlowHub\artifacts\workcenter-config-build-check\TeamHub.Infrastructure.deps.json
+D:\WorkFlowHub\artifacts\workcenter-config-build-check\TeamHub.Infrastructure.runtimeconfig.json
+D:\WorkFlowHub\artifacts\workcenter-config-build-check\TeamHub.Infrastructure.dll
+D:\WorkFlowHub\artifacts\workcenter-config-build-check\TeamHub.Infrastructure.pdb

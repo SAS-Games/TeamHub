@@ -36,3 +36,6 @@ D:\WorkFlowHub\artifacts\studio-no-seed-build-check\TeamHub.Authentication.pdb
 D:\WorkFlowHub\artifacts\studio-jira-build-check\TeamHub.Authentication.deps.json
 D:\WorkFlowHub\artifacts\studio-jira-build-check\TeamHub.Authentication.dll
 D:\WorkFlowHub\artifacts\studio-jira-build-check\TeamHub.Authentication.pdb
+D:\WorkFlowHub\artifacts\workcenter-config-build-check\TeamHub.Authentication.deps.json
+D:\WorkFlowHub\artifacts\workcenter-config-build-check\TeamHub.Authentication.dll
+D:\WorkFlowHub\artifacts\workcenter-config-build-check\TeamHub.Authentication.pdb

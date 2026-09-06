@@ -1,0 +1,31 @@
+@page "/flows/new"
+@model TeamHub.FlowDesigner.Web.Pages.Flows.NewModel
+@{
+    ViewData["Title"] = "New diagram";
+}
+@section Styles {
+    <link rel="stylesheet" href="~/_content/TeamHub.FlowDesigner.Web/css/flowdesigner.css" asp-append-version="true" />
+}
+<div class="container py-5">
+    <div class="fd-form-card mx-auto">
+        <a class="fd-back-link" asp-page="/Flows/Index">← All diagrams</a>
+        <div class="fd-eyebrow mt-4">New canvas</div>
+        <h1 class="h2 mb-2">Create a flow diagram</h1>
+        <p class="text-secondary mb-4">Give it a useful name. You can change these details later.</p>
+        <form method="post">
+            <div class="mb-3">
+                <label class="form-label" asp-for="Name"></label>
+                <input class="form-control form-control-lg" asp-for="Name" maxlength="200" autofocus />
+                <span class="text-danger small" asp-validation-for="Name"></span>
+            </div>
+            <div class="mb-4">
+                <label class="form-label" asp-for="Description"></label>
+                <textarea class="form-control" asp-for="Description" rows="3" maxlength="2000" placeholder="Optional context for this diagram"></textarea>
+            </div>
+            <div class="d-flex justify-content-end gap-2">
+                <a class="btn btn-light" asp-page="/Flows/Index">Cancel</a>
+                <button class="btn btn-primary" type="submit">Create and open</button>
+            </div>
+        </form>
+    </div>
+</div>

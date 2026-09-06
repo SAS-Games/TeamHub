@@ -1,0 +1,6 @@
+bin/
+obj/
+.vs/
+data/*.db*
+TestResults/
+.browser-qa/

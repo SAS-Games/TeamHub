@@ -37,3 +37,6 @@ D:\WorkFlowHub\artifacts\studio-no-seed-build-check\TeamHub.Milestones.pdb
 D:\WorkFlowHub\artifacts\studio-jira-build-check\TeamHub.Milestones.deps.json
 D:\WorkFlowHub\artifacts\studio-jira-build-check\TeamHub.Milestones.dll
 D:\WorkFlowHub\artifacts\studio-jira-build-check\TeamHub.Milestones.pdb
+D:\WorkFlowHub\artifacts\workcenter-config-build-check\TeamHub.Milestones.deps.json
+D:\WorkFlowHub\artifacts\workcenter-config-build-check\TeamHub.Milestones.dll
+D:\WorkFlowHub\artifacts\workcenter-config-build-check\TeamHub.Milestones.pdb

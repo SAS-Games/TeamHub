@@ -16,7 +16,12 @@ This solution is a local Windows-first POC for a generic workflow automation pla
 - src/TeamHub.Application: Service interfaces and DTOs
 - src/TeamHub.Infrastructure: EF Core, Excel provider, engine, configuration sync, reminders, notifications
 - src/TeamHub.Web: Local web app UI
+- src/TeamHub.FlowDesigner.Core: Flow diagram contracts and domain models
+- src/TeamHub.FlowDesigner: Flow persistence, validation, and application services
+- src/TeamHub.FlowDesigner.Web: Reusable Razor Class Library UI and API endpoints
+- src/TeamHub.FlowDesigner.Standalone: Optional standalone development host
 - tests/TeamHub.Tests: Unit tests for engine and validation
+- tests/TeamHub.FlowDesigner.Tests: Unit tests for flow behavior and access control
 
 ## Run
 
@@ -28,10 +33,27 @@ This solution is a local Windows-first POC for a generic workflow automation pla
 dotnet run --project src/TeamHub.Web/TeamHub.Web.csproj
 ```
 
-4. Open: http://localhost:5000
+4. Open: http://localhost:5051
 5. Go to Configuration -> Sync Configuration
 6. Start workflow instances from Start Workflow
 7. Complete tasks from My Tasks
+
+## Flow Designer
+
+After signing in, open the **Flow Designer** tab in the normal TeamHub navigation. It is part of the same authenticated application and uses the existing TeamHub user/admin roles.
+
+- A regular user can create, view, edit, duplicate, and delete only their own diagrams.
+- An administrator can view and manage every user's diagrams.
+- Diagram data is isolated in `data/flowdesigner.db`; the existing workflow database and workflow engine are unchanged.
+- The host port is `5051` for HTTP (`7288` for the HTTPS launch profile).
+
+For isolated Flow Designer development, run:
+
+```powershell
+dotnet run --project src/TeamHub.FlowDesigner.Standalone/TeamHub.FlowDesigner.Standalone.csproj
+```
+
+The standalone development host uses `http://localhost:5168`.
 
 ## Excel Contract
 
@@ -79,3 +101,4 @@ WorkflowSteps table columns:
 - Notification delivery is currently logged to DB and app logs via DatabaseNotificationService.
 - SQLite DB is created on app startup using EnsureCreated.
 - POC auth is simplified; owner is provided in My Tasks page for demonstration.
+- Flow Designer vendors Drawflow and Bootstrap under their MIT licenses; license texts are kept beside the distributed assets.
