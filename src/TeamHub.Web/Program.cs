@@ -23,6 +23,8 @@ Directory.CreateDirectory(dataDir);
 builder.Configuration["ConnectionStrings:WorkflowDb"] =
     $"Data Source={Path.Combine(dataDir, "workflow.db")}";
 var flowDesignerDatabasePath = Path.Combine(dataDir, "flowdesigner.db");
+builder.Configuration["ConnectionStrings:TeamDb"] =
+    $"Data Source={Path.Combine(dataDir, "team.db")}";
 
 // Add services to the container.
 builder.Services.AddRazorPages();
@@ -52,6 +54,8 @@ using (var scope = app.Services.CreateScope())
     db.Database.EnsureCreated();
     var studioDatabase = scope.ServiceProvider.GetRequiredService<IStudioDatabaseInitializer>();
     studioDatabase.InitializeAsync().GetAwaiter().GetResult();
+    var teamDatabase = scope.ServiceProvider.GetRequiredService<ITeamDatabaseInitializer>();
+    teamDatabase.InitializeAsync().GetAwaiter().GetResult();
 }
 await app.Services.InitializeFlowDesignerAsync();
 

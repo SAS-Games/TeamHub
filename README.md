@@ -15,6 +15,7 @@ This solution is a local Windows-first POC for a generic workflow automation pla
 - src/TeamHub.Domain: Entities and enums
 - src/TeamHub.Application: Service interfaces and DTOs
 - src/TeamHub.Infrastructure: EF Core, Excel provider, engine, configuration sync, reminders, notifications
+- src/TeamHub.Team: Database-backed team directory and support specialization configuration
 - src/TeamHub.Web: Local web app UI
 - src/TeamHub.FlowDesigner.Core: Flow diagram contracts and domain models
 - src/TeamHub.FlowDesigner: Flow persistence, validation, and application services
@@ -54,6 +55,12 @@ dotnet run --project src/TeamHub.FlowDesigner.Standalone/TeamHub.FlowDesigner.St
 ```
 
 The standalone development host uses `http://localhost:5168`.
+
+## Administration
+
+Administrators have a single **Configuration** navigation tab that links to the Team, Studio, and Workflow configuration pages. Team Configuration contains separate forms for team members and support specializations.
+
+Team data is stored in `data/team.db`. The Team pages no longer read `TeamInfo.xlsx`, so the application is unaffected when that spreadsheet is open, locked, empty, or absent.
 
 ## Excel Contract
 

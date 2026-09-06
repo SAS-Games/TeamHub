@@ -1,0 +1,165 @@
+@page "/Team/Configuration"
+@model TeamHub.Web.Pages.Team.ConfigurationModel
+@{
+    ViewData["Title"] = "Team Configuration";
+}
+
+<div class="page-hero">
+    <div>
+        <div class="eyebrow">Admin</div>
+        <h1>Team Configuration</h1>
+        <p>Maintain the people and support ownership displayed in the Team tab.</p>
+    </div>
+    <a class="btn btn-outline-secondary" asp-page="/Configuration/Index">All Configuration</a>
+</div>
+
+@if (!string.IsNullOrWhiteSpace(Model.StatusMessage))
+{
+    <div class="alert alert-info mt-3">@Model.StatusMessage</div>
+}
+
+<div class="row g-4 mt-1">
+    <div class="col-12 col-xl-6">
+        <section class="content-section h-100 m-0">
+            <div class="section-heading">
+                <div><span>Team info</span><h2>@(string.IsNullOrWhiteSpace(Model.MemberInput.Id) ? "Add Team Member" : "Edit Team Member")</h2></div>
+            </div>
+            <form method="post" asp-page-handler="SaveMember" class="p-4">
+                <input type="hidden" asp-for="MemberInput.Id" />
+                <div asp-validation-summary="ModelOnly" class="text-danger mb-3"></div>
+                <div class="row g-3">
+                    <div class="col-12">
+                        <label asp-for="MemberInput.EmployeeName" class="form-label">Employee Name</label>
+                        <input asp-for="MemberInput.EmployeeName" class="form-control" />
+                        <span asp-validation-for="MemberInput.EmployeeName" class="text-danger"></span>
+                    </div>
+                    <div class="col-md-6">
+                        <label asp-for="MemberInput.Role" class="form-label"></label>
+                        <input asp-for="MemberInput.Role" class="form-control" />
+                        <span asp-validation-for="MemberInput.Role" class="text-danger"></span>
+                    </div>
+                    <div class="col-md-6">
+                        <label asp-for="MemberInput.Gid" class="form-label">GID</label>
+                        <input asp-for="MemberInput.Gid" class="form-control" />
+                        <span asp-validation-for="MemberInput.Gid" class="text-danger"></span>
+                    </div>
+                    <div class="col-md-6">
+                        <label asp-for="MemberInput.Email" class="form-label"></label>
+                        <input asp-for="MemberInput.Email" class="form-control" type="email" />
+                        <span asp-validation-for="MemberInput.Email" class="text-danger"></span>
+                    </div>
+                    <div class="col-md-6">
+                        <label asp-for="MemberInput.ContactNumber" class="form-label">Contact Number</label>
+                        <input asp-for="MemberInput.ContactNumber" class="form-control" />
+                        <span asp-validation-for="MemberInput.ContactNumber" class="text-danger"></span>
+                    </div>
+                </div>
+                <div class="d-flex gap-2 mt-4">
+                    <button type="submit" class="btn btn-primary">Save Team Member</button>
+                    @if (!string.IsNullOrWhiteSpace(Model.MemberInput.Id))
+                    {
+                        <a class="btn btn-outline-secondary" asp-page="/Team/Configuration">Cancel</a>
+                    }
+                </div>
+            </form>
+        </section>
+    </div>
+
+    <div class="col-12 col-xl-6">
+        <section class="content-section h-100 m-0">
+            <div class="section-heading">
+                <div><span>Support specialization</span><h2>@(string.IsNullOrWhiteSpace(Model.SupportInput.Id) ? "Add Specialization" : "Edit Specialization")</h2></div>
+            </div>
+            <form method="post" asp-page-handler="SaveSpecialization" class="p-4">
+                <input type="hidden" asp-for="SupportInput.Id" />
+                <div asp-validation-summary="ModelOnly" class="text-danger mb-3"></div>
+                <div class="mb-3">
+                    <label asp-for="SupportInput.Pod" class="form-label">Pod</label>
+                    <input asp-for="SupportInput.Pod" class="form-control" />
+                    <span asp-validation-for="SupportInput.Pod" class="text-danger"></span>
+                </div>
+                <div class="mb-3">
+                    <label asp-for="SupportInput.FocusAreas" class="form-label">Sub-Categories / Focus Areas</label>
+                    <textarea asp-for="SupportInput.FocusAreas" class="form-control" rows="3"></textarea>
+                    <span asp-validation-for="SupportInput.FocusAreas" class="text-danger"></span>
+                </div>
+                <div class="mb-3">
+                    <label asp-for="SupportInput.Members" class="form-label">Engineers / Members</label>
+                    <textarea asp-for="SupportInput.Members" class="form-control" rows="3"></textarea>
+                    <span asp-validation-for="SupportInput.Members" class="text-danger"></span>
+                </div>
+                <div class="d-flex gap-2 mt-4">
+                    <button type="submit" class="btn btn-primary">Save Specialization</button>
+                    @if (!string.IsNullOrWhiteSpace(Model.SupportInput.Id))
+                    {
+                        <a class="btn btn-outline-secondary" asp-page="/Team/Configuration">Cancel</a>
+                    }
+                </div>
+            </form>
+        </section>
+    </div>
+</div>
+
+<section class="content-section">
+    <div class="section-heading"><div><span>Directory</span><h2>Team Members</h2></div><strong>@Model.Directory.Members.Count configured</strong></div>
+    @if (Model.Directory.Members.Count == 0)
+    {
+        <div class="p-4 text-secondary">No team members have been configured.</div>
+    }
+    else
+    {
+        <div class="table-responsive">
+            <table class="table styled-table">
+                <thead><tr><th>Employee Name</th><th>Role</th><th>GID</th><th>Email</th><th>Contact Number</th><th>Actions</th></tr></thead>
+                <tbody>
+                @foreach (var member in Model.Directory.Members)
+                {
+                    <tr>
+                        <td>@member.EmployeeName</td><td>@member.Role</td><td>@member.Gid</td><td>@member.Email</td><td>@member.ContactNumber</td>
+                        <td class="studio-actions">
+                            <a class="btn btn-sm btn-outline-primary" asp-page="/Team/Configuration" asp-route-memberId="@member.Id">Edit</a>
+                            <form method="post" asp-page-handler="DeleteMember" asp-route-memberId="@member.Id" class="d-inline">
+                                <button type="submit" class="btn btn-sm btn-outline-danger">Delete</button>
+                            </form>
+                        </td>
+                    </tr>
+                }
+                </tbody>
+            </table>
+        </div>
+    }
+</section>
+
+<section class="content-section">
+    <div class="section-heading"><div><span>Ownership</span><h2>Support Specializations</h2></div><strong>@Model.Directory.Specializations.Count configured</strong></div>
+    @if (Model.Directory.Specializations.Count == 0)
+    {
+        <div class="p-4 text-secondary">No support specializations have been configured.</div>
+    }
+    else
+    {
+        <div class="table-responsive">
+            <table class="table styled-table">
+                <thead><tr><th>Pod</th><th>Sub-Categories / Focus Areas</th><th>Engineers / Members</th><th>Actions</th></tr></thead>
+                <tbody>
+                @foreach (var specialization in Model.Directory.Specializations)
+                {
+                    <tr>
+                        <td>@specialization.Pod</td><td>@specialization.FocusAreas</td><td>@specialization.Members</td>
+                        <td class="studio-actions">
+                            <a class="btn btn-sm btn-outline-primary" asp-page="/Team/Configuration" asp-route-specializationId="@specialization.Id">Edit</a>
+                            <form method="post" asp-page-handler="DeleteSpecialization" asp-route-specializationId="@specialization.Id" class="d-inline">
+                                <button type="submit" class="btn btn-sm btn-outline-danger">Delete</button>
+                            </form>
+                        </td>
+                    </tr>
+                }
+                </tbody>
+            </table>
+        </div>
+    }
+</section>
+
+@section Scripts {
+    <partial name="_ValidationScriptsPartial" />
+}

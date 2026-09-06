@@ -1,0 +1,43 @@
+@page "/Configuration"
+@model TeamHub.Web.Pages.Configuration.IndexModel
+@{
+    ViewData["Title"] = "Configuration";
+}
+
+<div class="page-hero">
+    <div>
+        <div class="eyebrow">Admin</div>
+        <h1>Configuration</h1>
+        <p>Manage the application data and workflow setup available to your team.</p>
+    </div>
+</div>
+
+<div class="row g-4 mt-1">
+    <div class="col-12 col-md-6 col-xl-4">
+        <section class="content-section h-100 m-0">
+            <div class="section-heading"><div><span>People</span><h2>Team Information</h2></div></div>
+            <div class="p-4">
+                <p class="text-secondary">Manage team members and support specializations shown in the Team tab.</p>
+                <a class="btn btn-primary" asp-page="/Team/Configuration">Open Team Configuration</a>
+            </div>
+        </section>
+    </div>
+    <div class="col-12 col-md-6 col-xl-4">
+        <section class="content-section h-100 m-0">
+            <div class="section-heading"><div><span>Studios</span><h2>Studio Information</h2></div></div>
+            <div class="p-4">
+                <p class="text-secondary">Manage studio details, members, tools, and important links.</p>
+                <a class="btn btn-primary" asp-page="/Studio/Configuration">Open Studio Configuration</a>
+            </div>
+        </section>
+    </div>
+    <div class="col-12 col-md-6 col-xl-4">
+        <section class="content-section h-100 m-0">
+            <div class="section-heading"><div><span>Automation</span><h2>Workflows</h2></div></div>
+            <div class="p-4">
+                <p class="text-secondary">Create, validate, and publish workflow definitions used by Work Center.</p>
+                <a class="btn btn-primary" asp-page="/WorkCenter/Configuration">Open Workflow Configuration</a>
+            </div>
+        </section>
+    </div>
+</div>

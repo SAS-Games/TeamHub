@@ -13,9 +13,9 @@
 </div>
 <partial name="_TeamNav" />
 
-@if (!string.IsNullOrWhiteSpace(Model.ErrorMessage))
+@if (Model.Directory.Specializations.Count == 0)
 {
-    <div class="alert alert-warning">@Model.ErrorMessage</div>
+    <div class="alert alert-info">No support specializations have been configured yet.</div>
 }
 else
 {

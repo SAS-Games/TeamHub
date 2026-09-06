@@ -27,6 +27,7 @@
     <ProjectReference Include="..\..\src\TeamHub.Application\TeamHub.Application.csproj" />
     <ProjectReference Include="..\..\src\TeamHub.Infrastructure\TeamHub.Infrastructure.csproj" />
     <ProjectReference Include="..\..\src\TeamHub.Studio\TeamHub.Studio.csproj" />
+    <ProjectReference Include="..\..\src\TeamHub.Team\TeamHub.Team.csproj" />
     <ProjectReference Include="..\..\src\TeamHub.Domain\TeamHub.Domain.csproj" />
   </ItemGroup>
 

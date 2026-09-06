@@ -18,6 +18,7 @@
           "TeamHub.Domain": "1.0.0",
           "TeamHub.Infrastructure": "1.0.0",
           "TeamHub.Studio": "1.0.0",
+          "TeamHub.Team": "1.0.0",
           "coverlet.collector": "6.0.2",
           "xunit": "2.9.2",
           "xunit.runner.visualstudio": "2.8.2"
@@ -1233,6 +1234,20 @@
             "fileVersion": "1.0.0.0"
           }
         }
+      },
+      "TeamHub.Team/1.0.0": {
+        "dependencies": {
+          "Microsoft.EntityFrameworkCore": "9.0.8",
+          "Microsoft.EntityFrameworkCore.Sqlite": "9.0.8",
+          "Microsoft.Extensions.Configuration.Abstractions": "9.0.8",
+          "Microsoft.Extensions.DependencyInjection.Abstractions": "9.0.8"
+        },
+        "runtime": {
+          "TeamHub.Team.dll": {
+            "assemblyVersion": "1.0.0.0",
+            "fileVersion": "1.0.0.0"
+          }
+        }
       }
     }
   },
@@ -1783,6 +1798,11 @@
       "sha512": ""
     },
     "TeamHub.Studio/1.0.0": {
+      "type": "project",
+      "serviceable": false,
+      "sha512": ""
+    },
+    "TeamHub.Team/1.0.0": {
       "type": "project",
       "serviceable": false,
       "sha512": ""
