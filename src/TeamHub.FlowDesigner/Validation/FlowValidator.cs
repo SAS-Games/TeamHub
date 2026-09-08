@@ -78,7 +78,7 @@ public sealed class FlowValidator : IFlowValidator
         var connectedIds = flow.Connections
             .SelectMany(connection => new[] { connection.SourceNodeId, connection.TargetNodeId })
             .ToHashSet(StringComparer.Ordinal);
-        foreach (var orphan in flow.Nodes.Where(node => node.Type != NodeType.Note && !connectedIds.Contains(node.Id)))
+        foreach (var orphan in flow.Nodes.Where(node => !connectedIds.Contains(node.Id)))
         {
             issues.Add(new("orphan-node", $"'{orphan.Title}' is not connected.", ValidationSeverity.Warning, orphan.Id));
         }

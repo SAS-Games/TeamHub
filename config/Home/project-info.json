@@ -28,12 +28,6 @@
       "detail": "Live dashboard of active workflows, overdue steps, and milestones."
     }
   ],
-  "links": [
-    { "label": "Work Center", "page": "/WorkCenter/Overview" },
-    { "label": "Team Directory", "page": "/Team/Directory" },
-    { "label": "Responsibility Matrix", "page": "/Team/ResponsibilityMatrix" },
-    { "label": "Milestone Tracker", "page": "/Milestones" }
-  ],
   "usefulLinksKicker": "Quick access",
   "usefulLinksTitle": "Useful Links"
 }

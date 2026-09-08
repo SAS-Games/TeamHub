@@ -1,0 +1,41 @@
+@page "/Team/Achievements"
+@model TeamHub.Web.Pages.Team.AchievementsModel
+@{
+    ViewData["Title"] = "Team Achievements";
+    ViewData["TeamTab"] = "Achievements";
+}
+
+<div class="page-hero">
+    <div>
+        <h1>Team Achievements</h1>
+        <p>Celebrate and preserve the milestones achieved by the team.</p>
+    </div>
+</div>
+<partial name="_TeamNav" />
+
+@if (Model.Achievements.Count == 0)
+{
+    <div class="alert alert-info">No team achievements have been added yet.</div>
+}
+else
+{
+    <section class="content-section">
+        <div class="section-heading">
+            <div><span>Team history</span><h2>All Achievements</h2></div>
+            <strong>@Model.Achievements.Count recorded</strong>
+        </div>
+        <div class="achievement-list">
+            @foreach (var achievement in Model.Achievements)
+            {
+                <article class="achievement-item">
+                    <time datetime="@achievement.AchievedOn.ToString("yyyy-MM-dd")">@achievement.AchievedOn.ToString("dd MMM yyyy")</time>
+                    <div>
+                        <h3>@achievement.Title</h3>
+                        <p>@achievement.Description</p>
+                        <strong>Achieved by @achievement.AchievedBy</strong>
+                    </div>
+                </article>
+            }
+        </div>
+    </section>
+}

@@ -383,7 +383,7 @@
         node.type = byId("nodeType").value;
         adapter.setGraph(graph);
         selectedNode = node;
-        showNodeProperties(node);
+        window.requestAnimationFrame(() => adapter.selectNode(node.id));
         handleCanvasChange();
     }
 
@@ -421,7 +421,7 @@
         else if (flow.diagramType !== "BusinessWorkflow" && starts !== 1) issues.push({ severity: "Warning", code: "start-count", message: `Exactly one Start node is recommended; this flow has ${starts}.` });
         if (!graph.nodes.some(node => node.type === "End")) issues.push({ severity: "Warning", code: "missing-end", message: "At least one End node is recommended." });
         const connected = new Set(graph.connections.flatMap(connection => [connection.sourceNodeId, connection.targetNodeId]));
-        graph.nodes.filter(node => node.type !== "Note" && !connected.has(node.id)).forEach(node => issues.push({ severity: "Warning", code: "orphan-node", message: `'${node.title}' is not connected.`, elementId: node.id }));
+        graph.nodes.filter(node => !connected.has(node.id)).forEach(node => issues.push({ severity: "Warning", code: "orphan-node", message: `'${node.title}' is not connected.`, elementId: node.id }));
         graph.nodes.filter(node => ["Decision", "Gateway", "ParallelGateway"].includes(node.type)).forEach(node => {
             const outgoing = graph.connections.filter(connection => connection.sourceNodeId === node.id).length;
             if (outgoing < 2) issues.push({ severity: "Warning", code: "incomplete-branch", message: `'${node.title}' should have at least two outgoing paths.`, elementId: node.id });
@@ -508,7 +508,15 @@
         const offsetX = padding - minX;
         const offsetY = padding - minY;
         const nodes = new Map(graph.nodes.map(node => [node.id, node]));
-        const colors = { Start: "#087c68", End: "#ba3127", Process: "#2563a9", Activity: "#2563a9", Decision: "#b45309", Gateway: "#b45309", ParallelGateway: "#b45309", InputOutput: "#0e7490", ManualInput: "#0e7490", Document: "#a33c67", Note: "#a33c67", DataStore: "#6d4bd1", Subprocess: "#4f46a5", Preparation: "#4f46a5", Connector: "#596863", Event: "#596863" };
+        const colors = {
+            Start: ["#07745f", "#dff4ed"], End: ["#ba3127", "#fbe7e4"],
+            Process: ["#2563a9", "#e6f0fb"], Activity: ["#147549", "#e3f4ea"],
+            Decision: ["#934900", "#fff0d4"], Gateway: ["#6840ad", "#f0e9fb"], ParallelGateway: ["#4338a8", "#ecebff"],
+            InputOutput: ["#08728a", "#dff5f8"], ManualInput: ["#91440f", "#faeadf"],
+            Document: ["#a13b68", "#fae6ef"],
+            DataStore: ["#6740b5", "#eee9fb"], Subprocess: ["#3553a5", "#e7edfb"], Preparation: ["#4b5f76", "#e8eef3"],
+            Connector: ["#53645f", "#e8eeec"], Event: ["#884487", "#f6e8f6"]
+        };
         const parts = [`<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}"><rect width="100%" height="100%" fill="#f8faf9"/><g font-family="Segoe UI,Arial,sans-serif">`];
         for (const connection of graph.connections) {
             const source = nodes.get(connection.sourceNodeId);
@@ -527,20 +535,20 @@
             const y = node.y + offsetY;
             const w = node.width || 184;
             const h = node.height || 76;
-            const color = colors[node.type] || "#596863";
+            const [color, fill] = colors[node.type] || ["#596863", "#e9eeec"];
             const centerAligned = ["Decision", "Gateway", "ParallelGateway", "Connector", "Event"].includes(node.type);
             const textX = centerAligned ? x + w / 2 : x + 18;
             const anchor = centerAligned ? "middle" : "start";
-            parts.push(`<g>${exportNodeShape(node.type, x, y, w, h, color)}<text x="${textX}" y="${y + h / 2 - 5}" text-anchor="${anchor}" font-size="9" font-weight="700" fill="${color}" letter-spacing="1">${escapeXml(nodeTypes[node.type]?.title?.toUpperCase() || node.type.toUpperCase())}</text><text x="${textX}" y="${y + h / 2 + 17}" text-anchor="${anchor}" font-size="13" font-weight="700" fill="#172522">${escapeXml(shorten(node.title, centerAligned ? 18 : 28))}</text></g>`);
+            parts.push(`<g>${exportNodeShape(node.type, x, y, w, h, color, fill)}<text x="${textX}" y="${y + h / 2 - 5}" text-anchor="${anchor}" font-size="9" font-weight="700" fill="${color}" letter-spacing="1">${escapeXml(nodeTypes[node.type]?.title?.toUpperCase() || node.type.toUpperCase())}</text><text x="${textX}" y="${y + h / 2 + 17}" text-anchor="${anchor}" font-size="13" font-weight="700" fill="#172522">${escapeXml(shorten(node.title, centerAligned ? 18 : 28))}</text></g>`);
         }
         parts.push("</g></svg>");
         return parts.join("");
     }
 
-    function exportNodeShape(type, x, y, width, height, color) {
-        const common = `fill="#fff" stroke="${color}" stroke-width="2"`;
+    function exportNodeShape(type, x, y, width, height, color, fill) {
+        const common = `fill="${fill}" stroke="${color}" stroke-width="2"`;
         if (["Decision", "Gateway", "ParallelGateway"].includes(type)) {
-            return `<polygon points="${x + width / 2},${y} ${x + width},${y + height / 2} ${x + width / 2},${y + height} ${x},${y + height / 2}" ${common}/>`;
+            return `<polygon points="${x + width * .08},${y} ${x + width * .92},${y} ${x + width},${y + height / 2} ${x + width * .92},${y + height} ${x + width * .08},${y + height} ${x},${y + height / 2}" ${common}/>`;
         }
         if (type === "InputOutput") return `<polygon points="${x + 18},${y} ${x + width},${y} ${x + width - 18},${y + height} ${x},${y + height}" ${common}/>`;
         if (type === "ManualInput") return `<polygon points="${x + 14},${y + 12} ${x + width},${y} ${x + width - 14},${y + height} ${x},${y + height}" ${common}/>`;
@@ -548,7 +556,6 @@
         if (["Connector", "Event"].includes(type)) return `<ellipse cx="${x + width / 2}" cy="${y + height / 2}" rx="${width / 2}" ry="${height / 2}" ${common}/>`;
         if (type === "DataStore") return `<rect x="${x}" y="${y}" width="${width}" height="${height}" rx="${width / 2}" ry="${Math.min(15, height / 5)}" ${common}/><ellipse cx="${x + width / 2}" cy="${y + Math.min(15, height / 5)}" rx="${width / 2}" ry="${Math.min(15, height / 5)}" fill="none" stroke="${color}" stroke-width="2"/>`;
         if (type === "Document") return `<path d="M ${x} ${y} H ${x + width} V ${y + height - 12} Q ${x + width * .75} ${y + height - 24}, ${x + width * .5} ${y + height - 12} Q ${x + width * .25} ${y + height}, ${x} ${y + height - 12} Z" ${common}/>`;
-        if (type === "Note") return `<polygon points="${x},${y} ${x + width - 20},${y} ${x + width},${y + 20} ${x + width},${y + height} ${x},${y + height}" ${common}/><path d="M ${x + width - 20} ${y} V ${y + 20} H ${x + width}" fill="none" stroke="${color}" stroke-width="2"/>`;
         const radius = type === "Start" || type === "End" ? height / 2 : type === "Activity" ? 16 : 8;
         const extra = type === "Subprocess" ? `<path d="M ${x + 9} ${y} V ${y + height} M ${x + width - 9} ${y} V ${y + height}" stroke="${color}" stroke-width="1"/>` : "";
         return `<rect x="${x}" y="${y}" width="${width}" height="${height}" rx="${radius}" ${common}/>${extra}`;

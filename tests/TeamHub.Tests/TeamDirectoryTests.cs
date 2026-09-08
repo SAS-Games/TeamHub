@@ -96,6 +96,43 @@ public sealed class TeamDirectoryTests
         }
     }
 
+    [Fact]
+    public async Task Achievements_AreStoredAndListedNewestFirst()
+    {
+        var dbPath = CreateDatabasePath();
+        try
+        {
+            await using var provider = CreateServices(dbPath);
+            await using var scope = provider.CreateAsyncScope();
+            await scope.ServiceProvider.GetRequiredService<ITeamDatabaseInitializer>().InitializeAsync();
+            var achievements = scope.ServiceProvider.GetRequiredService<ITeamAchievementService>();
+
+            await achievements.AddAchievementAsync(new TeamAchievementDto
+            {
+                Title = "First release",
+                Description = "Shipped the first release.",
+                AchievedBy = "Platform pod",
+                AchievedOn = new DateTime(2026, 1, 10)
+            });
+            await achievements.AddAchievementAsync(new TeamAchievementDto
+            {
+                Title = "Performance target",
+                Description = "Reached the frame-time target.",
+                AchievedBy = "Rendering pod",
+                AchievedOn = new DateTime(2026, 2, 12)
+            });
+
+            var saved = await achievements.GetAchievementsAsync();
+
+            saved.Select(item => item.Title).Should().Equal("Performance target", "First release");
+            saved[0].AchievedBy.Should().Be("Rendering pod");
+        }
+        finally
+        {
+            DeleteDatabase(dbPath);
+        }
+    }
+
     private static string CreateDatabasePath() =>
         Path.Combine(Path.GetTempPath(), $"teamhub-team-{Guid.NewGuid():N}.db");
 

@@ -8,6 +8,8 @@
     --fd-accent-dark: #056454;
     --fd-accent-soft: #e2f3ef;
     --fd-danger: #b42318;
+    --fd-node-neutral: #596863;
+    --fd-node-neutral-fill: #edf1f0;
     --fd-radius: 8px;
     --fd-shadow: 0 8px 28px rgba(27, 55, 48, .08);
 }
@@ -32,7 +34,7 @@
 .fd-flow-icon { width: 40px; height: 40px; display: grid; place-items: center; color: var(--fd-accent); background: var(--fd-accent-soft); border-radius: 9px; font-size: 1.4rem; }
 .fd-mode-badge { color: #536560; background: #eef2f1; font-weight: 600; }
 .fd-card-description { height: 2.6em; overflow: hidden; }
-.fd-card-meta { display: flex; justify-content: space-between; gap: 1rem; padding-top: .9rem; border-top: 1px solid #dashed var(--fd-border); color: var(--fd-muted); font-size: .75rem; }
+.fd-card-meta { display: flex; justify-content: space-between; gap: 1rem; padding-top: .9rem; border-top: 1px dashed var(--fd-border); color: var(--fd-muted); font-size: .75rem; }
 .fd-empty-state { text-align: center; padding: 5rem 1.5rem; }
 .fd-empty-icon { width: 58px; height: 58px; display: grid; place-items: center; margin: 0 auto 1rem; border-radius: 14px; color: var(--fd-accent); background: var(--fd-accent-soft); font-size: 1.7rem; }
 .fd-form-card { max-width: 620px; padding: 2rem; }
@@ -78,15 +80,21 @@
 .fd-tool small { color: var(--fd-muted); font-size: .68rem; }
 .fd-tool-icon { flex: 0 0 31px; height: 31px; display: grid; place-items: center; border-radius: 7px; font-weight: 800; }
 
-.fd-type-start { color: #087c68; background: #dff4ed; }
+.fd-type-start { color: #07745f; background: #dff4ed; }
 .fd-type-end { color: #ba3127; background: #fbe7e4; }
-.fd-type-process, .fd-type-activity { color: #2563a9; background: #e6f0fb; }
-.fd-type-decision, .fd-type-gateway, .fd-type-parallelgateway { color: #b45309; background: #fdf0dc; }
-.fd-type-inputoutput, .fd-type-manualinput { color: #0e7490; background: #def4f8; }
-.fd-type-document, .fd-type-note { color: #a33c67; background: #f9e4ed; }
-.fd-type-datastore { color: #6d4bd1; background: #eeeafd; }
-.fd-type-subprocess, .fd-type-preparation { color: #4f46a5; background: #eae9fb; }
-.fd-type-connector, .fd-type-event { color: #596863; background: #e9eeec; }
+.fd-type-process { color: #2563a9; background: #e6f0fb; }
+.fd-type-activity { color: #147549; background: #e3f4ea; }
+.fd-type-decision { color: #934900; background: #fff0d4; }
+.fd-type-gateway { color: #6840ad; background: #f0e9fb; }
+.fd-type-parallelgateway { color: #4338a8; background: #ecebff; }
+.fd-type-inputoutput { color: #08728a; background: #dff5f8; }
+.fd-type-manualinput { color: #91440f; background: #faeadf; }
+.fd-type-document { color: #a13b68; background: #fae6ef; }
+.fd-type-datastore { color: #6740b5; background: #eee9fb; }
+.fd-type-subprocess { color: #3553a5; background: #e7edfb; }
+.fd-type-preparation { color: #4b5f76; background: #e8eef3; }
+.fd-type-connector { color: #53645f; background: #e8eeec; }
+.fd-type-event { color: #884487; background: #f6e8f6; }
 
 .fd-tool-icon[class*="fd-symbol-"] { position: relative; border: 2px solid currentColor; background: #fff; }
 .fd-tool-icon.fd-symbol-terminator { border-radius: 999px; }
@@ -98,7 +106,6 @@
 .fd-tool-icon.fd-symbol-connector, .fd-tool-icon.fd-symbol-event { border-radius: 50%; }
 .fd-tool-icon.fd-symbol-manual-input { clip-path: polygon(8% 20%, 100% 0, 92% 100%, 0 100%); }
 .fd-tool-icon.fd-symbol-preparation { clip-path: polygon(22% 0, 78% 0, 100% 50%, 78% 100%, 22% 100%, 0 50%); }
-.fd-tool-icon.fd-symbol-note { clip-path: polygon(0 0, 72% 0, 100% 28%, 100% 100%, 0 100%); }
 
 .fd-canvas-shell { min-width: 0; min-height: 0; position: relative; overflow: hidden; background: #f8faf9; }
 .fd-canvas { width: 100%; height: 100%; background-color: #f8faf9; background-image: radial-gradient(circle, #c9d6d2 1px, transparent 1px); background-size: 20px 20px; }
@@ -112,38 +119,87 @@
 .fd-canvas-controls .active { color: var(--fd-accent); background: var(--fd-accent-soft); }
 .fd-zoom-value { min-width: 52px !important; color: var(--fd-muted); font-size: .72rem; }
 
-.drawflow .drawflow-node { width: 184px; min-height: 76px; padding: 0; background: #fff; border: 1px solid #cedbd7; border-radius: 9px; box-shadow: 0 5px 16px rgba(27,55,48,.09); resize: both; overflow: visible; }
-.drawflow .drawflow-node.selected { border-color: var(--fd-accent); box-shadow: 0 0 0 2px rgba(8,124,104,.14), 0 8px 20px rgba(27,55,48,.12); }
-.drawflow .drawflow-node .drawflow_content_node { height: 100%; min-height: 74px; padding: 12px 13px; }
-.fd-node-content { height: 100%; min-height: 50px; display: flex; align-items: flex-start; gap: 10px; pointer-events: none; }
+.drawflow .drawflow-node {
+    --fd-node-color: var(--fd-node-neutral);
+    --fd-node-fill: var(--fd-node-neutral-fill);
+    width: 184px;
+    min-height: 76px;
+    padding: 0;
+    color: var(--fd-node-color);
+    background: var(--fd-node-fill);
+    border: 2px solid var(--fd-node-color);
+    border-radius: 9px;
+    box-shadow: 0 5px 16px rgba(27,55,48,.11);
+    resize: both;
+    overflow: visible;
+    transition: filter .14s ease, box-shadow .14s ease;
+}
+.drawflow .drawflow-node:hover { filter: saturate(1.08) brightness(.99); box-shadow: 0 7px 20px rgba(27,55,48,.15); }
+.drawflow .drawflow-node.selected { filter: saturate(1.12); box-shadow: 0 0 0 3px #fff, 0 0 0 6px var(--fd-node-color), 0 10px 24px rgba(27,55,48,.18); }
+.drawflow .drawflow-node.fd-node-start { --fd-node-color: #07745f; --fd-node-fill: #dff4ed; }
+.drawflow .drawflow-node.fd-node-end { --fd-node-color: #ba3127; --fd-node-fill: #fbe7e4; }
+.drawflow .drawflow-node.fd-node-process { --fd-node-color: #2563a9; --fd-node-fill: #e6f0fb; }
+.drawflow .drawflow-node.fd-node-activity { --fd-node-color: #147549; --fd-node-fill: #e3f4ea; }
+.drawflow .drawflow-node.fd-node-decision { --fd-node-color: #934900; --fd-node-fill: #fff0d4; }
+.drawflow .drawflow-node.fd-node-gateway { --fd-node-color: #6840ad; --fd-node-fill: #f0e9fb; }
+.drawflow .drawflow-node.fd-node-parallelgateway { --fd-node-color: #4338a8; --fd-node-fill: #ecebff; }
+.drawflow .drawflow-node.fd-node-inputoutput { --fd-node-color: #08728a; --fd-node-fill: #dff5f8; }
+.drawflow .drawflow-node.fd-node-manualinput { --fd-node-color: #91440f; --fd-node-fill: #faeadf; }
+.drawflow .drawflow-node.fd-node-document { --fd-node-color: #a13b68; --fd-node-fill: #fae6ef; }
+.drawflow .drawflow-node.fd-node-datastore { --fd-node-color: #6740b5; --fd-node-fill: #eee9fb; }
+.drawflow .drawflow-node.fd-node-subprocess { --fd-node-color: #3553a5; --fd-node-fill: #e7edfb; }
+.drawflow .drawflow-node.fd-node-preparation { --fd-node-color: #4b5f76; --fd-node-fill: #e8eef3; }
+.drawflow .drawflow-node.fd-node-connector { --fd-node-color: #53645f; --fd-node-fill: #e8eeec; }
+.drawflow .drawflow-node.fd-node-event { --fd-node-color: #884487; --fd-node-fill: #f6e8f6; }
+.drawflow .drawflow-node .drawflow_content_node { position: relative; height: 100%; min-height: 74px; padding: 12px 13px; }
+.fd-node-content { position: relative; z-index: 1; height: 100%; min-height: 50px; display: flex; align-items: flex-start; gap: 10px; pointer-events: none; }
 .fd-node-content .fd-tool-icon { flex-basis: 30px; height: 30px; }
 .fd-node-copy { min-width: 0; }
-.fd-node-type { display: block; margin-bottom: 3px; color: var(--fd-muted); font-size: .6rem; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
+.fd-node-type { display: block; margin-bottom: 3px; color: var(--fd-node-color); font-size: .6rem; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
 .fd-node-title { display: block; color: var(--fd-text); font-size: .82rem; font-weight: 700; line-height: 1.25; overflow-wrap: anywhere; }
 .fd-node-comments { display: inline-flex; align-items: center; justify-content: center; min-width: 19px; height: 17px; margin-top: 6px; padding: 0 5px; color: #52645f; background: #edf2f0; border-radius: 999px; font-size: .58rem; font-weight: 800; }
 .drawflow .drawflow-node.fd-shape-terminator { border-radius: 999px; }
 .drawflow .drawflow-node.fd-shape-activity { border-radius: 16px; }
-.drawflow .drawflow-node.fd-shape-subprocess { box-shadow: inset 7px 0 #fff, inset 8px 0 #aebfba, inset -7px 0 #fff, inset -8px 0 #aebfba, 0 5px 16px rgba(27,55,48,.09); }
-.drawflow .drawflow-node.fd-shape-input-output, .drawflow .drawflow-node.fd-shape-manual-input, .drawflow .drawflow-node.fd-shape-preparation, .drawflow .drawflow-node.fd-shape-decision, .drawflow .drawflow-node.fd-shape-gateway, .drawflow .drawflow-node.fd-shape-note { border-color: transparent; background: transparent; box-shadow: none; }
-.drawflow .drawflow-node.fd-shape-input-output .drawflow_content_node { background: #fff; clip-path: polygon(10% 0, 100% 0, 90% 100%, 0 100%); box-shadow: inset 0 0 0 2px #cedbd7; }
-.drawflow .drawflow-node.fd-shape-manual-input .drawflow_content_node { background: #fff; clip-path: polygon(8% 18%, 100% 0, 92% 100%, 0 100%); box-shadow: inset 0 0 0 2px #cedbd7; }
-.drawflow .drawflow-node.fd-shape-preparation .drawflow_content_node { background: #fff; clip-path: polygon(12% 0, 88% 0, 100% 50%, 88% 100%, 12% 100%, 0 50%); box-shadow: inset 0 0 0 2px #cedbd7; }
+.drawflow .drawflow-node.fd-shape-subprocess { box-shadow: inset 7px 0 var(--fd-node-fill), inset 9px 0 var(--fd-node-color), inset -7px 0 var(--fd-node-fill), inset -9px 0 var(--fd-node-color), 0 5px 16px rgba(27,55,48,.11); }
+.drawflow .drawflow-node.fd-shape-input-output,
+.drawflow .drawflow-node.fd-shape-manual-input,
+.drawflow .drawflow-node.fd-shape-preparation,
+.drawflow .drawflow-node.fd-shape-decision,
+.drawflow .drawflow-node.fd-shape-gateway { border-color: transparent; background: transparent; box-shadow: none; }
+.drawflow .drawflow-node.fd-shape-input-output { --fd-shape-clip: polygon(9% 0, 100% 0, 91% 100%, 0 100%); }
+.drawflow .drawflow-node.fd-shape-manual-input { --fd-shape-clip: polygon(7% 14%, 100% 0, 93% 100%, 0 100%); }
+.drawflow .drawflow-node.fd-shape-preparation { --fd-shape-clip: polygon(10% 0, 90% 0, 100% 50%, 90% 100%, 10% 100%, 0 50%); }
+.drawflow .drawflow-node.fd-shape-decision,
+.drawflow .drawflow-node.fd-shape-gateway { --fd-shape-clip: polygon(8% 0, 92% 0, 100% 50%, 92% 100%, 8% 100%, 0 50%); }
+.drawflow .drawflow-node[class*="fd-shape-"] .drawflow_content_node::before,
+.drawflow .drawflow-node[class*="fd-shape-"] .drawflow_content_node::after { content: ""; position: absolute; pointer-events: none; clip-path: var(--fd-shape-clip, none); }
+.drawflow .drawflow-node.fd-shape-input-output .drawflow_content_node::before,
+.drawflow .drawflow-node.fd-shape-manual-input .drawflow_content_node::before,
+.drawflow .drawflow-node.fd-shape-preparation .drawflow_content_node::before,
+.drawflow .drawflow-node.fd-shape-decision .drawflow_content_node::before,
+.drawflow .drawflow-node.fd-shape-gateway .drawflow_content_node::before { inset: 0; background: var(--fd-node-color); }
+.drawflow .drawflow-node.fd-shape-input-output .drawflow_content_node::after,
+.drawflow .drawflow-node.fd-shape-manual-input .drawflow_content_node::after,
+.drawflow .drawflow-node.fd-shape-preparation .drawflow_content_node::after,
+.drawflow .drawflow-node.fd-shape-decision .drawflow_content_node::after,
+.drawflow .drawflow-node.fd-shape-gateway .drawflow_content_node::after { inset: 2px; background: var(--fd-node-fill); }
+.drawflow .drawflow-node.fd-shape-input-output .drawflow_content_node,
+.drawflow .drawflow-node.fd-shape-manual-input .drawflow_content_node { padding-inline: 25px; }
+.drawflow .drawflow-node.fd-shape-preparation .drawflow_content_node { padding-inline: 27px; }
 .drawflow .drawflow-node.fd-shape-document { border-radius: 7px 7px 45% 12px / 7px 7px 18px 12px; }
 .drawflow .drawflow-node.fd-shape-data-store { border-radius: 50% / 16%; }
-.drawflow .drawflow-node.fd-shape-note .drawflow_content_node { background: #fff; clip-path: polygon(0 0, calc(100% - 22px) 0, 100% 22px, 100% 100%, 0 100%); box-shadow: inset 0 0 0 2px #cedbd7; }
-.drawflow .drawflow-node.fd-shape-decision, .drawflow .drawflow-node.fd-shape-gateway { width: 176px; min-height: 112px; resize: none; }
-.drawflow .drawflow-node.fd-shape-decision .drawflow_content_node, .drawflow .drawflow-node.fd-shape-gateway .drawflow_content_node { min-height: 110px; padding: 27px 34px; background: #fff; clip-path: polygon(50% 0, 100% 50%, 50% 100%, 0 50%); box-shadow: inset 0 0 0 2px #cedbd7; }
-.drawflow .drawflow-node.selected.fd-shape-input-output .drawflow_content_node, .drawflow .drawflow-node.selected.fd-shape-manual-input .drawflow_content_node, .drawflow .drawflow-node.selected.fd-shape-preparation .drawflow_content_node, .drawflow .drawflow-node.selected.fd-shape-decision .drawflow_content_node, .drawflow .drawflow-node.selected.fd-shape-gateway .drawflow_content_node, .drawflow .drawflow-node.selected.fd-shape-note .drawflow_content_node { box-shadow: inset 0 0 0 3px var(--fd-accent); }
+.drawflow .drawflow-node.fd-shape-decision, .drawflow .drawflow-node.fd-shape-gateway { width: 196px; min-height: 88px; resize: none; }
+.drawflow .drawflow-node.fd-shape-decision .drawflow_content_node, .drawflow .drawflow-node.fd-shape-gateway .drawflow_content_node { min-height: 86px; padding: 17px 28px; }
 .drawflow .drawflow-node.fd-shape-connector { width: 96px; min-height: 96px; border-radius: 50%; resize: none; }
 .drawflow .drawflow-node.fd-shape-connector .drawflow_content_node { min-height: 94px; padding: 21px 14px; }
-.drawflow .drawflow-node.fd-shape-event { width: 122px; min-height: 122px; border: 3px double #8fa39d; border-radius: 50%; resize: none; }
+.drawflow .drawflow-node.fd-shape-event { width: 122px; min-height: 122px; border: 4px double var(--fd-node-color); border-radius: 50%; resize: none; }
 .drawflow .drawflow-node.fd-shape-event .drawflow_content_node { min-height: 116px; padding: 28px 18px; }
 .fd-mode-businessworkflow .drawflow-node.fd-shape-terminator { width: 120px; min-height: 120px; border-radius: 50%; resize: none; }
 .fd-mode-businessworkflow .drawflow-node.fd-shape-terminator .drawflow_content_node { min-height: 118px; padding: 28px 17px; }
-.drawflow .drawflow-node .input, .drawflow .drawflow-node .output { width: 13px; height: 13px; background: #fff; border: 2px solid #8ba19b; }
+.drawflow .drawflow-node .input, .drawflow .drawflow-node .output { width: 13px; height: 13px; background: #fff; border: 2px solid var(--fd-node-color); }
 .drawflow .drawflow-node .input:hover, .drawflow .drawflow-node .output:hover { background: var(--fd-accent); border-color: var(--fd-accent); }
 .drawflow .connection .main-path { stroke: #82958f; stroke-width: 2.5px; }
-.drawflow .connection.selected .main-path { stroke: var(--fd-accent); stroke-width: 3.5px; }
+.drawflow .connection.selected .main-path, .drawflow .connection .main-path.selected { stroke: var(--fd-accent); stroke-width: 3.5px; }
 .drawflow .connection .fd-connection-label { fill: #445651; font-size: 11px; font-weight: 700; paint-order: stroke; stroke: #fff; stroke-width: 4px; stroke-linejoin: round; pointer-events: none; }
 
 .fd-properties-empty { height: 70%; display: grid; place-content: center; justify-items: center; color: var(--fd-muted); text-align: center; font-size: .8rem; }

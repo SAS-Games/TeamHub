@@ -67,17 +67,6 @@ public sealed class ValidationTests
     }
 
     [Fact]
-    public void UnconnectedNote_IsAllowed()
-    {
-        var flow = ConnectedFlow();
-        flow.Nodes.Add(new FlowNode { Id = "note", Type = NodeType.Note, Title = "Context" });
-
-        var result = _validator.Validate(flow);
-
-        Assert.DoesNotContain(result.Issues, issue => issue.Code == "orphan-node" && issue.ElementId == "note");
-    }
-
-    [Fact]
     public void DecisionWithOnePath_GetsGuidanceWarning()
     {
         var flow = ConnectedFlow();

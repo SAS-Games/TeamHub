@@ -18,7 +18,6 @@ public sealed class HomeContent
     public string HighlightsKicker { get; set; } = "What's inside";
     public string HighlightsTitle { get; set; } = "Highlights";
     public List<HomeHighlight> Highlights { get; set; } = [];
-    public List<HomeLink> Links { get; set; } = [];
     public string UsefulLinksKicker { get; set; } = "Quick access";
     public string UsefulLinksTitle { get; set; } = "Useful Links";
     public List<UsefulLink> UsefulLinks { get; set; } = [];
@@ -28,12 +27,6 @@ public sealed class HomeHighlight
 {
     public string Title { get; set; } = string.Empty;
     public string Detail { get; set; } = string.Empty;
-}
-
-public sealed class HomeLink
-{
-    public string Label { get; set; } = string.Empty;
-    public string Page { get; set; } = string.Empty;
 }
 
 public sealed class UsefulLink

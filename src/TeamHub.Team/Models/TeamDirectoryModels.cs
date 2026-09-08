@@ -23,3 +23,12 @@ public sealed class TeamDirectoryDto
     public IReadOnlyList<TeamMemberDto> Members { get; set; } = [];
     public IReadOnlyList<SpecializationDto> Specializations { get; set; } = [];
 }
+
+public sealed class TeamAchievementDto
+{
+    public string Id { get; set; } = string.Empty;
+    public string Title { get; set; } = string.Empty;
+    public string Description { get; set; } = string.Empty;
+    public string AchievedBy { get; set; } = string.Empty;
+    public DateTime AchievedOn { get; set; }
+}

@@ -19,6 +19,5 @@ public enum NodeType
     Activity,
     Event,
     Gateway,
-    ParallelGateway,
-    Note
+    ParallelGateway
 }

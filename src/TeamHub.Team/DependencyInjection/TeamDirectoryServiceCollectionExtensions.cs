@@ -17,6 +17,7 @@ public static class TeamDirectoryServiceCollectionExtensions
         services.AddScoped<SqliteTeamDirectoryService>();
         services.AddScoped<ITeamDirectoryService>(provider => provider.GetRequiredService<SqliteTeamDirectoryService>());
         services.AddScoped<ITeamConfigurationService>(provider => provider.GetRequiredService<SqliteTeamDirectoryService>());
+        services.AddScoped<ITeamAchievementService>(provider => provider.GetRequiredService<SqliteTeamDirectoryService>());
         return services;
     }
 }

@@ -24,10 +24,21 @@ internal sealed class SupportSpecializationRecord
     public DateTime UpdatedAtUtc { get; set; } = DateTime.UtcNow;
 }
 
+internal sealed class TeamAchievementRecord
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public string Title { get; set; } = string.Empty;
+    public string Description { get; set; } = string.Empty;
+    public string AchievedBy { get; set; } = string.Empty;
+    public DateTime AchievedOn { get; set; }
+    public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
+}
+
 internal sealed class TeamDbContext(DbContextOptions<TeamDbContext> options) : DbContext(options)
 {
     public DbSet<TeamMemberRecord> TeamMembers => Set<TeamMemberRecord>();
     public DbSet<SupportSpecializationRecord> SupportSpecializations => Set<SupportSpecializationRecord>();
+    public DbSet<TeamAchievementRecord> TeamAchievements => Set<TeamAchievementRecord>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -47,6 +58,15 @@ internal sealed class TeamDbContext(DbContextOptions<TeamDbContext> options) : D
             entity.ToTable("SupportSpecializations");
             entity.Property(x => x.Pod).HasMaxLength(256);
             entity.HasIndex(x => x.Pod);
+        });
+
+        modelBuilder.Entity<TeamAchievementRecord>(entity =>
+        {
+            entity.ToTable("TeamAchievements");
+            entity.Property(x => x.Title).HasMaxLength(256);
+            entity.Property(x => x.Description).HasMaxLength(2000);
+            entity.Property(x => x.AchievedBy).HasMaxLength(512);
+            entity.HasIndex(x => x.AchievedOn);
         });
     }
 }

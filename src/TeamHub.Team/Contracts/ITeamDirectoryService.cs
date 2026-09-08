@@ -15,6 +15,12 @@ public interface ITeamConfigurationService
     Task DeleteSpecializationAsync(string id, CancellationToken cancellationToken = default);
 }
 
+public interface ITeamAchievementService
+{
+    Task<IReadOnlyList<TeamAchievementDto>> GetAchievementsAsync(CancellationToken cancellationToken = default);
+    Task<TeamAchievementDto> AddAchievementAsync(TeamAchievementDto achievement, CancellationToken cancellationToken = default);
+}
+
 public interface ITeamDatabaseInitializer
 {
     Task InitializeAsync(CancellationToken cancellationToken = default);

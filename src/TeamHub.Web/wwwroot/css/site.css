@@ -45,6 +45,22 @@ body {
 .section-heading h2, .roadmap-header h2 { margin: 4px 0 0; font-size: 1.25rem; letter-spacing: 0; }
 .section-heading strong, .roadmap-header p { color: #65766f; font-weight: 400; margin: 0; }
 .section-body { padding: 20px 22px; }
+.team-config-tabs { display: flex; gap: 6px; margin-top: 24px; padding: 6px; overflow-x: auto; background: #e9efeb; border: 1px solid #d9e1dc; border-radius: 10px; }
+.team-config-tabs a { display: inline-flex; align-items: center; justify-content: center; gap: 9px; min-width: 160px; padding: 10px 16px; color: #5b6e67; border-radius: 7px; font-size: .84rem; font-weight: 700; text-decoration: none; white-space: nowrap; }
+.team-config-tabs a:hover { color: #18322d; background: rgba(255, 255, 255, .55); }
+.team-config-tabs a.active { color: #18322d; background: #fff; box-shadow: 0 2px 8px rgba(24, 50, 45, .09); }
+.team-config-tabs a span { min-width: 22px; padding: 2px 7px; color: #65766f; background: #edf2ee; border-radius: 999px; font-size: .68rem; text-align: center; }
+.team-config-tabs a.active span { color: #fff; background: #c05a35; }
+.team-config-panel { margin-top: 18px; }
+.achievement-list { display: grid; }
+.achievement-item { display: grid; grid-template-columns: 130px minmax(0, 1fr); gap: 24px; padding: 22px; border-top: 1px solid #e3e9e5; }
+.achievement-item:first-child { border-top: 0; }
+.achievement-item time { color: #c05a35; font-size: .78rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; }
+.achievement-item h3 { margin: 0 0 8px; font-size: 1.1rem; }
+.achievement-item p { margin: 0 0 10px; color: #52665f; white-space: pre-line; }
+.achievement-item strong { color: #65766f; font-size: .78rem; }
+.achievement-list-compact { max-height: 610px; overflow-y: auto; }
+.achievement-list-compact .achievement-item { grid-template-columns: 110px minmax(0, 1fr); padding: 18px 20px; }
 .styled-table { margin: 0; }
 .styled-table th { color: #65766f; font-size: .75rem; text-transform: uppercase; letter-spacing: .05em; white-space: nowrap; }
 .styled-table td, .styled-table th { padding: 14px 18px; vertical-align: middle; }
@@ -72,6 +88,7 @@ body {
   .milestone-hero { align-items: start; flex-direction: column; }
   .milestone-date { text-align: left; }
   .section-heading, .roadmap-header { align-items: start; flex-direction: column; }
+  .achievement-item { grid-template-columns: 1fr; gap: 8px; }
   .roadmap-step { flex-basis: 190px; }
   .roadmap-step-top { align-items: start; flex-direction: column; gap: 2px; }
 }

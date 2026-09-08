@@ -56,16 +56,6 @@
     </section>
 }
 
-@if (content.Links.Count > 0)
-{
-    <div class="d-flex flex-wrap gap-2 mb-4">
-        @foreach (var link in content.Links)
-        {
-            <a class="btn btn-primary" asp-page="@link.Page">@link.Label</a>
-        }
-    </div>
-}
-
 @if (content.UsefulLinks.Count > 0)
 {
     <section class="content-section">

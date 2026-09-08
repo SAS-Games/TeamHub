@@ -45,4 +45,16 @@ public sealed class SerializationTests
         Assert.Equal(DiagramType.StandardFlowchart, restored.DiagramType);
         Assert.Equal(NodeType.Activity, restored.Nodes.Single().Type);
     }
+
+    [Fact]
+    public void Deserialize_UpgradesRemovedNoteNodeToProcess()
+    {
+        var serializer = new SystemTextJsonFlowSerializer();
+        const string earlierJson = "{\"name\":\"Legacy notes\",\"diagramType\":\"StandardFlowchart\",\"nodes\":[{\"id\":\"note-1\",\"type\":\"Note\",\"title\":\"Context\"}],\"connections\":[]}";
+
+        var restored = serializer.Deserialize(earlierJson);
+
+        Assert.Equal(NodeType.Process, restored.Nodes.Single().Type);
+        Assert.Equal("Context", restored.Nodes.Single().Title);
+    }
 }

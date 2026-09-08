@@ -32,8 +32,7 @@ internal static class FlowTemplateFactory
             Node("qa-report", NodeType.Document, "Publish QA report and evidence", 1940, 280),
             Node("qa-end", NodeType.End, "Release candidate ready", 2180, 280),
             Node("qa-defect", NodeType.Document, "Log defects with evidence", 1460, 500),
-            Node("qa-fix", NodeType.Process, "Fix, rebuild, and update notes", 980, 500),
-            Node("qa-note", NodeType.Note, "Severity 1 and 2 defects block QA exit", 1220, 40)
+            Node("qa-fix", NodeType.Process, "Fix, rebuild, and update notes", 980, 500)
         ];
         flow.Connections =
         [

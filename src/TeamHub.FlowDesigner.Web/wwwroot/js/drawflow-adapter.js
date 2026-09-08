@@ -16,8 +16,7 @@
         Activity: { title: "Activity", help: "Business work step", icon: "A", inputs: 1, outputs: 1, shape: "activity" },
         Event: { title: "Intermediate event", help: "Something that occurs", icon: "EV", inputs: 1, outputs: 1, shape: "event" },
         Gateway: { title: "Exclusive gateway", help: "Choose one path", icon: "X", inputs: 1, outputs: 2, shape: "gateway" },
-        ParallelGateway: { title: "Parallel gateway", help: "Split or join paths", icon: "+", inputs: 2, outputs: 2, shape: "gateway" },
-        Note: { title: "Note", help: "Supporting annotation", icon: "N", inputs: 1, outputs: 1, shape: "note" }
+        ParallelGateway: { title: "Parallel gateway", help: "Split or join paths", icon: "+", inputs: 2, outputs: 2, shape: "gateway" }
     };
 
     const diagramTypes = {
@@ -30,17 +29,17 @@
         StandardFlowchart: {
             title: "Flowchart symbols",
             primary: "Process",
-            nodes: ["Start", "Process", "Decision", "InputOutput", "Document", "DataStore", "Subprocess", "Connector", "ManualInput", "Preparation", "End", "Note"]
+            nodes: ["Start", "Process", "Decision", "InputOutput", "Document", "DataStore", "Subprocess", "Connector", "ManualInput", "Preparation", "End"]
         },
         BusinessWorkflow: {
             title: "Workflow symbols",
             primary: "Activity",
-            nodes: ["Start", "Activity", "Gateway", "ParallelGateway", "Event", "Document", "DataStore", "End", "Note"]
+            nodes: ["Start", "Activity", "Gateway", "ParallelGateway", "Event", "Document", "DataStore", "End"]
         },
         CodeFlow: {
             title: "Code-flow symbols",
             primary: "Process",
-            nodes: ["Start", "Process", "Decision", "InputOutput", "Subprocess", "DataStore", "Connector", "Preparation", "End", "Note"]
+            nodes: ["Start", "Process", "Decision", "InputOutput", "Subprocess", "DataStore", "Connector", "Preparation", "End"]
         }
     };
 
@@ -186,11 +185,12 @@
         }
 
         addNode(type, x, y, supplied = {}, emitChange = true) {
-            const config = nodeTypes[type] || nodeTypes.Note;
+            const resolvedType = nodeTypes[type] ? type : "Process";
+            const config = nodeTypes[resolvedType];
             const externalId = supplied.id || newId("node");
             const data = {
                 externalId,
-                type: nodeTypes[type] ? type : "Note",
+                type: resolvedType,
                 title: supplied.title || config.title,
                 description: supplied.description || "",
                 metadata: supplied.metadata || {},
@@ -220,7 +220,7 @@
         }
 
         nodeHtml(data) {
-            const config = nodeTypes[data.type] || nodeTypes.Note;
+            const config = nodeTypes[data.type] || nodeTypes.Process;
             const commentCount = data.comments?.length || 0;
             const comments = commentCount ? `<span class="fd-node-comments" title="${commentCount} comment${commentCount === 1 ? "" : "s"}">${commentCount}</span>` : "";
             return `<div class="fd-node-content"><span class="fd-tool-icon fd-type-${data.type.toLowerCase()}">${config.icon}</span><span class="fd-node-copy"><span class="fd-node-type">${text(config.title)}</span><span class="fd-node-title">${text(data.title)}</span>${comments}</span></div>`;
@@ -233,7 +233,7 @@
                 const dom = document.getElementById(`node-${node.id}`);
                 return {
                     id: data.externalId || this.internalToExternal.get(String(node.id)) || `node-${node.id}`,
-                    type: data.type || "Note",
+                    type: nodeTypes[data.type] ? data.type : "Process",
                     title: data.title || "Untitled",
                     description: data.description || "",
                     x: node.pos_x,
@@ -294,6 +294,19 @@
             this.connectionState.set(key, state);
             this.refreshConnectionLabels();
             this.changed();
+        }
+
+        selectNode(externalId) {
+            const internalId = this.externalToInternal.get(externalId);
+            const element = internalId ? document.getElementById(`node-${internalId}`) : null;
+            if (!element) return false;
+            this.editor.ele_selected?.classList.remove("selected");
+            element.classList.add("selected");
+            this.editor.ele_selected = element;
+            this.editor.node_selected = element.id;
+            this.selected = { kind: "node", id: externalId };
+            this.callbacks.onSelectNode?.(this.getNode(externalId));
+            return true;
         }
 
         deleteSelected() {
@@ -390,8 +403,8 @@
             for (const node of nodes) {
                 const internal = this.externalToInternal.get(node.id);
                 const dom = internal ? document.getElementById(`node-${internal}`) : null;
-                if (dom && node.width) dom.style.width = `${Math.max(150, node.width)}px`;
-                if (dom && node.height) dom.style.height = `${Math.max(76, node.height)}px`;
+                if (dom && node.width && getComputedStyle(dom).resize !== "none") dom.style.width = `${Math.max(150, node.width)}px`;
+                if (dom && node.height && getComputedStyle(dom).resize !== "none") dom.style.height = `${Math.max(76, node.height)}px`;
             }
         }
 

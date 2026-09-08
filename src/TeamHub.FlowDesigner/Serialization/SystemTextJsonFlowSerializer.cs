@@ -39,11 +39,10 @@ public sealed class SystemTextJsonFlowSerializer : IFlowSerializer
             {
                 node["type"] = node["type"]?.GetValue<string>() switch
                 {
-                    "Task" or "Wait" or "AutomatedAction" => nameof(NodeType.Process),
+                    "Task" or "Wait" or "AutomatedAction" or "Custom" or "Note" => nameof(NodeType.Process),
                     "Approval" => nameof(NodeType.Activity),
                     "Parallel" => nameof(NodeType.ParallelGateway),
                     "Notification" => nameof(NodeType.Document),
-                    "Custom" => nameof(NodeType.Note),
                     var value => value
                 };
             }

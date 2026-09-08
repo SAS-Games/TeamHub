@@ -42,6 +42,22 @@ internal sealed class SqliteTeamDatabaseInitializer(TeamDbContext dbContext) : I
                 CREATE INDEX IF NOT EXISTS IX_SupportSpecializations_Pod
                 ON SupportSpecializations (Pod);
                 """, cancellationToken);
+
+            await dbContext.Database.ExecuteSqlRawAsync("""
+                CREATE TABLE IF NOT EXISTS TeamAchievements (
+                    Id TEXT NOT NULL CONSTRAINT PK_TeamAchievements PRIMARY KEY,
+                    Title TEXT NOT NULL,
+                    Description TEXT NOT NULL,
+                    AchievedBy TEXT NOT NULL,
+                    AchievedOn TEXT NOT NULL,
+                    CreatedAtUtc TEXT NOT NULL
+                );
+                """, cancellationToken);
+
+            await dbContext.Database.ExecuteSqlRawAsync("""
+                CREATE INDEX IF NOT EXISTS IX_TeamAchievements_AchievedOn
+                ON TeamAchievements (AchievedOn);
+                """, cancellationToken);
         }
         finally
         {

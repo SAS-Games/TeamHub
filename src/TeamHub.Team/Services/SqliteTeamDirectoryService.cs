@@ -3,7 +3,7 @@ using Microsoft.EntityFrameworkCore;
 namespace TeamHub.Team;
 
 internal sealed class SqliteTeamDirectoryService(TeamDbContext dbContext)
-    : ITeamDirectoryService, ITeamConfigurationService
+    : ITeamDirectoryService, ITeamConfigurationService, ITeamAchievementService
 {
     public async Task<TeamDirectoryDto> GetTeamDirectoryAsync(CancellationToken cancellationToken = default)
     {
@@ -122,6 +122,37 @@ internal sealed class SqliteTeamDirectoryService(TeamDbContext dbContext)
         await dbContext.SaveChangesAsync(cancellationToken);
     }
 
+    public async Task<IReadOnlyList<TeamAchievementDto>> GetAchievementsAsync(CancellationToken cancellationToken = default) =>
+        await dbContext.TeamAchievements
+            .AsNoTracking()
+            .OrderByDescending(achievement => achievement.AchievedOn)
+            .ThenByDescending(achievement => achievement.CreatedAtUtc)
+            .Select(achievement => new TeamAchievementDto
+            {
+                Id = achievement.Id.ToString(),
+                Title = achievement.Title,
+                Description = achievement.Description,
+                AchievedBy = achievement.AchievedBy,
+                AchievedOn = achievement.AchievedOn
+            })
+            .ToListAsync(cancellationToken);
+
+    public async Task<TeamAchievementDto> AddAchievementAsync(
+        TeamAchievementDto achievement,
+        CancellationToken cancellationToken = default)
+    {
+        var record = new TeamAchievementRecord
+        {
+            Title = achievement.Title.Trim(),
+            Description = achievement.Description.Trim(),
+            AchievedBy = achievement.AchievedBy.Trim(),
+            AchievedOn = achievement.AchievedOn.Date
+        };
+        dbContext.TeamAchievements.Add(record);
+        await dbContext.SaveChangesAsync(cancellationToken);
+        return ToDto(record);
+    }
+
     private async Task<TeamMemberRecord> FindOrCreateMemberAsync(string id, CancellationToken cancellationToken)
     {
         if (Guid.TryParse(id, out var memberId))
@@ -171,5 +202,14 @@ internal sealed class SqliteTeamDirectoryService(TeamDbContext dbContext)
         Pod = specialization.Pod,
         FocusAreas = specialization.FocusAreas,
         Members = specialization.Members
+    };
+
+    private static TeamAchievementDto ToDto(TeamAchievementRecord achievement) => new()
+    {
+        Id = achievement.Id.ToString(),
+        Title = achievement.Title,
+        Description = achievement.Description,
+        AchievedBy = achievement.AchievedBy,
+        AchievedOn = achievement.AchievedOn
     };
 }

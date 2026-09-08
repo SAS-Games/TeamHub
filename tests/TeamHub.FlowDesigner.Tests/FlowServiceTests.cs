@@ -33,7 +33,7 @@ public sealed class FlowServiceTests
         var flow = await service.CreateAsync("Integration QA", template: FlowTemplate.IntegrationQa);
 
         Assert.Equal(DiagramType.StandardFlowchart, flow.DiagramType);
-        Assert.Equal(13, flow.Nodes.Count);
+        Assert.Equal(12, flow.Nodes.Count);
         Assert.Equal(13, flow.Connections.Count);
         Assert.Contains(flow.Nodes, node => node.Type == NodeType.Decision && node.Comments.Count == 1);
         Assert.Empty(validator.Validate(flow).Issues);
