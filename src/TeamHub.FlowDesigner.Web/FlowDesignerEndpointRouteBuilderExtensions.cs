@@ -45,6 +45,33 @@ public static class FlowDesignerEndpointRouteBuilderExtensions
         api.MapPost("/{id:guid}/validate", (Guid id, FlowDefinition flow, IFlowValidator validator) =>
             id == flow.Id ? Results.Ok(validator.Validate(flow)) : Results.BadRequest());
 
+        api.MapPost("/{id:guid}/nodes/{nodeId}/comments", async (
+            Guid id,
+            string nodeId,
+            AddNodeCommentRequest request,
+            IFlowService flows,
+            CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                return Results.Ok(await flows.AddNodeCommentAsync(id, nodeId, request.Body, cancellationToken));
+            }
+            catch (ArgumentException exception)
+            {
+                return Results.BadRequest(new { message = exception.Message });
+            }
+            catch (UnauthorizedAccessException)
+            {
+                return Results.Forbid();
+            }
+            catch (KeyNotFoundException)
+            {
+                return Results.NotFound();
+            }
+        });
+
         return api;
     }
+
+    public sealed record AddNodeCommentRequest(string Body);
 }

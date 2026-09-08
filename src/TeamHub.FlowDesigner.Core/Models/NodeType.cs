@@ -6,13 +6,19 @@ namespace TeamHub.FlowDesigner.Core.Models;
 public enum NodeType
 {
     Start,
-    Task,
-    Decision,
-    Approval,
-    Parallel,
-    Wait,
-    Notification,
-    AutomatedAction,
     End,
-    Custom
+    Process,
+    Decision,
+    InputOutput,
+    Document,
+    DataStore,
+    Subprocess,
+    Connector,
+    ManualInput,
+    Preparation,
+    Activity,
+    Event,
+    Gateway,
+    ParallelGateway,
+    Note
 }

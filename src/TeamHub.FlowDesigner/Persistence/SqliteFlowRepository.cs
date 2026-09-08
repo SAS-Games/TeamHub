@@ -18,7 +18,7 @@ public sealed class SqliteFlowRepository(
                 flow.Id,
                 flow.Name,
                 flow.Description,
-                Enum.Parse<FlowMode>(flow.Mode),
+                ParseDiagramType(flow.DiagramType),
                 flow.NodeCount,
                 new DateTimeOffset(DateTime.SpecifyKind(flow.UpdatedAt, DateTimeKind.Utc)),
                 flow.Version,
@@ -45,7 +45,7 @@ public sealed class SqliteFlowRepository(
 
         entity.Name = flow.Name;
         entity.Description = flow.Description;
-        entity.Mode = flow.Mode.ToString();
+        entity.DiagramType = flow.DiagramType.ToString();
         entity.GraphJson = serializer.Serialize(flow);
         entity.CreatedAt = flow.CreatedAt.UtcDateTime;
         entity.UpdatedAt = flow.UpdatedAt.UtcDateTime;
@@ -61,4 +61,12 @@ public sealed class SqliteFlowRepository(
         await using var context = await contextFactory.CreateDbContextAsync(cancellationToken);
         await context.Flows.Where(flow => flow.Id == id).ExecuteDeleteAsync(cancellationToken);
     }
+
+    private static DiagramType ParseDiagramType(string value) => value switch
+    {
+        "DiagramOnly" => DiagramType.StandardFlowchart,
+        "ExecutableWorkflow" => DiagramType.BusinessWorkflow,
+        _ when Enum.TryParse<DiagramType>(value, out var diagramType) => diagramType,
+        _ => DiagramType.StandardFlowchart
+    };
 }

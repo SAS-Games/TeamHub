@@ -4,7 +4,7 @@ public sealed record FlowSummary(
     Guid Id,
     string Name,
     string Description,
-    FlowMode Mode,
+    DiagramType DiagramType,
     int NodeCount,
     DateTimeOffset UpdatedAt,
     int Version,

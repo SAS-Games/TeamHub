@@ -15,7 +15,10 @@
             <h1 class="display-6 fw-semibold mb-2">Flow diagrams</h1>
             <p class="text-secondary mb-0">Map a process, capture decisions, and keep every path understandable.</p>
         </div>
-        <a class="btn btn-primary btn-lg" asp-page="/Flows/New"><span aria-hidden="true">＋</span> New diagram</a>
+        <div class="d-flex gap-2">
+            <form method="post" asp-page-handler="CreateExample"><button class="btn btn-outline-secondary btn-lg" type="submit">QA example</button></form>
+            <a class="btn btn-primary btn-lg" asp-page="/Flows/New"><span aria-hidden="true">＋</span> New diagram</a>
+        </div>
     </div>
 
     @if (Model.Flows.Count == 0)
@@ -24,7 +27,10 @@
             <div class="fd-empty-icon" aria-hidden="true">◇</div>
             <h2 class="h4">Create your first flow</h2>
             <p class="text-secondary">Start with a blank canvas, then drag in steps and connect them.</p>
-            <a class="btn btn-primary" asp-page="/Flows/New">Create diagram</a>
+            <div class="d-flex justify-content-center gap-2">
+                <form method="post" asp-page-handler="CreateExample"><button class="btn btn-outline-secondary" type="submit">Open QA example</button></form>
+                <a class="btn btn-primary" asp-page="/Flows/New">Create diagram</a>
+            </div>
         </div>
     }
     else
@@ -36,7 +42,7 @@
                     <article class="fd-flow-card h-100">
                         <div class="d-flex align-items-start justify-content-between gap-3">
                             <div class="fd-flow-icon" aria-hidden="true">⌁</div>
-                            <span class="badge fd-mode-badge">@flow.Mode</span>
+                            <span class="badge fd-mode-badge">@flow.DiagramType.ToDisplayName()</span>
                         </div>
                         <h2 class="h5 mt-4 mb-2 text-truncate" title="@flow.Name">@flow.Name</h2>
                         <p class="text-secondary small fd-card-description">@(string.IsNullOrWhiteSpace(flow.Description) ? "No description" : flow.Description)</p>

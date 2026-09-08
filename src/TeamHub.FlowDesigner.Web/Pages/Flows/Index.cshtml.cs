@@ -15,7 +15,24 @@ public sealed class IndexModel(IFlowService flows) : PageModel
     {
         try
         {
-            var flow = await flows.CreateAsync(name, description, cancellationToken);
+            var flow = await flows.CreateAsync(name, description, cancellationToken: cancellationToken);
+            return RedirectToPage("/Flows/Edit", new { id = flow.Id });
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return Forbid();
+        }
+    }
+
+    public async Task<IActionResult> OnPostCreateExampleAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            var flow = await flows.CreateAsync(
+                "Integration QA workflow",
+                diagramType: DiagramType.StandardFlowchart,
+                template: FlowTemplate.IntegrationQa,
+                cancellationToken: cancellationToken);
             return RedirectToPage("/Flows/Edit", new { id = flow.Id });
         }
         catch (UnauthorizedAccessException)

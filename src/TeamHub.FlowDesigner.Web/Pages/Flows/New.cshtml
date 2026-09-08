@@ -11,7 +11,7 @@
         <a class="fd-back-link" asp-page="/Flows/Index">← All diagrams</a>
         <div class="fd-eyebrow mt-4">New canvas</div>
         <h1 class="h2 mb-2">Create a flow diagram</h1>
-        <p class="text-secondary mb-4">Give it a useful name. You can change these details later.</p>
+        <p class="text-secondary mb-4">Choose the symbol library that matches what you want to communicate.</p>
         <form method="post">
             <div class="mb-3">
                 <label class="form-label" asp-for="Name"></label>
@@ -22,6 +22,23 @@
                 <label class="form-label" asp-for="Description"></label>
                 <textarea class="form-control" asp-for="Description" rows="3" maxlength="2000" placeholder="Optional context for this diagram"></textarea>
             </div>
+            <fieldset class="mb-4">
+                <legend class="form-label">Diagram type</legend>
+                <div class="fd-diagram-type-grid">
+                    <label class="fd-diagram-type-option">
+                        <input asp-for="DiagramType" type="radio" value="StandardFlowchart" />
+                        <span><strong>Standard flowchart</strong><small>Processes, decisions, input/output, documents, and data.</small></span>
+                    </label>
+                    <label class="fd-diagram-type-option">
+                        <input asp-for="DiagramType" type="radio" value="BusinessWorkflow" />
+                        <span><strong>Business workflow</strong><small>Events, activities, gateways, documents, and data stores.</small></span>
+                    </label>
+                    <label class="fd-diagram-type-option">
+                        <input asp-for="DiagramType" type="radio" value="CodeFlow" />
+                        <span><strong>Code flow</strong><small>Algorithm steps, conditions, calls, input/output, and storage.</small></span>
+                    </label>
+                </div>
+            </fieldset>
             <div class="d-flex justify-content-end gap-2">
                 <a class="btn btn-light" asp-page="/Flows/Index">Cancel</a>
                 <button class="btn btn-primary" type="submit">Create and open</button>

@@ -23,7 +23,7 @@ public sealed class FlowService(
         return flow is not null && permissions.CanView(flow.CreatedBy) ? flow : null;
     }
 
-    public async Task<FlowDefinition> CreateAsync(string name, string? description = null, CancellationToken cancellationToken = default)
+    public async Task<FlowDefinition> CreateAsync(string name, string? description = null, DiagramType diagramType = DiagramType.StandardFlowchart, FlowTemplate template = FlowTemplate.Blank, CancellationToken cancellationToken = default)
     {
         if (!permissions.CanCreate())
         {
@@ -35,10 +35,12 @@ public sealed class FlowService(
         {
             Name = NormalizeName(name),
             Description = description?.Trim() ?? string.Empty,
+            DiagramType = diagramType,
             CreatedAt = now,
             UpdatedAt = now,
             CreatedBy = currentUser.GetCurrentUserId()
         };
+        FlowTemplateFactory.Apply(flow, template);
         await repository.SaveAsync(flow, cancellationToken);
         return flow;
     }
@@ -70,6 +72,31 @@ public sealed class FlowService(
         flow.UpdatedAt = DateTimeOffset.UtcNow;
         await repository.SaveAsync(flow, cancellationToken);
         return result;
+    }
+
+    public async Task<NodeComment> AddNodeCommentAsync(Guid flowId, string nodeId, string body, CancellationToken cancellationToken = default)
+    {
+        var flow = await RequiredFlowAsync(flowId, requireEdit: true, cancellationToken);
+        var node = flow.Nodes.SingleOrDefault(item => string.Equals(item.Id, nodeId, StringComparison.Ordinal))
+            ?? throw new KeyNotFoundException($"Node '{nodeId}' was not found.");
+        var normalizedBody = body?.Trim();
+        if (string.IsNullOrWhiteSpace(normalizedBody))
+        {
+            throw new ArgumentException("A comment is required.", nameof(body));
+        }
+
+        var comment = new NodeComment
+        {
+            Body = normalizedBody.Length <= 2000 ? normalizedBody : normalizedBody[..2000],
+            Author = currentUser.GetCurrentUserId() ?? "Anonymous",
+            CreatedAt = DateTimeOffset.UtcNow
+        };
+        node.Comments ??= [];
+        node.Comments.Add(comment);
+        flow.UpdatedAt = comment.CreatedAt;
+        flow.Version++;
+        await repository.SaveAsync(flow, cancellationToken);
+        return comment;
     }
 
     public async Task RenameAsync(Guid id, string name, CancellationToken cancellationToken = default)

@@ -5,7 +5,7 @@ public sealed class FlowDefinition
     public Guid Id { get; set; } = Guid.NewGuid();
     public string Name { get; set; } = "Untitled flow";
     public string Description { get; set; } = string.Empty;
-    public FlowMode Mode { get; set; } = FlowMode.DiagramOnly;
+    public DiagramType DiagramType { get; set; } = DiagramType.StandardFlowchart;
     public List<FlowNode> Nodes { get; set; } = [];
     public List<FlowConnection> Connections { get; set; } = [];
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;

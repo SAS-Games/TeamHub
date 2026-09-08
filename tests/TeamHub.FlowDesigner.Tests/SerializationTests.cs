@@ -11,7 +11,8 @@ public sealed class SerializationTests
         var flow = new FlowDefinition
         {
             Name = "Release plan",
-            Nodes = [new FlowNode { Id = "start", Type = NodeType.Start, X = 123.5, Metadata = { ["owner"] = "Sam" } }],
+            DiagramType = DiagramType.CodeFlow,
+            Nodes = [new FlowNode { Id = "start", Type = NodeType.Start, X = 123.5, CustomProperties = { ["notes"] = "Entry point" }, Comments = [new NodeComment { Author = "Sam", Body = "Looks good" }] }],
             Connections = []
         };
         var serializer = new SystemTextJsonFlowSerializer();
@@ -20,7 +21,28 @@ public sealed class SerializationTests
 
         Assert.Equal(flow.Id, restored.Id);
         Assert.Equal(NodeType.Start, restored.Nodes.Single().Type);
+        Assert.Equal(DiagramType.CodeFlow, restored.DiagramType);
         Assert.Equal(123.5, restored.Nodes.Single().X);
-        Assert.Equal("Sam", restored.Nodes.Single().Metadata["owner"]);
+        Assert.Equal("Entry point", restored.Nodes.Single().CustomProperties["notes"]);
+        Assert.Equal("Looks good", restored.Nodes.Single().Comments.Single().Body);
+    }
+
+    [Fact]
+    public void Deserialize_UpgradesEarlierWorkflowSpecificSymbols()
+    {
+        var serializer = new SystemTextJsonFlowSerializer();
+        var flow = new FlowDefinition
+        {
+            DiagramType = DiagramType.StandardFlowchart,
+            Nodes = [new FlowNode { Id = "step", Type = NodeType.Process, Title = "Review" }]
+        };
+        var earlierJson = serializer.Serialize(flow)
+            .Replace("\"diagramType\":\"StandardFlowchart\"", "\"mode\":\"DiagramOnly\"")
+            .Replace("\"type\":\"Process\"", "\"type\":\"Approval\"");
+
+        var restored = serializer.Deserialize(earlierJson);
+
+        Assert.Equal(DiagramType.StandardFlowchart, restored.DiagramType);
+        Assert.Equal(NodeType.Activity, restored.Nodes.Single().Type);
     }
 }

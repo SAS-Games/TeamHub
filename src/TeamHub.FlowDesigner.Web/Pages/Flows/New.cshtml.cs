@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
 using TeamHub.FlowDesigner.Core.Contracts;
+using TeamHub.FlowDesigner.Core.Models;
 
 namespace TeamHub.FlowDesigner.Web.Pages.Flows;
 
@@ -11,6 +12,9 @@ public sealed class NewModel(IFlowService flows) : PageModel
 
     [BindProperty]
     public string Description { get; set; } = string.Empty;
+
+    [BindProperty]
+    public DiagramType DiagramType { get; set; } = DiagramType.StandardFlowchart;
 
     public void OnGet() { }
 
@@ -24,7 +28,7 @@ public sealed class NewModel(IFlowService flows) : PageModel
 
         try
         {
-            var flow = await flows.CreateAsync(Name, Description, cancellationToken);
+            var flow = await flows.CreateAsync(Name, Description, DiagramType, cancellationToken: cancellationToken);
             return RedirectToPage("/Flows/Edit", new { id = flow.Id });
         }
         catch (UnauthorizedAccessException)

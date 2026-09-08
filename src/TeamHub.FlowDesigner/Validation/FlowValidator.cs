@@ -61,7 +61,11 @@ public sealed class FlowValidator : IFlowValidator
         }
 
         var starts = flow.Nodes.Count(node => node.Type == NodeType.Start);
-        if (starts != 1)
+        if (flow.DiagramType == DiagramType.BusinessWorkflow && starts == 0)
+        {
+            issues.Add(new("missing-start", "At least one Start event is recommended.", ValidationSeverity.Warning));
+        }
+        else if (flow.DiagramType != DiagramType.BusinessWorkflow && starts != 1)
         {
             issues.Add(new("start-count", $"Exactly one Start node is recommended; this flow has {starts}.", ValidationSeverity.Warning));
         }
@@ -74,9 +78,19 @@ public sealed class FlowValidator : IFlowValidator
         var connectedIds = flow.Connections
             .SelectMany(connection => new[] { connection.SourceNodeId, connection.TargetNodeId })
             .ToHashSet(StringComparer.Ordinal);
-        foreach (var orphan in flow.Nodes.Where(node => !connectedIds.Contains(node.Id)))
+        foreach (var orphan in flow.Nodes.Where(node => node.Type != NodeType.Note && !connectedIds.Contains(node.Id)))
         {
             issues.Add(new("orphan-node", $"'{orphan.Title}' is not connected.", ValidationSeverity.Warning, orphan.Id));
+        }
+
+        var branchingTypes = new[] { NodeType.Decision, NodeType.Gateway, NodeType.ParallelGateway };
+        foreach (var branch in flow.Nodes.Where(node => branchingTypes.Contains(node.Type)))
+        {
+            var outgoingCount = flow.Connections.Count(connection => connection.SourceNodeId == branch.Id);
+            if (outgoingCount < 2)
+            {
+                issues.Add(new("incomplete-branch", $"'{branch.Title}' should have at least two outgoing paths.", ValidationSeverity.Warning, branch.Id));
+            }
         }
 
         return new FlowValidationResult { Issues = issues };

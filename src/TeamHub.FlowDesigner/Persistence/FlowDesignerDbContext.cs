@@ -13,7 +13,7 @@ public sealed class FlowDesignerDbContext(DbContextOptions<FlowDesignerDbContext
         flow.HasKey(item => item.Id);
         flow.Property(item => item.Name).HasMaxLength(200).IsRequired();
         flow.Property(item => item.Description).HasMaxLength(2000);
-        flow.Property(item => item.Mode).HasMaxLength(50).IsRequired();
+        flow.Property(item => item.DiagramType).HasColumnName("Mode").HasMaxLength(50).IsRequired();
         flow.Property(item => item.GraphJson).IsRequired();
         flow.Property(item => item.CreatedBy).HasMaxLength(200);
         flow.HasIndex(item => item.UpdatedAt);

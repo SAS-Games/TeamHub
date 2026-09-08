@@ -1,6 +1,23 @@
-bin/
-obj/
+# .NET build and publish output (at any project depth)
+[Bb]in/
+[Oo]bj/
+/artifacts/
+
+# Local IDE state
 .vs/
-data/*.db*
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+
+# Test results and coverage output
 TestResults/
+*.trx
+*.coverage
+*.coveragexml
+
+# Local application databases, including SQLite journal/WAL files
+data/*.db*
+
+# Browser QA profiles and captures
 .browser-qa/

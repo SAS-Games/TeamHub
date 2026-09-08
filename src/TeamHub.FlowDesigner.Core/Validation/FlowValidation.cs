@@ -1,5 +1,8 @@
+using System.Text.Json.Serialization;
+
 namespace TeamHub.FlowDesigner.Core.Validation;
 
+[JsonConverter(typeof(JsonStringEnumConverter))]
 public enum ValidationSeverity
 {
     Warning,

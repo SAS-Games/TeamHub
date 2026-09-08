@@ -14,6 +14,8 @@
     const connectionForm = byId("connectionProperties");
     const emptyProperties = byId("emptyProperties");
     const nodeTypes = window.FlowDesignerAdapters.nodeTypes;
+    const diagramTypes = window.FlowDesignerAdapters.diagramTypes;
+    const palettes = window.FlowDesignerAdapters.palettes;
     let flow = null;
     let selectedNode = null;
     let selectedConnection = null;
@@ -47,6 +49,8 @@
         if (!response.ok) throw new Error(`Load failed (${response.status})`);
         flow = await response.json();
         nameInput.value = flow.name;
+        root.dataset.diagramType = flow.diagramType;
+        root.classList.add(`fd-mode-${flow.diagramType.toLowerCase()}`);
         adapter.setGraph(flow);
         history = [graphSnapshot()];
         historyIndex = 0;
@@ -58,12 +62,7 @@
     }
 
     function bindUi() {
-        for (const [type, config] of Object.entries(nodeTypes)) {
-            const option = document.createElement("option");
-            option.value = type;
-            option.textContent = config.title;
-            byId("nodeType").appendChild(option);
-        }
+        buildPalette();
 
         document.querySelectorAll("[data-node-type]").forEach(tool => {
             tool.addEventListener("dragstart", event => {
@@ -78,14 +77,14 @@
         canvas.addEventListener("drop", event => {
             event.preventDefault();
             const type = event.dataTransfer.getData("application/x-flow-node");
-            if (!nodeTypes[type]) return;
+            if (!activePalette().nodes.includes(type)) return;
             const point = adapter.screenToCanvas(event.clientX, event.clientY);
             adapter.addNode(type, point.x - 90, point.y - 35);
         });
         canvas.addEventListener("dblclick", event => {
             if (event.target !== canvas && !event.target.classList.contains("drawflow")) return;
             const point = adapter.screenToCanvas(event.clientX, event.clientY);
-            adapter.addNode("Task", point.x - 90, point.y - 35);
+            adapter.addNode(activePalette().primary, point.x - 90, point.y - 35);
         });
 
         saveButton.addEventListener("click", () => save(true));
@@ -104,10 +103,11 @@
         byId("exportSvg").addEventListener("click", exportSvg);
         byId("exportPng").addEventListener("click", exportPng);
 
-        ["nodeTitle", "nodeDescription", "nodeOwner", "nodeDuration", "nodeNotes"].forEach(id => {
+        ["nodeTitle", "nodeDescription", "nodeNotes"].forEach(id => {
             byId(id).addEventListener("input", updateSelectedNode);
         });
         byId("nodeType").addEventListener("change", changeSelectedNodeType);
+        byId("addNodeComment").addEventListener("click", addNodeComment);
         byId("deleteNode").addEventListener("click", () => adapter.deleteSelected());
         byId("connectionLabel").addEventListener("input", () => {
             if (!selectedConnection) return;
@@ -129,6 +129,39 @@
             event.preventDefault();
             event.returnValue = "";
         });
+    }
+
+    function activePalette() {
+        const diagram = diagramTypes[flow?.diagramType] || diagramTypes.StandardFlowchart;
+        return palettes[diagram.palette] || palettes.StandardFlowchart;
+    }
+
+    function buildPalette() {
+        const palette = activePalette();
+        byId("paletteTitle").textContent = palette.title;
+        byId("diagramTypeLabel").textContent = (diagramTypes[flow?.diagramType] || diagramTypes.StandardFlowchart).title;
+        const toolList = byId("nodeToolList");
+        const typeSelect = byId("nodeType");
+        toolList.replaceChildren();
+        typeSelect.replaceChildren();
+
+        for (const type of palette.nodes) {
+            const config = nodeTypes[type];
+            const tool = document.createElement("button");
+            tool.className = "fd-tool";
+            tool.type = "button";
+            tool.draggable = true;
+            tool.dataset.nodeType = type;
+            tool.innerHTML = `<span class="fd-tool-icon fd-type-${type.toLowerCase()} fd-symbol-${config.shape}"></span><span><strong></strong><small></small></span>`;
+            tool.querySelector("strong").textContent = config.title;
+            tool.querySelector("small").textContent = config.help;
+            toolList.appendChild(tool);
+
+            const option = document.createElement("option");
+            option.value = type;
+            option.textContent = config.title;
+            byId("nodeType").appendChild(option);
+        }
     }
 
     function addAtCenter(type) {
@@ -247,9 +280,9 @@
         byId("nodeTitle").value = node.title || "";
         byId("nodeDescription").value = node.description || "";
         byId("nodeType").value = node.type;
-        byId("nodeOwner").value = node.metadata?.owner || "";
-        byId("nodeDuration").value = node.metadata?.duration || "";
         byId("nodeNotes").value = node.customProperties?.notes || "";
+        byId("newNodeComment").value = "";
+        renderNodeComments(node.comments || []);
     }
 
     function showConnectionProperties(connection) {
@@ -278,11 +311,68 @@
         const changes = {
             title: byId("nodeTitle").value || nodeTypes[selectedNode.type].title,
             description: byId("nodeDescription").value,
-            metadata: { ...(selectedNode.metadata || {}), owner: byId("nodeOwner").value, duration: byId("nodeDuration").value },
             customProperties: { ...(selectedNode.customProperties || {}), notes: byId("nodeNotes").value }
         };
         selectedNode = { ...selectedNode, ...changes };
         adapter.updateNode(selectedNode.id, changes);
+    }
+
+    async function addNodeComment() {
+        if (!selectedNode) return;
+        const input = byId("newNodeComment");
+        const button = byId("addNodeComment");
+        const body = input.value.trim();
+        if (!body) return;
+        button.disabled = true;
+        try {
+            const response = await fetch(`/api/flows/${flowId}/nodes/${encodeURIComponent(selectedNode.id)}/comments`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ body })
+            });
+            const result = await response.json();
+            if (!response.ok) throw new Error(result.message || "Could not add comment");
+            const comments = [...(selectedNode.comments || []), result];
+            selectedNode = { ...selectedNode, comments };
+            adapter.updateNode(selectedNode.id, { comments }, false);
+            input.value = "";
+            renderNodeComments(comments);
+            showToast("Comment added");
+        } catch (error) {
+            console.error(error);
+            showToast(error.message || "Could not add comment");
+        } finally {
+            button.disabled = false;
+        }
+    }
+
+    function renderNodeComments(comments) {
+        const list = byId("nodeComments");
+        byId("nodeCommentCount").textContent = comments.length;
+        list.replaceChildren();
+        if (!comments.length) {
+            const empty = document.createElement("p");
+            empty.className = "fd-comments-empty";
+            empty.textContent = "No comments yet.";
+            list.appendChild(empty);
+            return;
+        }
+        for (const comment of [...comments].sort((left, right) => new Date(left.createdAt) - new Date(right.createdAt))) {
+            const item = document.createElement("article");
+            item.className = "fd-comment";
+            const header = document.createElement("div");
+            header.className = "fd-comment-meta";
+            const author = document.createElement("strong");
+            author.textContent = comment.author || "Unknown user";
+            const time = document.createElement("time");
+            time.dateTime = comment.createdAt;
+            time.textContent = new Date(comment.createdAt).toLocaleString([], { dateStyle: "medium", timeStyle: "short" });
+            header.append(author, time);
+            const body = document.createElement("p");
+            body.textContent = comment.body;
+            item.append(header, body);
+            list.appendChild(item);
+        }
     }
 
     function changeSelectedNodeType() {
@@ -327,10 +417,15 @@
         const graph = adapter.getGraph();
         const issues = [];
         const starts = graph.nodes.filter(node => node.type === "Start").length;
-        if (starts !== 1) issues.push({ severity: "Warning", code: "start-count", message: `Exactly one Start node is recommended; this flow has ${starts}.` });
+        if (flow.diagramType === "BusinessWorkflow" && starts === 0) issues.push({ severity: "Warning", code: "missing-start", message: "At least one Start event is recommended." });
+        else if (flow.diagramType !== "BusinessWorkflow" && starts !== 1) issues.push({ severity: "Warning", code: "start-count", message: `Exactly one Start node is recommended; this flow has ${starts}.` });
         if (!graph.nodes.some(node => node.type === "End")) issues.push({ severity: "Warning", code: "missing-end", message: "At least one End node is recommended." });
         const connected = new Set(graph.connections.flatMap(connection => [connection.sourceNodeId, connection.targetNodeId]));
-        graph.nodes.filter(node => !connected.has(node.id)).forEach(node => issues.push({ severity: "Warning", code: "orphan-node", message: `'${node.title}' is not connected.`, elementId: node.id }));
+        graph.nodes.filter(node => node.type !== "Note" && !connected.has(node.id)).forEach(node => issues.push({ severity: "Warning", code: "orphan-node", message: `'${node.title}' is not connected.`, elementId: node.id }));
+        graph.nodes.filter(node => ["Decision", "Gateway", "ParallelGateway"].includes(node.type)).forEach(node => {
+            const outgoing = graph.connections.filter(connection => connection.sourceNodeId === node.id).length;
+            if (outgoing < 2) issues.push({ severity: "Warning", code: "incomplete-branch", message: `'${node.title}' should have at least two outgoing paths.`, elementId: node.id });
+        });
         return issues;
     }
 
@@ -339,7 +434,7 @@
         const button = byId("validationButton");
         const icon = byId("validationIcon");
         const list = byId("validationIssues");
-        const errors = issues.filter(issue => issue.severity?.toLowerCase() === "error").length;
+        const errors = issues.filter(issue => validationSeverity(issue) === "error").length;
         const warnings = issues.length - errors;
         button.classList.toggle("has-error", errors > 0);
         button.classList.toggle("has-warning", errors === 0 && warnings > 0);
@@ -355,11 +450,17 @@
         }
         for (const issue of issues) {
             const item = document.createElement("div");
-            item.className = `fd-validation-item ${issue.severity?.toLowerCase() || "warning"}`;
-            item.innerHTML = `<span>${issue.severity?.toLowerCase() === "error" ? "×" : "!"}</span><span></span>`;
+            const severity = validationSeverity(issue);
+            item.className = `fd-validation-item ${severity}`;
+            item.innerHTML = `<span>${severity === "error" ? "×" : "!"}</span><span></span>`;
             item.lastElementChild.textContent = issue.message;
             list.appendChild(item);
         }
+    }
+
+    function validationSeverity(issue) {
+        if (typeof issue?.severity === "string") return issue.severity.toLowerCase();
+        return issue?.severity === 1 ? "error" : "warning";
     }
 
     function updateCanvasHint() {
@@ -407,7 +508,7 @@
         const offsetX = padding - minX;
         const offsetY = padding - minY;
         const nodes = new Map(graph.nodes.map(node => [node.id, node]));
-        const colors = { Start: "#087c68", Task: "#2563a9", Decision: "#b45309", Approval: "#6d4bd1", Parallel: "#0e7490", Wait: "#8a5c10", Notification: "#a33c67", AutomatedAction: "#4f46a5", End: "#ba3127", Custom: "#596863" };
+        const colors = { Start: "#087c68", End: "#ba3127", Process: "#2563a9", Activity: "#2563a9", Decision: "#b45309", Gateway: "#b45309", ParallelGateway: "#b45309", InputOutput: "#0e7490", ManualInput: "#0e7490", Document: "#a33c67", Note: "#a33c67", DataStore: "#6d4bd1", Subprocess: "#4f46a5", Preparation: "#4f46a5", Connector: "#596863", Event: "#596863" };
         const parts = [`<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}"><rect width="100%" height="100%" fill="#f8faf9"/><g font-family="Segoe UI,Arial,sans-serif">`];
         for (const connection of graph.connections) {
             const source = nodes.get(connection.sourceNodeId);
@@ -426,11 +527,31 @@
             const y = node.y + offsetY;
             const w = node.width || 184;
             const h = node.height || 76;
-            const color = colors[node.type] || colors.Custom;
-            parts.push(`<g><rect x="${x}" y="${y}" width="${w}" height="${h}" rx="9" fill="#fff" stroke="#cedbd7"/><rect x="${x}" y="${y}" width="5" height="${h}" rx="3" fill="${color}"/><text x="${x + 18}" y="${y + 25}" font-size="10" font-weight="700" fill="${color}" letter-spacing="1">${escapeXml(nodeTypes[node.type]?.title?.toUpperCase() || node.type.toUpperCase())}</text><text x="${x + 18}" y="${y + 49}" font-size="14" font-weight="700" fill="#172522">${escapeXml(shorten(node.title, 28))}</text></g>`);
+            const color = colors[node.type] || "#596863";
+            const centerAligned = ["Decision", "Gateway", "ParallelGateway", "Connector", "Event"].includes(node.type);
+            const textX = centerAligned ? x + w / 2 : x + 18;
+            const anchor = centerAligned ? "middle" : "start";
+            parts.push(`<g>${exportNodeShape(node.type, x, y, w, h, color)}<text x="${textX}" y="${y + h / 2 - 5}" text-anchor="${anchor}" font-size="9" font-weight="700" fill="${color}" letter-spacing="1">${escapeXml(nodeTypes[node.type]?.title?.toUpperCase() || node.type.toUpperCase())}</text><text x="${textX}" y="${y + h / 2 + 17}" text-anchor="${anchor}" font-size="13" font-weight="700" fill="#172522">${escapeXml(shorten(node.title, centerAligned ? 18 : 28))}</text></g>`);
         }
         parts.push("</g></svg>");
         return parts.join("");
+    }
+
+    function exportNodeShape(type, x, y, width, height, color) {
+        const common = `fill="#fff" stroke="${color}" stroke-width="2"`;
+        if (["Decision", "Gateway", "ParallelGateway"].includes(type)) {
+            return `<polygon points="${x + width / 2},${y} ${x + width},${y + height / 2} ${x + width / 2},${y + height} ${x},${y + height / 2}" ${common}/>`;
+        }
+        if (type === "InputOutput") return `<polygon points="${x + 18},${y} ${x + width},${y} ${x + width - 18},${y + height} ${x},${y + height}" ${common}/>`;
+        if (type === "ManualInput") return `<polygon points="${x + 14},${y + 12} ${x + width},${y} ${x + width - 14},${y + height} ${x},${y + height}" ${common}/>`;
+        if (type === "Preparation") return `<polygon points="${x + 20},${y} ${x + width - 20},${y} ${x + width},${y + height / 2} ${x + width - 20},${y + height} ${x + 20},${y + height} ${x},${y + height / 2}" ${common}/>`;
+        if (["Connector", "Event"].includes(type)) return `<ellipse cx="${x + width / 2}" cy="${y + height / 2}" rx="${width / 2}" ry="${height / 2}" ${common}/>`;
+        if (type === "DataStore") return `<rect x="${x}" y="${y}" width="${width}" height="${height}" rx="${width / 2}" ry="${Math.min(15, height / 5)}" ${common}/><ellipse cx="${x + width / 2}" cy="${y + Math.min(15, height / 5)}" rx="${width / 2}" ry="${Math.min(15, height / 5)}" fill="none" stroke="${color}" stroke-width="2"/>`;
+        if (type === "Document") return `<path d="M ${x} ${y} H ${x + width} V ${y + height - 12} Q ${x + width * .75} ${y + height - 24}, ${x + width * .5} ${y + height - 12} Q ${x + width * .25} ${y + height}, ${x} ${y + height - 12} Z" ${common}/>`;
+        if (type === "Note") return `<polygon points="${x},${y} ${x + width - 20},${y} ${x + width},${y + 20} ${x + width},${y + height} ${x},${y + height}" ${common}/><path d="M ${x + width - 20} ${y} V ${y + 20} H ${x + width}" fill="none" stroke="${color}" stroke-width="2"/>`;
+        const radius = type === "Start" || type === "End" ? height / 2 : type === "Activity" ? 16 : 8;
+        const extra = type === "Subprocess" ? `<path d="M ${x + 9} ${y} V ${y + height} M ${x + width - 9} ${y} V ${y + height}" stroke="${color}" stroke-width="1"/>` : "";
+        return `<rect x="${x}" y="${y}" width="${width}" height="${height}" rx="${radius}" ${common}/>${extra}`;
     }
 
     function escapeXml(value) {
