@@ -18,6 +18,7 @@ TestResults/
 
 # Local application databases, including SQLite journal/WAL files
 **/data/*.db*
+!**/data/templates.db
 
 # Browser QA profiles and captures
 .browser-qa/
