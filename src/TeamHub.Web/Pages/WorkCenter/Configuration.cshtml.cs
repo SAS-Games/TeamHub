@@ -5,12 +5,18 @@ using Microsoft.EntityFrameworkCore;
 using TeamHub.Application.Interfaces;
 using TeamHub.Application.Models;
 using TeamHub.Domain.Entities;
+using TeamHub.FlowDesigner.Core.Contracts;
+using TeamHub.FlowDesigner.Core.Models;
 using TeamHub.Infrastructure.Persistence;
 
 namespace TeamHub.Web.Pages.WorkCenter;
 
 [Authorize(Roles = "Admin")]
-public class ConfigurationModel(IWorkflowConfigurationService configurationService, WorkflowDbContext dbContext) : PageModel
+public class ConfigurationModel(
+    IWorkflowConfigurationService configurationService,
+    WorkflowDbContext dbContext,
+    IFlowService flows,
+    IFlowTemplateCatalogService templates) : PageModel
 {
     [BindProperty]
     public WorkflowDraftInput Input { get; set; } = new();
@@ -19,6 +25,8 @@ public class ConfigurationModel(IWorkflowConfigurationService configurationServi
     public string? StatusMessage { get; set; }
 
     public IReadOnlyList<WorkflowDraftSummaryDto> Drafts { get; private set; } = [];
+    public IReadOnlyList<FlowSummary> VisualWorkflows { get; private set; } = [];
+    public IReadOnlyList<TemplateCatalogSummary> WorkCenterTemplates { get; private set; } = [];
     public IReadOnlyList<WorkflowDefinition> PublishedDefinitions { get; private set; } = [];
     public bool ShowForm { get; private set; }
 
@@ -91,9 +99,44 @@ public class ConfigurationModel(IWorkflowConfigurationService configurationServi
         return RedirectToPage();
     }
 
+    public async Task<IActionResult> OnPostCreateVisualAsync(string? name, CancellationToken cancellationToken)
+    {
+        var flow = await flows.CreateAsync(
+            string.IsNullOrWhiteSpace(name) ? "Untitled Work Center Workflow" : name,
+            diagramType: DiagramType.WorkCenterWorkflow,
+            cancellationToken: cancellationToken);
+        return RedirectToPage("/Flows/Edit", new { id = flow.Id });
+    }
+
+    public async Task<IActionResult> OnPostCreateFromTemplateAsync(Guid templateId, CancellationToken cancellationToken)
+    {
+        var flow = await templates.CreateFlowAsync(templateId, cancellationToken: cancellationToken);
+        return RedirectToPage("/Flows/Edit", new { id = flow.Id });
+    }
+
+    public async Task<IActionResult> OnPostDuplicateVisualAsync(Guid id, CancellationToken cancellationToken)
+    {
+        var copy = await flows.DuplicateAsync(id, cancellationToken);
+        return RedirectToPage("/Flows/Edit", new { id = copy.Id });
+    }
+
+    public async Task<IActionResult> OnPostDeleteVisualAsync(Guid id, CancellationToken cancellationToken)
+    {
+        await flows.DeleteAsync(id, cancellationToken);
+        StatusMessage = "Visual workflow deleted.";
+        return RedirectToPage();
+    }
+
     private async Task LoadAsync(CancellationToken cancellationToken)
     {
         Drafts = await configurationService.GetDraftsAsync(cancellationToken);
+        VisualWorkflows = (await flows.ListAsync(cancellationToken))
+            .Where(flow => flow.DiagramType == DiagramType.WorkCenterWorkflow)
+            .OrderByDescending(flow => flow.UpdatedAt)
+            .ToList();
+        WorkCenterTemplates = (await templates.ListAsync(cancellationToken))
+            .Where(template => template.DiagramType == DiagramType.WorkCenterWorkflow)
+            .ToList();
         PublishedDefinitions = await dbContext.WorkflowDefinitions
             .AsNoTracking()
             .Where(x => x.IsActive)

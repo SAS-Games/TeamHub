@@ -230,37 +230,32 @@ public sealed class WorkflowEngineService(
                 continue;
             }
 
-            var reminderThreshold = step.StartedAtUtc.Value.AddHours(step.ReminderAfterHours ?? 0);
-            if (now < reminderThreshold)
+            if (step.ReminderAfterHours.HasValue)
             {
-                continue;
-            }
+                var reminderThreshold = step.StartedAtUtc.Value.AddHours(step.ReminderAfterHours.Value);
+                var shouldSendReminder = now >= reminderThreshold
+                    && (step.LastReminderAtUtc is null
+                        || step.ReminderRepeatHours.HasValue
+                            && step.ReminderRepeatHours.Value > 0
+                            && (now - step.LastReminderAtUtc.Value).TotalHours >= step.ReminderRepeatHours.Value);
 
-            var reminderType = step.DueAtUtc.Value < now ? NotificationType.Overdue : NotificationType.Reminder;
-
-            var shouldSendReminder = false;
-            if (step.LastReminderAtUtc is null)
-            {
-                shouldSendReminder = true;
-            }
-            else if (step.ReminderRepeatHours.HasValue && step.ReminderRepeatHours.Value > 0)
-            {
-                shouldSendReminder = (now - step.LastReminderAtUtc.Value).TotalHours >= step.ReminderRepeatHours.Value;
-            }
-
-            if (shouldSendReminder)
-            {
-                await notificationService.SendAsync(new NotificationMessage
+                if (shouldSendReminder)
                 {
-                    WorkflowInstanceId = step.WorkflowInstanceId,
-                    WorkflowStepInstanceId = step.Id,
-                    Type = reminderType,
-                    Recipient = step.Owner,
-                    Subject = $"Reminder - {step.StepName}",
-                    Body = $"Task '{step.StepName}' for instance '{step.WorkflowInstance.InstanceName}' is overdue."
-                }, cancellationToken);
-                step.LastReminderAtUtc = now;
-                notificationsSent++;
+                    var overdue = step.DueAtUtc.Value < now;
+                    await notificationService.SendAsync(new NotificationMessage
+                    {
+                        WorkflowInstanceId = step.WorkflowInstanceId,
+                        WorkflowStepInstanceId = step.Id,
+                        Type = overdue ? NotificationType.Overdue : NotificationType.Reminder,
+                        Recipient = step.Owner,
+                        Subject = $"Reminder - {step.StepName}",
+                        Body = overdue
+                            ? $"Task '{step.StepName}' for instance '{step.WorkflowInstance.InstanceName}' is overdue."
+                            : $"Task '{step.StepName}' for instance '{step.WorkflowInstance.InstanceName}' is due at {step.DueAtUtc:yyyy-MM-dd HH:mm} UTC."
+                    }, cancellationToken);
+                    step.LastReminderAtUtc = now;
+                    notificationsSent++;
+                }
             }
 
             if (step.DueAtUtc.Value < now

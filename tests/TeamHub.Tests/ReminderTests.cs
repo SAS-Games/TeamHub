@@ -60,6 +60,43 @@ public class ReminderTests
         second.Should().Be(0);
     }
 
+    [Fact]
+    public async Task ReminderIsNotSent_WhenTaskHasNoReminderConfiguration()
+    {
+        await using var context = CreateDbContext();
+        var clock = new TestClock(new DateTime(2026, 9, 4, 10, 0, 0, DateTimeKind.Utc));
+        var notification = new TestNotificationService();
+        var engine = new WorkflowEngineService(context, clock, notification);
+        var definition = new WorkflowDefinition
+        {
+            WorkflowKey = "NO_REMINDER",
+            Name = "No reminder",
+            Version = 1,
+            ConfigHash = "no-reminder",
+            IsActive = true,
+            Enabled = true,
+            ImportedAtUtc = clock.UtcNow
+        };
+        definition.Steps.Add(new WorkflowStepDefinition
+        {
+            WorkflowDefinition = definition,
+            StepKey = "TASK",
+            Name = "Task",
+            Owner = "owner@x.com",
+            ExpectedDurationHours = 1,
+            Required = true,
+            Enabled = true,
+            SortOrder = 1
+        });
+        context.Add(definition);
+        await context.SaveChangesAsync();
+
+        await engine.StartWorkflowAsync(new StartWorkflowRequest { WorkflowKey = "NO_REMINDER", InstanceName = "Instance", StartedBy = "admin" });
+        clock.UtcNow = clock.UtcNow.AddHours(2);
+
+        (await engine.RunReminderCycleAsync()).Should().Be(0);
+    }
+
     private static WorkflowDbContext CreateDbContext()
     {
         var options = new DbContextOptionsBuilder<WorkflowDbContext>()

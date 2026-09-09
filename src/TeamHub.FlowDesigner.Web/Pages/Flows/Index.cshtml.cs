@@ -5,52 +5,23 @@ using TeamHub.FlowDesigner.Core.Models;
 
 namespace TeamHub.FlowDesigner.Web.Pages.Flows;
 
-public sealed class IndexModel(IFlowService flows, IFlowPermissionService permissions) : PageModel
+public sealed class IndexModel(IFlowService flows, IFlowTemplateCatalogService templates) : PageModel
 {
     public IReadOnlyList<FlowSummary> Flows { get; private set; } = [];
-    public bool CanUseStudioSupportTemplate => permissions.CanUseTemplate(FlowTemplate.StudioSupport);
+    public Guid? StudioSupportTemplateId { get; private set; }
 
-    public async Task OnGetAsync(CancellationToken cancellationToken) => Flows = await flows.ListAsync(cancellationToken);
+    public async Task OnGetAsync(CancellationToken cancellationToken)
+    {
+        Flows = await flows.ListAsync(cancellationToken);
+        StudioSupportTemplateId = (await templates.ListAsync(cancellationToken))
+            .FirstOrDefault(template => template.TemplateKey == "STUDIO_SUPPORT")?.Id;
+    }
 
     public async Task<IActionResult> OnPostCreateAsync(string name, string? description, CancellationToken cancellationToken)
     {
         try
         {
             var flow = await flows.CreateAsync(name, description, cancellationToken: cancellationToken);
-            return RedirectToPage("/Flows/Edit", new { id = flow.Id });
-        }
-        catch (UnauthorizedAccessException)
-        {
-            return Forbid();
-        }
-    }
-
-    public async Task<IActionResult> OnPostCreateExampleAsync(CancellationToken cancellationToken)
-    {
-        try
-        {
-            var flow = await flows.CreateAsync(
-                "Integration QA workflow",
-                diagramType: DiagramType.StandardFlowchart,
-                template: FlowTemplate.IntegrationQa,
-                cancellationToken: cancellationToken);
-            return RedirectToPage("/Flows/Edit", new { id = flow.Id });
-        }
-        catch (UnauthorizedAccessException)
-        {
-            return Forbid();
-        }
-    }
-
-    public async Task<IActionResult> OnPostCreateStudioSupportAsync(CancellationToken cancellationToken)
-    {
-        try
-        {
-            var flow = await flows.CreateAsync(
-                "Studio Support Workflow",
-                diagramType: DiagramType.BusinessWorkflow,
-                template: FlowTemplate.StudioSupport,
-                cancellationToken: cancellationToken);
             return RedirectToPage("/Flows/Edit", new { id = flow.Id });
         }
         catch (UnauthorizedAccessException)

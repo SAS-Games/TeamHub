@@ -5,9 +5,13 @@ using TeamHub.FlowDesigner.Core.Models;
 
 namespace TeamHub.FlowDesigner.Web.Pages.Flows;
 
-public sealed class NewModel(IFlowService flows, IFlowPermissionService permissions) : PageModel
+public sealed class NewModel(
+    IFlowService flows,
+    IFlowTemplateCatalogService templates,
+    IFlowPermissionService permissions) : PageModel
 {
-    public bool CanUseStudioSupportTemplate => permissions.CanUseTemplate(FlowTemplate.StudioSupport);
+    public bool CanCreateWorkCenterWorkflow => permissions.CanUseDiagramType(DiagramType.WorkCenterWorkflow);
+    public IReadOnlyList<TemplateCatalogSummary> Templates { get; private set; } = [];
 
     [BindProperty]
     public string Name { get; set; } = string.Empty;
@@ -19,26 +23,38 @@ public sealed class NewModel(IFlowService flows, IFlowPermissionService permissi
     public DiagramType DiagramType { get; set; } = DiagramType.StandardFlowchart;
 
     [BindProperty]
-    public FlowTemplate Template { get; set; } = FlowTemplate.Blank;
+    public Guid? TemplateId { get; set; }
 
-    public void OnGet() { }
+    public async Task OnGetAsync(Guid? templateId = null, CancellationToken cancellationToken = default)
+    {
+        TemplateId = templateId;
+        await LoadTemplatesAsync(cancellationToken);
+    }
 
     public async Task<IActionResult> OnPostAsync(CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(Name))
         {
             ModelState.AddModelError(nameof(Name), "Enter a name for the diagram.");
+            await LoadTemplatesAsync(cancellationToken);
             return Page();
         }
 
         try
         {
-            var flow = await flows.CreateAsync(Name, Description, DiagramType, Template, cancellationToken);
+            var flow = TemplateId.HasValue
+                ? await templates.CreateFlowAsync(TemplateId.Value, Name, cancellationToken)
+                : await flows.CreateAsync(Name, Description, DiagramType, FlowTemplate.Blank, cancellationToken);
             return RedirectToPage("/Flows/Edit", new { id = flow.Id });
         }
         catch (UnauthorizedAccessException)
         {
             return Forbid();
         }
+    }
+
+    private async Task LoadTemplatesAsync(CancellationToken cancellationToken)
+    {
+        Templates = await templates.ListAsync(cancellationToken);
     }
 }

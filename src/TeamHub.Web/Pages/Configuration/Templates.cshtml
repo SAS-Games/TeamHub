@@ -1,0 +1,48 @@
+@page "/Configuration/Templates"
+@model TeamHub.Web.Pages.Configuration.TemplatesModel
+@using TeamHub.FlowDesigner.Core.Models
+@{
+    ViewData["Title"] = "Template Catalog";
+}
+
+<div class="page-hero">
+    <div>
+        <div class="eyebrow">Configuration</div>
+        <h1>Template Catalog</h1>
+        <p>Reusable templates stored in the shared template database.</p>
+    </div>
+    <div class="d-flex gap-2">
+        <a class="btn btn-outline-secondary" asp-page="/Configuration/Index">All Configuration</a>
+        <a class="btn btn-primary" asp-page="/Flows/New">Create from Template</a>
+    </div>
+</div>
+
+<section class="content-section">
+    <div class="section-heading"><div><span>templates.db</span><h2>Available Templates</h2></div></div>
+    @if (Model.Templates.Count == 0)
+    {
+        <div class="section-body text-secondary">No templates are stored yet. Open a saved diagram and choose <strong>Save as template</strong>.</div>
+    }
+    else
+    {
+        <div class="table-responsive">
+            <table class="table styled-table align-middle">
+                <thead><tr><th>Name</th><th>Key</th><th>Category</th><th>Diagram type</th><th>Version</th><th>Source</th><th></th></tr></thead>
+                <tbody>
+                @foreach (var template in Model.Templates)
+                {
+                    <tr>
+                        <td><strong>@template.Name</strong><div class="small text-secondary">@template.Description</div></td>
+                        <td><code>@template.TemplateKey</code></td>
+                        <td>@template.Category</td>
+                        <td>@template.DiagramType?.ToDisplayName()</td>
+                        <td>@template.Version</td>
+                        <td>@(template.IsBuiltIn ? "Built in" : "Team")</td>
+                        <td><a class="btn btn-sm btn-outline-primary" asp-page="/Flows/New" asp-route-templateId="@template.Id">Use</a></td>
+                    </tr>
+                }
+                </tbody>
+            </table>
+        </div>
+    }
+</section>

@@ -45,6 +45,55 @@ public static class FlowDesignerEndpointRouteBuilderExtensions
         api.MapPost("/{id:guid}/validate", (Guid id, FlowDefinition flow, IFlowValidator validator) =>
             id == flow.Id ? Results.Ok(validator.Validate(flow)) : Results.BadRequest());
 
+        api.MapPost("/{id:guid}/publish", async (
+            Guid id,
+            IFlowService flows,
+            IFlowPublicationService publicationService,
+            CancellationToken cancellationToken) =>
+        {
+            var flow = await flows.GetAsync(id, cancellationToken);
+            if (flow is null)
+            {
+                return Results.NotFound();
+            }
+
+            if (!publicationService.CanPublish(flow))
+            {
+                return Results.Forbid();
+            }
+
+            var result = await publicationService.PublishAsync(flow, cancellationToken);
+            return result.Success ? Results.Ok(result) : Results.BadRequest(result);
+        });
+
+        api.MapPost("/{id:guid}/templates", async (
+            Guid id,
+            SaveFlowTemplateRequest request,
+            IFlowTemplateCatalogService templates,
+            CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                return Results.Ok(await templates.SaveFlowAsync(id, request, cancellationToken));
+            }
+            catch (ArgumentException exception)
+            {
+                return Results.BadRequest(new { message = exception.Message });
+            }
+            catch (InvalidOperationException exception)
+            {
+                return Results.BadRequest(new { message = exception.Message });
+            }
+            catch (UnauthorizedAccessException)
+            {
+                return Results.Forbid();
+            }
+            catch (KeyNotFoundException)
+            {
+                return Results.NotFound();
+            }
+        });
+
         api.MapDelete("/{id:guid}", async (Guid id, IFlowService flows, CancellationToken cancellationToken) =>
         {
             try

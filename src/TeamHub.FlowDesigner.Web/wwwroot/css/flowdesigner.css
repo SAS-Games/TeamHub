@@ -121,6 +121,7 @@
 .fd-canvas-hint { position: absolute; inset: 50% auto auto 50%; transform: translate(-50%, -50%); display: flex; flex-direction: column; align-items: center; color: #81918d; pointer-events: none; text-align: center; }
 .fd-canvas-hint strong { color: #586a65; font-size: .9rem; }
 .fd-canvas-hint span { font-size: .76rem; }
+.fd-presentation-controls { display: none; }
 .fd-canvas-controls { position: absolute; left: 14px; bottom: 14px; display: flex; gap: 4px; padding: 4px; border: 1px solid var(--fd-border); border-radius: 9px; background: rgba(255,255,255,.94); box-shadow: 0 4px 18px rgba(27,55,48,.08); }
 .fd-canvas-controls .btn { min-width: 32px; padding: .22rem .45rem; }
 .fd-canvas-controls .active { color: var(--fd-accent); background: var(--fd-accent-soft); }
@@ -301,6 +302,27 @@
 .fd-validation-item.warning { color: #85570a; }
 .fd-toast { position: absolute; right: 18px; bottom: 45px; z-index: 40; transform: translateY(10px); opacity: 0; pointer-events: none; padding: 9px 13px; color: #fff; background: #243b35; border-radius: 7px; box-shadow: var(--fd-shadow); font-size: .78rem; transition: opacity .18s ease, transform .18s ease; }
 .fd-toast.show { transform: translateY(0); opacity: 1; }
+
+.fd-designer.is-presenting { position: fixed; inset: 0; z-index: 1080; width: 100vw; height: 100vh; min-height: 0; grid-template-rows: minmax(0, 1fr); background: #f8faf9; }
+.fd-designer.is-presenting .fd-designer-toolbar,
+.fd-designer.is-presenting .fd-toolbox,
+.fd-designer.is-presenting .fd-properties,
+.fd-designer.is-presenting .fd-statusbar,
+.fd-designer.is-presenting .fd-validation-popover,
+.fd-designer.is-presenting .fd-toast { display: none !important; }
+.fd-designer.is-presenting .fd-designer-main { min-height: 0; grid-template-columns: minmax(0, 1fr); }
+.fd-designer.is-presenting .fd-canvas-shell { grid-column: 1 / -1; }
+.fd-designer.is-presenting .fd-presentation-controls { position: absolute; top: 18px; right: 18px; z-index: 20; display: flex; align-items: center; gap: 14px; padding: 7px 8px 7px 12px; border: 1px solid var(--fd-border); border-radius: 10px; background: rgba(255,255,255,.94); box-shadow: 0 6px 22px rgba(27,55,48,.12); }
+.fd-presentation-controls > span { display: flex; flex-direction: column; color: var(--fd-text); font-size: .76rem; line-height: 1.25; }
+.fd-presentation-controls small { color: var(--fd-muted); font-size: .66rem; }
+.fd-presentation-controls .btn span { margin-left: 3px; color: var(--fd-muted); font-size: .66rem; }
+.fd-designer.is-presenting .fd-canvas-controls { left: 50%; bottom: 20px; z-index: 20; transform: translateX(-50%); }
+.fd-designer.is-presenting #gridToggle { display: none; }
+.fd-canvas.is-read-only .drawflow-node .input,
+.fd-canvas.is-read-only .drawflow-node .output,
+.fd-canvas.is-read-only .fd-resize-handle { visibility: hidden; pointer-events: none; }
+.fd-canvas.is-read-only .drawflow-node { cursor: grab; }
+.fd-canvas.is-read-only .drawflow-node:active { cursor: grabbing; }
 
 @media (max-width: 1040px) {
     .fd-designer-main { grid-template-columns: 190px minmax(0, 1fr); }

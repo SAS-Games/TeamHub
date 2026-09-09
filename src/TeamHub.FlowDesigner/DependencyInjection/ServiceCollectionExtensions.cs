@@ -20,14 +20,19 @@ public static class ServiceCollectionExtensions
         configure?.Invoke(options);
 
         services.AddDbContextFactory<FlowDesignerDbContext>(builder => builder.UseSqlite(options.ConnectionString));
+        services.AddDbContextFactory<TemplateCatalogDbContext>(builder => builder.UseSqlite(options.TemplateConnectionString));
         services.AddSingleton<IFlowSerializer, SystemTextJsonFlowSerializer>();
         services.AddSingleton<IFlowValidator, FlowValidator>();
         services.AddScoped<IFlowRepository, SqliteFlowRepository>();
+        services.AddScoped<ITemplateCatalogRepository, SqliteTemplateCatalogRepository>();
+        services.AddScoped<IFlowTemplateCatalogService, FlowTemplateCatalogService>();
+        services.AddScoped<TemplateCatalogSeeder>();
         services.AddScoped<IFlowService, FlowService>();
         services.TryAddSingleton<ICurrentUserProvider, AnonymousCurrentUserProvider>();
         services.TryAddSingleton<IFlowPermissionService, AllowAllFlowPermissionService>();
         services.TryAddSingleton<IFlowThemeProvider, DefaultFlowThemeProvider>();
         services.TryAddSingleton<IFlowNavigationProvider, DefaultFlowNavigationProvider>();
+        services.TryAddSingleton<IFlowPublicationService, NoFlowPublicationService>();
         return services;
     }
 
@@ -37,6 +42,10 @@ public static class ServiceCollectionExtensions
         var factory = scope.ServiceProvider.GetRequiredService<IDbContextFactory<FlowDesignerDbContext>>();
         await using var context = await factory.CreateDbContextAsync(cancellationToken);
         await context.Database.EnsureCreatedAsync(cancellationToken);
+        var templateFactory = scope.ServiceProvider.GetRequiredService<IDbContextFactory<TemplateCatalogDbContext>>();
+        await using var templateContext = await templateFactory.CreateDbContextAsync(cancellationToken);
+        await templateContext.Database.EnsureCreatedAsync(cancellationToken);
+        await scope.ServiceProvider.GetRequiredService<TemplateCatalogSeeder>().SeedAsync(cancellationToken);
     }
 
     private sealed class AnonymousCurrentUserProvider : ICurrentUserProvider
@@ -50,6 +59,16 @@ public static class ServiceCollectionExtensions
         public bool CanEdit(string? ownerId) => true;
         public bool CanCreate() => true;
         public bool CanUseTemplate(FlowTemplate template) => true;
+        public bool CanUseDiagramType(DiagramType diagramType) => true;
+        public bool CanManageTemplates() => true;
+    }
+
+    private sealed class NoFlowPublicationService : IFlowPublicationService
+    {
+        public bool CanPublish(FlowDefinition flow) => false;
+
+        public Task<FlowPublicationResult> PublishAsync(FlowDefinition flow, CancellationToken cancellationToken = default) =>
+            Task.FromResult(FlowPublicationResult.Invalid(["Publishing is not configured for this host."]));
     }
 
     private sealed class DefaultFlowThemeProvider : IFlowThemeProvider

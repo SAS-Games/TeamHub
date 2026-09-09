@@ -13,6 +13,7 @@ using TeamHub.Web.Home;
 using TeamHub.Web.Navigation;
 using TeamHub.Web.Options;
 using TeamHub.Web.FlowDesigner;
+using TeamHub.Web.WorkCenter;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.WebHost.UseStaticWebAssets();
@@ -25,6 +26,7 @@ builder.Configuration["ConnectionStrings:WorkflowDb"] = $"Data Source={Path.Comb
 builder.Configuration["ConnectionStrings:TeamDb"] = $"Data Source={Path.Combine(dataDir, "team.db")}";
 builder.Configuration["ConnectionStrings:StudioDb"] = $"Data Source={Path.Combine(dataDir, "studio.db")}";
 var flowDesignerDatabasePath = Path.Combine(dataDir, "flowdesigner.db");
+var templateDatabasePath = Path.Combine(dataDir, "templates.db");
 
 // Add services to the container.
 builder.Services.AddRazorPages();
@@ -39,7 +41,12 @@ builder.Services.AddWorkflowInfrastructure(builder.Configuration);
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<ICurrentUserProvider, TeamHubFlowCurrentUserProvider>();
 builder.Services.AddScoped<IFlowPermissionService, TeamHubFlowPermissionService>();
-builder.Services.AddFlowDesigner(options => options.ConnectionString = $"Data Source={flowDesignerDatabasePath}");
+builder.Services.AddScoped<IFlowPublicationService, WorkCenterFlowPublicationService>();
+builder.Services.AddFlowDesigner(options =>
+{
+    options.ConnectionString = $"Data Source={flowDesignerDatabasePath}";
+    options.TemplateConnectionString = $"Data Source={templateDatabasePath}";
+});
 builder.Services.AddMilestoneTracker(builder.Configuration);
 builder.Services.AddTeamDirectory(builder.Configuration);
 builder.Services.AddStudioDirectory(builder.Configuration);

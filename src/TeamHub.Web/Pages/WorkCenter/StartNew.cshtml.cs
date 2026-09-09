@@ -16,17 +16,17 @@ public class StartNewModel(
     [BindProperty]
     public StartInput Input { get; set; } = new();
 
-    public IReadOnlyList<string> WorkflowKeys { get; private set; } = [];
+    public IReadOnlyList<WorkflowOption> Workflows { get; private set; } = [];
     public string? ResultMessage { get; private set; }
 
     public async Task OnGetAsync()
     {
-        await LoadWorkflowKeysAsync();
+        await LoadWorkflowsAsync();
     }
 
     public async Task<IActionResult> OnPostAsync()
     {
-        await LoadWorkflowKeysAsync();
+        await LoadWorkflowsAsync();
         if (!ModelState.IsValid)
         {
             return Page();
@@ -37,7 +37,7 @@ public class StartNewModel(
             WorkflowKey = Input.WorkflowKey,
             InstanceName = Input.InstanceName,
             Description = Input.Description,
-            StartedBy = "admin@local"
+            StartedBy = User.Identity?.Name ?? "admin@local"
         });
 
         ResultMessage = "Workflow started successfully.";
@@ -45,13 +45,12 @@ public class StartNewModel(
         return Page();
     }
 
-    private async Task LoadWorkflowKeysAsync()
+    private async Task LoadWorkflowsAsync()
     {
-        WorkflowKeys = await dbContext.WorkflowDefinitions
-            .Where(x => x.Enabled)
-            .GroupBy(x => x.WorkflowKey)
-            .Select(g => g.Key)
-            .OrderBy(x => x)
+        Workflows = await dbContext.WorkflowDefinitions
+            .Where(definition => definition.Enabled && definition.IsActive)
+            .OrderBy(definition => definition.Name)
+            .Select(definition => new WorkflowOption(definition.WorkflowKey, definition.Name, definition.Version))
             .ToListAsync();
     }
 
@@ -61,4 +60,6 @@ public class StartNewModel(
         public string InstanceName { get; set; } = string.Empty;
         public string? Description { get; set; }
     }
+
+    public sealed record WorkflowOption(string Key, string Name, int Version);
 }

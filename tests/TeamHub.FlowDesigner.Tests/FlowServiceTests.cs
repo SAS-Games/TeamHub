@@ -84,6 +84,26 @@ public sealed class FlowServiceTests
     }
 
     [Fact]
+    public async Task Create_OnboardingTemplateBuildsParallelExecutableLayout()
+    {
+        await using var database = new TestDatabase();
+        var repository = await database.CreateRepositoryAsync();
+        var validator = new FlowValidator();
+        var service = new FlowService(repository, validator, new SystemTextJsonFlowSerializer(), new TestUserProvider(), new AllowAllPermissionService());
+
+        var flow = await service.CreateAsync("Employee Onboarding", template: FlowTemplate.Onboarding);
+
+        Assert.Equal(DiagramType.WorkCenterWorkflow, flow.DiagramType);
+        Assert.Equal("ONBOARDING", flow.Metadata["workflowKey"]);
+        Assert.Equal(4, flow.Nodes.Count(node => node.Type == NodeType.Activity));
+        Assert.Equal(2, flow.Nodes.Count(node => node.Type == NodeType.ParallelGateway));
+        Assert.Equal("48", flow.Nodes.Single(node => node.Id == "onboarding-approval").CustomProperties["expectedDurationHours"]);
+        Assert.Contains(flow.Connections, edge => edge.SourceNodeId == "onboarding-split" && edge.TargetNodeId == "onboarding-security");
+        Assert.Contains(flow.Connections, edge => edge.SourceNodeId == "onboarding-approval" && edge.TargetNodeId == "onboarding-lab");
+        Assert.Empty(validator.Validate(flow).Issues);
+    }
+
+    [Fact]
     public async Task AddNodeComment_RecordsAuthenticatedAuthorAndPersists()
     {
         await using var database = new TestDatabase();
@@ -129,5 +149,7 @@ public sealed class FlowServiceTests
         public bool CanEdit(string? ownerId) => true;
         public bool CanCreate() => true;
         public bool CanUseTemplate(FlowTemplate template) => true;
+        public bool CanUseDiagramType(DiagramType diagramType) => true;
+        public bool CanManageTemplates() => true;
     }
 }

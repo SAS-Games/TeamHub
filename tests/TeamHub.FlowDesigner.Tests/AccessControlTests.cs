@@ -61,10 +61,27 @@ public sealed class AccessControlTests
 
         await Assert.ThrowsAsync<UnauthorizedAccessException>(() =>
             userService.CreateAsync("Studio support", template: FlowTemplate.StudioSupport));
+        await Assert.ThrowsAsync<UnauthorizedAccessException>(() =>
+            userService.CreateAsync("Onboarding", template: FlowTemplate.Onboarding));
 
         var adminDraft = await adminService.CreateAsync("Studio support", template: FlowTemplate.StudioSupport);
 
         Assert.Equal(58, adminDraft.Nodes.Count);
+    }
+
+    [Fact]
+    public async Task WorkCenterWorkflow_IsRestrictedToAdmins()
+    {
+        await using var database = new TestDatabase();
+        var repository = await database.CreateRepositoryAsync();
+        var userService = CreateService(repository, "alice", isAdmin: false);
+        var adminService = CreateService(repository, "admin", isAdmin: true);
+
+        await Assert.ThrowsAsync<UnauthorizedAccessException>(() =>
+            userService.CreateAsync("Onboarding", diagramType: DiagramType.WorkCenterWorkflow));
+
+        var adminDraft = await adminService.CreateAsync("Onboarding", diagramType: DiagramType.WorkCenterWorkflow);
+        Assert.Equal(DiagramType.WorkCenterWorkflow, adminDraft.DiagramType);
     }
 
     private static FlowService CreateService(IFlowRepository repository, string userName, bool isAdmin) =>
@@ -80,6 +97,9 @@ public sealed class AccessControlTests
         public bool CanView(string? ownerId) => isAdmin || string.Equals(ownerId, userName, StringComparison.OrdinalIgnoreCase);
         public bool CanEdit(string? ownerId) => CanView(ownerId);
         public bool CanCreate() => true;
-        public bool CanUseTemplate(FlowTemplate template) => template != FlowTemplate.StudioSupport || isAdmin;
+        public bool CanUseTemplate(FlowTemplate template) =>
+            template is not FlowTemplate.StudioSupport and not FlowTemplate.Onboarding || isAdmin;
+        public bool CanUseDiagramType(DiagramType diagramType) => diagramType != DiagramType.WorkCenterWorkflow || isAdmin;
+        public bool CanManageTemplates() => isAdmin;
     }
 }

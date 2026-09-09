@@ -10,8 +10,12 @@
     const saveState = byId("saveState");
     const saveButton = byId("saveButton");
     const saveButtonText = byId("saveButtonText");
+    const publishButton = byId("publishButton");
+    const publishButtonText = byId("publishButtonText");
+    const saveTemplateForm = byId("saveTemplateForm");
     const nodeForm = byId("nodeProperties");
     const connectionForm = byId("connectionProperties");
+    const workflowForm = byId("workflowProperties");
     const emptyProperties = byId("emptyProperties");
     const nodeTypes = window.FlowDesignerAdapters.nodeTypes;
     const diagramTypes = window.FlowDesignerAdapters.diagramTypes;
@@ -28,6 +32,8 @@
     let history = [];
     let historyIndex = -1;
     let applyingHistory = false;
+    let workflowKeyTouched = false;
+    let presentationMode = false;
 
     const adapter = new window.FlowDesignerAdapters.DrawflowAdapter(byId("drawflow"), {
         onChange: handleCanvasChange,
@@ -52,6 +58,7 @@
         root.dataset.diagramType = flow.diagramType;
         root.classList.add(`fd-mode-${flow.diagramType.toLowerCase()}`);
         adapter.setGraph(flow);
+        initializeWorkflowProperties();
         history = [graphSnapshot()];
         historyIndex = 0;
         updateHistoryButtons();
@@ -59,6 +66,7 @@
         applyValidation(localValidation());
         setSaveState(isDraft ? "unsaved" : "saved", isDraft ? "Not saved yet" : "Saved");
         bindUi();
+        clearProperties();
     }
 
     function bindUi() {
@@ -76,6 +84,7 @@
         canvas.addEventListener("dragover", event => { event.preventDefault(); event.dataTransfer.dropEffect = "copy"; });
         canvas.addEventListener("drop", event => {
             event.preventDefault();
+            if (presentationMode) return;
             const type = event.dataTransfer.getData("application/x-flow-node");
             if (!activePalette().nodes.includes(type)) return;
             const point = adapter.screenToCanvas(event.clientX, event.clientY);
@@ -83,6 +92,7 @@
             adapter.addNode(type, position.x, position.y);
         });
         canvas.addEventListener("dblclick", event => {
+            if (presentationMode) return;
             if (event.target !== canvas && !event.target.classList.contains("drawflow")) return;
             const point = adapter.screenToCanvas(event.clientX, event.clientY);
             const position = nodePosition(activePalette().primary, point);
@@ -90,9 +100,25 @@
         });
 
         saveButton.addEventListener("click", () => save(true));
-        nameInput.addEventListener("input", markDirty);
+        publishButton?.addEventListener("click", publish);
+        saveTemplateForm?.addEventListener("submit", saveAsTemplate);
+        byId("saveTemplateModal")?.addEventListener("show.bs.modal", () => {
+            if (!byId("templateName").value) byId("templateName").value = nameInput.value.trim();
+            if (!byId("templateKey").value) byId("templateKey").value = toKey(nameInput.value);
+            if (!byId("templateDescription").value) byId("templateDescription").value = flow?.description || "";
+            if (isWorkCenter() && byId("templateCategory").value === "General") byId("templateCategory").value = "Work Center";
+        });
+        nameInput.addEventListener("input", () => {
+            if (isWorkCenter() && !workflowKeyTouched) byId("workflowKey").value = toKey(nameInput.value);
+            markDirty();
+        });
+        byId("workflowKey").addEventListener("input", () => { workflowKeyTouched = true; markDirty(); });
+        byId("workflowDescription").addEventListener("input", markDirty);
+        byId("workflowEnabled").addEventListener("change", markDirty);
         byId("undoButton").addEventListener("click", undo);
         byId("redoButton").addEventListener("click", redo);
+        byId("presentationButton").addEventListener("click", enterPresentation);
+        byId("exitPresentation").addEventListener("click", exitPresentation);
         byId("zoomIn").addEventListener("click", () => adapter.zoomIn());
         byId("zoomOut").addEventListener("click", () => adapter.zoomOut());
         byId("zoomReset").addEventListener("click", () => adapter.resetZoom());
@@ -110,6 +136,8 @@
         });
         byId("nodeType").addEventListener("change", changeSelectedNodeType);
         ["nodeTone", "nodeLayer", "nodePortLayout", "nodeSectionId", "nodePresentationStyle"].forEach(id => byId(id).addEventListener("change", updateSelectedNode));
+        ["taskStepKey", "taskOwner", "taskExpectedHours", "taskReminderAfterHours", "taskReminderRepeatHours", "taskEscalationAfterHours", "taskEscalationOwner"].forEach(id => byId(id).addEventListener("input", updateSelectedNode));
+        ["taskOwnerType", "taskRequired", "taskEnabled"].forEach(id => byId(id).addEventListener("change", updateSelectedNode));
         byId("addNodeComment").addEventListener("click", addNodeComment);
         byId("deleteNode").addEventListener("click", () => adapter.deleteSelected());
         byId("connectionLabel").addEventListener("input", () => {
@@ -152,10 +180,18 @@
         byId("closeValidation").addEventListener("click", () => byId("validationPopover").classList.add("d-none"));
 
         document.addEventListener("keydown", handleKeyboard);
+        document.addEventListener("fullscreenchange", () => {
+            if (!presentationMode) return;
+            if (document.fullscreenElement === root) window.requestAnimationFrame(() => adapter.fitToView());
+            else exitPresentation(false);
+        });
         document.addEventListener("keyup", event => {
             if (event.code === "Space") adapter.setSpacePanning(false);
         });
         window.addEventListener("blur", () => adapter.setSpacePanning(false));
+        window.addEventListener("resize", () => {
+            if (presentationMode) window.requestAnimationFrame(() => adapter.fitToView());
+        });
         window.addEventListener("beforeunload", event => {
             if (!dirty && !isDraft) return;
             event.preventDefault();
@@ -166,6 +202,26 @@
     function activePalette() {
         const diagram = diagramTypes[flow?.diagramType] || diagramTypes.StandardFlowchart;
         return palettes[diagram.palette] || palettes.StandardFlowchart;
+    }
+
+    function isWorkCenter() {
+        return flow?.diagramType === "WorkCenterWorkflow";
+    }
+
+    function toKey(value) {
+        return String(value || "")
+            .trim()
+            .toUpperCase()
+            .replace(/[^A-Z0-9]+/g, "_")
+            .replace(/^_+|_+$/g, "");
+    }
+
+    function initializeWorkflowProperties() {
+        const configuredKey = flow.metadata?.workflowKey || "";
+        byId("workflowKey").value = configuredKey || toKey(flow.name);
+        byId("workflowDescription").value = flow.description || "";
+        byId("workflowEnabled").checked = String(flow.metadata?.enabled ?? "true").toLowerCase() !== "false";
+        workflowKeyTouched = Boolean(configuredKey);
     }
 
     function buildPalette() {
@@ -240,6 +296,14 @@
 
         const graph = adapter.getGraph();
         flow = { ...flow, name: nameInput.value.trim() || "Untitled flow", nodes: graph.nodes, connections: graph.connections };
+        if (isWorkCenter()) {
+            flow.description = byId("workflowDescription").value.trim();
+            flow.metadata = {
+                ...(flow.metadata || {}),
+                workflowKey: byId("workflowKey").value.trim() || toKey(flow.name),
+                enabled: String(byId("workflowEnabled").checked)
+            };
+        }
 
         try {
             const response = await fetch(`/api/flows/${flowId}`, {
@@ -266,6 +330,68 @@
             saving = false;
             saveButton.disabled = false;
             saveButtonText.textContent = "Save";
+        }
+    }
+
+    async function publish() {
+        if (!publishButton || saving) return;
+        if (!(await save(false))) return;
+
+        publishButton.disabled = true;
+        publishButtonText.textContent = "Publishingâ€¦";
+        try {
+            const response = await fetch(`/api/flows/${flowId}/publish`, { method: "POST" });
+            const result = await response.json();
+            if (!response.ok) {
+                const issues = (result.errors || [result.message || "Publish failed"]).map((message, index) => ({
+                    severity: "Error",
+                    code: `publish-${index}`,
+                    message
+                }));
+                applyValidation([...localValidation(), ...issues]);
+                byId("validationPopover").classList.remove("d-none");
+                throw new Error(issues[0]?.message || "Publish failed");
+            }
+            showToast(result.message || "Workflow published to Work Center");
+            publishButtonText.textContent = "Published";
+            window.setTimeout(() => { publishButtonText.textContent = "Publish to Work Center"; }, 1800);
+        } catch (error) {
+            console.error(error);
+            showToast(error.message || "Publish failed");
+            publishButtonText.textContent = "Publish to Work Center";
+        } finally {
+            publishButton.disabled = false;
+        }
+    }
+
+    async function saveAsTemplate(event) {
+        event.preventDefault();
+        if (!(await save(false))) return;
+
+        const button = byId("confirmSaveTemplate");
+        button.disabled = true;
+        button.textContent = "Saving...";
+        try {
+            const response = await fetch(`/api/flows/${flowId}/templates`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    templateKey: byId("templateKey").value,
+                    name: byId("templateName").value,
+                    category: byId("templateCategory").value,
+                    description: byId("templateDescription").value
+                })
+            });
+            const result = await response.json();
+            if (!response.ok) throw new Error(result.message || "Template could not be saved");
+            bootstrap.Modal.getInstance(byId("saveTemplateModal"))?.hide();
+            showToast(`Template saved as ${result.templateKey} v${result.version}`);
+        } catch (error) {
+            console.error(error);
+            showToast(error.message || "Template could not be saved");
+        } finally {
+            button.disabled = false;
+            button.textContent = "Save template";
         }
     }
 
@@ -346,6 +472,7 @@
         selectedNode = node;
         selectedConnection = null;
         emptyProperties.classList.add("d-none");
+        workflowForm.classList.add("d-none");
         connectionForm.classList.add("d-none");
         nodeForm.classList.remove("d-none");
         byId("nodeTitle").value = node.title || "";
@@ -357,6 +484,18 @@
         populateSectionOptions(node);
         byId("nodePresentationStyle").value = node.customProperties?.presentationStyle || "";
         byId("nodeNotes").value = node.customProperties?.notes || "";
+        const isTask = isWorkCenter() && node.type === "Activity";
+        byId("workCenterTaskProperties").classList.toggle("d-none", !isTask);
+        byId("taskStepKey").value = node.customProperties?.stepKey || toKey(node.title);
+        byId("taskOwner").value = node.customProperties?.owner || "";
+        byId("taskOwnerType").value = node.customProperties?.ownerType || "User";
+        byId("taskExpectedHours").value = node.customProperties?.expectedDurationHours || "24";
+        byId("taskReminderAfterHours").value = node.customProperties?.reminderAfterHours || "";
+        byId("taskReminderRepeatHours").value = node.customProperties?.reminderRepeatHours || "";
+        byId("taskEscalationAfterHours").value = node.customProperties?.escalationAfterHours || "";
+        byId("taskEscalationOwner").value = node.customProperties?.escalationOwner || "";
+        byId("taskRequired").checked = String(node.customProperties?.required ?? "true").toLowerCase() !== "false";
+        byId("taskEnabled").checked = String(node.customProperties?.enabled ?? "true").toLowerCase() !== "false";
         byId("newNodeComment").value = "";
         renderNodeComments(node.comments || []);
     }
@@ -375,6 +514,7 @@
         selectedConnection = connection;
         selectedNode = null;
         emptyProperties.classList.add("d-none");
+        workflowForm.classList.add("d-none");
         nodeForm.classList.add("d-none");
         connectionForm.classList.remove("d-none");
         byId("connectionLabel").value = connection.label || "";
@@ -390,23 +530,39 @@
         selectedConnection = null;
         nodeForm.classList.add("d-none");
         connectionForm.classList.add("d-none");
-        emptyProperties.classList.remove("d-none");
+        workflowForm.classList.toggle("d-none", !isWorkCenter());
+        emptyProperties.classList.toggle("d-none", isWorkCenter());
     }
 
     function updateSelectedNode() {
         if (!selectedNode) return;
+        const customProperties = {
+            ...(selectedNode.customProperties || {}),
+            tone: byId("nodeTone").value,
+            layer: byId("nodeLayer").value,
+            portLayout: byId("nodePortLayout").value,
+            sectionId: byId("nodeSectionId").value,
+            presentationStyle: byId("nodePresentationStyle").value,
+            notes: byId("nodeNotes").value
+        };
+        if (isWorkCenter() && selectedNode.type === "Activity") {
+            Object.assign(customProperties, {
+                stepKey: byId("taskStepKey").value,
+                owner: byId("taskOwner").value,
+                ownerType: byId("taskOwnerType").value,
+                expectedDurationHours: byId("taskExpectedHours").value,
+                reminderAfterHours: byId("taskReminderAfterHours").value,
+                reminderRepeatHours: byId("taskReminderRepeatHours").value,
+                escalationAfterHours: byId("taskEscalationAfterHours").value,
+                escalationOwner: byId("taskEscalationOwner").value,
+                required: String(byId("taskRequired").checked),
+                enabled: String(byId("taskEnabled").checked)
+            });
+        }
         const changes = {
             title: byId("nodeTitle").value || nodeTypes[selectedNode.type].title,
             description: byId("nodeDescription").value,
-            customProperties: {
-                ...(selectedNode.customProperties || {}),
-                tone: byId("nodeTone").value,
-                layer: byId("nodeLayer").value,
-                portLayout: byId("nodePortLayout").value,
-                sectionId: byId("nodeSectionId").value,
-                presentationStyle: byId("nodePresentationStyle").value,
-                notes: byId("nodeNotes").value
-            }
+            customProperties
         };
         selectedNode = { ...selectedNode, ...changes };
         adapter.updateNode(selectedNode.id, changes);
@@ -469,6 +625,17 @@
     }
 
     function handleKeyboard(event) {
+        if (presentationMode) {
+            if (event.key === "Escape") {
+                if (document.fullscreenElement === root) return;
+                event.preventDefault();
+                exitPresentation(false);
+            } else if (event.code === "Space" && !event.repeat) {
+                event.preventDefault();
+                adapter.setSpacePanning(true);
+            }
+            return;
+        }
         const editing = ["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement?.tagName);
         if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "s") {
             event.preventDefault(); save(true); return;
@@ -488,6 +655,53 @@
         else if (event.key === "Delete" || event.key === "Backspace") { if (adapter.deleteSelected()) event.preventDefault(); }
     }
 
+    async function enterPresentation() {
+        if (presentationMode) return;
+        presentationMode = true;
+        root.classList.add("is-presenting");
+        byId("presentationButton").setAttribute("aria-pressed", "true");
+        byId("toolbox").classList.remove("open");
+        byId("propertiesPanel").classList.remove("open");
+        byId("validationPopover").classList.add("d-none");
+        adapter.setReadOnly(true);
+        window.requestAnimationFrame(() => {
+            adapter.fitToView();
+            byId("exitPresentation").focus({ preventScroll: true });
+        });
+
+        if (document.fullscreenEnabled && !document.fullscreenElement) {
+            try {
+                await root.requestFullscreen();
+            } catch {
+                // The full-canvas presentation remains available when browser fullscreen is blocked.
+            }
+        }
+    }
+
+    function exitPresentation(exitFullscreen = true) {
+        if (!presentationMode) return;
+        if (exitFullscreen && document.fullscreenElement === root) {
+            document.exitFullscreen()
+                .then(() => { if (presentationMode) finishPresentationExit(); })
+                .catch(finishPresentationExit);
+            return;
+        }
+        finishPresentationExit();
+    }
+
+    function finishPresentationExit() {
+        if (!presentationMode) return;
+        presentationMode = false;
+        root.classList.remove("is-presenting");
+        byId("presentationButton").setAttribute("aria-pressed", "false");
+        adapter.setSpacePanning(false);
+        adapter.setReadOnly(false);
+        window.requestAnimationFrame(() => {
+            adapter.fitToView();
+            byId("presentationButton").focus({ preventScroll: true });
+        });
+    }
+
     function pasteNode() {
         const copy = structuredClone(clipboardNode);
         copy.id = `node-${crypto.randomUUID()}`;
@@ -503,13 +717,22 @@
         const graph = adapter.getGraph();
         const issues = [];
         const starts = graph.nodes.filter(node => node.type === "Start").length;
-        if (flow.diagramType !== "BusinessWorkflow" && starts !== 1) issues.push({ severity: "Warning", code: "start-count", message: `Exactly one Start node is recommended; this flow has ${starts}.` });
-        if (flow.diagramType !== "BusinessWorkflow" && !graph.nodes.some(node => node.type === "End")) issues.push({ severity: "Warning", code: "missing-end", message: "At least one End node is recommended." });
+        if (isWorkCenter()) {
+            if (starts !== 1) issues.push({ severity: "Error", code: "start-count", message: `Exactly one Start node is required; this workflow has ${starts}.` });
+            if (!graph.nodes.some(node => node.type === "End")) issues.push({ severity: "Error", code: "missing-end", message: "At least one End node is required." });
+            if (!graph.nodes.some(node => node.type === "Activity")) issues.push({ severity: "Error", code: "missing-task", message: "Add at least one Task." });
+            graph.nodes.filter(node => node.type === "Activity" && !node.customProperties?.owner?.trim()).forEach(node => issues.push({ severity: "Warning", code: "missing-owner", message: `'${node.title}' needs an assignee before publishing.`, elementId: node.id }));
+        } else {
+            if (flow.diagramType !== "BusinessWorkflow" && starts !== 1) issues.push({ severity: "Warning", code: "start-count", message: `Exactly one Start node is recommended; this flow has ${starts}.` });
+            if (flow.diagramType !== "BusinessWorkflow" && !graph.nodes.some(node => node.type === "End")) issues.push({ severity: "Warning", code: "missing-end", message: "At least one End node is recommended." });
+        }
         const connected = new Set(graph.connections.flatMap(connection => [connection.sourceNodeId, connection.targetNodeId]));
         graph.nodes.filter(node => !["Section", "Annotation"].includes(node.type) && !connected.has(node.id)).forEach(node => issues.push({ severity: "Warning", code: "orphan-node", message: `'${node.title}' is not connected.`, elementId: node.id }));
         graph.nodes.filter(node => ["Decision", "Gateway", "ParallelGateway"].includes(node.type)).forEach(node => {
+            const incoming = graph.connections.filter(connection => connection.targetNodeId === node.id).length;
             const outgoing = graph.connections.filter(connection => connection.sourceNodeId === node.id).length;
-            if (outgoing < 2) issues.push({ severity: "Warning", code: "incomplete-branch", message: `'${node.title}' should have at least two outgoing paths.`, elementId: node.id });
+            const validParallelJoin = node.type === "ParallelGateway" && incoming >= 2;
+            if (outgoing < 2 && !validParallelJoin) issues.push({ severity: "Warning", code: "incomplete-branch", message: `'${node.title}' should have at least two incoming or outgoing paths.`, elementId: node.id });
         });
         return issues;
     }

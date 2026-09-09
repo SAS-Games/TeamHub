@@ -9,11 +9,11 @@
     <div>
         <div class="eyebrow">Work Center</div>
         <h1>Configuration</h1>
-        <p>Create workflow drafts from the page and publish them when the setup is ready.</p>
+        <p>Design task dependencies visually, configure ownership and timing, then publish the workflow.</p>
     </div>
     <div class="d-flex gap-2">
         <a class="btn btn-outline-secondary" asp-page="/Configuration/Index">All Configuration</a>
-        <a class="btn btn-primary" asp-page="/WorkCenter/Configuration" asp-route-create="true">Create Work</a>
+        <button class="btn btn-primary" type="button" data-bs-toggle="collapse" data-bs-target="#createVisualWorkflow" aria-expanded="false">Create Workflow</button>
     </div>
 </div>
 <partial name="_WorkCenterNav" />
@@ -26,7 +26,64 @@
 @if (!Model.ShowForm)
 {
     <section class="content-section">
-        <div class="section-heading"><div><span>Saved drafts</span><h2>Work Configuration</h2></div></div>
+        <div class="collapse" id="createVisualWorkflow">
+            <form method="post" asp-page-handler="CreateVisual" class="section-body row g-3 align-items-end">
+                <div class="col-md-8">
+                    <label class="form-label" for="visualWorkflowName">Workflow name</label>
+                    <input class="form-control" id="visualWorkflowName" name="name" maxlength="200" required placeholder="For example, Employee onboarding" />
+                </div>
+                <div class="col-md-4"><button class="btn btn-primary w-100" type="submit">Create in Flow Designer</button></div>
+            </form>
+            @if (Model.WorkCenterTemplates.Count > 0)
+            {
+                <div class="section-body pt-0">
+                    <div class="small fw-semibold mb-2">Start from a stored template</div>
+                    <div class="d-flex flex-wrap gap-2">
+                        @foreach (var template in Model.WorkCenterTemplates)
+                        {
+                            <form method="post" asp-page-handler="CreateFromTemplate" asp-route-templateId="@template.Id">
+                                <button class="btn btn-outline-primary" type="submit">Use @template.Name</button>
+                            </form>
+                        }
+                    </div>
+                </div>
+            }
+        </div>
+        <div class="section-heading"><div><span>Visual authoring</span><h2>Work Center Workflows</h2></div></div>
+        @if (Model.VisualWorkflows.Count == 0)
+        {
+            <div class="section-body text-secondary">No visual workflows yet. Create one, add Start, Task, and End nodes, then publish it.</div>
+        }
+        else
+        {
+            <div class="table-responsive">
+                <table class="table styled-table align-middle">
+                    <thead><tr><th>Name</th><th>Symbols</th><th>Saved version</th><th>Updated</th><th>Actions</th></tr></thead>
+                    <tbody>
+                    @foreach (var workflow in Model.VisualWorkflows)
+                    {
+                        <tr>
+                            <td><strong>@workflow.Name</strong><div class="small text-secondary">@workflow.Description</div></td>
+                            <td>@workflow.NodeCount</td>
+                            <td>@workflow.Version</td>
+                            <td>@workflow.UpdatedAt.LocalDateTime.ToString("yyyy-MM-dd HH:mm")</td>
+                            <td class="studio-actions">
+                                <a class="btn btn-sm btn-outline-primary" asp-page="/Flows/Edit" asp-route-id="@workflow.Id">Design</a>
+                                <form method="post" asp-page-handler="DuplicateVisual" asp-route-id="@workflow.Id" class="d-inline"><button class="btn btn-sm btn-outline-secondary" type="submit">Duplicate</button></form>
+                                <form method="post" asp-page-handler="DeleteVisual" asp-route-id="@workflow.Id" class="d-inline"><button class="btn btn-sm btn-outline-danger" type="submit">Delete</button></form>
+                            </td>
+                        </tr>
+                    }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </section>
+
+    @if (Model.Drafts.Count > 0)
+    {
+    <section class="content-section">
+        <div class="section-heading"><div><span>Legacy editor</span><h2>Table-based Drafts</h2></div></div>
         <div class="table-responsive">
             <table class="table styled-table">
                 <thead><tr><th>Workflow Key</th><th>Name</th><th>Steps</th><th>Updated</th><th>Actions</th></tr></thead>
@@ -50,6 +107,7 @@
             </table>
         </div>
     </section>
+    }
 
     <section class="content-section">
         <div class="section-heading"><div><span>Published</span><h2>Active Workflows</h2></div></div>

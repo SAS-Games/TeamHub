@@ -8,8 +8,13 @@ builder.Logging.AddSimpleConsole();
 builder.Services.AddRazorPages();
 
 var databasePath = Path.Combine(builder.Environment.ContentRootPath, "data", "flowdesigner.db");
+var templateDatabasePath = Path.Combine(builder.Environment.ContentRootPath, "data", "templates.db");
 Directory.CreateDirectory(Path.GetDirectoryName(databasePath)!);
-builder.Services.AddFlowDesigner(options => options.ConnectionString = $"Data Source={databasePath}");
+builder.Services.AddFlowDesigner(options =>
+{
+    options.ConnectionString = $"Data Source={databasePath}";
+    options.TemplateConnectionString = $"Data Source={templateDatabasePath}";
+});
 
 var app = builder.Build();
 if (!app.Environment.IsDevelopment())

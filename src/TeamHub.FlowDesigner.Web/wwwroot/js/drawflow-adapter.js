@@ -13,7 +13,7 @@
         Connector: { title: "Connector", help: "Continue elsewhere", icon: "C", inputs: 1, outputs: 1, shape: "connector" },
         ManualInput: { title: "Manual input", help: "User-provided input", icon: "IN", inputs: 1, outputs: 1, shape: "manual-input" },
         Preparation: { title: "Preparation", help: "Initialize or prepare", icon: "PRE", inputs: 1, outputs: 1, shape: "preparation" },
-        Activity: { title: "Activity", help: "Business work step", icon: "A", inputs: 1, outputs: 1, shape: "activity" },
+        Activity: { title: "Task", help: "Assignable work step", icon: "A", inputs: 1, outputs: 1, shape: "activity" },
         Event: { title: "Intermediate event", help: "Something that occurs", icon: "EV", inputs: 1, outputs: 1, shape: "event" },
         Gateway: { title: "Exclusive gateway", help: "Choose one path", icon: "X", inputs: 1, outputs: 2, shape: "gateway" },
         ParallelGateway: { title: "Parallel gateway", help: "Split or join paths", icon: "+", inputs: 2, outputs: 2, shape: "gateway" },
@@ -24,7 +24,8 @@
     const diagramTypes = {
         StandardFlowchart: { title: "Standard flowchart", palette: "StandardFlowchart" },
         BusinessWorkflow: { title: "Business workflow", palette: "BusinessWorkflow" },
-        CodeFlow: { title: "Code flow", palette: "CodeFlow" }
+        CodeFlow: { title: "Code flow", palette: "CodeFlow" },
+        WorkCenterWorkflow: { title: "Work Center workflow", palette: "WorkCenterWorkflow" }
     };
 
     const palettes = {
@@ -42,6 +43,11 @@
             title: "Code-flow symbols",
             primary: "Process",
             nodes: ["Section", "Annotation", "Start", "Process", "Decision", "InputOutput", "Subprocess", "DataStore", "Connector", "Preparation", "End"]
+        },
+        WorkCenterWorkflow: {
+            title: "Work Center blocks",
+            primary: "Activity",
+            nodes: ["Section", "Annotation", "Start", "Activity", "ParallelGateway", "End"]
         }
     };
 
@@ -56,6 +62,19 @@
 
     function newId(prefix) {
         return `${prefix}-${crypto.randomUUID()}`;
+    }
+
+    function connectionPath(startX, startY, endX, endY, sourceVertical, targetVertical) {
+        const distance = Math.hypot(endX - startX, endY - startY);
+        const controlDistance = Math.max(55, Math.min(180, distance * .38));
+        const sourceControl = sourceVertical
+            ? { x: startX, y: startY + controlDistance }
+            : { x: startX + controlDistance, y: startY };
+        const targetControl = targetVertical
+            ? { x: endX, y: endY - controlDistance }
+            : { x: endX - controlDistance, y: endY };
+
+        return `M ${startX} ${startY} C ${sourceControl.x} ${sourceControl.y}, ${targetControl.x} ${targetControl.y}, ${endX} ${endY}`;
     }
 
     function nodeAppearanceClasses(data) {
@@ -87,6 +106,7 @@
             this.suppressChanges = false;
             this.snapToGrid = true;
             this.spacePanning = false;
+            this.readOnly = false;
             this.defaultPortLayout = "horizontal";
 
             this.editor = new Drawflow(element);
@@ -179,6 +199,13 @@
                 event.preventDefault();
                 event.stopImmediatePropagation();
             }, true);
+            this.element.addEventListener("wheel", event => {
+                if (!this.readOnly || event.ctrlKey) return;
+                event.preventDefault();
+                event.stopImmediatePropagation();
+                if (event.deltaY < 0) this.editor.zoom_in();
+                else if (event.deltaY > 0) this.editor.zoom_out();
+            }, { capture: true, passive: false });
         }
 
         installArrowMarker() {
@@ -239,6 +266,7 @@
         }
 
         beginResize(event) {
+            if (this.readOnly) return;
             const handle = event.target.closest?.(".fd-resize-handle");
             const nodeElement = handle?.closest(".drawflow-node");
             if (!handle || !nodeElement || event.button !== 0) return;
@@ -488,7 +516,7 @@
         }
 
         deleteSelected() {
-            if (!this.selected) return false;
+            if (this.readOnly || !this.selected) return false;
             if (this.selected.kind === "node") {
                 const internalId = this.externalToInternal.get(this.selected.id);
                 if (!internalId) return false;
@@ -535,6 +563,22 @@
         setGrid(enabled) { this.snapToGrid = enabled; this.element.classList.toggle("no-grid", !enabled); }
         setSpacePanning(enabled) { this.spacePanning = enabled; this.element.classList.toggle("is-space-pan", enabled); }
         setDefaultPortLayout(layout) { this.defaultPortLayout = layout === "vertical" ? "vertical" : "horizontal"; }
+
+        setReadOnly(enabled) {
+            this.readOnly = Boolean(enabled);
+            this.editor.editor_mode = this.readOnly ? "view" : "edit";
+            this.element.classList.toggle("is-read-only", this.readOnly);
+            if (!this.readOnly) return;
+
+            this.element.querySelectorAll(".selected").forEach(element => element.classList.remove("selected"));
+            this.editor.ele_selected = null;
+            this.editor.node_selected = null;
+            this.editor.connection_selected = null;
+            this.selected = null;
+            this.selectedGroupId = null;
+            this.refreshGroupAppearance();
+            this.callbacks.onClearSelection?.();
+        }
 
         handleNodeMoved(internalId) {
             const id = String(internalId);
@@ -719,6 +763,7 @@
                     const svg = this.element.querySelector(`svg.connection.node_out_node-${parts.source}.node_in_node-${parts.target}.${parts.sourcePort}.${parts.targetPort}`);
                     if (!svg) continue;
                     svg.querySelectorAll(".fd-connection-label").forEach(label => label.remove());
+                    this.refreshConnectionGeometry(svg, parts);
                     const path = svg.querySelector(".main-path");
                     if (!path) continue;
                     for (const className of [...path.classList]) {
@@ -742,6 +787,27 @@
             });
         }
 
+        refreshConnectionGeometry(svg, parts) {
+            const paths = [...svg.querySelectorAll(".main-path")];
+            if (paths.length !== 1) return;
+
+            const sourceVertical = this.nodeData(parts.source)?.customProperties?.portLayout === "vertical";
+            const targetVertical = this.nodeData(parts.target)?.customProperties?.portLayout === "vertical";
+            if (!sourceVertical && !targetVertical) return;
+
+            const path = paths[0];
+            const coordinates = (path.getAttribute("d") || "")
+                .match(/-?\d*\.?\d+(?:e[-+]?\d+)?/gi)
+                ?.map(Number);
+            if (!coordinates || coordinates.length < 4 || coordinates.some(value => !Number.isFinite(value))) return;
+
+            const startX = coordinates[0];
+            const startY = coordinates[1];
+            const endX = coordinates.at(-2);
+            const endY = coordinates.at(-1);
+            path.setAttribute("d", connectionPath(startX, startY, endX, endY, sourceVertical, targetVertical));
+        }
+
         validPort(internalId, requested, kind) {
             const node = this.editor.drawflow.drawflow.Home.data[String(internalId)];
             const ports = Object.keys(kind === "output" ? node.outputs : node.inputs);
@@ -758,5 +824,5 @@
         }
     }
 
-    window.FlowDesignerAdapters = { DrawflowAdapter, nodeTypes, diagramTypes, palettes };
+    window.FlowDesignerAdapters = { DrawflowAdapter, nodeTypes, diagramTypes, palettes, connectionPath };
 })();

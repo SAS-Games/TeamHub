@@ -25,20 +25,16 @@
             <fieldset class="mb-4">
                 <legend class="form-label">Starting point</legend>
                 <div class="fd-diagram-type-grid">
-                    @if (Model.CanUseStudioSupportTemplate)
+                    @foreach (var template in Model.Templates)
                     {
                         <label class="fd-diagram-type-option">
-                            <input asp-for="Template" type="radio" value="StudioSupport" />
-                            <span><strong>Studio support workflow</strong><small>Four support tracks, project-health decisions, and a continuous improvement cycle.</small></span>
+                            <input asp-for="TemplateId" type="radio" value="@template.Id" />
+                            <span><strong>@template.Name</strong><small>@template.Category &middot; @template.Description</small></span>
                         </label>
                     }
                     <label class="fd-diagram-type-option">
-                        <input asp-for="Template" type="radio" value="Blank" />
+                        <input asp-for="TemplateId" type="radio" value="" />
                         <span><strong>Blank canvas</strong><small>Build your own diagram from the selected symbol library.</small></span>
-                    </label>
-                    <label class="fd-diagram-type-option">
-                        <input asp-for="Template" type="radio" value="IntegrationQa" />
-                        <span><strong>Integration QA example</strong><small>A ready-made QA lifecycle with success and defect paths.</small></span>
                     </label>
                 </div>
             </fieldset>
@@ -57,6 +53,13 @@
                         <input asp-for="DiagramType" type="radio" value="CodeFlow" />
                         <span><strong>Code flow</strong><small>Algorithm steps, conditions, calls, input/output, and storage.</small></span>
                     </label>
+                    @if (Model.CanCreateWorkCenterWorkflow)
+                    {
+                        <label class="fd-diagram-type-option">
+                            <input asp-for="DiagramType" type="radio" value="WorkCenterWorkflow" />
+                            <span><strong>Work Center workflow</strong><small>Publish tasks, owners, deadlines, reminders, and dependencies into Work Center.</small></span>
+                        </label>
+                    }
                 </div>
             </fieldset>
             <div class="d-flex justify-content-end gap-2">

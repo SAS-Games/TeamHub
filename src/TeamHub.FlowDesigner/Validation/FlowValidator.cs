@@ -83,10 +83,12 @@ public sealed class FlowValidator : IFlowValidator
         var branchingTypes = new[] { NodeType.Decision, NodeType.Gateway, NodeType.ParallelGateway };
         foreach (var branch in flow.Nodes.Where(node => branchingTypes.Contains(node.Type)))
         {
+            var incomingCount = flow.Connections.Count(connection => connection.TargetNodeId == branch.Id);
             var outgoingCount = flow.Connections.Count(connection => connection.SourceNodeId == branch.Id);
-            if (outgoingCount < 2)
+            var validParallelJoin = branch.Type == NodeType.ParallelGateway && incomingCount >= 2;
+            if (outgoingCount < 2 && !validParallelJoin)
             {
-                issues.Add(new("incomplete-branch", $"'{branch.Title}' should have at least two outgoing paths.", ValidationSeverity.Warning, branch.Id));
+                issues.Add(new("incomplete-branch", $"'{branch.Title}' should have at least two incoming or outgoing paths.", ValidationSeverity.Warning, branch.Id));
             }
         }
 

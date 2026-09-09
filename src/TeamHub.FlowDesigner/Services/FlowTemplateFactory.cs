@@ -16,9 +16,42 @@ internal static class FlowTemplateFactory
             case FlowTemplate.StudioSupport:
                 ApplyStudioSupport(flow);
                 return;
+            case FlowTemplate.Onboarding:
+                ApplyOnboarding(flow);
+                return;
             default:
                 throw new ArgumentOutOfRangeException(nameof(template), template, "Unknown flow template.");
         }
+    }
+
+    private static void ApplyOnboarding(FlowDefinition flow)
+    {
+        flow.DiagramType = DiagramType.WorkCenterWorkflow;
+        flow.Description = "Reusable onboarding workflow with PIC approval, parallel security briefing, and dependent lab access.";
+        flow.Metadata["workflowKey"] = "ONBOARDING";
+        flow.Metadata["enabled"] = "true";
+        flow.Nodes =
+        [
+            StyledNode("onboarding-start", NodeType.Start, "Start onboarding", 460, 40, 190, 76, "green", "", "vertical"),
+            WorkTask("onboarding-eoo", "Create an EOO ticket", 430, 170, "CREATE_EOO_TICKET", 24, "blue"),
+            StyledNode("onboarding-split", NodeType.ParallelGateway, "Begin parallel onboarding work", 490, 310, 100, 100, "purple", "", "vertical"),
+            WorkTask("onboarding-approval", "Approval from PIC UAT", 245, 470, "PIC_UAT_APPROVAL", 48, "orange"),
+            WorkTask("onboarding-security", "Security Briefing", 675, 470, "SECURITY_BRIEFING", 24, "green"),
+            WorkTask("onboarding-lab", "Lab Access", 245, 640, "LAB_ACCESS", 24, "blue"),
+            StyledNode("onboarding-join", NodeType.ParallelGateway, "Complete parallel onboarding work", 490, 790, 100, 100, "purple", "", "vertical"),
+            StyledNode("onboarding-end", NodeType.End, "Onboarding complete", 460, 950, 190, 76, "green", "", "vertical")
+        ];
+        flow.Connections =
+        [
+            Edge("onboarding-edge-1", "onboarding-start", "onboarding-eoo"),
+            Edge("onboarding-edge-2", "onboarding-eoo", "onboarding-split"),
+            Edge("onboarding-edge-3", "onboarding-split", "onboarding-approval", sourcePort: "output_1"),
+            Edge("onboarding-edge-4", "onboarding-split", "onboarding-security", sourcePort: "output_2"),
+            Edge("onboarding-edge-5", "onboarding-approval", "onboarding-lab"),
+            Edge("onboarding-edge-6", "onboarding-lab", "onboarding-join", targetPort: "input_1"),
+            Edge("onboarding-edge-7", "onboarding-security", "onboarding-join", targetPort: "input_2"),
+            Edge("onboarding-edge-8", "onboarding-join", "onboarding-end")
+        ];
     }
 
     private static void ApplyIntegrationQa(FlowDefinition flow)
@@ -296,7 +329,32 @@ internal static class FlowTemplateFactory
         node.CustomProperties["portLayout"] = portLayout;
     }
 
-    private static FlowConnection Edge(string id, string source, string target, string label = "", string sourcePort = "output_1")
+    private static FlowNode WorkTask(
+        string id,
+        string title,
+        double x,
+        double y,
+        string stepKey,
+        double expectedDurationHours,
+        string tone)
+    {
+        var node = StyledNode(id, NodeType.Activity, title, x, y, 220, 86, tone, "step", "vertical");
+        node.CustomProperties["stepKey"] = stepKey;
+        node.CustomProperties["owner"] = "";
+        node.CustomProperties["ownerType"] = "User";
+        node.CustomProperties["expectedDurationHours"] = expectedDurationHours.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        node.CustomProperties["required"] = "true";
+        node.CustomProperties["enabled"] = "true";
+        return node;
+    }
+
+    private static FlowConnection Edge(
+        string id,
+        string source,
+        string target,
+        string label = "",
+        string sourcePort = "output_1",
+        string targetPort = "input_1")
     {
         var tone = id.StartsWith("direct-", StringComparison.Ordinal) || target.StartsWith("direct-", StringComparison.Ordinal) ? "red"
             : id.StartsWith("proactive-", StringComparison.Ordinal) || target.StartsWith("proactive-", StringComparison.Ordinal) ? "green"
@@ -313,7 +371,7 @@ internal static class FlowTemplateFactory
             SourceNodeId = source,
             TargetNodeId = target,
             SourcePort = sourcePort,
-            TargetPort = "input_1",
+            TargetPort = targetPort,
             Label = label,
             Metadata = string.IsNullOrEmpty(tone)
                 ? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)

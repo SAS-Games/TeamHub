@@ -22,12 +22,12 @@
 <section class="content-section">
 <form method="post" class="section-body">
     <div class="mb-3">
-        <label class="form-label">Workflow Key</label>
+        <label class="form-label">Workflow</label>
         <select asp-for="Input.WorkflowKey" class="form-select" required>
             <option value="">Select workflow</option>
-            @foreach (var key in Model.WorkflowKeys)
+            @foreach (var workflow in Model.Workflows)
             {
-                <option value="@key">@key</option>
+                <option value="@workflow.Key">@workflow.Name (v@(workflow.Version))</option>
             }
         </select>
     </div>

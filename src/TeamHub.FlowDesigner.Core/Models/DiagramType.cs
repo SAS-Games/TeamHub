@@ -7,7 +7,8 @@ public enum DiagramType
 {
     StandardFlowchart,
     BusinessWorkflow,
-    CodeFlow
+    CodeFlow,
+    WorkCenterWorkflow
 }
 
 public static class DiagramTypeExtensions
@@ -17,6 +18,7 @@ public static class DiagramTypeExtensions
         DiagramType.StandardFlowchart => "Standard flowchart",
         DiagramType.BusinessWorkflow => "Business workflow",
         DiagramType.CodeFlow => "Code flow",
+        DiagramType.WorkCenterWorkflow => "Work Center workflow",
         _ => "Flow diagram"
     };
 }

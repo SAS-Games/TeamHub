@@ -33,6 +33,10 @@ public sealed class FlowService(
         {
             throw new UnauthorizedAccessException("The current user cannot use this flow template.");
         }
+        if (!permissions.CanUseDiagramType(diagramType))
+        {
+            throw new UnauthorizedAccessException("The current user cannot create this type of flow diagram.");
+        }
 
         var now = DateTimeOffset.UtcNow;
         var flow = new FlowDefinition

@@ -13,6 +13,21 @@ public interface IFlowPermissionService
     bool CanEdit(string? ownerId);
     bool CanCreate();
     bool CanUseTemplate(FlowTemplate template);
+    bool CanUseDiagramType(DiagramType diagramType);
+    bool CanManageTemplates();
+}
+
+public interface IFlowPublicationService
+{
+    bool CanPublish(FlowDefinition flow);
+    Task<FlowPublicationResult> PublishAsync(FlowDefinition flow, CancellationToken cancellationToken = default);
+}
+
+public sealed record FlowPublicationResult(bool Success, string Message, IReadOnlyList<string> Errors)
+{
+    public static FlowPublicationResult Published(string message) => new(true, message, []);
+    public static FlowPublicationResult Invalid(IReadOnlyList<string> errors) =>
+        new(false, "The workflow could not be published.", errors);
 }
 
 public interface IFlowThemeProvider
