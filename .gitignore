@@ -1,7 +1,7 @@
 # .NET build and publish output (at any project depth)
 [Bb]in/
 [Oo]bj/
-/artifacts/
+**/artifacts/
 
 # Local IDE state
 .vs/
@@ -17,7 +17,7 @@ TestResults/
 *.coveragexml
 
 # Local application databases, including SQLite journal/WAL files
-data/*.db*
+**/data/*.db*
 
 # Browser QA profiles and captures
 .browser-qa/

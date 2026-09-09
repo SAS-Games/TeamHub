@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using TeamHub.FlowDesigner.Core.Contracts;
+using TeamHub.FlowDesigner.Core.Models;
 using TeamHub.FlowDesigner.Persistence;
 using TeamHub.FlowDesigner.Serialization;
 using TeamHub.FlowDesigner.Services;
@@ -48,6 +49,7 @@ public static class ServiceCollectionExtensions
         public bool CanView(string? ownerId) => true;
         public bool CanEdit(string? ownerId) => true;
         public bool CanCreate() => true;
+        public bool CanUseTemplate(FlowTemplate template) => true;
     }
 
     private sealed class DefaultFlowThemeProvider : IFlowThemeProvider

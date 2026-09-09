@@ -45,6 +45,23 @@ public static class FlowDesignerEndpointRouteBuilderExtensions
         api.MapPost("/{id:guid}/validate", (Guid id, FlowDefinition flow, IFlowValidator validator) =>
             id == flow.Id ? Results.Ok(validator.Validate(flow)) : Results.BadRequest());
 
+        api.MapDelete("/{id:guid}", async (Guid id, IFlowService flows, CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                await flows.DeleteAsync(id, cancellationToken);
+                return Results.NoContent();
+            }
+            catch (UnauthorizedAccessException)
+            {
+                return Results.Forbid();
+            }
+            catch (KeyNotFoundException)
+            {
+                return Results.NotFound();
+            }
+        });
+
         api.MapPost("/{id:guid}/nodes/{nodeId}/comments", async (
             Guid id,
             string nodeId,

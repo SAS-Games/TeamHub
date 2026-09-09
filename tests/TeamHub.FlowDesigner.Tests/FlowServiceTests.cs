@@ -23,6 +23,25 @@ public sealed class FlowServiceTests
     }
 
     [Fact]
+    public async Task Create_RemainsHiddenUntilFirstExplicitSave()
+    {
+        await using var database = new TestDatabase();
+        var repository = await database.CreateRepositoryAsync();
+        var service = new FlowService(repository, new FlowValidator(), new SystemTextJsonFlowSerializer(), new TestUserProvider(), new AllowAllPermissionService());
+
+        var draft = await service.CreateAsync("Unpublished diagram", diagramType: DiagramType.BusinessWorkflow);
+
+        Assert.Equal(0, draft.Version);
+        Assert.Empty(await service.ListAsync());
+
+        var result = await service.SaveAsync(draft);
+
+        Assert.True(result.IsValid);
+        Assert.Equal(1, draft.Version);
+        Assert.Contains(await service.ListAsync(), flow => flow.Id == draft.Id);
+    }
+
+    [Fact]
     public async Task Create_IntegrationQaTemplateBuildsCompleteExample()
     {
         await using var database = new TestDatabase();
@@ -36,6 +55,31 @@ public sealed class FlowServiceTests
         Assert.Equal(12, flow.Nodes.Count);
         Assert.Equal(13, flow.Connections.Count);
         Assert.Contains(flow.Nodes, node => node.Type == NodeType.Decision && node.Comments.Count == 1);
+        Assert.Empty(validator.Validate(flow).Issues);
+    }
+
+    [Fact]
+    public async Task Create_StudioSupportTemplateBuildsEditableOperatingModel()
+    {
+        await using var database = new TestDatabase();
+        var repository = await database.CreateRepositoryAsync();
+        var validator = new FlowValidator();
+        var service = new FlowService(repository, validator, new SystemTextJsonFlowSerializer(), new TestUserProvider(), new AllowAllPermissionService());
+
+        var flow = await service.CreateAsync("Studio Support", template: FlowTemplate.StudioSupport);
+
+        Assert.Equal(DiagramType.BusinessWorkflow, flow.DiagramType);
+        Assert.Equal(58, flow.Nodes.Count);
+        Assert.Equal(43, flow.Connections.Count);
+        Assert.Equal(5, flow.Nodes.Count(node => node.Type == NodeType.Section));
+        Assert.Equal(10, flow.Nodes.Count(node => node.Type == NodeType.Annotation));
+        Assert.DoesNotContain(flow.Nodes, node => node.Type is NodeType.Start or NodeType.End);
+        Assert.Contains(flow.Nodes, node => node.Id == "support-title" && node.CustomProperties["presentationStyle"] == "banner");
+        Assert.Contains(flow.Nodes, node => node.Id == "direct-frame" && node.Width == 330 && node.Height == 1050 && node.CustomProperties["presentationStyle"] == "band" && node.CustomProperties["portLayout"] == "vertical");
+        Assert.Contains(flow.Nodes, node => node.Id == "health-frame" && node.CustomProperties["tone"] == "orange");
+        Assert.Contains(flow.Nodes, node => node.Id == "direct-1" && node.CustomProperties["portLayout"] == "vertical" && node.CustomProperties["sectionId"] == "direct-frame");
+        Assert.Contains(flow.Nodes, node => node.Id == "learn-1" && node.CustomProperties["portLayout"] == "horizontal");
+        Assert.Equal(44, flow.Nodes.Count(node => node.CustomProperties.ContainsKey("sectionId")));
         Assert.Empty(validator.Validate(flow).Issues);
     }
 
@@ -69,6 +113,7 @@ public sealed class FlowServiceTests
 
         Assert.NotEqual(source.Id, copy.Id);
         Assert.Equal("Connected (copy)", copy.Name);
+        Assert.Equal(0, copy.Version);
         Assert.Equal(source.Nodes.Select(node => node.Id), copy.Nodes.Select(node => node.Id));
         Assert.NotNull(await repository.GetAsync(copy.Id));
     }
@@ -83,5 +128,6 @@ public sealed class FlowServiceTests
         public bool CanView(string? ownerId) => true;
         public bool CanEdit(string? ownerId) => true;
         public bool CanCreate() => true;
+        public bool CanUseTemplate(FlowTemplate template) => true;
     }
 }

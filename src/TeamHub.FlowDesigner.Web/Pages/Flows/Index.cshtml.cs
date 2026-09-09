@@ -5,9 +5,10 @@ using TeamHub.FlowDesigner.Core.Models;
 
 namespace TeamHub.FlowDesigner.Web.Pages.Flows;
 
-public sealed class IndexModel(IFlowService flows) : PageModel
+public sealed class IndexModel(IFlowService flows, IFlowPermissionService permissions) : PageModel
 {
     public IReadOnlyList<FlowSummary> Flows { get; private set; } = [];
+    public bool CanUseStudioSupportTemplate => permissions.CanUseTemplate(FlowTemplate.StudioSupport);
 
     public async Task OnGetAsync(CancellationToken cancellationToken) => Flows = await flows.ListAsync(cancellationToken);
 
@@ -32,6 +33,23 @@ public sealed class IndexModel(IFlowService flows) : PageModel
                 "Integration QA workflow",
                 diagramType: DiagramType.StandardFlowchart,
                 template: FlowTemplate.IntegrationQa,
+                cancellationToken: cancellationToken);
+            return RedirectToPage("/Flows/Edit", new { id = flow.Id });
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return Forbid();
+        }
+    }
+
+    public async Task<IActionResult> OnPostCreateStudioSupportAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            var flow = await flows.CreateAsync(
+                "Studio Support Workflow",
+                diagramType: DiagramType.BusinessWorkflow,
+                template: FlowTemplate.StudioSupport,
                 cancellationToken: cancellationToken);
             return RedirectToPage("/Flows/Edit", new { id = flow.Id });
         }

@@ -16,7 +16,10 @@
             <p class="text-secondary mb-0">Map a process, capture decisions, and keep every path understandable.</p>
         </div>
         <div class="d-flex gap-2">
-            <form method="post" asp-page-handler="CreateExample"><button class="btn btn-outline-secondary btn-lg" type="submit">QA example</button></form>
+            @if (Model.CanUseStudioSupportTemplate)
+            {
+                <form method="post" asp-page-handler="CreateStudioSupport"><button class="btn btn-outline-secondary btn-lg" type="submit">Studio support template</button></form>
+            }
             <a class="btn btn-primary btn-lg" asp-page="/Flows/New"><span aria-hidden="true">＋</span> New diagram</a>
         </div>
     </div>
@@ -28,7 +31,10 @@
             <h2 class="h4">Create your first flow</h2>
             <p class="text-secondary">Start with a blank canvas, then drag in steps and connect them.</p>
             <div class="d-flex justify-content-center gap-2">
-                <form method="post" asp-page-handler="CreateExample"><button class="btn btn-outline-secondary" type="submit">Open QA example</button></form>
+                @if (Model.CanUseStudioSupportTemplate)
+                {
+                    <form method="post" asp-page-handler="CreateStudioSupport"><button class="btn btn-outline-secondary" type="submit">Open studio support template</button></form>
+                }
                 <a class="btn btn-primary" asp-page="/Flows/New">Create diagram</a>
             </div>
         </div>

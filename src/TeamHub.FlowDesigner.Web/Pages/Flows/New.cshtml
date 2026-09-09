@@ -11,7 +11,7 @@
         <a class="fd-back-link" asp-page="/Flows/Index">← All diagrams</a>
         <div class="fd-eyebrow mt-4">New canvas</div>
         <h1 class="h2 mb-2">Create a flow diagram</h1>
-        <p class="text-secondary mb-4">Choose the symbol library that matches what you want to communicate.</p>
+        <p class="text-secondary mb-4">Start with an editable template or choose a blank symbol library.</p>
         <form method="post">
             <div class="mb-3">
                 <label class="form-label" asp-for="Name"></label>
@@ -22,6 +22,26 @@
                 <label class="form-label" asp-for="Description"></label>
                 <textarea class="form-control" asp-for="Description" rows="3" maxlength="2000" placeholder="Optional context for this diagram"></textarea>
             </div>
+            <fieldset class="mb-4">
+                <legend class="form-label">Starting point</legend>
+                <div class="fd-diagram-type-grid">
+                    @if (Model.CanUseStudioSupportTemplate)
+                    {
+                        <label class="fd-diagram-type-option">
+                            <input asp-for="Template" type="radio" value="StudioSupport" />
+                            <span><strong>Studio support workflow</strong><small>Four support tracks, project-health decisions, and a continuous improvement cycle.</small></span>
+                        </label>
+                    }
+                    <label class="fd-diagram-type-option">
+                        <input asp-for="Template" type="radio" value="Blank" />
+                        <span><strong>Blank canvas</strong><small>Build your own diagram from the selected symbol library.</small></span>
+                    </label>
+                    <label class="fd-diagram-type-option">
+                        <input asp-for="Template" type="radio" value="IntegrationQa" />
+                        <span><strong>Integration QA example</strong><small>A ready-made QA lifecycle with success and defect paths.</small></span>
+                    </label>
+                </div>
+            </fieldset>
             <fieldset class="mb-4">
                 <legend class="form-label">Diagram type</legend>
                 <div class="fd-diagram-type-grid">

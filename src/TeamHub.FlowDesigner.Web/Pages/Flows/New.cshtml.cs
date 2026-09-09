@@ -5,8 +5,10 @@ using TeamHub.FlowDesigner.Core.Models;
 
 namespace TeamHub.FlowDesigner.Web.Pages.Flows;
 
-public sealed class NewModel(IFlowService flows) : PageModel
+public sealed class NewModel(IFlowService flows, IFlowPermissionService permissions) : PageModel
 {
+    public bool CanUseStudioSupportTemplate => permissions.CanUseTemplate(FlowTemplate.StudioSupport);
+
     [BindProperty]
     public string Name { get; set; } = string.Empty;
 
@@ -15,6 +17,9 @@ public sealed class NewModel(IFlowService flows) : PageModel
 
     [BindProperty]
     public DiagramType DiagramType { get; set; } = DiagramType.StandardFlowchart;
+
+    [BindProperty]
+    public FlowTemplate Template { get; set; } = FlowTemplate.Blank;
 
     public void OnGet() { }
 
@@ -28,7 +33,7 @@ public sealed class NewModel(IFlowService flows) : PageModel
 
         try
         {
-            var flow = await flows.CreateAsync(Name, Description, DiagramType, cancellationToken: cancellationToken);
+            var flow = await flows.CreateAsync(Name, Description, DiagramType, Template, cancellationToken);
             return RedirectToPage("/Flows/Edit", new { id = flow.Id });
         }
         catch (UnauthorizedAccessException)

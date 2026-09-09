@@ -13,7 +13,7 @@
 <div class="fd-designer" id="flowDesigner" data-flow-id="@Model.FlowId" data-diagram-type="@Model.DiagramType">
     <div class="fd-designer-toolbar">
         <div class="d-flex align-items-center gap-2 min-w-0">
-            <a class="btn btn-sm btn-light fd-icon-button" asp-page="/Flows/Index" aria-label="Back to diagrams" title="Back to diagrams">&larr;</a>
+            <a class="btn btn-sm btn-light fd-icon-button" id="backToFlows" asp-page="/Flows/Index" aria-label="Back to diagrams" title="Back to diagrams">&larr;</a>
             <div class="min-w-0">
                 <label class="visually-hidden" for="flowName">Flow name</label>
                 <input id="flowName" class="fd-flow-title" maxlength="200" value="@Model.FlowName" />
@@ -69,6 +69,13 @@
                 <div class="mb-3"><label class="form-label" for="nodeTitle">Label</label><input class="form-control" id="nodeTitle" maxlength="160" /></div>
                 <div class="mb-3"><label class="form-label" for="nodeDescription">Description</label><textarea class="form-control" id="nodeDescription" rows="3" maxlength="1000"></textarea></div>
                 <div class="mb-3"><label class="form-label" for="nodeType">Symbol</label><select class="form-select" id="nodeType"></select></div>
+                <div class="row g-2 mb-3">
+                    <div class="col-6"><label class="form-label" for="nodeTone">Color</label><select class="form-select" id="nodeTone"><option value="">Automatic</option><option value="blue">Blue</option><option value="green">Green</option><option value="red">Red</option><option value="orange">Orange</option><option value="purple">Purple</option></select></div>
+                    <div class="col-6"><label class="form-label" for="nodeLayer">Layer</label><select class="form-select" id="nodeLayer"><option value="">Automatic</option><option value="background">Background</option><option value="foreground">Foreground</option></select></div>
+                </div>
+                <div class="mb-3"><label class="form-label" for="nodePortLayout">Connector pins</label><select class="form-select" id="nodePortLayout"><option value="horizontal">Left input / right output</option><option value="vertical">Top input / bottom output</option></select></div>
+                <div class="mb-3" id="nodeSectionField"><label class="form-label" for="nodeSectionId">Section group</label><div id="nodeSectionHelp" class="form-text mt-0 mb-1">Drag the node into or out of a section, or choose one here.</div><select class="form-select" id="nodeSectionId" aria-describedby="nodeSectionHelp"><option value="">No section</option></select></div>
+                <div class="mb-3"><label class="form-label" for="nodePresentationStyle">Visual style</label><select class="form-select" id="nodePresentationStyle"><option value="">Standard symbol</option><option value="step">Compact step</option><option value="card">Information card</option><option value="banner">Solid banner</option><option value="plain">Plain text</option><option value="band">Section with header band</option></select></div>
                 <div class="mb-3"><label class="form-label" for="nodeNotes">Notes</label><textarea class="form-control" id="nodeNotes" rows="3" maxlength="1000" placeholder="Optional supporting detail"></textarea></div>
                 <section class="fd-comments" aria-labelledby="nodeCommentsHeading">
                     <div class="d-flex align-items-center justify-content-between mb-2">
@@ -85,6 +92,7 @@
             <form id="connectionProperties" class="d-none" autocomplete="off">
                 <div class="fd-selection-label">Selected connector</div>
                 <div class="mb-3"><label class="form-label" for="connectionLabel">Label</label><input class="form-control" id="connectionLabel" maxlength="120" placeholder="e.g. Yes" /></div>
+                <div class="mb-3"><label class="form-label" for="connectionTone">Color</label><select class="form-select" id="connectionTone"><option value="">Automatic</option><option value="blue">Blue</option><option value="green">Green</option><option value="red">Red</option><option value="orange">Orange</option><option value="purple">Purple</option></select></div>
                 <p class="small text-secondary" id="connectionSummary"></p>
                 <button class="btn btn-sm btn-outline-danger w-100" id="deleteConnection" type="button">Delete connector</button>
             </form>
@@ -93,10 +101,20 @@
 
     <div class="fd-statusbar">
         <button class="fd-validation-button" id="validationButton" type="button"><span id="validationIcon">&#10003;</span><span id="validationSummary">Ready</span></button>
-        <span class="ms-auto d-none d-md-inline"><span id="diagramTypeLabel">@Model.DiagramType.ToDisplayName()</span> &middot; Double-click adds the primary symbol &middot; Del removes selection &middot; Ctrl+C / Ctrl+V duplicates</span>
+        <span class="ms-auto d-none d-md-inline"><span id="diagramTypeLabel">@Model.DiagramType.ToDisplayName()</span> &middot; Right-drag, middle-drag, or Space-drag to pan &middot; Double-click adds a symbol &middot; Del removes selection</span>
     </div>
     <div class="fd-validation-popover d-none" id="validationPopover"><div class="d-flex justify-content-between align-items-center"><strong>Diagram check</strong><button class="btn-close" id="closeValidation" type="button"></button></div><div id="validationIssues" class="mt-3"></div></div>
     <div class="fd-toast" id="toast" role="status" aria-live="polite"></div>
+
+    <div class="modal fade" id="leaveDiagramModal" tabindex="-1" aria-labelledby="leaveDiagramTitle" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header"><h2 class="modal-title fs-5" id="leaveDiagramTitle">Save your changes?</h2><button class="btn-close" type="button" data-bs-dismiss="modal" aria-label="Keep editing"></button></div>
+                <div class="modal-body">Save the latest changes before returning to your diagrams, or discard them.</div>
+                <div class="modal-footer"><button class="btn btn-light" type="button" data-bs-dismiss="modal">Keep editing</button><button class="btn btn-outline-danger" id="discardAndLeave" type="button">Discard</button><button class="btn btn-primary" id="saveAndLeave" type="button">Save and leave</button></div>
+            </div>
+        </div>
+    </div>
 </div>
 
 <script src="~/_content/TeamHub.FlowDesigner.Web/vendor/drawflow/drawflow.min.js" asp-append-version="true"></script>

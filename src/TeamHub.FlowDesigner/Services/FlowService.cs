@@ -14,7 +14,7 @@ public sealed class FlowService(
     public async Task<IReadOnlyList<FlowSummary>> ListAsync(CancellationToken cancellationToken = default)
     {
         var flows = await repository.ListAsync(cancellationToken);
-        return flows.Where(flow => permissions.CanView(flow.CreatedBy)).ToList();
+        return flows.Where(flow => flow.Version > 0 && permissions.CanView(flow.CreatedBy)).ToList();
     }
 
     public async Task<FlowDefinition?> GetAsync(Guid id, CancellationToken cancellationToken = default)
@@ -29,6 +29,10 @@ public sealed class FlowService(
         {
             throw new UnauthorizedAccessException("The current user cannot create flow diagrams.");
         }
+        if (!permissions.CanUseTemplate(template))
+        {
+            throw new UnauthorizedAccessException("The current user cannot use this flow template.");
+        }
 
         var now = DateTimeOffset.UtcNow;
         var flow = new FlowDefinition
@@ -38,7 +42,8 @@ public sealed class FlowService(
             DiagramType = diagramType,
             CreatedAt = now,
             UpdatedAt = now,
-            CreatedBy = currentUser.GetCurrentUserId()
+            CreatedBy = currentUser.GetCurrentUserId(),
+            Version = 0
         };
         FlowTemplateFactory.Apply(flow, template);
         await repository.SaveAsync(flow, cancellationToken);
@@ -68,7 +73,7 @@ public sealed class FlowService(
 
         flow.CreatedAt = existing.CreatedAt;
         flow.CreatedBy = existing.CreatedBy;
-        flow.Version = Math.Max(existing.Version + 1, flow.Version);
+        flow.Version = Math.Max(existing.Version + 1, 1);
         flow.UpdatedAt = DateTimeOffset.UtcNow;
         await repository.SaveAsync(flow, cancellationToken);
         return result;
@@ -94,7 +99,10 @@ public sealed class FlowService(
         node.Comments ??= [];
         node.Comments.Add(comment);
         flow.UpdatedAt = comment.CreatedAt;
-        flow.Version++;
+        if (flow.Version > 0)
+        {
+            flow.Version++;
+        }
         await repository.SaveAsync(flow, cancellationToken);
         return comment;
     }
@@ -123,7 +131,7 @@ public sealed class FlowService(
         copy.CreatedAt = now;
         copy.UpdatedAt = now;
         copy.CreatedBy = currentUser.GetCurrentUserId();
-        copy.Version = 1;
+        copy.Version = 0;
         await repository.SaveAsync(copy, cancellationToken);
         return copy;
     }

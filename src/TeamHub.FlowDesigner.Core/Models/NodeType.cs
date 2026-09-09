@@ -19,5 +19,7 @@ public enum NodeType
     Activity,
     Event,
     Gateway,
-    ParallelGateway
+    ParallelGateway,
+    Section,
+    Annotation
 }

@@ -61,16 +61,12 @@ public sealed class FlowValidator : IFlowValidator
         }
 
         var starts = flow.Nodes.Count(node => node.Type == NodeType.Start);
-        if (flow.DiagramType == DiagramType.BusinessWorkflow && starts == 0)
-        {
-            issues.Add(new("missing-start", "At least one Start event is recommended.", ValidationSeverity.Warning));
-        }
-        else if (flow.DiagramType != DiagramType.BusinessWorkflow && starts != 1)
+        if (flow.DiagramType != DiagramType.BusinessWorkflow && starts != 1)
         {
             issues.Add(new("start-count", $"Exactly one Start node is recommended; this flow has {starts}.", ValidationSeverity.Warning));
         }
 
-        if (flow.Nodes.All(node => node.Type != NodeType.End))
+        if (flow.DiagramType != DiagramType.BusinessWorkflow && flow.Nodes.All(node => node.Type != NodeType.End))
         {
             issues.Add(new("missing-end", "At least one End node is recommended.", ValidationSeverity.Warning));
         }
@@ -78,7 +74,8 @@ public sealed class FlowValidator : IFlowValidator
         var connectedIds = flow.Connections
             .SelectMany(connection => new[] { connection.SourceNodeId, connection.TargetNodeId })
             .ToHashSet(StringComparer.Ordinal);
-        foreach (var orphan in flow.Nodes.Where(node => !connectedIds.Contains(node.Id)))
+        var informationalTypes = new[] { NodeType.Section, NodeType.Annotation };
+        foreach (var orphan in flow.Nodes.Where(node => !informationalTypes.Contains(node.Type) && !connectedIds.Contains(node.Id)))
         {
             issues.Add(new("orphan-node", $"'{orphan.Title}' is not connected.", ValidationSeverity.Warning, orphan.Id));
         }

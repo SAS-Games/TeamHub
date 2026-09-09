@@ -20,9 +20,8 @@
     let selectedNode = null;
     let selectedConnection = null;
     let dirty = false;
+    let isDraft = false;
     let saving = false;
-    let pendingSave = false;
-    let autosaveTimer = null;
     let historyTimer = null;
     let toastTimer = null;
     let clipboardNode = null;
@@ -48,6 +47,7 @@
         const response = await fetch(`/api/flows/${flowId}`);
         if (!response.ok) throw new Error(`Load failed (${response.status})`);
         flow = await response.json();
+        isDraft = Number(flow.version) <= 0;
         nameInput.value = flow.name;
         root.dataset.diagramType = flow.diagramType;
         root.classList.add(`fd-mode-${flow.diagramType.toLowerCase()}`);
@@ -57,7 +57,7 @@
         updateHistoryButtons();
         updateCanvasHint();
         applyValidation(localValidation());
-        setSaveState("saved", "Saved");
+        setSaveState(isDraft ? "unsaved" : "saved", isDraft ? "Not saved yet" : "Saved");
         bindUi();
     }
 
@@ -79,12 +79,14 @@
             const type = event.dataTransfer.getData("application/x-flow-node");
             if (!activePalette().nodes.includes(type)) return;
             const point = adapter.screenToCanvas(event.clientX, event.clientY);
-            adapter.addNode(type, point.x - 90, point.y - 35);
+            const position = nodePosition(type, point);
+            adapter.addNode(type, position.x, position.y);
         });
         canvas.addEventListener("dblclick", event => {
             if (event.target !== canvas && !event.target.classList.contains("drawflow")) return;
             const point = adapter.screenToCanvas(event.clientX, event.clientY);
-            adapter.addNode(activePalette().primary, point.x - 90, point.y - 35);
+            const position = nodePosition(activePalette().primary, point);
+            adapter.addNode(activePalette().primary, position.x, position.y);
         });
 
         saveButton.addEventListener("click", () => save(true));
@@ -107,6 +109,7 @@
             byId(id).addEventListener("input", updateSelectedNode);
         });
         byId("nodeType").addEventListener("change", changeSelectedNodeType);
+        ["nodeTone", "nodeLayer", "nodePortLayout", "nodeSectionId", "nodePresentationStyle"].forEach(id => byId(id).addEventListener("change", updateSelectedNode));
         byId("addNodeComment").addEventListener("click", addNodeComment);
         byId("deleteNode").addEventListener("click", () => adapter.deleteSelected());
         byId("connectionLabel").addEventListener("input", () => {
@@ -114,7 +117,32 @@
             selectedConnection.label = byId("connectionLabel").value;
             adapter.updateConnectionLabel(selectedConnection, selectedConnection.label);
         });
+        byId("connectionTone").addEventListener("change", () => {
+            if (!selectedConnection) return;
+            const tone = byId("connectionTone").value;
+            selectedConnection.metadata = { ...(selectedConnection.metadata || {}), tone };
+            adapter.updateConnectionTone(selectedConnection, tone);
+        });
         byId("deleteConnection").addEventListener("click", () => adapter.deleteSelected());
+
+        byId("backToFlows").addEventListener("click", event => {
+            event.preventDefault();
+            requestLeave(event.currentTarget.href);
+        });
+        byId("saveAndLeave").addEventListener("click", async () => {
+            const target = byId("backToFlows").href;
+            if (await save(true)) window.location.assign(target);
+        });
+        byId("discardAndLeave").addEventListener("click", () => discardAndLeave(byId("backToFlows").href));
+        document.addEventListener("click", event => {
+            if (event.defaultPrevented || event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
+            const link = event.target.closest?.("a[href]");
+            if (!link || link.target === "_blank" || link.hasAttribute("download")) return;
+            const target = new URL(link.href, window.location.href);
+            if (target.origin !== window.location.origin || target.href === window.location.href || (!dirty && !isDraft)) return;
+            event.preventDefault();
+            requestLeave(target.href);
+        });
 
         byId("toggleToolbox").addEventListener("click", () => byId("toolbox").classList.toggle("open"));
         byId("closeToolbox").addEventListener("click", () => byId("toolbox").classList.remove("open"));
@@ -124,8 +152,12 @@
         byId("closeValidation").addEventListener("click", () => byId("validationPopover").classList.add("d-none"));
 
         document.addEventListener("keydown", handleKeyboard);
+        document.addEventListener("keyup", event => {
+            if (event.code === "Space") adapter.setSpacePanning(false);
+        });
+        window.addEventListener("blur", () => adapter.setSpacePanning(false));
         window.addEventListener("beforeunload", event => {
-            if (!dirty) return;
+            if (!dirty && !isDraft) return;
             event.preventDefault();
             event.returnValue = "";
         });
@@ -167,8 +199,17 @@
     function addAtCenter(type) {
         const canvas = byId("drawflow").getBoundingClientRect();
         const point = adapter.screenToCanvas(canvas.left + canvas.width / 2, canvas.top + canvas.height / 2);
-        adapter.addNode(type, point.x - 90, point.y - 35);
+        const position = nodePosition(type, point);
+        adapter.addNode(type, position.x, position.y);
         byId("toolbox").classList.remove("open");
+    }
+
+    function nodePosition(type, point) {
+        const config = nodeTypes[type] || nodeTypes.Process;
+        return {
+            x: point.x - (config.defaultWidth || 184) / 2,
+            y: point.y - (config.defaultHeight || 76) / 2
+        };
     }
 
     function handleCanvasChange() {
@@ -183,16 +224,16 @@
     function markDirty() {
         dirty = true;
         setSaveState("unsaved", "Unsaved changes");
-        window.clearTimeout(autosaveTimer);
-        autosaveTimer = window.setTimeout(() => save(false), 1800);
     }
 
     async function save(manual) {
-        if (!flow || (!dirty && !manual)) return;
-        if (saving) { pendingSave = true; return; }
+        if (!flow) return false;
+        if (!dirty && !isDraft) {
+            if (manual) showToast("Diagram is already saved");
+            return true;
+        }
+        if (saving) return false;
         saving = true;
-        pendingSave = false;
-        window.clearTimeout(autosaveTimer);
         setSaveState("saving", "Saving…");
         saveButton.disabled = true;
         saveButtonText.textContent = "Saving…";
@@ -210,20 +251,50 @@
             applyValidation(result.issues || []);
             if (!response.ok) throw new Error(result.message || "Save failed");
             flow = result.flow;
+            isDraft = false;
             dirty = false;
             setSaveState("saved", `Saved ${new Date(flow.updatedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`);
             if (manual) showToast("Diagram saved");
+            return true;
         } catch (error) {
             console.error(error);
             dirty = true;
             setSaveState("error", "Save failed — try again");
             showToast(error.message || "Save failed");
+            return false;
         } finally {
             saving = false;
             saveButton.disabled = false;
             saveButtonText.textContent = "Save";
-            if (pendingSave) save(false);
         }
+    }
+
+    function requestLeave(target) {
+        if (!dirty && !isDraft) {
+            window.location.assign(target);
+            return;
+        }
+        if (isDraft && !dirty) {
+            discardAndLeave(target);
+            return;
+        }
+        bootstrap.Modal.getOrCreateInstance(byId("leaveDiagramModal"), { backdrop: "static" }).show();
+    }
+
+    async function discardAndLeave(target) {
+        if (isDraft) {
+            try {
+                const response = await fetch(`/api/flows/${flowId}`, { method: "DELETE" });
+                if (!response.ok && response.status !== 404) throw new Error("Could not discard the draft");
+            } catch (error) {
+                console.error(error);
+                showToast(error.message || "Could not discard the draft");
+                return;
+            }
+        }
+        dirty = false;
+        isDraft = false;
+        window.location.assign(target);
     }
 
     function setSaveState(kind, message) {
@@ -280,9 +351,24 @@
         byId("nodeTitle").value = node.title || "";
         byId("nodeDescription").value = node.description || "";
         byId("nodeType").value = node.type;
+        byId("nodeTone").value = node.customProperties?.tone || "";
+        byId("nodeLayer").value = node.customProperties?.layer || "";
+        byId("nodePortLayout").value = node.customProperties?.portLayout || "horizontal";
+        populateSectionOptions(node);
+        byId("nodePresentationStyle").value = node.customProperties?.presentationStyle || "";
         byId("nodeNotes").value = node.customProperties?.notes || "";
         byId("newNodeComment").value = "";
         renderNodeComments(node.comments || []);
+    }
+
+    function populateSectionOptions(node) {
+        const select = byId("nodeSectionId");
+        select.replaceChildren(new Option("No section", ""));
+        for (const section of adapter.getGraph().nodes.filter(item => item.type === "Section" && item.id !== node.id)) {
+            select.add(new Option(section.title || "Untitled section", section.id));
+        }
+        select.value = node.customProperties?.sectionId || "";
+        byId("nodeSectionField").classList.toggle("d-none", node.type === "Section");
     }
 
     function showConnectionProperties(connection) {
@@ -292,6 +378,7 @@
         nodeForm.classList.add("d-none");
         connectionForm.classList.remove("d-none");
         byId("connectionLabel").value = connection.label || "";
+        byId("connectionTone").value = connection.metadata?.tone || "";
         const graph = adapter.getGraph();
         const source = graph.nodes.find(node => node.id === connection.sourceNodeId);
         const target = graph.nodes.find(node => node.id === connection.targetNodeId);
@@ -311,39 +398,32 @@
         const changes = {
             title: byId("nodeTitle").value || nodeTypes[selectedNode.type].title,
             description: byId("nodeDescription").value,
-            customProperties: { ...(selectedNode.customProperties || {}), notes: byId("nodeNotes").value }
+            customProperties: {
+                ...(selectedNode.customProperties || {}),
+                tone: byId("nodeTone").value,
+                layer: byId("nodeLayer").value,
+                portLayout: byId("nodePortLayout").value,
+                sectionId: byId("nodeSectionId").value,
+                presentationStyle: byId("nodePresentationStyle").value,
+                notes: byId("nodeNotes").value
+            }
         };
         selectedNode = { ...selectedNode, ...changes };
         adapter.updateNode(selectedNode.id, changes);
     }
 
-    async function addNodeComment() {
+    function addNodeComment() {
         if (!selectedNode) return;
         const input = byId("newNodeComment");
-        const button = byId("addNodeComment");
         const body = input.value.trim();
         if (!body) return;
-        button.disabled = true;
-        try {
-            const response = await fetch(`/api/flows/${flowId}/nodes/${encodeURIComponent(selectedNode.id)}/comments`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ body })
-            });
-            const result = await response.json();
-            if (!response.ok) throw new Error(result.message || "Could not add comment");
-            const comments = [...(selectedNode.comments || []), result];
-            selectedNode = { ...selectedNode, comments };
-            adapter.updateNode(selectedNode.id, { comments }, false);
-            input.value = "";
-            renderNodeComments(comments);
-            showToast("Comment added");
-        } catch (error) {
-            console.error(error);
-            showToast(error.message || "Could not add comment");
-        } finally {
-            button.disabled = false;
-        }
+        const comment = { id: crypto.randomUUID(), body, author: "You", createdAt: new Date().toISOString() };
+        const comments = [...(selectedNode.comments || []), comment];
+        selectedNode = { ...selectedNode, comments };
+        adapter.updateNode(selectedNode.id, { comments });
+        input.value = "";
+        renderNodeComments(comments);
+        showToast("Comment added — save to keep it");
     }
 
     function renderNodeComments(comments) {
@@ -381,6 +461,7 @@
         const node = graph.nodes.find(item => item.id === selectedNode.id);
         if (!node) return;
         node.type = byId("nodeType").value;
+        if (node.type === "Section") delete node.customProperties?.sectionId;
         adapter.setGraph(graph);
         selectedNode = node;
         window.requestAnimationFrame(() => adapter.selectNode(node.id));
@@ -393,6 +474,11 @@
             event.preventDefault(); save(true); return;
         }
         if (editing) return;
+        if (event.code === "Space" && !event.repeat) {
+            event.preventDefault();
+            adapter.setSpacePanning(true);
+            return;
+        }
         const key = event.key.toLowerCase();
         if ((event.ctrlKey || event.metaKey) && key === "z") { event.preventDefault(); event.shiftKey ? redo() : undo(); }
         else if ((event.ctrlKey || event.metaKey) && key === "y") { event.preventDefault(); redo(); }
@@ -417,11 +503,10 @@
         const graph = adapter.getGraph();
         const issues = [];
         const starts = graph.nodes.filter(node => node.type === "Start").length;
-        if (flow.diagramType === "BusinessWorkflow" && starts === 0) issues.push({ severity: "Warning", code: "missing-start", message: "At least one Start event is recommended." });
-        else if (flow.diagramType !== "BusinessWorkflow" && starts !== 1) issues.push({ severity: "Warning", code: "start-count", message: `Exactly one Start node is recommended; this flow has ${starts}.` });
-        if (!graph.nodes.some(node => node.type === "End")) issues.push({ severity: "Warning", code: "missing-end", message: "At least one End node is recommended." });
+        if (flow.diagramType !== "BusinessWorkflow" && starts !== 1) issues.push({ severity: "Warning", code: "start-count", message: `Exactly one Start node is recommended; this flow has ${starts}.` });
+        if (flow.diagramType !== "BusinessWorkflow" && !graph.nodes.some(node => node.type === "End")) issues.push({ severity: "Warning", code: "missing-end", message: "At least one End node is recommended." });
         const connected = new Set(graph.connections.flatMap(connection => [connection.sourceNodeId, connection.targetNodeId]));
-        graph.nodes.filter(node => !connected.has(node.id)).forEach(node => issues.push({ severity: "Warning", code: "orphan-node", message: `'${node.title}' is not connected.`, elementId: node.id }));
+        graph.nodes.filter(node => !["Section", "Annotation"].includes(node.type) && !connected.has(node.id)).forEach(node => issues.push({ severity: "Warning", code: "orphan-node", message: `'${node.title}' is not connected.`, elementId: node.id }));
         graph.nodes.filter(node => ["Decision", "Gateway", "ParallelGateway"].includes(node.type)).forEach(node => {
             const outgoing = graph.connections.filter(connection => connection.sourceNodeId === node.id).length;
             if (outgoing < 2) issues.push({ severity: "Warning", code: "incomplete-branch", message: `'${node.title}' should have at least two outgoing paths.`, elementId: node.id });
@@ -515,40 +600,105 @@
             InputOutput: ["#08728a", "#dff5f8"], ManualInput: ["#91440f", "#faeadf"],
             Document: ["#a13b68", "#fae6ef"],
             DataStore: ["#6740b5", "#eee9fb"], Subprocess: ["#3553a5", "#e7edfb"], Preparation: ["#4b5f76", "#e8eef3"],
-            Connector: ["#53645f", "#e8eeec"], Event: ["#884487", "#f6e8f6"]
+            Connector: ["#53645f", "#e8eeec"], Event: ["#884487", "#f6e8f6"],
+            Section: ["#1f5f8b", "#e5f1fa"], Annotation: ["#7c3a96", "#f7e9fb"]
         };
-        const parts = [`<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}"><rect width="100%" height="100%" fill="#f8faf9"/><g font-family="Segoe UI,Arial,sans-serif">`];
+        const presentationTones = {
+            red: ["#c93642", "#fdebed"], green: ["#168451", "#e5f6ec"],
+            orange: ["#d85612", "#fff0e5"], purple: ["#7141ad", "#f2ebfb"],
+            blue: ["#1769aa", "#e7f2fc"]
+        };
+        const connectorTones = { default: "#82958f", blue: "#1769aa", green: "#168451", red: "#c93642", orange: "#d85612", purple: "#7141ad" };
+        const markers = Object.entries(connectorTones).map(([tone, color]) => `<marker id="fd-export-arrow-${tone}" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="${color}"/></marker>`).join("");
+        const parts = [`<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}"><defs>${markers}</defs><rect width="100%" height="100%" fill="#f8faf9"/><g font-family="Segoe UI,Arial,sans-serif">`];
+        for (const section of graph.nodes.filter(node => node.type === "Section")) {
+            const x = section.x + offsetX;
+            const y = section.y + offsetY;
+            const w = section.width || 420;
+            const h = section.height || 300;
+            const [color, fill] = presentationTones[String(section.customProperties?.tone || "").toLowerCase()] || colors.Section;
+            parts.push(exportPresentationNode(section, x, y, w, h, color, fill));
+        }
         for (const connection of graph.connections) {
             const source = nodes.get(connection.sourceNodeId);
             const target = nodes.get(connection.targetNodeId);
             if (!source || !target) continue;
-            const x1 = source.x + (source.width || 184) + offsetX;
-            const y1 = source.y + (source.height || 76) / 2 + offsetY;
-            const x2 = target.x + offsetX;
-            const y2 = target.y + (target.height || 76) / 2 + offsetY;
-            const curve = Math.max(45, Math.abs(x2 - x1) * .45);
-            parts.push(`<path d="M ${x1} ${y1} C ${x1 + curve} ${y1}, ${x2 - curve} ${y2}, ${x2} ${y2}" fill="none" stroke="#82958f" stroke-width="3"/>`);
-            if (connection.label) parts.push(`<text x="${(x1 + x2) / 2}" y="${(y1 + y2) / 2 - 7}" text-anchor="middle" font-size="12" font-weight="700" fill="#445651">${escapeXml(connection.label)}</text>`);
+            const start = exportPortPoint(source, "output", offsetX, offsetY);
+            const end = exportPortPoint(target, "input", offsetX, offsetY);
+            const bothVertical = source.customProperties?.portLayout === "vertical" && target.customProperties?.portLayout === "vertical";
+            const curve = Math.max(45, Math.abs(bothVertical ? end.y - start.y : end.x - start.x) * .45);
+            const path = bothVertical
+                ? `M ${start.x} ${start.y} C ${start.x} ${start.y + curve}, ${end.x} ${end.y - curve}, ${end.x} ${end.y}`
+                : `M ${start.x} ${start.y} C ${start.x + curve} ${start.y}, ${end.x - curve} ${end.y}, ${end.x} ${end.y}`;
+            const tone = String(connection.metadata?.tone || "").toLowerCase();
+            const resolvedTone = Object.hasOwn(connectorTones, tone) ? tone : "default";
+            const connectorColor = connectorTones[resolvedTone];
+            parts.push(`<path d="${path}" fill="none" stroke="${connectorColor}" stroke-width="3" marker-end="url(#fd-export-arrow-${resolvedTone})"/>`);
+            if (connection.label) parts.push(`<text x="${(start.x + end.x) / 2}" y="${(start.y + end.y) / 2 - 7}" text-anchor="middle" font-size="12" font-weight="700" fill="${connectorColor}">${escapeXml(connection.label)}</text>`);
         }
         for (const node of graph.nodes) {
+            if (node.type === "Section") continue;
             const x = node.x + offsetX;
             const y = node.y + offsetY;
             const w = node.width || 184;
             const h = node.height || 76;
-            const [color, fill] = colors[node.type] || ["#596863", "#e9eeec"];
+            const [color, fill] = presentationTones[String(node.customProperties?.tone || "").toLowerCase()] || colors[node.type] || ["#596863", "#e9eeec"];
+            if (node.type === "Annotation") {
+                parts.push(exportPresentationNode(node, x, y, w, h, color, fill));
+                continue;
+            }
             const centerAligned = ["Decision", "Gateway", "ParallelGateway", "Connector", "Event"].includes(node.type);
+            const presentationStyle = node.customProperties?.presentationStyle || "";
+            if (["step", "card", "banner", "plain"].includes(presentationStyle)) {
+                const titleColor = presentationStyle === "banner" ? "#fff" : color;
+                const descriptionColor = presentationStyle === "banner" ? "#edf7ff" : "#52645f";
+                const shape = exportNodeShape(node.type, x, y, w, h, color, fill, presentationStyle);
+                const title = exportMultilineText(node.title, x + w / 2, y + 25, Math.max(15, Math.floor(w / 8)), 15, `text-anchor="middle" font-size="13" font-weight="700" fill="${titleColor}"`, 3);
+                const description = node.description ? exportMultilineText(node.description, x + w / 2, y + 47, Math.max(18, Math.floor(w / 7)), 13, `text-anchor="middle" font-size="10" fill="${descriptionColor}"`, Math.max(1, Math.floor((h - 48) / 13))) : "";
+                parts.push(`<g>${shape}${title}${description}</g>`);
+                continue;
+            }
             const textX = centerAligned ? x + w / 2 : x + 18;
             const anchor = centerAligned ? "middle" : "start";
-            parts.push(`<g>${exportNodeShape(node.type, x, y, w, h, color, fill)}<text x="${textX}" y="${y + h / 2 - 5}" text-anchor="${anchor}" font-size="9" font-weight="700" fill="${color}" letter-spacing="1">${escapeXml(nodeTypes[node.type]?.title?.toUpperCase() || node.type.toUpperCase())}</text><text x="${textX}" y="${y + h / 2 + 17}" text-anchor="${anchor}" font-size="13" font-weight="700" fill="#172522">${escapeXml(shorten(node.title, centerAligned ? 18 : 28))}</text></g>`);
+            const description = node.description ? `<text x="${textX}" y="${y + h / 2 + 34}" text-anchor="${anchor}" font-size="10" fill="#52645f">${escapeXml(shorten(node.description, centerAligned ? 22 : 38))}</text>` : "";
+            parts.push(`<g>${exportNodeShape(node.type, x, y, w, h, color, fill)}<text x="${textX}" y="${y + h / 2 - 5}" text-anchor="${anchor}" font-size="9" font-weight="700" fill="${color}" letter-spacing="1">${escapeXml(nodeTypes[node.type]?.title?.toUpperCase() || node.type.toUpperCase())}</text><text x="${textX}" y="${y + h / 2 + 17}" text-anchor="${anchor}" font-size="13" font-weight="700" fill="#172522">${escapeXml(shorten(node.title, centerAligned ? 18 : 28))}</text>${description}</g>`);
         }
         parts.push("</g></svg>");
         return parts.join("");
     }
 
-    function exportNodeShape(type, x, y, width, height, color, fill) {
+    function exportPresentationNode(node, x, y, width, height, color, fill) {
+        const presentationStyle = node.customProperties?.presentationStyle || "";
+        if (node.type === "Section") {
+            if (presentationStyle === "band") {
+                const title = exportMultilineText(node.title, x + width / 2, y + 24, Math.max(18, Math.floor(width / 8)), 14, `text-anchor="middle" font-size="14" font-weight="700" fill="#fff"`, 2);
+                const description = node.description ? exportMultilineText(node.description, x + width / 2, y + 45, Math.max(20, Math.floor(width / 7)), 12, `text-anchor="middle" font-size="10" font-weight="600" fill="#f5f7ff"`, 1) : "";
+                return `<g><rect x="${x}" y="${y}" width="${width}" height="${height}" rx="12" fill="${fill}" stroke="${color}" stroke-width="2"/><path d="M ${x + 12} ${y} H ${x + width - 12} Q ${x + width} ${y} ${x + width} ${y + 12} V ${y + 58} H ${x} V ${y + 12} Q ${x} ${y} ${x + 12} ${y}" fill="${color}"/>${title}${description}</g>`;
+            }
+            const description = node.description ? `<text x="${x + 16}" y="${y + 62}" font-size="11" fill="#385c70">${escapeXml(shorten(node.description, 100))}</text>` : "";
+            return `<g>${exportNodeShape(node.type, x, y, width, height, color, fill)}<rect x="${x + 14}" y="${y + 14}" width="${Math.min(width - 28, Math.max(110, node.title.length * 8 + 24))}" height="28" rx="5" fill="${color}"/><text x="${x + 26}" y="${y + 33}" font-size="13" font-weight="700" fill="#fff">${escapeXml(shorten(node.title, 48))}</text>${description}</g>`;
+        }
+
+        const centered = ["banner", "plain"].includes(presentationStyle);
+        const textX = centered ? x + width / 2 : x + 16;
+        const titleColor = presentationStyle === "banner" ? "#fff" : color;
+        const descriptionColor = presentationStyle === "banner" ? "#edf7ff" : "#4e365a";
+        const shape = exportNodeShape(node.type, x, y, width, height, color, fill, presentationStyle);
+        const title = exportMultilineText(node.title, textX, y + 29, Math.max(18, Math.floor(width / 8)), 17, `${centered ? 'text-anchor="middle" ' : ""}font-size="16" font-weight="700" fill="${titleColor}"`, 3);
+        const description = node.description ? exportMultilineText(node.description, textX, y + 57, Math.max(20, Math.floor(width / 7)), 14, `${centered ? 'text-anchor="middle" ' : ""}font-size="11" fill="${descriptionColor}"`, Math.max(1, Math.floor((height - 58) / 14))) : "";
+        return `<g>${shape}${title}${description}</g>`;
+    }
+
+    function exportNodeShape(type, x, y, width, height, color, fill, presentationStyle = "") {
+        if (presentationStyle === "plain") return "";
+        if (presentationStyle === "banner") return `<rect x="${x}" y="${y}" width="${width}" height="${height}" rx="9" fill="${color}" stroke="${color}" stroke-width="2"/>`;
+        if (presentationStyle === "step") return `<rect x="${x}" y="${y}" width="${width}" height="${height}" rx="8" fill="#fff" stroke="${color}" stroke-width="1.5"/>`;
+        if (presentationStyle === "card") return `<rect x="${x}" y="${y}" width="${width}" height="${height}" rx="12" fill="${fill}" stroke="${color}" stroke-width="2"/>`;
         const common = `fill="${fill}" stroke="${color}" stroke-width="2"`;
+        if (type === "Section") return `<rect x="${x}" y="${y}" width="${width}" height="${height}" rx="12" fill="${fill}" fill-opacity=".78" stroke="${color}" stroke-width="2" stroke-dasharray="8 5"/>`;
+        if (type === "Annotation") return `<rect x="${x}" y="${y}" width="${width}" height="${height}" rx="9" ${common} stroke-dasharray="5 4"/>`;
         if (["Decision", "Gateway", "ParallelGateway"].includes(type)) {
-            return `<polygon points="${x + width * .08},${y} ${x + width * .92},${y} ${x + width},${y + height / 2} ${x + width * .92},${y + height} ${x + width * .08},${y + height} ${x},${y + height / 2}" ${common}/>`;
+            return `<polygon points="${x + width / 2},${y} ${x + width},${y + height / 2} ${x + width / 2},${y + height} ${x},${y + height / 2}" ${common}/>`;
         }
         if (type === "InputOutput") return `<polygon points="${x + 18},${y} ${x + width},${y} ${x + width - 18},${y + height} ${x},${y + height}" ${common}/>`;
         if (type === "ManualInput") return `<polygon points="${x + 14},${y + 12} ${x + width},${y} ${x + width - 14},${y + height} ${x},${y + height}" ${common}/>`;
@@ -559,6 +709,36 @@
         const radius = type === "Start" || type === "End" ? height / 2 : type === "Activity" ? 16 : 8;
         const extra = type === "Subprocess" ? `<path d="M ${x + 9} ${y} V ${y + height} M ${x + width - 9} ${y} V ${y + height}" stroke="${color}" stroke-width="1"/>` : "";
         return `<rect x="${x}" y="${y}" width="${width}" height="${height}" rx="${radius}" ${common}/>${extra}`;
+    }
+
+    function exportPortPoint(node, kind, offsetX, offsetY) {
+        const width = node.width || 184;
+        const height = node.height || 76;
+        if (node.customProperties?.portLayout === "vertical") {
+            return { x: node.x + width / 2 + offsetX, y: node.y + (kind === "output" ? height : 0) + offsetY };
+        }
+        return { x: node.x + (kind === "output" ? width : 0) + offsetX, y: node.y + height / 2 + offsetY };
+    }
+
+    function exportMultilineText(value, x, y, maxCharacters, lineHeight, attributes, maxLines) {
+        const sourceLines = String(value || "").split(/\r?\n/);
+        const lines = [];
+        for (const sourceLine of sourceLines) {
+            if (!sourceLine) { lines.push(""); continue; }
+            let remaining = sourceLine;
+            while (remaining.length > maxCharacters && lines.length < maxLines) {
+                let split = remaining.lastIndexOf(" ", maxCharacters);
+                if (split < Math.floor(maxCharacters * .55)) split = maxCharacters;
+                lines.push(remaining.slice(0, split));
+                remaining = remaining.slice(split).trimStart();
+            }
+            if (lines.length < maxLines) lines.push(remaining);
+            if (lines.length >= maxLines) break;
+        }
+        if (lines.length === maxLines && sourceLines.join(" ").length > lines.join(" ").length) {
+            lines[maxLines - 1] = shorten(lines[maxLines - 1], Math.max(2, maxCharacters));
+        }
+        return `<text x="${x}" y="${y}" ${attributes}>${lines.map((line, index) => `<tspan x="${x}" dy="${index === 0 ? 0 : lineHeight}">${escapeXml(line)}</tspan>`).join("")}</text>`;
     }
 
     function escapeXml(value) {

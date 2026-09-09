@@ -67,6 +67,42 @@ public sealed class ValidationTests
     }
 
     [Fact]
+    public void PresentationNodes_DoNotRequireConnections()
+    {
+        var flow = ConnectedFlow();
+        flow.Nodes.Add(new FlowNode { Id = "section", Type = NodeType.Section, Title = "Support activities" });
+        flow.Nodes.Add(new FlowNode { Id = "heading", Type = NodeType.Annotation, Title = "Studio support workflow" });
+
+        var result = _validator.Validate(flow);
+
+        Assert.DoesNotContain(result.Issues, issue => issue.Code == "orphan-node" &&
+            (issue.ElementId == "section" || issue.ElementId == "heading"));
+    }
+
+    [Fact]
+    public void BusinessWorkflow_DoesNotRequireFormalStartOrEndSymbols()
+    {
+        var flow = new FlowDefinition
+        {
+            Name = "Operating model",
+            DiagramType = DiagramType.BusinessWorkflow,
+            Nodes =
+            [
+                new FlowNode { Id = "activity-1", Type = NodeType.Activity, Title = "Receive request" },
+                new FlowNode { Id = "activity-2", Type = NodeType.Activity, Title = "Resolve request" }
+            ],
+            Connections =
+            [
+                new FlowConnection { Id = "edge", SourceNodeId = "activity-1", TargetNodeId = "activity-2", SourcePort = "output_1", TargetPort = "input_1" }
+            ]
+        };
+
+        var result = _validator.Validate(flow);
+
+        Assert.DoesNotContain(result.Issues, issue => issue.Code is "missing-start" or "start-count" or "missing-end");
+    }
+
+    [Fact]
     public void DecisionWithOnePath_GetsGuidanceWarning()
     {
         var flow = ConnectedFlow();

@@ -3,5 +3,6 @@ namespace TeamHub.FlowDesigner.Core.Models;
 public enum FlowTemplate
 {
     Blank,
-    IntegrationQa
+    IntegrationQa,
+    StudioSupport
 }

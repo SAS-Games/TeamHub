@@ -16,7 +16,9 @@
         Activity: { title: "Activity", help: "Business work step", icon: "A", inputs: 1, outputs: 1, shape: "activity" },
         Event: { title: "Intermediate event", help: "Something that occurs", icon: "EV", inputs: 1, outputs: 1, shape: "event" },
         Gateway: { title: "Exclusive gateway", help: "Choose one path", icon: "X", inputs: 1, outputs: 2, shape: "gateway" },
-        ParallelGateway: { title: "Parallel gateway", help: "Split or join paths", icon: "+", inputs: 2, outputs: 2, shape: "gateway" }
+        ParallelGateway: { title: "Parallel gateway", help: "Split or join paths", icon: "+", inputs: 2, outputs: 2, shape: "gateway" },
+        Section: { title: "Section group", defaultTitle: "Section", help: "Move related steps together", icon: "▣", inputs: 1, outputs: 1, shape: "section", defaultWidth: 420, defaultHeight: 300 },
+        Annotation: { title: "Annotation / heading", defaultTitle: "Heading", help: "Freeform title or supporting text", icon: "T", inputs: 0, outputs: 0, shape: "annotation", defaultWidth: 280, defaultHeight: 110 }
     };
 
     const diagramTypes = {
@@ -29,17 +31,17 @@
         StandardFlowchart: {
             title: "Flowchart symbols",
             primary: "Process",
-            nodes: ["Start", "Process", "Decision", "InputOutput", "Document", "DataStore", "Subprocess", "Connector", "ManualInput", "Preparation", "End"]
+            nodes: ["Section", "Annotation", "Start", "Process", "Decision", "InputOutput", "Document", "DataStore", "Subprocess", "Connector", "ManualInput", "Preparation", "End"]
         },
         BusinessWorkflow: {
             title: "Workflow symbols",
             primary: "Activity",
-            nodes: ["Start", "Activity", "Gateway", "ParallelGateway", "Event", "Document", "DataStore", "End"]
+            nodes: ["Section", "Annotation", "Start", "Activity", "Gateway", "ParallelGateway", "Event", "Document", "DataStore", "End"]
         },
         CodeFlow: {
             title: "Code-flow symbols",
             primary: "Process",
-            nodes: ["Start", "Process", "Decision", "InputOutput", "Subprocess", "DataStore", "Connector", "Preparation", "End"]
+            nodes: ["Section", "Annotation", "Start", "Process", "Decision", "InputOutput", "Subprocess", "DataStore", "Connector", "Preparation", "End"]
         }
     };
 
@@ -56,6 +58,18 @@
         return `${prefix}-${crypto.randomUUID()}`;
     }
 
+    function nodeAppearanceClasses(data) {
+        const tone = String(data?.customProperties?.tone || "").toLowerCase();
+        const layer = String(data?.customProperties?.layer || "").toLowerCase();
+        const portLayout = String(data?.customProperties?.portLayout || "").toLowerCase();
+        const presentationStyle = String(data?.customProperties?.presentationStyle || "").toLowerCase();
+        const toneClass = ["blue", "red", "green", "orange", "purple"].includes(tone) ? ` fd-tone-${tone}` : "";
+        const layerClass = ["background", "foreground"].includes(layer) ? ` fd-layer-${layer}` : "";
+        const portClass = portLayout === "vertical" ? " fd-ports-vertical" : "";
+        const styleClass = ["step", "card", "banner", "plain", "band"].includes(presentationStyle) ? ` fd-style-${presentationStyle}` : "";
+        return `${toneClass}${layerClass}${portClass}${styleClass}`;
+    }
+
     class DrawflowAdapter {
         constructor(element, callbacks = {}) {
             if (!window.Drawflow) {
@@ -66,10 +80,14 @@
             this.callbacks = callbacks;
             this.externalToInternal = new Map();
             this.internalToExternal = new Map();
+            this.nodePositions = new Map();
             this.connectionState = new Map();
             this.selected = null;
+            this.selectedGroupId = null;
             this.suppressChanges = false;
             this.snapToGrid = true;
+            this.spacePanning = false;
+            this.defaultPortLayout = "horizontal";
 
             this.editor = new Drawflow(element);
             this.editor.reroute = true;
@@ -78,6 +96,7 @@
             this.editor.zoom_max = 1.8;
             this.editor.zoom_value = 0.1;
             this.editor.start();
+            this.installArrowMarker();
             this.bindEvents();
         }
 
@@ -87,8 +106,12 @@
             });
 
             this.editor.on("nodeMoved", internalId => {
-                if (this.snapToGrid) this.snapNode(internalId);
+                this.handleNodeMoved(internalId);
                 this.changed();
+                const externalId = this.internalToExternal.get(String(internalId));
+                if (externalId && this.selected?.kind === "node" && this.selected.id === externalId) {
+                    this.callbacks.onSelectNode?.(this.getNode(externalId));
+                }
             });
 
             this.editor.on("connectionCreated", detail => {
@@ -108,12 +131,16 @@
             this.editor.on("nodeSelected", internalId => {
                 const id = this.internalToExternal.get(String(internalId));
                 this.selected = id ? { kind: "node", id } : null;
+                this.selectedGroupId = this.nodeData(internalId)?.type === "Section" ? id : null;
+                this.refreshGroupAppearance();
                 if (id) this.callbacks.onSelectNode?.(this.getNode(id));
             });
 
             this.editor.on("nodeUnselected", () => {
                 if (this.selected?.kind === "node") {
                     this.selected = null;
+                    this.selectedGroupId = null;
+                    this.refreshGroupAppearance();
                     this.callbacks.onClearSelection?.();
                 }
             });
@@ -139,6 +166,116 @@
                     this.captureNodeSizes();
                 }, 0);
             });
+
+            this.element.addEventListener("pointerdown", event => this.beginResize(event), true);
+            this.element.addEventListener("pointerdown", event => this.beginPan(event), true);
+            this.element.addEventListener("mousedown", event => {
+                const panning = (this.spacePanning && event.button === 0) || event.button === 1 || event.button === 2;
+                if (!panning) return;
+                event.preventDefault();
+                event.stopImmediatePropagation();
+            }, true);
+            this.element.addEventListener("contextmenu", event => {
+                event.preventDefault();
+                event.stopImmediatePropagation();
+            }, true);
+        }
+
+        installArrowMarker() {
+            if (document.getElementById("fd-connection-arrow")) return;
+            const namespace = "http://www.w3.org/2000/svg";
+            const svg = document.createElementNS(namespace, "svg");
+            svg.classList.add("fd-connection-definitions");
+            const definitions = document.createElementNS(namespace, "defs");
+            const tones = { "": "#82958f", blue: "#1769aa", green: "#168451", red: "#c93642", orange: "#d85612", purple: "#7141ad" };
+            for (const [tone, color] of Object.entries(tones)) {
+                const marker = document.createElementNS(namespace, "marker");
+                marker.id = tone ? `fd-connection-arrow-${tone}` : "fd-connection-arrow";
+                marker.setAttribute("viewBox", "0 0 10 10");
+                marker.setAttribute("refX", "9");
+                marker.setAttribute("refY", "5");
+                marker.setAttribute("markerWidth", "7");
+                marker.setAttribute("markerHeight", "7");
+                marker.setAttribute("orient", "auto-start-reverse");
+                const arrow = document.createElementNS(namespace, "path");
+                arrow.setAttribute("d", "M 0 0 L 10 5 L 0 10 z");
+                arrow.setAttribute("fill", color);
+                marker.appendChild(arrow);
+                definitions.appendChild(marker);
+            }
+            svg.appendChild(definitions);
+            this.element.appendChild(svg);
+        }
+
+        beginPan(event) {
+            const enabled = (this.spacePanning && event.button === 0) || event.button === 1 || event.button === 2;
+            if (!enabled || event.target.closest?.(".fd-resize-handle")) return;
+
+            event.preventDefault();
+            event.stopImmediatePropagation();
+            const startX = event.clientX;
+            const startY = event.clientY;
+            const canvasX = this.editor.canvas_x;
+            const canvasY = this.editor.canvas_y;
+            this.element.classList.add("is-panning");
+
+            const move = moveEvent => {
+                moveEvent.preventDefault();
+                this.editor.canvas_x = canvasX + moveEvent.clientX - startX;
+                this.editor.canvas_y = canvasY + moveEvent.clientY - startY;
+                this.editor.precanvas.style.transform = `translate(${this.editor.canvas_x}px, ${this.editor.canvas_y}px) scale(${this.editor.zoom})`;
+                this.editor.precanvas.style.transformOrigin = "0 0";
+            };
+            const finish = () => {
+                window.removeEventListener("pointermove", move);
+                window.removeEventListener("pointerup", finish);
+                window.removeEventListener("pointercancel", finish);
+                this.element.classList.remove("is-panning");
+            };
+
+            window.addEventListener("pointermove", move, { passive: false });
+            window.addEventListener("pointerup", finish);
+            window.addEventListener("pointercancel", finish);
+        }
+
+        beginResize(event) {
+            const handle = event.target.closest?.(".fd-resize-handle");
+            const nodeElement = handle?.closest(".drawflow-node");
+            if (!handle || !nodeElement || event.button !== 0) return;
+
+            event.preventDefault();
+            event.stopImmediatePropagation();
+            const internalId = nodeElement.id.slice(5);
+            const startX = event.clientX;
+            const startY = event.clientY;
+            const startWidth = nodeElement.offsetWidth;
+            const startHeight = nodeElement.offsetHeight;
+            const isSection = nodeElement.classList.contains("fd-shape-section");
+            const minimumWidth = isSection ? 260 : 180;
+            const minimumHeight = isSection ? 180 : 80;
+            nodeElement.classList.add("is-resizing");
+
+            const move = moveEvent => {
+                moveEvent.preventDefault();
+                const zoom = this.editor.zoom || 1;
+                nodeElement.style.width = `${Math.max(minimumWidth, startWidth + (moveEvent.clientX - startX) / zoom)}px`;
+                nodeElement.style.height = `${Math.max(minimumHeight, startHeight + (moveEvent.clientY - startY) / zoom)}px`;
+                this.editor.updateConnectionNodes(`node-${internalId}`);
+            };
+            const finish = () => {
+                window.removeEventListener("pointermove", move);
+                window.removeEventListener("pointerup", finish);
+                window.removeEventListener("pointercancel", finish);
+                nodeElement.classList.remove("is-resizing");
+                this.captureNodeSize(internalId);
+                if (isSection && this.reconcileSectionMembership(false)) this.changed();
+                this.refreshGroupAppearance();
+                this.editor.updateConnectionNodes(`node-${internalId}`);
+            };
+
+            window.addEventListener("pointermove", move, { passive: false });
+            window.addEventListener("pointerup", finish);
+            window.addEventListener("pointercancel", finish);
         }
 
         changed() {
@@ -153,6 +290,7 @@
             this.editor.clear();
             this.externalToInternal.clear();
             this.internalToExternal.clear();
+            this.nodePositions.clear();
             this.connectionState.clear();
 
             for (const node of graph.nodes ?? []) {
@@ -179,8 +317,10 @@
             this.callbacks.onClearSelection?.();
             window.setTimeout(() => {
                 this.applySavedSizes(graph.nodes ?? []);
+                this.reconcileSectionMembership(false, true);
                 this.updateAllConnections();
                 this.refreshConnectionLabels();
+                this.refreshGroupAppearance();
             }, 0);
         }
 
@@ -191,7 +331,7 @@
             const data = {
                 externalId,
                 type: resolvedType,
-                title: supplied.title || config.title,
+                title: supplied.title || config.defaultTitle || config.title,
                 description: supplied.description || "",
                 metadata: supplied.metadata || {},
                 customProperties: supplied.customProperties || {},
@@ -199,6 +339,9 @@
                 width: supplied.width ?? null,
                 height: supplied.height ?? null
             };
+            if (!data.customProperties.portLayout && emitChange) {
+                data.customProperties = { ...data.customProperties, portLayout: this.defaultPortLayout };
+            }
             const previousSuppress = this.suppressChanges;
             if (!emitChange) this.suppressChanges = true;
             const internalId = this.editor.addNode(
@@ -207,23 +350,37 @@
                 config.outputs,
                 Math.max(10, Number(x) || 100),
                 Math.max(10, Number(y) || 100),
-                `fd-node-${data.type.toLowerCase()} fd-shape-${config.shape}`,
+                `fd-node-${data.type.toLowerCase()} fd-shape-${config.shape}${nodeAppearanceClasses(data)}`,
                 data,
                 this.nodeHtml(data),
                 false
             );
             this.externalToInternal.set(externalId, String(internalId));
             this.internalToExternal.set(String(internalId), externalId);
+            this.nodePositions.set(String(internalId), { x: Math.max(10, Number(x) || 100), y: Math.max(10, Number(y) || 100) });
             this.suppressChanges = previousSuppress;
-            if (emitChange) this.changed();
+            if (emitChange) {
+                this.updateNodeSectionMembership(String(internalId));
+                this.refreshGroupAppearance();
+                this.changed();
+            }
             return externalId;
         }
 
         nodeHtml(data) {
             const config = nodeTypes[data.type] || nodeTypes.Process;
+            if (config.shape === "section") {
+                const description = data.description ? `<span class="fd-section-description">${text(data.description)}</span>` : "";
+                return `<div class="fd-section-content"><span class="fd-section-title">${text(data.title)}</span>${description}<button class="fd-resize-handle" type="button" aria-label="Resize section frame" title="Drag to resize"></button></div>`;
+            }
+            if (config.shape === "annotation") {
+                const description = data.description ? `<span class="fd-annotation-description">${text(data.description)}</span>` : "";
+                return `<div class="fd-annotation-content"><span class="fd-annotation-title">${text(data.title)}</span>${description}<button class="fd-resize-handle" type="button" aria-label="Resize annotation" title="Drag to resize"></button></div>`;
+            }
             const commentCount = data.comments?.length || 0;
             const comments = commentCount ? `<span class="fd-node-comments" title="${commentCount} comment${commentCount === 1 ? "" : "s"}">${commentCount}</span>` : "";
-            return `<div class="fd-node-content"><span class="fd-tool-icon fd-type-${data.type.toLowerCase()}">${config.icon}</span><span class="fd-node-copy"><span class="fd-node-type">${text(config.title)}</span><span class="fd-node-title">${text(data.title)}</span>${comments}</span></div>`;
+            const description = data.description ? `<span class="fd-node-description">${text(data.description)}</span>` : "";
+            return `<div class="fd-node-content"><span class="fd-tool-icon fd-type-${data.type.toLowerCase()}">${config.icon}</span><span class="fd-node-copy"><span class="fd-node-type">${text(config.title)}</span><span class="fd-node-title">${text(data.title)}</span>${description}${comments}</span></div>`;
         }
 
         getGraph() {
@@ -273,13 +430,20 @@
             return this.getGraph().nodes.find(node => node.id === externalId) || null;
         }
 
+        nodeData(internalId) {
+            return this.editor.drawflow.drawflow.Home.data[String(internalId)]?.data || null;
+        }
+
         updateNode(externalId, changes, emitChange = true) {
             const internalId = this.externalToInternal.get(externalId);
             if (!internalId) return;
             const node = this.editor.drawflow.drawflow.Home.data[internalId];
             node.data = { ...node.data, ...changes };
+            this.refreshNodeAppearance(internalId, node.data);
             const content = document.querySelector(`#node-${internalId} .drawflow_content_node`);
             if (content) content.innerHTML = this.nodeHtml(node.data);
+            window.requestAnimationFrame(() => this.editor.updateConnectionNodes(`node-${internalId}`));
+            this.refreshGroupAppearance();
             if (emitChange) this.changed();
             this.callbacks.onSelectNode?.(this.getNode(externalId));
         }
@@ -296,6 +460,18 @@
             this.changed();
         }
 
+        updateConnectionTone(connection, tone) {
+            const source = this.externalToInternal.get(connection.sourceNodeId);
+            const target = this.externalToInternal.get(connection.targetNodeId);
+            if (!source || !target) return;
+            const key = this.connectionKey(source, target, connection.sourcePort, connection.targetPort);
+            const state = this.connectionState.get(key) || { id: connection.id || newId("connection"), label: connection.label || "", metadata: {} };
+            state.metadata = { ...(state.metadata || {}), tone };
+            this.connectionState.set(key, state);
+            this.refreshConnectionLabels();
+            this.changed();
+        }
+
         selectNode(externalId) {
             const internalId = this.externalToInternal.get(externalId);
             const element = internalId ? document.getElementById(`node-${internalId}`) : null;
@@ -305,6 +481,8 @@
             this.editor.ele_selected = element;
             this.editor.node_selected = element.id;
             this.selected = { kind: "node", id: externalId };
+            this.selectedGroupId = this.nodeData(internalId)?.type === "Section" ? externalId : null;
+            this.refreshGroupAppearance();
             this.callbacks.onSelectNode?.(this.getNode(externalId));
             return true;
         }
@@ -314,15 +492,19 @@
             if (this.selected.kind === "node") {
                 const internalId = this.externalToInternal.get(this.selected.id);
                 if (!internalId) return false;
+                if (this.nodeData(internalId)?.type === "Section") this.clearSectionMembership(this.selected.id);
                 this.editor.removeNodeId(`node-${internalId}`);
                 this.externalToInternal.delete(this.selected.id);
                 this.internalToExternal.delete(internalId);
+                this.nodePositions.delete(internalId);
             } else {
                 const parts = this.parseConnectionKey(this.selected.key);
                 this.editor.removeSingleConnection(parts.source, parts.target, parts.sourcePort, parts.targetPort);
                 this.connectionState.delete(this.selected.key);
             }
             this.selected = null;
+            this.selectedGroupId = null;
+            this.refreshGroupAppearance();
             this.callbacks.onClearSelection?.();
             this.changed();
             return true;
@@ -351,6 +533,115 @@
         resetZoom() { this.editor.zoom_reset(); }
         getZoom() { return this.editor.zoom; }
         setGrid(enabled) { this.snapToGrid = enabled; this.element.classList.toggle("no-grid", !enabled); }
+        setSpacePanning(enabled) { this.spacePanning = enabled; this.element.classList.toggle("is-space-pan", enabled); }
+        setDefaultPortLayout(layout) { this.defaultPortLayout = layout === "vertical" ? "vertical" : "horizontal"; }
+
+        handleNodeMoved(internalId) {
+            const id = String(internalId);
+            const node = this.editor.drawflow.drawflow.Home.data[id];
+            if (!node) return;
+            const previous = this.nodePositions.get(id) || { x: node.pos_x, y: node.pos_y };
+            if (this.snapToGrid) this.snapNode(id);
+            const current = { x: node.pos_x, y: node.pos_y };
+            if (node.data?.type === "Section") {
+                this.moveSectionMembers(node.data.externalId, current.x - previous.x, current.y - previous.y);
+            } else {
+                this.updateNodeSectionMembership(id);
+            }
+            this.nodePositions.set(id, current);
+            this.refreshGroupAppearance();
+        }
+
+        moveSectionMembers(sectionId, deltaX, deltaY) {
+            if (!sectionId || (!deltaX && !deltaY)) return;
+            for (const [internalId, node] of Object.entries(this.editor.drawflow.drawflow.Home.data)) {
+                if (node.data?.type === "Section" || node.data?.customProperties?.sectionId !== sectionId) continue;
+                node.pos_x += deltaX;
+                node.pos_y += deltaY;
+                const element = document.getElementById(`node-${internalId}`);
+                if (element) {
+                    element.style.left = `${node.pos_x}px`;
+                    element.style.top = `${node.pos_y}px`;
+                }
+                this.nodePositions.set(String(internalId), { x: node.pos_x, y: node.pos_y });
+                this.editor.updateConnectionNodes(`node-${internalId}`);
+            }
+        }
+
+        reconcileSectionMembership(emitChange = false, onlyMissing = false) {
+            let changed = false;
+            for (const [internalId, node] of Object.entries(this.editor.drawflow.drawflow.Home.data)) {
+                if (node.data?.type === "Section") continue;
+                const existing = node.data?.customProperties?.sectionId;
+                if (onlyMissing && existing && this.externalToInternal.has(existing)) continue;
+                changed = this.updateNodeSectionMembership(internalId) || changed;
+            }
+            this.refreshGroupAppearance();
+            if (changed && emitChange) this.changed();
+            return changed;
+        }
+
+        updateNodeSectionMembership(internalId) {
+            const id = String(internalId);
+            const node = this.editor.drawflow.drawflow.Home.data[id];
+            if (!node || node.data?.type === "Section") return false;
+            const element = document.getElementById(`node-${id}`);
+            const centerX = node.pos_x + (element?.offsetWidth || node.data?.width || 184) / 2;
+            const centerY = node.pos_y + (element?.offsetHeight || node.data?.height || 76) / 2;
+            const containingSections = Object.entries(this.editor.drawflow.drawflow.Home.data)
+                .filter(([, candidate]) => candidate.data?.type === "Section")
+                .map(([sectionInternalId, section]) => {
+                    const sectionElement = document.getElementById(`node-${sectionInternalId}`);
+                    const width = sectionElement?.offsetWidth || section.data?.width || 420;
+                    const height = sectionElement?.offsetHeight || section.data?.height || 300;
+                    return { id: section.data.externalId, x: section.pos_x, y: section.pos_y, width, height, area: width * height };
+                })
+                .filter(section => centerX >= section.x && centerX <= section.x + section.width && centerY >= section.y && centerY <= section.y + section.height)
+                .sort((left, right) => left.area - right.area);
+            const sectionId = containingSections[0]?.id || "";
+            const currentSectionId = node.data.customProperties?.sectionId || "";
+            if (sectionId === currentSectionId) return false;
+            node.data.customProperties = { ...(node.data.customProperties || {}) };
+            if (sectionId) node.data.customProperties.sectionId = sectionId;
+            else delete node.data.customProperties.sectionId;
+            return true;
+        }
+
+        clearSectionMembership(sectionId) {
+            for (const node of Object.values(this.editor.drawflow.drawflow.Home.data)) {
+                if (node.data?.customProperties?.sectionId !== sectionId) continue;
+                node.data.customProperties = { ...(node.data.customProperties || {}) };
+                delete node.data.customProperties.sectionId;
+            }
+        }
+
+        refreshGroupAppearance() {
+            const validSections = new Set(Object.values(this.editor.drawflow.drawflow.Home.data)
+                .filter(node => node.data?.type === "Section")
+                .map(node => node.data.externalId));
+            for (const [internalId, node] of Object.entries(this.editor.drawflow.drawflow.Home.data)) {
+                const element = document.getElementById(`node-${internalId}`);
+                if (!element) continue;
+                element.classList.remove("fd-group-member", "fd-group-highlight", "fd-group-selected");
+                if (node.data?.type === "Section") {
+                    element.classList.toggle("fd-group-selected", node.data.externalId === this.selectedGroupId);
+                    continue;
+                }
+                const sectionId = node.data?.customProperties?.sectionId;
+                if (!sectionId || !validSections.has(sectionId)) continue;
+                element.classList.add("fd-group-member");
+                if (sectionId === this.selectedGroupId) element.classList.add("fd-group-highlight");
+            }
+        }
+
+        refreshNodeAppearance(internalId, data) {
+            const element = document.getElementById(`node-${internalId}`);
+            if (!element) return;
+            for (const className of [...element.classList]) {
+                if (className.startsWith("fd-tone-") || className.startsWith("fd-layer-") || className.startsWith("fd-ports-") || className.startsWith("fd-style-")) element.classList.remove(className);
+            }
+            nodeAppearanceClasses(data).trim().split(/\s+/).filter(Boolean).forEach(className => element.classList.add(className));
+        }
 
         fitToView() {
             const nodes = [...this.element.querySelectorAll(".drawflow-node")];
@@ -386,16 +677,19 @@
 
         captureNodeSizes() {
             const exported = this.editor.drawflow.drawflow.Home.data;
-            for (const [id, node] of Object.entries(exported)) {
-                const dom = document.getElementById(`node-${id}`);
-                if (!dom) continue;
-                const width = dom.offsetWidth;
-                const height = dom.offsetHeight;
-                if (node.data.width !== width || node.data.height !== height) {
-                    node.data.width = width;
-                    node.data.height = height;
-                    this.changed();
-                }
+            for (const id of Object.keys(exported)) this.captureNodeSize(id);
+        }
+
+        captureNodeSize(internalId) {
+            const node = this.editor.drawflow.drawflow.Home.data[String(internalId)];
+            const dom = document.getElementById(`node-${internalId}`);
+            if (!node || !dom) return;
+            const width = dom.offsetWidth;
+            const height = dom.offsetHeight;
+            if (node.data.width !== width || node.data.height !== height) {
+                node.data.width = width;
+                node.data.height = height;
+                this.changed();
             }
         }
 
@@ -403,8 +697,11 @@
             for (const node of nodes) {
                 const internal = this.externalToInternal.get(node.id);
                 const dom = internal ? document.getElementById(`node-${internal}`) : null;
-                if (dom && node.width && getComputedStyle(dom).resize !== "none") dom.style.width = `${Math.max(150, node.width)}px`;
-                if (dom && node.height && getComputedStyle(dom).resize !== "none") dom.style.height = `${Math.max(76, node.height)}px`;
+                if (!dom) continue;
+                const resizablePresentationNode = node.type === "Section" || node.type === "Annotation";
+                const browserResizableNode = getComputedStyle(dom).resize !== "none";
+                if (node.width && (resizablePresentationNode || browserResizableNode)) dom.style.width = `${Math.max(node.type === "Section" ? 260 : 150, node.width)}px`;
+                if (node.height && (resizablePresentationNode || browserResizableNode)) dom.style.height = `${Math.max(node.type === "Section" ? 180 : 76, node.height)}px`;
             }
         }
 
@@ -422,9 +719,14 @@
                     const svg = this.element.querySelector(`svg.connection.node_out_node-${parts.source}.node_in_node-${parts.target}.${parts.sourcePort}.${parts.targetPort}`);
                     if (!svg) continue;
                     svg.querySelectorAll(".fd-connection-label").forEach(label => label.remove());
-                    if (!state.label) continue;
                     const path = svg.querySelector(".main-path");
                     if (!path) continue;
+                    for (const className of [...path.classList]) {
+                        if (className.startsWith("fd-connection-tone-")) path.classList.remove(className);
+                    }
+                    const tone = String(state.metadata?.tone || "").toLowerCase();
+                    if (["blue", "green", "red", "orange", "purple"].includes(tone)) path.classList.add(`fd-connection-tone-${tone}`);
+                    if (!state.label) continue;
                     const pathId = `fd-path-${parts.source}-${parts.target}-${parts.sourcePort}-${parts.targetPort}`;
                     path.id = pathId;
                     const label = document.createElementNS("http://www.w3.org/2000/svg", "text");

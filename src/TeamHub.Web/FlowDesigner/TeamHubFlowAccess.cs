@@ -1,4 +1,5 @@
 using TeamHub.FlowDesigner.Core.Contracts;
+using TeamHub.FlowDesigner.Core.Models;
 
 namespace TeamHub.Web.FlowDesigner;
 
@@ -18,6 +19,8 @@ public sealed class TeamHubFlowPermissionService(IHttpContextAccessor httpContex
     public bool CanEdit(string? ownerId) => IsAdmin() || IsOwner(ownerId);
 
     public bool CanCreate() => httpContextAccessor.HttpContext?.User.Identity?.IsAuthenticated == true;
+
+    public bool CanUseTemplate(FlowTemplate template) => template != FlowTemplate.StudioSupport || IsAdmin();
 
     private bool IsAdmin() => httpContextAccessor.HttpContext?.User.IsInRole("Admin") == true;
 

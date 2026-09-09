@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -148,7 +149,9 @@ internal sealed class StudioDbContext(DbContextOptions<StudioDbContext> options)
     }
 }
 
-internal sealed class SqliteStudioDatabaseInitializer(StudioDbContext dbContext) : IStudioDatabaseInitializer
+internal sealed class SqliteStudioDatabaseInitializer(
+    StudioDbContext dbContext,
+    IConfiguration configuration) : IStudioDatabaseInitializer
 {
     public async Task InitializeAsync(CancellationToken cancellationToken = default)
     {
@@ -224,12 +227,162 @@ internal sealed class SqliteStudioDatabaseInitializer(StudioDbContext dbContext)
                 ON StudioImportantLinks (StudioRecordId, DisplayOrder);
                 """, cancellationToken);
 
+            await MoveLegacyStudioTablesAsync(cancellationToken);
         }
         finally
         {
             await dbContext.Database.CloseConnectionAsync();
         }
     }
+
+    private async Task MoveLegacyStudioTablesAsync(CancellationToken cancellationToken)
+    {
+        var legacyConnectionString = configuration.GetConnectionString("WorkflowDb");
+        var studioConnectionString = dbContext.Database.GetConnectionString();
+        if (string.IsNullOrWhiteSpace(legacyConnectionString) || string.IsNullOrWhiteSpace(studioConnectionString))
+        {
+            return;
+        }
+
+        var legacyPath = GetDatabasePath(legacyConnectionString);
+        var studioPath = GetDatabasePath(studioConnectionString);
+        if (legacyPath is null || studioPath is null
+            || string.Equals(legacyPath, studioPath, StringComparison.OrdinalIgnoreCase)
+            || !File.Exists(legacyPath))
+        {
+            return;
+        }
+
+        var connection = (SqliteConnection)dbContext.Database.GetDbConnection();
+        await using (var attach = connection.CreateCommand())
+        {
+            attach.CommandText = "ATTACH DATABASE $legacyPath AS legacy;";
+            attach.Parameters.AddWithValue("$legacyPath", legacyPath);
+            await attach.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        try
+        {
+            if (!await TableExistsAsync(connection, "Studios", cancellationToken))
+            {
+                return;
+            }
+
+            await using var transaction = (SqliteTransaction)await connection.BeginTransactionAsync(cancellationToken);
+            await ExecuteAsync(connection, transaction, """
+                INSERT OR IGNORE INTO main.Studios
+                    (Id, StudioName, ProjectName, Location, CreatedAtUtc, UpdatedAtUtc)
+                SELECT Id, StudioName, ProjectName, Location, CreatedAtUtc, UpdatedAtUtc
+                FROM legacy.Studios;
+                """, cancellationToken);
+
+            var childTables = new[]
+            {
+                new LegacyTable("StudioTeamMembers", "Id, StudioRecordId, DisplayOrder, Name, RolesAndResponsibilities, EmailId"),
+                new LegacyTable("StudioDevelopmentTools", "Id, StudioRecordId, DisplayOrder, Name, Description"),
+                new LegacyTable("StudioImportantLinks", "Id, StudioRecordId, DisplayOrder, Label, Url, Description")
+            };
+
+            var existingChildTables = new List<LegacyTable>();
+            foreach (var table in childTables)
+            {
+                if (!await TableExistsAsync(connection, table.Name, cancellationToken, transaction))
+                {
+                    continue;
+                }
+
+                existingChildTables.Add(table);
+                await ExecuteAsync(connection, transaction, $"""
+                    INSERT OR IGNORE INTO main.{table.Name} ({table.Columns})
+                    SELECT {table.Columns}
+                    FROM legacy.{table.Name} AS source
+                    WHERE EXISTS (
+                        SELECT 1 FROM main.Studios AS studio WHERE studio.Id = source.StudioRecordId
+                    );
+                    """, cancellationToken);
+            }
+
+            var migrationComplete = await AllRowsMovedAsync(connection, transaction, "Studios", cancellationToken);
+            foreach (var table in existingChildTables)
+            {
+                migrationComplete = migrationComplete
+                    && await AllRowsMovedAsync(connection, transaction, table.Name, cancellationToken);
+            }
+
+            if (migrationComplete)
+            {
+                foreach (var table in existingChildTables)
+                {
+                    await ExecuteAsync(connection, transaction, $"DROP TABLE legacy.{table.Name};", cancellationToken);
+                }
+                await ExecuteAsync(connection, transaction, "DROP TABLE legacy.Studios;", cancellationToken);
+            }
+
+            await transaction.CommitAsync(cancellationToken);
+        }
+        finally
+        {
+            await using var detach = connection.CreateCommand();
+            detach.CommandText = "DETACH DATABASE legacy;";
+            await detach.ExecuteNonQueryAsync(cancellationToken);
+        }
+    }
+
+    private static string? GetDatabasePath(string connectionString)
+    {
+        var dataSource = new SqliteConnectionStringBuilder(connectionString).DataSource;
+        if (string.IsNullOrWhiteSpace(dataSource) || dataSource == ":memory:")
+        {
+            return null;
+        }
+
+        return Path.GetFullPath(dataSource);
+    }
+
+    private static async Task<bool> TableExistsAsync(
+        SqliteConnection connection,
+        string tableName,
+        CancellationToken cancellationToken,
+        SqliteTransaction? transaction = null)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = "SELECT 1 FROM legacy.sqlite_master WHERE type = 'table' AND name = $tableName LIMIT 1;";
+        command.Parameters.AddWithValue("$tableName", tableName);
+        return await command.ExecuteScalarAsync(cancellationToken) is not null;
+    }
+
+    private static async Task<bool> AllRowsMovedAsync(
+        SqliteConnection connection,
+        SqliteTransaction transaction,
+        string tableName,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = $"""
+            SELECT COUNT(*)
+            FROM legacy.{tableName} AS source
+            WHERE NOT EXISTS (
+                SELECT 1 FROM main.{tableName} AS target WHERE target.Id = source.Id
+            );
+            """;
+        return Convert.ToInt64(await command.ExecuteScalarAsync(cancellationToken)) == 0;
+    }
+
+    private static async Task ExecuteAsync(
+        SqliteConnection connection,
+        SqliteTransaction transaction,
+        string sql,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = sql;
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    private sealed record LegacyTable(string Name, string Columns);
 }
 
 internal sealed class SqliteStudioDirectoryService(StudioDbContext dbContext) : IStudioDirectoryService
@@ -434,7 +587,7 @@ public static class StudioDirectoryServiceCollectionExtensions
         services.AddSingleton(configuration);
         services.AddDbContext<StudioDbContext>(options =>
         {
-            var connectionString = configuration.GetConnectionString("WorkflowDb") ?? "Data Source=data/workflow.db";
+            var connectionString = configuration.GetConnectionString("StudioDb") ?? "Data Source=data/studio.db";
             options.UseSqlite(connectionString);
         });
         services.AddScoped<IStudioDatabaseInitializer, SqliteStudioDatabaseInitializer>();

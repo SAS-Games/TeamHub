@@ -18,14 +18,13 @@ var builder = WebApplication.CreateBuilder(args);
 builder.WebHost.UseStaticWebAssets();
 ConfigurationFilePaths.ResolveConfiguredPaths(builder.Configuration, builder.Environment.ContentRootPath);
 
-var dataDir = Path.Combine(AppContext.BaseDirectory, "data");
+var dataDir = Path.Combine(builder.Environment.ContentRootPath, "data");
 Directory.CreateDirectory(dataDir);
 
-builder.Configuration["ConnectionStrings:WorkflowDb"] =
-    $"Data Source={Path.Combine(dataDir, "workflow.db")}";
+builder.Configuration["ConnectionStrings:WorkflowDb"] = $"Data Source={Path.Combine(dataDir, "workflow.db")}";
+builder.Configuration["ConnectionStrings:TeamDb"] = $"Data Source={Path.Combine(dataDir, "team.db")}";
+builder.Configuration["ConnectionStrings:StudioDb"] = $"Data Source={Path.Combine(dataDir, "studio.db")}";
 var flowDesignerDatabasePath = Path.Combine(dataDir, "flowdesigner.db");
-builder.Configuration["ConnectionStrings:TeamDb"] =
-    $"Data Source={Path.Combine(dataDir, "team.db")}";
 
 // Add services to the container.
 builder.Services.AddRazorPages();

@@ -95,6 +95,8 @@
 .fd-type-preparation { color: #4b5f76; background: #e8eef3; }
 .fd-type-connector { color: #53645f; background: #e8eeec; }
 .fd-type-event { color: #884487; background: #f6e8f6; }
+.fd-type-section { color: #1f5f8b; background: #e5f1fa; }
+.fd-type-annotation { color: #7c3a96; background: #f7e9fb; }
 
 .fd-tool-icon[class*="fd-symbol-"] { position: relative; border: 2px solid currentColor; background: #fff; }
 .fd-tool-icon.fd-symbol-terminator { border-radius: 999px; }
@@ -106,10 +108,15 @@
 .fd-tool-icon.fd-symbol-connector, .fd-tool-icon.fd-symbol-event { border-radius: 50%; }
 .fd-tool-icon.fd-symbol-manual-input { clip-path: polygon(8% 20%, 100% 0, 92% 100%, 0 100%); }
 .fd-tool-icon.fd-symbol-preparation { clip-path: polygon(22% 0, 78% 0, 100% 50%, 78% 100%, 22% 100%, 0 50%); }
+.fd-tool-icon.fd-symbol-section { border-radius: 4px; box-shadow: inset 0 8px currentColor; }
+.fd-tool-icon.fd-symbol-annotation { border-style: dashed; border-radius: 4px; }
 
 .fd-canvas-shell { min-width: 0; min-height: 0; position: relative; overflow: hidden; background: #f8faf9; }
 .fd-canvas { width: 100%; height: 100%; background-color: #f8faf9; background-image: radial-gradient(circle, #c9d6d2 1px, transparent 1px); background-size: 20px 20px; }
 .fd-canvas.no-grid { background-image: none; }
+.fd-canvas.is-space-pan { cursor: grab; }
+.fd-canvas.is-space-pan .drawflow-node { cursor: grab; }
+.fd-canvas.is-panning, .fd-canvas.is-panning .drawflow-node { cursor: grabbing; user-select: none; }
 .fd-canvas .drawflow { width: 100%; height: 100%; }
 .fd-canvas-hint { position: absolute; inset: 50% auto auto 50%; transform: translate(-50%, -50%); display: flex; flex-direction: column; align-items: center; color: #81918d; pointer-events: none; text-align: center; }
 .fd-canvas-hint strong { color: #586a65; font-size: .9rem; }
@@ -151,13 +158,67 @@
 .drawflow .drawflow-node.fd-node-preparation { --fd-node-color: #4b5f76; --fd-node-fill: #e8eef3; }
 .drawflow .drawflow-node.fd-node-connector { --fd-node-color: #53645f; --fd-node-fill: #e8eeec; }
 .drawflow .drawflow-node.fd-node-event { --fd-node-color: #884487; --fd-node-fill: #f6e8f6; }
+.drawflow .drawflow-node.fd-node-section { --fd-node-color: #1f5f8b; --fd-node-fill: #e5f1fa; }
+.drawflow .drawflow-node.fd-node-annotation { --fd-node-color: #7c3a96; --fd-node-fill: #f7e9fb; }
+.drawflow .drawflow-node.fd-tone-red { --fd-node-color: #c93642; --fd-node-fill: #fdebed; }
+.drawflow .drawflow-node.fd-tone-green { --fd-node-color: #168451; --fd-node-fill: #e5f6ec; }
+.drawflow .drawflow-node.fd-tone-orange { --fd-node-color: #d85612; --fd-node-fill: #fff0e5; }
+.drawflow .drawflow-node.fd-tone-purple { --fd-node-color: #7141ad; --fd-node-fill: #f2ebfb; }
+.drawflow .drawflow-node.fd-tone-blue { --fd-node-color: #1769aa; --fd-node-fill: #e7f2fc; }
+.drawflow .drawflow-node.fd-layer-background { z-index: 0 !important; }
+.drawflow .drawflow-node.fd-layer-foreground { z-index: 3 !important; }
+.drawflow .drawflow-node:not(.fd-node-section) { z-index: 1; }
 .drawflow .drawflow-node .drawflow_content_node { position: relative; height: 100%; min-height: 74px; padding: 12px 13px; }
 .fd-node-content { position: relative; z-index: 1; height: 100%; min-height: 50px; display: flex; align-items: flex-start; gap: 10px; pointer-events: none; }
 .fd-node-content .fd-tool-icon { flex-basis: 30px; height: 30px; }
 .fd-node-copy { min-width: 0; }
 .fd-node-type { display: block; margin-bottom: 3px; color: var(--fd-node-color); font-size: .6rem; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
-.fd-node-title { display: block; color: var(--fd-text); font-size: .82rem; font-weight: 700; line-height: 1.25; overflow-wrap: anywhere; }
+.fd-node-title { display: block; color: var(--fd-text); font-size: .82rem; font-weight: 700; line-height: 1.25; white-space: pre-line; overflow-wrap: anywhere; }
+.fd-node-description { display: block; margin-top: 5px; color: #52645f; font-size: .68rem; font-weight: 500; line-height: 1.3; white-space: pre-line; overflow-wrap: anywhere; }
 .fd-node-comments { display: inline-flex; align-items: center; justify-content: center; min-width: 19px; height: 17px; margin-top: 6px; padding: 0 5px; color: #52645f; background: #edf2f0; border-radius: 999px; font-size: .58rem; font-weight: 800; }
+.drawflow .drawflow-node[class*="fd-tone-"] .fd-tool-icon { color: var(--fd-node-color); background: color-mix(in srgb, var(--fd-node-fill) 82%, white); }
+.drawflow .drawflow-node.fd-style-step { min-height: 62px; background: color-mix(in srgb, var(--fd-node-fill) 38%, white); border-width: 1.5px; border-radius: 8px; box-shadow: 0 2px 7px rgba(27,55,48,.06); }
+.drawflow .drawflow-node.fd-style-card { background: color-mix(in srgb, var(--fd-node-fill) 76%, white); border-radius: 12px; box-shadow: 0 3px 12px rgba(27,55,48,.08); }
+.drawflow .drawflow-node.fd-style-banner { background: var(--fd-node-color); border-color: var(--fd-node-color); border-radius: 9px; box-shadow: 0 4px 12px color-mix(in srgb, var(--fd-node-color) 18%, transparent); }
+.drawflow .drawflow-node.fd-style-plain { background: transparent; border-color: transparent; box-shadow: none; }
+.drawflow .drawflow-node:is(.fd-style-step,.fd-style-card,.fd-style-banner,.fd-style-plain) .fd-tool-icon,
+.drawflow .drawflow-node:is(.fd-style-step,.fd-style-card,.fd-style-banner,.fd-style-plain) .fd-node-type { display: none; }
+.drawflow .drawflow-node:is(.fd-style-step,.fd-style-card,.fd-style-banner,.fd-style-plain) .fd-node-content { display: block; min-height: 38px; text-align: center; }
+.drawflow .drawflow-node:is(.fd-style-step,.fd-style-card,.fd-style-banner,.fd-style-plain) .fd-node-copy { display: block; width: 100%; }
+.drawflow .drawflow-node.fd-style-step .fd-node-title { font-size: .78rem; }
+.drawflow .drawflow-node.fd-style-step .fd-node-description { font-size: .65rem; }
+.drawflow .drawflow-node.fd-style-card .fd-node-title { color: var(--fd-node-color); font-size: .96rem; }
+.drawflow .drawflow-node.fd-style-card .fd-node-description { margin-top: 9px; color: #263b36; text-align: left; font-size: .72rem; line-height: 1.42; }
+.drawflow .drawflow-node.fd-style-banner .fd-node-title { color: #fff; font-size: .95rem; }
+.drawflow .drawflow-node.fd-style-banner .fd-node-description { color: rgba(255,255,255,.88); text-align: center; }
+.drawflow .drawflow-node.fd-style-plain .fd-node-title { color: var(--fd-node-color); font-size: 1rem; }
+.drawflow .drawflow-node.fd-style-plain .fd-node-description { color: #3b504a; text-align: center; }
+.drawflow .drawflow-node.fd-shape-section { width: 420px; min-width: 260px; min-height: 180px; z-index: 0; background: color-mix(in srgb, var(--fd-node-fill) 82%, transparent); border: 2px dashed var(--fd-node-color); border-radius: 12px; box-shadow: none; resize: none; overflow: visible; }
+.drawflow .drawflow-node.fd-shape-section .drawflow_content_node { min-height: 176px; padding: 0; overflow: hidden; border-radius: 10px; }
+.drawflow .drawflow-node.fd-shape-section.fd-group-selected { box-shadow: 0 0 0 4px color-mix(in srgb, var(--fd-node-color) 22%, transparent); }
+.drawflow .drawflow-node.fd-group-highlight:not(.selected) { outline: 2px solid color-mix(in srgb, var(--fd-node-color) 55%, white); outline-offset: 3px; }
+.fd-section-content { position: relative; height: 100%; min-height: 176px; pointer-events: none; }
+.fd-section-title { position: absolute; top: 14px; left: 14px; max-width: calc(100% - 28px); padding: 7px 12px; color: #fff; background: var(--fd-node-color); border-radius: 6px; font-size: .78rem; font-weight: 800; line-height: 1.2; overflow-wrap: anywhere; }
+.fd-section-description { position: absolute; top: 54px; left: 16px; right: 16px; color: #385c70; font-size: .7rem; line-height: 1.35; white-space: pre-line; overflow-wrap: anywhere; }
+.drawflow .drawflow-node.fd-shape-section.fd-style-band { border-style: solid; background: color-mix(in srgb, var(--fd-node-fill) 72%, white); }
+.drawflow .drawflow-node.fd-shape-section.fd-style-band .fd-section-title { top: 0; left: 0; display: flex; align-items: center; justify-content: center; width: 100%; max-width: none; height: 52px; padding: 9px 18px 20px; border-radius: 9px 9px 0 0; text-align: center; font-size: .94rem; }
+.drawflow .drawflow-node.fd-shape-section.fd-style-band .fd-section-description { top: 30px; left: 12px; right: 12px; z-index: 1; color: rgba(255,255,255,.88); text-align: center; font-size: .68rem; font-weight: 600; }
+.drawflow .drawflow-node.fd-shape-annotation { width: 280px; min-width: 180px; min-height: 80px; background: var(--fd-node-fill); border: 2px dashed var(--fd-node-color); border-radius: 9px; box-shadow: none; resize: none; overflow: hidden; }
+.drawflow .drawflow-node.fd-shape-annotation .drawflow_content_node { min-height: 76px; padding: 14px 16px; }
+.fd-annotation-content { display: block; height: 100%; min-height: 0; pointer-events: none; }
+.fd-annotation-title { display: block; color: var(--fd-node-color); font-size: 1rem; font-weight: 800; line-height: 1.25; white-space: pre-line; overflow-wrap: anywhere; }
+.fd-annotation-description { display: block; margin-top: 8px; color: #4e365a; font-size: .76rem; line-height: 1.4; white-space: pre-line; overflow-wrap: anywhere; }
+.drawflow .drawflow-node.fd-shape-annotation.fd-style-card { border-style: solid; }
+.drawflow .drawflow-node.fd-shape-annotation.fd-style-banner { border-style: solid; background: var(--fd-node-color); }
+.drawflow .drawflow-node.fd-shape-annotation.fd-style-banner .fd-annotation-title { color: #fff; text-align: center; font-size: 1.35rem; }
+.drawflow .drawflow-node.fd-shape-annotation.fd-style-banner .fd-annotation-description { color: rgba(255,255,255,.88); text-align: center; }
+.drawflow .drawflow-node.fd-shape-annotation.fd-style-plain { border: 0; background: transparent; }
+.drawflow .drawflow-node.fd-shape-annotation.fd-style-plain .fd-annotation-title,
+.drawflow .drawflow-node.fd-shape-annotation.fd-style-plain .fd-annotation-description { text-align: center; }
+.fd-resize-handle { position: absolute; right: 3px; bottom: 3px; z-index: 5; width: 24px; height: 24px; padding: 0; border: 0; border-radius: 5px; color: var(--fd-node-color); background: transparent; cursor: nwse-resize; pointer-events: auto; touch-action: none; }
+.fd-resize-handle::before { content: ""; position: absolute; right: 4px; bottom: 4px; width: 12px; height: 12px; background: repeating-linear-gradient(135deg, transparent 0 3px, currentColor 3px 5px); opacity: .7; }
+.fd-resize-handle:hover, .fd-resize-handle:focus-visible { background: color-mix(in srgb, var(--fd-node-color) 12%, transparent); outline: none; }
+.drawflow .drawflow-node.is-resizing { filter: saturate(1.08); box-shadow: 0 0 0 3px color-mix(in srgb, var(--fd-node-color) 22%, transparent); }
 .drawflow .drawflow-node.fd-shape-terminator { border-radius: 999px; }
 .drawflow .drawflow-node.fd-shape-activity { border-radius: 16px; }
 .drawflow .drawflow-node.fd-shape-subprocess { box-shadow: inset 7px 0 var(--fd-node-fill), inset 9px 0 var(--fd-node-color), inset -7px 0 var(--fd-node-fill), inset -9px 0 var(--fd-node-color), 0 5px 16px rgba(27,55,48,.11); }
@@ -170,7 +231,7 @@
 .drawflow .drawflow-node.fd-shape-manual-input { --fd-shape-clip: polygon(7% 14%, 100% 0, 93% 100%, 0 100%); }
 .drawflow .drawflow-node.fd-shape-preparation { --fd-shape-clip: polygon(10% 0, 90% 0, 100% 50%, 90% 100%, 10% 100%, 0 50%); }
 .drawflow .drawflow-node.fd-shape-decision,
-.drawflow .drawflow-node.fd-shape-gateway { --fd-shape-clip: polygon(8% 0, 92% 0, 100% 50%, 92% 100%, 8% 100%, 0 50%); }
+.drawflow .drawflow-node.fd-shape-gateway { --fd-shape-clip: polygon(50% 0, 100% 50%, 50% 100%, 0 50%); }
 .drawflow .drawflow-node[class*="fd-shape-"] .drawflow_content_node::before,
 .drawflow .drawflow-node[class*="fd-shape-"] .drawflow_content_node::after { content: ""; position: absolute; pointer-events: none; clip-path: var(--fd-shape-clip, none); }
 .drawflow .drawflow-node.fd-shape-input-output .drawflow_content_node::before,
@@ -188,17 +249,29 @@
 .drawflow .drawflow-node.fd-shape-preparation .drawflow_content_node { padding-inline: 27px; }
 .drawflow .drawflow-node.fd-shape-document { border-radius: 7px 7px 45% 12px / 7px 7px 18px 12px; }
 .drawflow .drawflow-node.fd-shape-data-store { border-radius: 50% / 16%; }
-.drawflow .drawflow-node.fd-shape-decision, .drawflow .drawflow-node.fd-shape-gateway { width: 196px; min-height: 88px; resize: none; }
-.drawflow .drawflow-node.fd-shape-decision .drawflow_content_node, .drawflow .drawflow-node.fd-shape-gateway .drawflow_content_node { min-height: 86px; padding: 17px 28px; }
+.drawflow .drawflow-node.fd-shape-decision, .drawflow .drawflow-node.fd-shape-gateway { width: 196px; min-height: 116px; resize: none; }
+.drawflow .drawflow-node.fd-shape-decision .drawflow_content_node, .drawflow .drawflow-node.fd-shape-gateway .drawflow_content_node { min-height: 114px; padding: 31px 42px; }
 .drawflow .drawflow-node.fd-shape-connector { width: 96px; min-height: 96px; border-radius: 50%; resize: none; }
 .drawflow .drawflow-node.fd-shape-connector .drawflow_content_node { min-height: 94px; padding: 21px 14px; }
 .drawflow .drawflow-node.fd-shape-event { width: 122px; min-height: 122px; border: 4px double var(--fd-node-color); border-radius: 50%; resize: none; }
 .drawflow .drawflow-node.fd-shape-event .drawflow_content_node { min-height: 116px; padding: 28px 18px; }
 .fd-mode-businessworkflow .drawflow-node.fd-shape-terminator { width: 120px; min-height: 120px; border-radius: 50%; resize: none; }
 .fd-mode-businessworkflow .drawflow-node.fd-shape-terminator .drawflow_content_node { min-height: 118px; padding: 28px 17px; }
+.drawflow .drawflow-node.fd-ports-vertical .inputs,
+.drawflow .drawflow-node.fd-ports-vertical .outputs { position: absolute; left: 0; z-index: 4; display: flex; justify-content: center; gap: 18px; width: 100%; height: 16px; pointer-events: none; }
+.drawflow .drawflow-node.fd-ports-vertical .inputs { top: -8px; }
+.drawflow .drawflow-node.fd-ports-vertical .outputs { top: auto; bottom: -8px; }
+.drawflow .drawflow-node.fd-ports-vertical .input,
+.drawflow .drawflow-node.fd-ports-vertical .output { position: static; inset: auto; float: none; margin: 0; transform: none; pointer-events: auto; }
 .drawflow .drawflow-node .input, .drawflow .drawflow-node .output { width: 13px; height: 13px; background: #fff; border: 2px solid var(--fd-node-color); }
 .drawflow .drawflow-node .input:hover, .drawflow .drawflow-node .output:hover { background: var(--fd-accent); border-color: var(--fd-accent); }
-.drawflow .connection .main-path { stroke: #82958f; stroke-width: 2.5px; }
+.fd-connection-definitions { position: absolute; width: 0; height: 0; overflow: hidden; pointer-events: none; }
+.drawflow .connection .main-path { stroke: #82958f; stroke-width: 2.5px; marker-end: url(#fd-connection-arrow); }
+.drawflow .connection .main-path.fd-connection-tone-blue { stroke: #1769aa; marker-end: url(#fd-connection-arrow-blue); }
+.drawflow .connection .main-path.fd-connection-tone-green { stroke: #168451; marker-end: url(#fd-connection-arrow-green); }
+.drawflow .connection .main-path.fd-connection-tone-red { stroke: #c93642; marker-end: url(#fd-connection-arrow-red); }
+.drawflow .connection .main-path.fd-connection-tone-orange { stroke: #d85612; marker-end: url(#fd-connection-arrow-orange); }
+.drawflow .connection .main-path.fd-connection-tone-purple { stroke: #7141ad; marker-end: url(#fd-connection-arrow-purple); }
 .drawflow .connection.selected .main-path, .drawflow .connection .main-path.selected { stroke: var(--fd-accent); stroke-width: 3.5px; }
 .drawflow .connection .fd-connection-label { fill: #445651; font-size: 11px; font-weight: 700; paint-order: stroke; stroke: #fff; stroke-width: 4px; stroke-linejoin: round; pointer-events: none; }
 

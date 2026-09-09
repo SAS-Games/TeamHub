@@ -1,4 +1,5 @@
 using TeamHub.FlowDesigner.Core.Contracts;
+using TeamHub.FlowDesigner.Core.Models;
 using TeamHub.FlowDesigner.Serialization;
 using TeamHub.FlowDesigner.Services;
 using TeamHub.FlowDesigner.Validation;
@@ -50,6 +51,22 @@ public sealed class AccessControlTests
         Assert.NotNull(await service.GetAsync(legacy.Id));
     }
 
+    [Fact]
+    public async Task StudioSupportTemplate_IsRestrictedToAdmins()
+    {
+        await using var database = new TestDatabase();
+        var repository = await database.CreateRepositoryAsync();
+        var userService = CreateService(repository, "alice", isAdmin: false);
+        var adminService = CreateService(repository, "admin", isAdmin: true);
+
+        await Assert.ThrowsAsync<UnauthorizedAccessException>(() =>
+            userService.CreateAsync("Studio support", template: FlowTemplate.StudioSupport));
+
+        var adminDraft = await adminService.CreateAsync("Studio support", template: FlowTemplate.StudioSupport);
+
+        Assert.Equal(58, adminDraft.Nodes.Count);
+    }
+
     private static FlowService CreateService(IFlowRepository repository, string userName, bool isAdmin) =>
         new(repository, new FlowValidator(), new SystemTextJsonFlowSerializer(), new UserProvider(userName), new PermissionService(userName, isAdmin));
 
@@ -63,5 +80,6 @@ public sealed class AccessControlTests
         public bool CanView(string? ownerId) => isAdmin || string.Equals(ownerId, userName, StringComparison.OrdinalIgnoreCase);
         public bool CanEdit(string? ownerId) => CanView(ownerId);
         public bool CanCreate() => true;
+        public bool CanUseTemplate(FlowTemplate template) => template != FlowTemplate.StudioSupport || isAdmin;
     }
 }

@@ -138,12 +138,142 @@ public sealed class StudioDirectoryTests
         }
     }
 
-    private static ServiceProvider CreateServices(string dbPath, string? jiraConfigPath = null)
+    [Fact]
+    public async Task InitializeAsync_CreatesStudioTablesOnlyInStudioDatabase()
+    {
+        var studioDbPath = Path.Combine(Path.GetTempPath(), $"teamhub-studio-{Guid.NewGuid():N}.db");
+        var workflowDbPath = Path.Combine(Path.GetTempPath(), $"teamhub-workflow-{Guid.NewGuid():N}.db");
+
+        try
+        {
+            await using (var workflowConnection = new SqliteConnection($"Data Source={workflowDbPath}"))
+            {
+                await workflowConnection.OpenAsync();
+                await using var command = workflowConnection.CreateCommand();
+                command.CommandText = "CREATE TABLE WorkflowOnly (Id TEXT PRIMARY KEY);";
+                await command.ExecuteNonQueryAsync();
+            }
+
+            await using var provider = CreateServices(studioDbPath, workflowDbPath: workflowDbPath);
+            await using var scope = provider.CreateAsyncScope();
+            await scope.ServiceProvider.GetRequiredService<IStudioDatabaseInitializer>().InitializeAsync();
+
+            var studioTables = await GetTableNamesAsync(studioDbPath);
+            studioTables.Should().Contain(["Studios", "StudioTeamMembers", "StudioDevelopmentTools", "StudioImportantLinks"]);
+
+            var workflowTables = await GetTableNamesAsync(workflowDbPath);
+            workflowTables.Should().ContainSingle().Which.Should().Be("WorkflowOnly");
+        }
+        finally
+        {
+            SqliteConnection.ClearAllPools();
+            if (File.Exists(studioDbPath))
+            {
+                File.Delete(studioDbPath);
+            }
+            if (File.Exists(workflowDbPath))
+            {
+                File.Delete(workflowDbPath);
+            }
+        }
+    }
+
+    [Fact]
+    public async Task InitializeAsync_MovesLegacyStudioDataOutOfWorkflowDatabase()
+    {
+        var studioDbPath = Path.Combine(Path.GetTempPath(), $"teamhub-studio-{Guid.NewGuid():N}.db");
+        var workflowDbPath = Path.Combine(Path.GetTempPath(), $"teamhub-workflow-{Guid.NewGuid():N}.db");
+
+        try
+        {
+            await using (var legacyProvider = CreateServices(workflowDbPath))
+            await using (var legacyScope = legacyProvider.CreateAsyncScope())
+            {
+                await legacyScope.ServiceProvider.GetRequiredService<IStudioDatabaseInitializer>().InitializeAsync();
+                await legacyScope.ServiceProvider.GetRequiredService<IStudioDirectoryService>().SaveStudioAsync(new StudioDetails
+                {
+                    StudioName = "Legacy Studio",
+                    ProjectName = "Legacy Project",
+                    Location = "Pune",
+                    TeamMembers =
+                    [
+                        new StudioTeamMember
+                        {
+                            Name = "Asha",
+                            RolesAndResponsibilities = "Producer",
+                            EmailId = "asha@example.com"
+                        }
+                    ],
+                    DevelopmentTools =
+                    [
+                        new StudioDevelopmentTool { Name = "Build Monitor", Description = "Tracks builds" }
+                    ],
+                    ImportantLinks =
+                    [
+                        new StudioImportantLink
+                        {
+                            Label = "Plan",
+                            Url = "https://example.com/plan",
+                            Description = "Delivery plan"
+                        }
+                    ]
+                });
+            }
+
+            await using (var provider = CreateServices(studioDbPath, workflowDbPath: workflowDbPath))
+            await using (var scope = provider.CreateAsyncScope())
+            {
+                await scope.ServiceProvider.GetRequiredService<IStudioDatabaseInitializer>().InitializeAsync();
+                var studios = await scope.ServiceProvider.GetRequiredService<IStudioDirectoryService>().GetStudiosAsync();
+
+                studios.Should().ContainSingle();
+                studios[0].StudioName.Should().Be("Legacy Studio");
+                studios[0].TeamMembers.Should().ContainSingle();
+                studios[0].DevelopmentTools.Should().ContainSingle();
+                studios[0].ImportantLinks.Should().ContainSingle();
+            }
+
+            var workflowTables = await GetTableNamesAsync(workflowDbPath);
+            workflowTables.Should().NotContain(table => table.StartsWith("Studio", StringComparison.Ordinal));
+        }
+        finally
+        {
+            SqliteConnection.ClearAllPools();
+            if (File.Exists(studioDbPath))
+            {
+                File.Delete(studioDbPath);
+            }
+            if (File.Exists(workflowDbPath))
+            {
+                File.Delete(workflowDbPath);
+            }
+        }
+    }
+
+    private static async Task<IReadOnlyList<string>> GetTableNamesAsync(string databasePath)
+    {
+        await using var connection = new SqliteConnection($"Data Source={databasePath}");
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = "SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name;";
+
+        var names = new List<string>();
+        await using var reader = await command.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+        {
+            names.Add(reader.GetString(0));
+        }
+
+        return names;
+    }
+
+    private static ServiceProvider CreateServices(string dbPath, string? jiraConfigPath = null, string? workflowDbPath = null)
     {
         var configuration = new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?>
             {
-                ["ConnectionStrings:WorkflowDb"] = $"Data Source={dbPath}",
+                ["ConnectionStrings:StudioDb"] = $"Data Source={dbPath}",
+                ["ConnectionStrings:WorkflowDb"] = workflowDbPath is null ? null : $"Data Source={workflowDbPath}",
                 ["StudioJiraConfiguration:ConfigPath"] = jiraConfigPath
             })
             .Build();

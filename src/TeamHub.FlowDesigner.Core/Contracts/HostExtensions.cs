@@ -1,3 +1,5 @@
+using TeamHub.FlowDesigner.Core.Models;
+
 namespace TeamHub.FlowDesigner.Core.Contracts;
 
 public interface ICurrentUserProvider
@@ -10,6 +12,7 @@ public interface IFlowPermissionService
     bool CanView(string? ownerId);
     bool CanEdit(string? ownerId);
     bool CanCreate();
+    bool CanUseTemplate(FlowTemplate template);
 }
 
 public interface IFlowThemeProvider

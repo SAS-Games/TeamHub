@@ -5,6 +5,11 @@
     "description": "Onboarding guides, coding standards, and process docs."
   },
   {
+    "label": "Confluence",
+    "url": "https://example.com/confluence",
+    "description": "Project documentation and knowledge base."
+  },
+  {
     "label": "Project Board",
     "url": "https://example.com/board",
     "description": "Sprint planning and issue tracking."
