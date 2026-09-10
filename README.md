@@ -80,6 +80,16 @@ The standalone development host uses `http://localhost:5168`.
 
 Administrators have a single **Configuration** navigation tab that links to the Team, Studio, and Workflow configuration pages. Team Configuration contains forms for team members, support specializations, achievements, and text appearance. Each person can be assigned to either the Team Members or Management section. The Text Appearance panel controls bold and italic styling per column for Team Directory, Achievements, and Responsibility Matrix.
 
+The Admin Portal also contains **Authorized Users** and **Access Management**:
+
+- The Authorized User List is the source of truth for TeamHub access. Admins can add, update, activate/deactivate, or remove Registered, Privileged, and Admin users.
+- Only active, pre-authorized Registered users can complete self-registration. Privileged and Admin users can be provisioned with a temporary password or recognized through a configured organization authentication provider.
+- Access Management assigns No Access, Read Only, Create, Edit, Delete, or Full Access to each supported module for Guest, Registered, Privileged, and Admin users. These permissions are enforced in both the UI and request pipeline.
+- New Razor Page areas are discovered automatically at startup using their first folder or page-name segment. Missing permission rows are created with No Access for Guest, Registered, and Privileged users and Full Access for Admin, then shown automatically in Access Management.
+- Existing `WorkflowUsers` settings are imported once as bootstrap users for backward compatibility. Subsequent user and permission changes are stored in `src/TeamHub.Web/data/access.db`.
+
+TeamHub can map an externally authenticated organization identity to an authorized user when its name identifier or user name matches the Authorized User List. The deployment must still configure the desired SSO or Windows authentication provider; organization membership alone does not grant access.
+
 Team data is stored in `data/team.db`. The Team pages no longer read `TeamInfo.xlsx`, so the application is unaffected when that spreadsheet is open, locked, empty, or absent.
 
 Studio Configuration stores each studio's time zone and an ordered list of internal contacts with Name and Role fields. The Studio dashboard shows a live local clock and the internal contacts in a responsive right-hand sidebar. Existing studio records default to UTC until another time zone is selected.

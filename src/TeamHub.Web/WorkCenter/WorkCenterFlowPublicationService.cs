@@ -4,6 +4,7 @@ using TeamHub.Application.Interfaces;
 using TeamHub.Application.Models;
 using TeamHub.FlowDesigner.Core.Contracts;
 using TeamHub.FlowDesigner.Core.Models;
+using TeamHub.Authentication;
 
 namespace TeamHub.Web.WorkCenter;
 
@@ -23,7 +24,8 @@ public sealed class WorkCenterFlowPublicationService(
 
     public bool CanPublish(FlowDefinition flow) =>
         flow.DiagramType == DiagramType.WorkCenterWorkflow
-        && httpContextAccessor.HttpContext?.User.IsInRole("Admin") == true;
+        && (httpContextAccessor.HttpContext?.User.IsInRole(TeamHubUserTypes.Admin) == true
+            || httpContextAccessor.HttpContext?.User.IsInRole(TeamHubUserTypes.Privileged) == true);
 
     public async Task<FlowPublicationResult> PublishAsync(
         FlowDefinition flow,
@@ -31,7 +33,7 @@ public sealed class WorkCenterFlowPublicationService(
     {
         if (!CanPublish(flow))
         {
-            throw new UnauthorizedAccessException("Only administrators can publish Work Center workflows.");
+            throw new UnauthorizedAccessException("Full Work Center access is required to publish workflows.");
         }
 
         var errors = Validate(flow);

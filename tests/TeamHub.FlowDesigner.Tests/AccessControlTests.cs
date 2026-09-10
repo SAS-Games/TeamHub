@@ -136,6 +136,7 @@ public sealed class AccessControlTests
         public bool CanView(string? ownerId) => isAdmin || string.Equals(ownerId, userName, StringComparison.OrdinalIgnoreCase);
         public bool CanViewShared() => true;
         public bool CanEdit(string? ownerId) => CanView(ownerId);
+        public bool CanDelete(string? ownerId) => CanView(ownerId);
         public bool CanCreate() => true;
         public bool CanUseTemplate(FlowTemplate template) =>
             template is not FlowTemplate.Onboarding || isAdmin;

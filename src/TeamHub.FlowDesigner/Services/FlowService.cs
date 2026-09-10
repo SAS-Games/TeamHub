@@ -166,7 +166,12 @@ public sealed class FlowService(
 
     public async Task DeleteAsync(Guid id, CancellationToken cancellationToken = default)
     {
-        await RequiredFlowAsync(id, requireEdit: true, cancellationToken);
+        var flow = await repository.GetAsync(id, cancellationToken)
+            ?? throw new KeyNotFoundException($"Flow '{id}' was not found.");
+        if (!permissions.CanDelete(flow.CreatedBy))
+        {
+            throw new UnauthorizedAccessException("The current user cannot delete this flow diagram.");
+        }
         await repository.DeleteAsync(id, cancellationToken);
     }
 

@@ -1,6 +1,6 @@
 using Microsoft.AspNetCore.Authentication.Cookies;
-using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.EntityFrameworkCore;
 
 namespace TeamHub.Authentication;
 
@@ -13,28 +13,28 @@ public sealed class WorkflowUser
 
 public interface IWorkflowAuthenticationService
 {
-    WorkflowUser? ValidateCredentials(string username, string password);
+    Task<AuthorizedUserRecord?> ValidateCredentialsAsync(string username, string password, CancellationToken cancellationToken = default);
 }
 
-internal sealed class ConfigurationWorkflowAuthenticationService(IConfiguration configuration) : IWorkflowAuthenticationService
+internal sealed class AuthorizedListWorkflowAuthenticationService(IUserAccessService users) : IWorkflowAuthenticationService
 {
-    public WorkflowUser? ValidateCredentials(string username, string password)
-    {
-        var users = configuration.GetSection("WorkflowUsers").Get<List<WorkflowUser>>() ?? [];
-        var normalizedUsername = username.Trim();
-        return users.FirstOrDefault(user =>
-            string.Equals(user.Username.Trim(), normalizedUsername, StringComparison.OrdinalIgnoreCase)
-            && user.Password == password);
-    }
+    public Task<AuthorizedUserRecord?> ValidateCredentialsAsync(string username, string password, CancellationToken cancellationToken = default) =>
+        users.ValidateCredentialsAsync(username, password, cancellationToken);
 }
 
 public static class WorkflowAuthenticationServiceCollectionExtensions
 {
-    public static IServiceCollection AddWorkflowAuthentication(this IServiceCollection services)
+    public static IServiceCollection AddWorkflowAuthentication(this IServiceCollection services, string connectionString)
     {
-        services.AddSingleton<IWorkflowAuthenticationService, ConfigurationWorkflowAuthenticationService>();
+        services.AddDbContextFactory<AccessControlDbContext>(options => options.UseSqlite(connectionString));
+        services.AddScoped<IUserAccessService, UserAccessService>();
+        services.AddScoped<IWorkflowAuthenticationService, AuthorizedListWorkflowAuthenticationService>();
         services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
-            .AddCookie(options => options.LoginPath = "/Login");
+            .AddCookie(options =>
+            {
+                options.LoginPath = "/Login";
+                options.AccessDeniedPath = "/AccessDenied";
+            });
         return services;
     }
 }

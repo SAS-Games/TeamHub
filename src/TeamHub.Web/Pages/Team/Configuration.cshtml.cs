@@ -6,7 +6,7 @@ using TeamHub.Team;
 
 namespace TeamHub.Web.Pages.Team;
 
-[Authorize(Roles = "Admin")]
+[Authorize]
 public sealed class ConfigurationModel(
     ITeamDirectoryService teamDirectoryService,
     ITeamConfigurationService teamConfigurationService,

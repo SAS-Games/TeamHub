@@ -4,7 +4,8 @@
     ViewData["Title"] = "Login";
 }
 
-<h1 class="mb-4">Workflow System Login</h1>
+<h1 class="mb-2">Sign in to TeamHub</h1>
+<p class="text-secondary mb-4">Only users authorized by a TeamHub administrator can sign in.</p>
 
 @if (!string.IsNullOrWhiteSpace(Model.ErrorMessage))
 {
@@ -21,4 +22,5 @@
         <input asp-for="Input.Password" type="password" class="form-control" autocomplete="current-password" required />
     </div>
     <button type="submit" class="btn btn-primary">Sign in</button>
+    <a class="btn btn-link" asp-page="/Register">Register an authorized account</a>
 </form>

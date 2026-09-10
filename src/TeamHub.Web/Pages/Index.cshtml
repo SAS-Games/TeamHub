@@ -56,7 +56,7 @@
     </section>
 }
 
-@if (content.UsefulLinks.Count > 0)
+@if (Model.CanViewUsefulLinks && content.UsefulLinks.Count > 0)
 {
     <section class="content-section">
         <div class="section-heading">

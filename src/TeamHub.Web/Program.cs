@@ -1,6 +1,7 @@
 using System.IO;
-using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Routing;
 using TeamHub.Authentication;
+using TeamHub.Web.AccessControl;
 using TeamHub.FlowDesigner.Core.Contracts;
 using TeamHub.FlowDesigner.DependencyInjection;
 using TeamHub.FlowDesigner.Web;
@@ -25,6 +26,7 @@ Directory.CreateDirectory(dataDir);
 builder.Configuration["ConnectionStrings:WorkflowDb"] = $"Data Source={Path.Combine(dataDir, "workflow.db")}";
 builder.Configuration["ConnectionStrings:TeamDb"] = $"Data Source={Path.Combine(dataDir, "team.db")}";
 builder.Configuration["ConnectionStrings:StudioDb"] = $"Data Source={Path.Combine(dataDir, "studio.db")}";
+var accessDatabasePath = Path.Combine(dataDir, "access.db");
 var flowDesignerDatabasePath = Path.Combine(dataDir, "flowdesigner.db");
 var templateDatabasePath = Path.Combine(dataDir, "templates.db");
 
@@ -32,11 +34,10 @@ var templateDatabasePath = Path.Combine(dataDir, "templates.db");
 builder.Services.AddRazorPages();
 builder.Services.Configure<ApplicationOptions>(builder.Configuration.GetSection("Application"));
 builder.Services.Configure<List<NavigationTabOptions>>(builder.Configuration.GetSection("NavigationTabs"));
-builder.Services.AddWorkflowAuthentication();
-builder.Services.AddAuthorizationBuilder()
-    .SetFallbackPolicy(new AuthorizationPolicyBuilder()
-        .RequireAuthenticatedUser()
-        .Build());
+builder.Services.AddWorkflowAuthentication($"Data Source={accessDatabasePath}");
+builder.Services.AddAuthorization();
+builder.Services.AddScoped<ICurrentAccessService, CurrentAccessService>();
+builder.Services.AddSingleton<ITeamHubModuleCatalog, TeamHubModuleCatalog>();
 builder.Services.AddWorkflowInfrastructure(builder.Configuration);
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<ICurrentUserProvider, TeamHubFlowCurrentUserProvider>();
@@ -57,6 +58,8 @@ var app = builder.Build();
 
 using (var scope = app.Services.CreateScope())
 {
+    var userAccess = scope.ServiceProvider.GetRequiredService<IUserAccessService>();
+    await userAccess.InitializeAsync();
     var db = scope.ServiceProvider.GetRequiredService<WorkflowDbContext>();
     db.Database.EnsureCreated();
     var studioDatabase = scope.ServiceProvider.GetRequiredService<IStudioDatabaseInitializer>();
@@ -79,9 +82,18 @@ app.UseStaticFiles();
 app.UseRouting();
 
 app.UseAuthentication();
+app.UseTeamHubAccessControl();
 app.UseAuthorization();
 
 app.MapRazorPages();
-app.MapFlowDesignerApi().RequireAuthorization();
+app.MapFlowDesignerApi();
+
+var moduleCatalog = app.Services.GetRequiredService<ITeamHubModuleCatalog>();
+moduleCatalog.Discover(((IEndpointRouteBuilder)app).DataSources);
+using (var scope = app.Services.CreateScope())
+{
+    await scope.ServiceProvider.GetRequiredService<IUserAccessService>()
+        .EnsureModulesAsync(moduleCatalog.Modules);
+}
 
 app.Run();

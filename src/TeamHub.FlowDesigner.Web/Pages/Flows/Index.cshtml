@@ -58,7 +58,7 @@
                                         <li><button class="dropdown-item" type="button" data-bs-toggle="modal" data-bs-target="#renameModal" data-flow-id="@flow.Id" data-flow-name="@flow.Name">Rename</button></li>
                                     }
                                     <li><form method="post" asp-page-handler="Duplicate"><input type="hidden" name="id" value="@flow.Id" /><button class="dropdown-item" type="submit">Duplicate</button></form></li>
-                                    @if (Model.CanEdit(flow))
+                                    @if (Model.CanDelete(flow))
                                     {
                                         <li><hr class="dropdown-divider" /></li>
                                         <li><button class="dropdown-item text-danger" type="button" data-bs-toggle="modal" data-bs-target="#deleteModal" data-flow-id="@flow.Id" data-flow-name="@flow.Name">Delete</button></li>

@@ -1,0 +1,16 @@
+@page
+@model TeamHub.Web.Pages.AccessDeniedModel
+@{
+    ViewData["Title"] = "Access denied";
+}
+
+<div class="container py-5">
+    <div class="card border-0 shadow-sm mx-auto" style="max-width: 620px;">
+        <div class="card-body p-5">
+            <div class="eyebrow">TeamHub access control</div>
+            <h1 class="h2">Access denied</h1>
+            <p class="text-secondary">Your account does not have the required permission for this page or action. Contact a TeamHub administrator if you need additional access.</p>
+            <a class="btn btn-primary" asp-page="/Index">Return home</a>
+        </div>
+    </div>
+</div>

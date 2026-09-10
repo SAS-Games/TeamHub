@@ -7,7 +7,7 @@ using TeamHub.Studio;
 
 namespace TeamHub.Web.Pages.Studio;
 
-[Authorize(Roles = "Admin")]
+[Authorize]
 public class ConfigurationModel(IStudioDirectoryService studioDirectoryService) : PageModel
 {
     [BindProperty]

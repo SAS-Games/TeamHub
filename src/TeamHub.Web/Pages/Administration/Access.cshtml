@@ -1,0 +1,68 @@
+@page "/Administration/Access"
+@model TeamHub.Web.Pages.Administration.AccessModel
+@using TeamHub.Authentication
+@{
+    ViewData["Title"] = "Access Management";
+    var inputIndex = 0;
+}
+
+<div class="page-hero">
+    <div>
+        <div class="eyebrow">Admin Portal</div>
+        <h1>Access Management</h1>
+        <p>Configure the access level applied to each page or module for every TeamHub user type.</p>
+    </div>
+    <div class="d-flex gap-2">
+        <a class="btn btn-outline-secondary" asp-page="/Configuration/Index">Admin Portal</a>
+        <a class="btn btn-outline-primary" asp-page="/Administration/Users">Authorized Users</a>
+    </div>
+</div>
+
+@if (!string.IsNullOrWhiteSpace(Model.StatusMessage))
+{
+    <div class="alert alert-success">@Model.StatusMessage</div>
+}
+
+<section class="content-section">
+    <div class="section-heading"><div><span>Authorization policy</span><h2>Page / Module Access Matrix</h2></div></div>
+    <form method="post">
+        <div class="table-responsive">
+            <table class="table styled-table align-middle">
+                <thead><tr><th>Page / Module</th>@foreach (var type in Model.UserTypes) { <th>@type</th> }</tr></thead>
+                <tbody>
+                @foreach (var module in Model.Modules)
+                {
+                    <tr>
+                        <td><strong>@module</strong></td>
+                        @foreach (var type in Model.UserTypes)
+                        {
+                            var level = Model.GetLevel(module, type);
+                            var locked = Model.IsLocked(module, type);
+                            <td>
+                                <input type="hidden" name="Input[@inputIndex].Module" value="@module" />
+                                <input type="hidden" name="Input[@inputIndex].UserType" value="@type" />
+                                @if (locked)
+                                {
+                                    <input type="hidden" name="Input[@inputIndex].AccessLevel" value="@level" />
+                                    <span class="badge text-bg-light">@level.ToDisplayName()</span>
+                                }
+                                else
+                                {
+                                    <select class="form-select form-select-sm" name="Input[@inputIndex].AccessLevel" aria-label="@module access for @type">
+                                        @foreach (var option in Model.AccessLevels)
+                                        {
+                                            <option value="@option" selected="@(option == level)">@option.ToDisplayName()</option>
+                                        }
+                                    </select>
+                                }
+                            </td>
+                            inputIndex++;
+                        }
+                    </tr>
+                }
+                </tbody>
+            </table>
+        </div>
+        <div class="section-body pt-3"><button class="btn btn-primary" type="submit">Save Access Matrix</button></div>
+    </form>
+</section>

@@ -123,6 +123,7 @@ public sealed class FlowServiceTests
         public bool CanView(string? ownerId) => true;
         public bool CanViewShared() => true;
         public bool CanEdit(string? ownerId) => true;
+        public bool CanDelete(string? ownerId) => true;
         public bool CanCreate() => true;
         public bool CanUseTemplate(FlowTemplate template) => true;
         public bool CanUseDiagramType(DiagramType diagramType) => true;

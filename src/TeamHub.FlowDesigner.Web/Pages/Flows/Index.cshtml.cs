@@ -11,6 +11,7 @@ public sealed class IndexModel(
 {
     public IReadOnlyList<FlowSummary> Flows { get; private set; } = [];
     public bool CanEdit(FlowSummary flow) => permissions.CanEdit(flow.CreatedBy);
+    public bool CanDelete(FlowSummary flow) => permissions.CanDelete(flow.CreatedBy);
 
     public async Task OnGetAsync(CancellationToken cancellationToken)
     {

@@ -8,7 +8,7 @@ using TeamHub.Infrastructure.Persistence;
 
 namespace TeamHub.Web.Pages.WorkCenter;
 
-[Authorize(Roles = "Admin")]
+[Authorize]
 public class StartNewModel(
     WorkflowDbContext dbContext,
     IWorkflowEngine workflowEngine) : PageModel

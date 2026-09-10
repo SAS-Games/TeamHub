@@ -18,7 +18,7 @@ public class LoginModel(IWorkflowAuthenticationService authenticationService) : 
 
     public async Task<IActionResult> OnPostAsync(string? returnUrl = null)
     {
-        var user = authenticationService.ValidateCredentials(Input.Username, Input.Password);
+        var user = await authenticationService.ValidateCredentialsAsync(Input.Username, Input.Password, HttpContext.RequestAborted);
 
         if (user is null)
         {
@@ -28,15 +28,17 @@ public class LoginModel(IWorkflowAuthenticationService authenticationService) : 
 
         var claims = new[]
         {
-            new Claim(ClaimTypes.Name, user.Username),
-            new Claim(ClaimTypes.Role, user.Role)
+            new Claim(ClaimTypes.NameIdentifier, user.UserId),
+            new Claim(ClaimTypes.Name, user.UserId),
+            new Claim(ClaimTypes.GivenName, user.DisplayName),
+            new Claim(ClaimTypes.Role, user.UserType)
         };
         var identity = new ClaimsIdentity(claims, CookieAuthenticationDefaults.AuthenticationScheme);
         await HttpContext.SignInAsync(
             CookieAuthenticationDefaults.AuthenticationScheme,
             new ClaimsPrincipal(identity));
 
-        return LocalRedirect(string.IsNullOrWhiteSpace(returnUrl) ? "/" : returnUrl);
+        return LocalRedirect(string.IsNullOrWhiteSpace(returnUrl) || !Url.IsLocalUrl(returnUrl) ? "/" : returnUrl);
     }
 
     public sealed class LoginInput

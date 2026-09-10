@@ -1,15 +1,33 @@
 @using Microsoft.Extensions.Options
 @using TeamHub.Studio
+@using TeamHub.Authentication
+@using TeamHub.Web.AccessControl
 @using TeamHub.Web.Navigation
 @using TeamHub.Web.Options
 @inject IOptions<List<NavigationTabOptions>> NavigationTabsOptions
 @inject IOptions<ApplicationOptions> ApplicationOptions
 @inject IStudioDirectoryService StudioDirectoryService
+@inject ICurrentAccessService CurrentAccess
 @{
     var applicationName = ApplicationOptions.Value.Name;
-    var navigationTabs = NavigationTabsOptions.Value
-        .OrderBy(tab => tab.Order)
-        .Where(tab => !tab.AdminOnly || User.IsInRole("Admin"));
+    var currentModule = TeamHubAccessRoutes.ResolveModule(Context.Request.Path);
+    var currentPageAccess = currentModule is null ? AccessLevel.FullAccess : await CurrentAccess.GetAccessLevelAsync(currentModule);
+    var isReadOnlyPage = currentPageAccess == AccessLevel.ReadOnly;
+    var navigationTabs = new List<NavigationTabOptions>();
+    foreach (var tab in NavigationTabsOptions.Value.OrderBy(tab => tab.Order))
+    {
+        if (string.Equals(tab.Page, "/Logout", StringComparison.OrdinalIgnoreCase))
+        {
+            if (User.Identity?.IsAuthenticated == true) navigationTabs.Add(tab);
+            continue;
+        }
+        var module = TeamHubAccessRoutes.ResolveNavigationModule(tab.Page);
+        if ((!tab.AdminOnly || User.IsInRole(TeamHubUserTypes.Admin))
+            && (module is null || await CurrentAccess.CanAsync(module)))
+        {
+            navigationTabs.Add(tab);
+        }
+    }
     IReadOnlyList<StudioDetails> studioTabs = [];
     try
     {
@@ -70,12 +88,24 @@
                             }
                         }
                     </ul>
+                    @if (User.Identity?.IsAuthenticated == true)
+                    {
+                        <span class="navbar-text small text-secondary me-2">@(User.FindFirst(System.Security.Claims.ClaimTypes.GivenName)?.Value ?? User.Identity.Name)</span>
+                    }
+                    else
+                    {
+                        <a class="btn btn-sm btn-outline-primary" asp-page="/Login">Sign in</a>
+                    }
                 </div>
             </div>
         </nav>
     </header>
     <div class="@(fullBleed ? "container-fluid p-0" : "container")">
         <main role="main" class="pb-3">
+            @if (isReadOnlyPage && User.Identity?.IsAuthenticated == true)
+            {
+                <div class="alert alert-light border small" role="status">You have read-only access to this module.</div>
+            }
             @RenderBody()
         </main>
     </div>
@@ -92,6 +122,36 @@
     <script src="~/lib/jquery/dist/jquery.min.js"></script>
     <script src="~/lib/bootstrap/dist/js/bootstrap.bundle.min.js"></script>
     <script src="~/js/site.js" asp-append-version="true"></script>
+    <script>
+        (() => {
+            const granted = @((int)currentPageAccess);
+            const requiredFor = (url, method) => {
+                const target = new URL(url, window.location.href);
+                const handler = target.searchParams.get("handler") || "";
+                if (method === "DELETE" || /delete/i.test(handler)) return 4;
+                if (/\/publish/i.test(target.pathname) || (/\/templates/i.test(target.pathname) && method !== "GET") || /publish/i.test(handler)) return 5;
+                if (method === "POST" && /(create|duplicate)/i.test(handler)) return 2;
+                if (["POST", "PUT", "PATCH"].includes(method)) return 3;
+                if (method === "GET" && (/\/new$/i.test(target.pathname) || target.searchParams.has("create"))) return 2;
+                return 1;
+            };
+            const allows = required => granted === 5 || granted >= required;
+
+            document.querySelectorAll('form[method="post"]').forEach(form => {
+                if (!allows(3)) form.querySelectorAll('input, select, textarea').forEach(control => control.disabled = true);
+                form.querySelectorAll('button, input[type="submit"]').forEach(button => {
+                    const target = button.formAction || form.action;
+                    button.disabled = !allows(requiredFor(target, "POST"));
+                });
+            });
+            document.querySelectorAll('a[href]').forEach(link => {
+                if (allows(requiredFor(link.href, "GET"))) return;
+                link.classList.add("disabled");
+                link.setAttribute("aria-disabled", "true");
+                link.addEventListener("click", event => event.preventDefault());
+            });
+        })();
+    </script>
 
     @await RenderSectionAsync("Scripts", required: false)
 </body>
