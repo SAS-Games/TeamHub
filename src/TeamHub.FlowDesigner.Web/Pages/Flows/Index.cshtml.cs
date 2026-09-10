@@ -5,10 +5,14 @@ using TeamHub.FlowDesigner.Core.Models;
 
 namespace TeamHub.FlowDesigner.Web.Pages.Flows;
 
-public sealed class IndexModel(IFlowService flows, IFlowTemplateCatalogService templates) : PageModel
+public sealed class IndexModel(
+    IFlowService flows,
+    IFlowTemplateCatalogService templates,
+    IFlowPermissionService permissions) : PageModel
 {
     public IReadOnlyList<FlowSummary> Flows { get; private set; } = [];
     public Guid? StudioSupportTemplateId { get; private set; }
+    public bool CanEdit(FlowSummary flow) => permissions.CanEdit(flow.CreatedBy);
 
     public async Task OnGetAsync(CancellationToken cancellationToken)
     {

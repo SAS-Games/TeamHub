@@ -772,16 +772,20 @@
                     const tone = String(state.metadata?.tone || "").toLowerCase();
                     if (["blue", "green", "red", "orange", "purple"].includes(tone)) path.classList.add(`fd-connection-tone-${tone}`);
                     if (!state.label) continue;
-                    const pathId = `fd-path-${parts.source}-${parts.target}-${parts.sourcePort}-${parts.targetPort}`;
-                    path.id = pathId;
+                    let point;
+                    try {
+                        point = path.getPointAtLength(path.getTotalLength() / 2);
+                    } catch {
+                        continue;
+                    }
                     const label = document.createElementNS("http://www.w3.org/2000/svg", "text");
                     label.setAttribute("class", "fd-connection-label");
-                    const textPath = document.createElementNS("http://www.w3.org/2000/svg", "textPath");
-                    textPath.setAttribute("href", `#${pathId}`);
-                    textPath.setAttribute("startOffset", "50%");
-                    textPath.setAttribute("text-anchor", "middle");
-                    textPath.textContent = state.label;
-                    label.appendChild(textPath);
+                    label.setAttribute("x", point.x);
+                    label.setAttribute("y", point.y - 7);
+                    label.setAttribute("text-anchor", "middle");
+                    label.setAttribute("dominant-baseline", "central");
+                    label.setAttribute("data-tone", ["blue", "green", "red", "orange", "purple"].includes(tone) ? tone : "default");
+                    label.textContent = state.label;
                     svg.appendChild(label);
                 }
             });

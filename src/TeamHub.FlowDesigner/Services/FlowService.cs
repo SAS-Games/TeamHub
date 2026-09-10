@@ -14,13 +14,15 @@ public sealed class FlowService(
     public async Task<IReadOnlyList<FlowSummary>> ListAsync(CancellationToken cancellationToken = default)
     {
         var flows = await repository.ListAsync(cancellationToken);
-        return flows.Where(flow => flow.Version > 0 && permissions.CanView(flow.CreatedBy)).ToList();
+        return flows
+            .Where(flow => flow.Version > 0 && CanView(flow.CreatedBy, flow.IsShared))
+            .ToList();
     }
 
     public async Task<FlowDefinition?> GetAsync(Guid id, CancellationToken cancellationToken = default)
     {
         var flow = await repository.GetAsync(id, cancellationToken);
-        return flow is not null && permissions.CanView(flow.CreatedBy) ? flow : null;
+        return flow is not null && CanView(flow.CreatedBy, flow.IsShared) ? flow : null;
     }
 
     public async Task<FlowDefinition> CreateAsync(string name, string? description = null, DiagramType diagramType = DiagramType.StandardFlowchart, FlowTemplate template = FlowTemplate.Blank, CancellationToken cancellationToken = default)
@@ -77,6 +79,7 @@ public sealed class FlowService(
 
         flow.CreatedAt = existing.CreatedAt;
         flow.CreatedBy = existing.CreatedBy;
+        flow.IsShared = existing.IsShared;
         flow.Version = Math.Max(existing.Version + 1, 1);
         flow.UpdatedAt = DateTimeOffset.UtcNow;
         await repository.SaveAsync(flow, cancellationToken);
@@ -111,6 +114,26 @@ public sealed class FlowService(
         return comment;
     }
 
+    public async Task<FlowDefinition> SetSharedAsync(Guid id, bool isShared, CancellationToken cancellationToken = default)
+    {
+        var flow = await RequiredFlowAsync(id, requireEdit: true, cancellationToken);
+        if (flow.Version <= 0)
+        {
+            throw new InvalidOperationException("Save the diagram before sharing it.");
+        }
+
+        if (flow.IsShared == isShared)
+        {
+            return flow;
+        }
+
+        flow.IsShared = isShared;
+        flow.UpdatedAt = DateTimeOffset.UtcNow;
+        flow.Version++;
+        await repository.SaveAsync(flow, cancellationToken);
+        return flow;
+    }
+
     public async Task RenameAsync(Guid id, string name, CancellationToken cancellationToken = default)
     {
         var flow = await RequiredFlowAsync(id, requireEdit: true, cancellationToken);
@@ -135,6 +158,7 @@ public sealed class FlowService(
         copy.CreatedAt = now;
         copy.UpdatedAt = now;
         copy.CreatedBy = currentUser.GetCurrentUserId();
+        copy.IsShared = false;
         copy.Version = 0;
         await repository.SaveAsync(copy, cancellationToken);
         return copy;
@@ -150,9 +174,12 @@ public sealed class FlowService(
     {
         var flow = await repository.GetAsync(id, cancellationToken)
             ?? throw new KeyNotFoundException($"Flow '{id}' was not found.");
-        var allowed = requireEdit ? permissions.CanEdit(flow.CreatedBy) : permissions.CanView(flow.CreatedBy);
+        var allowed = requireEdit ? permissions.CanEdit(flow.CreatedBy) : CanView(flow.CreatedBy, flow.IsShared);
         return allowed ? flow : throw new UnauthorizedAccessException("The current user cannot access this flow diagram.");
     }
+
+    private bool CanView(string? ownerId, bool isShared) =>
+        permissions.CanView(ownerId) || isShared && permissions.CanViewShared();
 
     private static string NormalizeName(string? name)
     {

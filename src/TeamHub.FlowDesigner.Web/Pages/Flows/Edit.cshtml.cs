@@ -13,6 +13,8 @@ public sealed class EditModel(
     public Guid FlowId { get; private set; }
     public string FlowName { get; private set; } = string.Empty;
     public DiagramType DiagramType { get; private set; }
+    public bool CanEdit { get; private set; }
+    public bool IsShared { get; private set; }
     public bool CanPublish { get; private set; }
     public bool CanSaveAsTemplate { get; private set; }
     public string BackPath { get; private set; } = "/flows";
@@ -28,6 +30,8 @@ public sealed class EditModel(
         FlowId = flow.Id;
         FlowName = flow.Name;
         DiagramType = flow.DiagramType;
+        CanEdit = permissions.CanEdit(flow.CreatedBy);
+        IsShared = flow.IsShared;
         CanPublish = publicationService.CanPublish(flow);
         CanSaveAsTemplate = permissions.CanManageTemplates();
         BackPath = flow.DiagramType == DiagramType.WorkCenterWorkflow

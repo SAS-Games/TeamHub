@@ -11,19 +11,22 @@ public sealed class SqliteFlowRepository(
     public async Task<IReadOnlyList<FlowSummary>> ListAsync(CancellationToken cancellationToken = default)
     {
         await using var context = await contextFactory.CreateDbContextAsync(cancellationToken);
-        return await context.Flows
+        var entities = await context.Flows
             .AsNoTracking()
             .OrderByDescending(flow => flow.UpdatedAt)
-            .Select(flow => new FlowSummary(
-                flow.Id,
-                flow.Name,
-                flow.Description,
-                ParseDiagramType(flow.DiagramType),
-                flow.NodeCount,
-                new DateTimeOffset(DateTime.SpecifyKind(flow.UpdatedAt, DateTimeKind.Utc)),
-                flow.Version,
-                flow.CreatedBy))
             .ToListAsync(cancellationToken);
+
+        return entities.Select(entity => new FlowSummary(
+            entity.Id,
+            entity.Name,
+            entity.Description,
+            ParseDiagramType(entity.DiagramType),
+            entity.NodeCount,
+            new DateTimeOffset(DateTime.SpecifyKind(entity.UpdatedAt, DateTimeKind.Utc)),
+            entity.Version,
+            entity.CreatedBy,
+            serializer.Deserialize(entity.GraphJson).IsShared))
+            .ToList();
     }
 
     public async Task<FlowDefinition?> GetAsync(Guid id, CancellationToken cancellationToken = default)

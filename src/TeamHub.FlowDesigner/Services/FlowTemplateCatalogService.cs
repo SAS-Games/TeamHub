@@ -74,6 +74,7 @@ public sealed class FlowTemplateCatalogService(
         payload.CreatedBy = null;
         payload.CreatedAt = DateTimeOffset.UnixEpoch;
         payload.UpdatedAt = DateTimeOffset.UnixEpoch;
+        payload.IsShared = false;
         payload.Version = 0;
         foreach (var node in payload.Nodes) node.Comments = [];
 
@@ -123,6 +124,7 @@ public sealed class FlowTemplateCatalogService(
         flow.CreatedAt = now;
         flow.UpdatedAt = now;
         flow.CreatedBy = currentUser.GetCurrentUserId();
+        flow.IsShared = false;
         flow.Version = 0;
         await flows.SaveAsync(flow, cancellationToken);
         return flow;

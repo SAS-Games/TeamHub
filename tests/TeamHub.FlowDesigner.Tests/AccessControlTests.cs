@@ -52,6 +52,47 @@ public sealed class AccessControlTests
     }
 
     [Fact]
+    public async Task SharedFlow_IsVisibleButNotEditableByOtherUsers()
+    {
+        await using var database = new TestDatabase();
+        var repository = await database.CreateRepositoryAsync();
+        var adminFlow = ValidationTests.ConnectedFlow();
+        adminFlow.CreatedBy = "admin";
+        adminFlow.Name = "Published support workflow";
+        var privateFlow = ValidationTests.ConnectedFlow();
+        privateFlow.Id = Guid.NewGuid();
+        privateFlow.CreatedBy = "bob";
+        privateFlow.Name = "Bob private workflow";
+        await repository.SaveAsync(adminFlow);
+        await repository.SaveAsync(privateFlow);
+
+        var adminService = CreateService(repository, "admin", isAdmin: true);
+        var shared = await adminService.SetSharedAsync(adminFlow.Id, true);
+        var aliceService = CreateService(repository, "alice", isAdmin: false);
+
+        Assert.True(shared.IsShared);
+        var visible = await aliceService.ListAsync();
+        Assert.Single(visible);
+        Assert.Equal(adminFlow.Id, visible[0].Id);
+        Assert.True(visible[0].IsShared);
+        Assert.NotNull(await aliceService.GetAsync(adminFlow.Id));
+        Assert.Null(await aliceService.GetAsync(privateFlow.Id));
+        await Assert.ThrowsAsync<UnauthorizedAccessException>(() => aliceService.RenameAsync(adminFlow.Id, "Not allowed"));
+        await Assert.ThrowsAsync<UnauthorizedAccessException>(() => aliceService.SetSharedAsync(adminFlow.Id, false));
+    }
+
+    [Fact]
+    public async Task Draft_CannotBeShared()
+    {
+        await using var database = new TestDatabase();
+        var repository = await database.CreateRepositoryAsync();
+        var adminService = CreateService(repository, "admin", isAdmin: true);
+        var draft = await adminService.CreateAsync("Unsaved flow");
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => adminService.SetSharedAsync(draft.Id, true));
+    }
+
+    [Fact]
     public async Task StudioSupportTemplate_IsRestrictedToAdmins()
     {
         await using var database = new TestDatabase();
@@ -95,6 +136,7 @@ public sealed class AccessControlTests
     private sealed class PermissionService(string userName, bool isAdmin) : IFlowPermissionService
     {
         public bool CanView(string? ownerId) => isAdmin || string.Equals(ownerId, userName, StringComparison.OrdinalIgnoreCase);
+        public bool CanViewShared() => true;
         public bool CanEdit(string? ownerId) => CanView(ownerId);
         public bool CanCreate() => true;
         public bool CanUseTemplate(FlowTemplate template) =>

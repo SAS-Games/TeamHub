@@ -16,6 +16,8 @@ public sealed class TeamHubFlowPermissionService(IHttpContextAccessor httpContex
 {
     public bool CanView(string? ownerId) => IsAdmin() || IsOwner(ownerId);
 
+    public bool CanViewShared() => httpContextAccessor.HttpContext?.User.Identity?.IsAuthenticated == true;
+
     public bool CanEdit(string? ownerId) => IsAdmin() || IsOwner(ownerId);
 
     public bool CanCreate() => httpContextAccessor.HttpContext?.User.Identity?.IsAuthenticated == true;

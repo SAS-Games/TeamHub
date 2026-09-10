@@ -146,6 +146,7 @@ public sealed class FlowServiceTests
     private sealed class AllowAllPermissionService : IFlowPermissionService
     {
         public bool CanView(string? ownerId) => true;
+        public bool CanViewShared() => true;
         public bool CanEdit(string? ownerId) => true;
         public bool CanCreate() => true;
         public bool CanUseTemplate(FlowTemplate template) => true;

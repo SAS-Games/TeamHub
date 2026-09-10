@@ -6,10 +6,13 @@
 
     const byId = id => document.getElementById(id);
     const flowId = root.dataset.flowId;
+    const canEdit = root.dataset.canEdit === "true";
     const nameInput = byId("flowName");
     const saveState = byId("saveState");
     const saveButton = byId("saveButton");
     const saveButtonText = byId("saveButtonText");
+    const shareButton = byId("shareButton");
+    const shareButtonText = byId("shareButtonText");
     const publishButton = byId("publishButton");
     const publishButtonText = byId("publishButtonText");
     const saveTemplateForm = byId("saveTemplateForm");
@@ -58,13 +61,16 @@
         root.dataset.diagramType = flow.diagramType;
         root.classList.add(`fd-mode-${flow.diagramType.toLowerCase()}`);
         adapter.setGraph(flow);
+        adapter.setReadOnly(!canEdit);
+        nameInput.readOnly = !canEdit;
         initializeWorkflowProperties();
         history = [graphSnapshot()];
         historyIndex = 0;
         updateHistoryButtons();
         updateCanvasHint();
         applyValidation(localValidation());
-        setSaveState(isDraft ? "unsaved" : "saved", isDraft ? "Not saved yet" : "Saved");
+        updateShareButton();
+        setSaveState(canEdit ? (isDraft ? "unsaved" : "saved") : "saved", canEdit ? (isDraft ? "Not saved yet" : "Saved") : "View only");
         bindUi();
         clearProperties();
     }
@@ -84,7 +90,7 @@
         canvas.addEventListener("dragover", event => { event.preventDefault(); event.dataTransfer.dropEffect = "copy"; });
         canvas.addEventListener("drop", event => {
             event.preventDefault();
-            if (presentationMode) return;
+            if (!canEdit || presentationMode) return;
             const type = event.dataTransfer.getData("application/x-flow-node");
             if (!activePalette().nodes.includes(type)) return;
             const point = adapter.screenToCanvas(event.clientX, event.clientY);
@@ -92,7 +98,7 @@
             adapter.addNode(type, position.x, position.y);
         });
         canvas.addEventListener("dblclick", event => {
-            if (presentationMode) return;
+            if (!canEdit || presentationMode) return;
             if (event.target !== canvas && !event.target.classList.contains("drawflow")) return;
             const point = adapter.screenToCanvas(event.clientX, event.clientY);
             const position = nodePosition(activePalette().primary, point);
@@ -100,6 +106,7 @@
         });
 
         saveButton.addEventListener("click", () => save(true));
+        shareButton?.addEventListener("click", toggleSharing);
         publishButton?.addEventListener("click", publish);
         saveTemplateForm?.addEventListener("submit", saveAsTemplate);
         byId("saveTemplateModal")?.addEventListener("show.bs.modal", () => {
@@ -283,7 +290,7 @@
     }
 
     async function save(manual) {
-        if (!flow) return false;
+        if (!flow || !canEdit) return false;
         if (!dirty && !isDraft) {
             if (manual) showToast("Diagram is already saved");
             return true;
@@ -352,6 +359,8 @@
                 byId("validationPopover").classList.remove("d-none");
                 throw new Error(issues[0]?.message || "Publish failed");
             }
+            flow.isShared = true;
+            updateShareButton();
             showToast(result.message || "Workflow published to Work Center");
             publishButtonText.textContent = "Published";
             window.setTimeout(() => { publishButtonText.textContent = "Publish to Work Center"; }, 1800);
@@ -362,6 +371,42 @@
         } finally {
             publishButton.disabled = false;
         }
+    }
+
+    async function toggleSharing() {
+        if (!shareButton || saving || !canEdit) return;
+        if (!(await save(false))) return;
+
+        const nextShared = !Boolean(flow.isShared);
+        shareButton.disabled = true;
+        shareButtonText.textContent = nextShared ? "Sharing..." : "Updating...";
+        try {
+            const response = await fetch(`/api/flows/${flowId}/share`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ isShared: nextShared })
+            });
+            const result = await response.json();
+            if (!response.ok) throw new Error(result.message || "Could not update sharing");
+            flow = result;
+            updateShareButton();
+            showToast(flow.isShared ? "Diagram shared with all users" : "Diagram is private");
+        } catch (error) {
+            console.error(error);
+            showToast(error.message || "Could not update sharing");
+            updateShareButton();
+        } finally {
+            shareButton.disabled = false;
+        }
+    }
+
+    function updateShareButton() {
+        if (!shareButton || !shareButtonText) return;
+        const isShared = Boolean(flow?.isShared);
+        root.dataset.isShared = String(isShared);
+        shareButton.setAttribute("aria-pressed", String(isShared));
+        shareButtonText.textContent = isShared ? "Unshare" : "Share";
+        shareButton.title = isShared ? "Make this diagram private" : "Allow all users to view this diagram";
     }
 
     async function saveAsTemplate(event) {
@@ -631,6 +676,13 @@
                 event.preventDefault();
                 exitPresentation(false);
             } else if (event.code === "Space" && !event.repeat) {
+                event.preventDefault();
+                adapter.setSpacePanning(true);
+            }
+            return;
+        }
+        if (!canEdit) {
+            if (event.code === "Space" && !event.repeat) {
                 event.preventDefault();
                 adapter.setSpacePanning(true);
             }

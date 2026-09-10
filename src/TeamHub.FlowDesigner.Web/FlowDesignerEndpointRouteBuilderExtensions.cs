@@ -45,6 +45,30 @@ public static class FlowDesignerEndpointRouteBuilderExtensions
         api.MapPost("/{id:guid}/validate", (Guid id, FlowDefinition flow, IFlowValidator validator) =>
             id == flow.Id ? Results.Ok(validator.Validate(flow)) : Results.BadRequest());
 
+        api.MapPost("/{id:guid}/share", async (
+            Guid id,
+            SetFlowSharingRequest request,
+            IFlowService flows,
+            CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                return Results.Ok(await flows.SetSharedAsync(id, request.IsShared, cancellationToken));
+            }
+            catch (InvalidOperationException exception)
+            {
+                return Results.BadRequest(new { message = exception.Message });
+            }
+            catch (UnauthorizedAccessException)
+            {
+                return Results.Forbid();
+            }
+            catch (KeyNotFoundException)
+            {
+                return Results.NotFound();
+            }
+        });
+
         api.MapPost("/{id:guid}/publish", async (
             Guid id,
             IFlowService flows,
@@ -63,7 +87,13 @@ public static class FlowDesignerEndpointRouteBuilderExtensions
             }
 
             var result = await publicationService.PublishAsync(flow, cancellationToken);
-            return result.Success ? Results.Ok(result) : Results.BadRequest(result);
+            if (!result.Success)
+            {
+                return Results.BadRequest(result);
+            }
+
+            await flows.SetSharedAsync(id, true, cancellationToken);
+            return Results.Ok(result);
         });
 
         api.MapPost("/{id:guid}/templates", async (
@@ -140,4 +170,5 @@ public static class FlowDesignerEndpointRouteBuilderExtensions
     }
 
     public sealed record AddNodeCommentRequest(string Body);
+    public sealed record SetFlowSharingRequest(bool IsShared);
 }

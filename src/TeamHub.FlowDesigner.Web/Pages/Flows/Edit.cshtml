@@ -10,7 +10,7 @@
     <link rel="stylesheet" href="~/_content/TeamHub.FlowDesigner.Web/css/flowdesigner.css" asp-append-version="true" />
 }
 
-<div class="fd-designer" id="flowDesigner" data-flow-id="@Model.FlowId" data-diagram-type="@Model.DiagramType">
+<div class="fd-designer@(Model.CanEdit ? "" : " is-view-only")" id="flowDesigner" data-flow-id="@Model.FlowId" data-diagram-type="@Model.DiagramType" data-can-edit="@Model.CanEdit.ToString().ToLowerInvariant()" data-is-shared="@Model.IsShared.ToString().ToLowerInvariant()">
     <div class="fd-designer-toolbar">
         <div class="d-flex align-items-center gap-2 min-w-0">
             <a class="btn btn-sm btn-light fd-icon-button" id="backToFlows" href="@Model.BackPath" aria-label="Back" title="Back">&larr;</a>
@@ -21,10 +21,14 @@
             </div>
         </div>
         <div class="fd-toolbar-actions">
-            <button class="btn btn-sm btn-light fd-mobile-panel-button" id="toggleToolbox" type="button">Symbols</button>
-            <button class="btn btn-sm btn-light" id="undoButton" type="button" title="Undo (Ctrl+Z)" disabled>&#8630; <span class="d-none d-lg-inline">Undo</span></button>
-            <button class="btn btn-sm btn-light" id="redoButton" type="button" title="Redo (Ctrl+Y)" disabled>&#8631; <span class="d-none d-lg-inline">Redo</span></button>
+            <button class="btn btn-sm btn-light fd-mobile-panel-button fd-edit-only" id="toggleToolbox" type="button">Symbols</button>
+            <button class="btn btn-sm btn-light fd-edit-only" id="undoButton" type="button" title="Undo (Ctrl+Z)" disabled>&#8630; <span class="d-none d-lg-inline">Undo</span></button>
+            <button class="btn btn-sm btn-light fd-edit-only" id="redoButton" type="button" title="Redo (Ctrl+Y)" disabled>&#8631; <span class="d-none d-lg-inline">Redo</span></button>
             <button class="btn btn-sm btn-light" id="presentationButton" type="button" aria-pressed="false" title="Open a read-only presentation">Present</button>
+            @if (Model.CanEdit)
+            {
+                <button class="btn btn-sm btn-light fd-edit-only" id="shareButton" type="button" aria-pressed="@Model.IsShared.ToString().ToLowerInvariant()"><span id="shareButtonText">@(Model.IsShared ? "Unshare" : "Share")</span></button>
+            }
             <div class="dropdown">
                 <button class="btn btn-sm btn-light dropdown-toggle" data-bs-toggle="dropdown" type="button">Export</button>
                 <ul class="dropdown-menu dropdown-menu-end shadow-sm">
@@ -32,7 +36,7 @@
                     <li><button class="dropdown-item" id="exportPng" type="button">Download PNG</button></li>
                 </ul>
             </div>
-            <button class="btn btn-sm btn-primary" id="saveButton" type="button"><span id="saveButtonText">Save</span></button>
+            <button class="btn btn-sm btn-primary fd-edit-only" id="saveButton" type="button"><span id="saveButtonText">Save</span></button>
             @if (Model.CanSaveAsTemplate)
             {
                 <button class="btn btn-sm btn-light" id="saveAsTemplateButton" type="button" data-bs-toggle="modal" data-bs-target="#saveTemplateModal">Save as template</button>
@@ -41,12 +45,12 @@
             {
                 <button class="btn btn-sm btn-success" id="publishButton" type="button"><span id="publishButtonText">Publish to Work Center</span></button>
             }
-            <button class="btn btn-sm btn-light fd-mobile-panel-button" id="toggleProperties" type="button">Properties</button>
+            <button class="btn btn-sm btn-light fd-mobile-panel-button fd-edit-only" id="toggleProperties" type="button">Properties</button>
         </div>
     </div>
 
     <div class="fd-designer-main">
-        <aside class="fd-toolbox" id="toolbox" aria-label="Symbol toolbox">
+        <aside class="fd-toolbox fd-edit-only" id="toolbox" aria-label="Symbol toolbox">
             <div class="fd-panel-heading">
                 <div><div class="fd-eyebrow">Build</div><h2 id="paletteTitle">Symbols</h2></div>
                 <button class="btn-close fd-panel-close" id="closeToolbox" type="button" aria-label="Close toolbox"></button>
@@ -67,11 +71,11 @@
                 <button class="btn btn-sm btn-light fd-zoom-value" id="zoomReset" type="button" title="Reset zoom">100%</button>
                 <button class="btn btn-sm btn-light" id="zoomIn" type="button" title="Zoom in">+</button>
                 <button class="btn btn-sm btn-light" id="fitView" type="button" title="Fit to view">Fit</button>
-                <button class="btn btn-sm btn-light active" id="gridToggle" type="button" title="Toggle grid">Grid</button>
+                <button class="btn btn-sm btn-light active fd-edit-only" id="gridToggle" type="button" title="Toggle grid">Grid</button>
             </div>
         </section>
 
-        <aside class="fd-properties" id="propertiesPanel" aria-label="Properties">
+        <aside class="fd-properties fd-edit-only" id="propertiesPanel" aria-label="Properties">
             <div class="fd-panel-heading">
                 <div><div class="fd-eyebrow">Inspector</div><h2>Properties</h2></div>
                 <button class="btn-close fd-panel-close" id="closeProperties" type="button" aria-label="Close properties"></button>

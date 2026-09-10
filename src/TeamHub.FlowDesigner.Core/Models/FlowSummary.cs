@@ -8,4 +8,5 @@ public sealed record FlowSummary(
     int NodeCount,
     DateTimeOffset UpdatedAt,
     int Version,
-    string? CreatedBy);
+    string? CreatedBy,
+    bool IsShared);

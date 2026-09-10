@@ -12,5 +12,6 @@ public sealed class FlowDefinition
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
     public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
     public string? CreatedBy { get; set; }
+    public bool IsShared { get; set; }
     public int Version { get; set; } = 1;
 }

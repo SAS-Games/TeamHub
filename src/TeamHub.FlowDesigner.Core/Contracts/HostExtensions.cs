@@ -10,6 +10,7 @@ public interface ICurrentUserProvider
 public interface IFlowPermissionService
 {
     bool CanView(string? ownerId);
+    bool CanViewShared();
     bool CanEdit(string? ownerId);
     bool CanCreate();
     bool CanUseTemplate(FlowTemplate template);
