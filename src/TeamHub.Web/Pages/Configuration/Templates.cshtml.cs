@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
 using TeamHub.FlowDesigner.Core.Contracts;
 using TeamHub.FlowDesigner.Core.Models;
@@ -10,8 +11,29 @@ public sealed class TemplatesModel(IFlowTemplateCatalogService templates) : Page
 {
     public IReadOnlyList<TemplateCatalogSummary> Templates { get; private set; } = [];
 
+    [TempData]
+    public string? StatusMessage { get; set; }
+
     public async Task OnGetAsync(CancellationToken cancellationToken)
     {
         Templates = await templates.ListAsync(cancellationToken);
+    }
+
+    public async Task<IActionResult> OnPostDeleteAsync(Guid id, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await templates.DeleteAsync(id, cancellationToken);
+            StatusMessage = "Template deleted.";
+            return RedirectToPage();
+        }
+        catch (KeyNotFoundException)
+        {
+            return NotFound();
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return Forbid();
+        }
     }
 }

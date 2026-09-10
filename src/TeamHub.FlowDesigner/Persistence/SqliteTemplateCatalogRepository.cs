@@ -80,6 +80,17 @@ public sealed class SqliteTemplateCatalogRepository(
         await context.SaveChangesAsync(cancellationToken);
     }
 
+    public async Task DeleteAsync(Guid id, CancellationToken cancellationToken = default)
+    {
+        await using var context = await contextFactory.CreateDbContextAsync(cancellationToken);
+        var entity = await context.Templates.SingleOrDefaultAsync(item => item.Id == id, cancellationToken);
+        if (entity is null) return;
+
+        entity.IsActive = false;
+        entity.UpdatedAt = DateTime.UtcNow;
+        await context.SaveChangesAsync(cancellationToken);
+    }
+
     private static TemplateCatalogDefinition ToDefinition(TemplateCatalogDefinitionEntity entity) => new()
     {
         Id = entity.Id,

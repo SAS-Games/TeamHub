@@ -47,7 +47,8 @@ public sealed class TeamDirectoryTests
                 Role = "Support Engineer",
                 Gid = "G123",
                 Email = "asha@example.com",
-                ContactNumber = "+91 99999 00000"
+                ContactNumber = "+91 99999 00000",
+                Section = TeamMemberSections.Management
             });
             saved.Role = "Senior Support Engineer";
             var updated = await configuration.SaveTeamMemberAsync(saved);
@@ -56,7 +57,9 @@ public sealed class TeamDirectoryTests
             updated.Role.Should().Be("Senior Support Engineer");
             var directory = await scope.ServiceProvider.GetRequiredService<ITeamDirectoryService>()
                 .GetTeamDirectoryAsync();
-            directory.Members.Should().ContainSingle().Which.Role.Should().Be("Senior Support Engineer");
+            var member = directory.Members.Should().ContainSingle().Subject;
+            member.Role.Should().Be("Senior Support Engineer");
+            member.Section.Should().Be(TeamMemberSections.Management);
         }
         finally
         {
@@ -126,6 +129,94 @@ public sealed class TeamDirectoryTests
 
             saved.Select(item => item.Title).Should().Equal("Performance target", "First release");
             saved[0].AchievedBy.Should().Be("Rendering pod");
+        }
+        finally
+        {
+            DeleteDatabase(dbPath);
+        }
+    }
+
+    [Fact]
+    public async Task TextAppearance_IsStoredPerPageAndColumn()
+    {
+        var dbPath = CreateDatabasePath();
+        try
+        {
+            await using var provider = CreateServices(dbPath);
+            await using var scope = provider.CreateAsyncScope();
+            await scope.ServiceProvider.GetRequiredService<ITeamDatabaseInitializer>().InitializeAsync();
+            var appearanceService = scope.ServiceProvider.GetRequiredService<IPageTextAppearanceService>();
+
+            await appearanceService.SavePageAppearanceAsync(new PageTextAppearanceDto
+            {
+                PageKey = TeamPageAppearanceCatalog.Directory,
+                Columns =
+                [
+                    new() { ColumnKey = "employee-name", IsBold = true },
+                    new() { ColumnKey = "role", IsItalic = true }
+                ]
+            });
+
+            var directoryAppearance = await appearanceService.GetPageAppearanceAsync(
+                TeamPageAppearanceCatalog.Directory);
+            var achievementsAppearance = await appearanceService.GetPageAppearanceAsync(
+                TeamPageAppearanceCatalog.Achievements);
+
+            directoryAppearance.Columns.Should().HaveCount(2);
+            directoryAppearance.CssClass("employee-name").Should().Contain("configured-text-bold");
+            directoryAppearance.CssClass("role").Should().Contain("configured-text-italic");
+            directoryAppearance.CssClass("email").Should().BeEmpty();
+            achievementsAppearance.Columns.Should().BeEmpty();
+        }
+        finally
+        {
+            DeleteDatabase(dbPath);
+        }
+    }
+
+    [Fact]
+    public async Task Initializer_AddsSectionToAnExistingTeamMembersTable()
+    {
+        var dbPath = CreateDatabasePath();
+        try
+        {
+            await using (var connection = new SqliteConnection($"Data Source={dbPath}"))
+            {
+                await connection.OpenAsync();
+                await using var command = connection.CreateCommand();
+                command.CommandText = """
+                    CREATE TABLE TeamMembers (
+                        Id TEXT NOT NULL CONSTRAINT PK_TeamMembers PRIMARY KEY,
+                        EmployeeName TEXT NOT NULL,
+                        Role TEXT NOT NULL,
+                        Gid TEXT NOT NULL,
+                        Email TEXT NOT NULL,
+                        ContactNumber TEXT NOT NULL,
+                        CreatedAtUtc TEXT NOT NULL,
+                        UpdatedAtUtc TEXT NOT NULL
+                    );
+                    """;
+                await command.ExecuteNonQueryAsync();
+            }
+
+            await using (var provider = CreateServices(dbPath))
+            await using (var scope = provider.CreateAsyncScope())
+            {
+                await scope.ServiceProvider.GetRequiredService<ITeamDatabaseInitializer>().InitializeAsync();
+            }
+
+            await using var verificationConnection = new SqliteConnection($"Data Source={dbPath}");
+            await verificationConnection.OpenAsync();
+            await using var verificationCommand = verificationConnection.CreateCommand();
+            verificationCommand.CommandText = "PRAGMA table_info(TeamMembers);";
+            await using var reader = await verificationCommand.ExecuteReaderAsync();
+            var columns = new List<string>();
+            while (await reader.ReadAsync())
+            {
+                columns.Add(reader.GetString(1));
+            }
+
+            columns.Should().Contain("Section");
         }
         finally
         {

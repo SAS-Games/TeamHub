@@ -10,7 +10,7 @@ public sealed class ConfigurationFilePathsTests : IDisposable
     public ConfigurationFilePathsTests() => Directory.CreateDirectory(_root);
 
     [Fact]
-    public void ExistingContentRootFileTakesPrecedenceOverBundledCopy()
+    public void ExistingContentRootFileTakesPrecedence()
     {
         Directory.CreateDirectory(Path.Combine(_root, "config", "Home"));
         var customFile = Path.Combine(_root, "config", "Home", "project-info.json");
@@ -27,31 +27,33 @@ public sealed class ConfigurationFilePathsTests : IDisposable
     }
 
     [Fact]
-    public void AppSettingsPathsResolveToBundledFiles_FromAnUnrelatedContentRoot()
+    public void AppSettingsPathsResolveToRepositoryConfig_FromNestedWebContentRoot()
     {
+        var contentRoot = Path.Combine(_root, "src", "TeamHub.Web");
+        Directory.CreateDirectory(contentRoot);
+        Directory.CreateDirectory(Path.Combine(_root, "config", "Home"));
+        Directory.CreateDirectory(Path.Combine(_root, "config", "Studio"));
+
         var configuration = new ConfigurationBuilder()
             .SetBasePath(AppContext.BaseDirectory)
             .AddJsonFile("appsettings.json")
             .Build();
 
-        ConfigurationFilePaths.ResolveConfiguredPaths(configuration, _root);
+        ConfigurationFilePaths.ResolveConfiguredPaths(configuration, contentRoot);
 
-        foreach (var key in new[]
+        var expectedPaths = new Dictionary<string, string>
         {
-            "MilestoneConfiguration:ExcelPath",
-            "HomeConfiguration:ProjectInfoPath",
-            "HomeConfiguration:UsefulLinksPath",
-            "StudioJiraConfiguration:ConfigPath"
-        })
+            ["WorkflowConfiguration:ExcelPath"] = Path.Combine(_root, "config", "Workflows.xlsx"),
+            ["MilestoneConfiguration:ExcelPath"] = Path.Combine(_root, "config", "MilestoneTracker.xlsx"),
+            ["HomeConfiguration:ProjectInfoPath"] = Path.Combine(_root, "config", "Home", "project-info.json"),
+            ["HomeConfiguration:UsefulLinksPath"] = Path.Combine(_root, "config", "Home", "useful-links.json"),
+            ["StudioJiraConfiguration:ConfigPath"] = Path.Combine(_root, "config", "Studio", "jira-settings.json")
+        };
+
+        foreach (var (key, expectedPath) in expectedPaths)
         {
-            var path = configuration[key]!;
-            Assert.StartsWith(AppContext.BaseDirectory, path);
-            Assert.True(File.Exists(path), $"Missing bundled configuration for {key}: {path}");
+            Assert.Equal(expectedPath, configuration[key]);
         }
-
-        // The optional workflow import workbook is not shipped in this repository.
-        Assert.Equal(Path.Combine(AppContext.BaseDirectory, "config", "Workflows.xlsx"),
-            configuration["WorkflowConfiguration:ExcelPath"]);
     }
 
     public void Dispose() => Directory.Delete(_root, recursive: true);

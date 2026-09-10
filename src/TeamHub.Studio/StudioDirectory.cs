@@ -11,6 +11,8 @@ public sealed class StudioDetails
     public string StudioName { get; set; } = string.Empty;
     public string ProjectName { get; set; } = string.Empty;
     public string Location { get; set; } = string.Empty;
+    public string TimeZoneId { get; set; } = TimeZoneInfo.Utc.Id;
+    public List<StudioContact> OurContacts { get; set; } = [];
     public List<StudioTeamMember> TeamMembers { get; set; } = [];
     public List<StudioDevelopmentTool> DevelopmentTools { get; set; } = [];
     public List<StudioImportantLink> ImportantLinks { get; set; } = [];
@@ -55,9 +57,11 @@ internal sealed class StudioRecord
     public string StudioName { get; set; } = string.Empty;
     public string ProjectName { get; set; } = string.Empty;
     public string Location { get; set; } = string.Empty;
+    public string TimeZoneId { get; set; } = TimeZoneInfo.Utc.Id;
     public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
     public DateTime UpdatedAtUtc { get; set; } = DateTime.UtcNow;
     public ICollection<StudioTeamMemberRecord> TeamMembers { get; set; } = new List<StudioTeamMemberRecord>();
+    public ICollection<StudioContactRecord> OurContacts { get; set; } = new List<StudioContactRecord>();
     public ICollection<StudioDevelopmentToolsRecord> DevelopmentTools { get; set; } = new List<StudioDevelopmentToolsRecord>();
     public ICollection<StudioImportantLinkRecord> ImportantLinks { get; set; } = new List<StudioImportantLinkRecord>();
 }
@@ -97,6 +101,7 @@ internal sealed class StudioImportantLinkRecord
 internal sealed class StudioDbContext(DbContextOptions<StudioDbContext> options) : DbContext(options)
 {
     public DbSet<StudioRecord> Studios => Set<StudioRecord>();
+    public DbSet<StudioContactRecord> StudioContacts => Set<StudioContactRecord>();
     public DbSet<StudioTeamMemberRecord> StudioTeamMembers => Set<StudioTeamMemberRecord>();
     public DbSet<StudioDevelopmentToolsRecord> StudioDevelopmentTools => Set<StudioDevelopmentToolsRecord>();
     public DbSet<StudioImportantLinkRecord> StudioImportantLinks => Set<StudioImportantLinkRecord>();
@@ -109,7 +114,20 @@ internal sealed class StudioDbContext(DbContextOptions<StudioDbContext> options)
             entity.Property(x => x.StudioName).HasMaxLength(256);
             entity.Property(x => x.ProjectName).HasMaxLength(256);
             entity.Property(x => x.Location).HasMaxLength(256);
+            entity.Property(x => x.TimeZoneId).HasMaxLength(256);
             entity.HasIndex(x => new { x.StudioName, x.ProjectName }).IsUnique();
+        });
+
+        modelBuilder.Entity<StudioContactRecord>(entity =>
+        {
+            entity.ToTable("StudioContacts");
+            entity.Property(x => x.Name).HasMaxLength(256);
+            entity.Property(x => x.Role).HasMaxLength(256);
+            entity.HasIndex(x => new { x.StudioRecordId, x.DisplayOrder });
+            entity.HasOne(x => x.Studio)
+                .WithMany(x => x.OurContacts)
+                .HasForeignKey(x => x.StudioRecordId)
+                .OnDelete(DeleteBehavior.Cascade);
         });
 
         modelBuilder.Entity<StudioTeamMemberRecord>(entity =>
@@ -164,14 +182,41 @@ internal sealed class SqliteStudioDatabaseInitializer(
                     StudioName TEXT NOT NULL,
                     ProjectName TEXT NOT NULL,
                     Location TEXT NOT NULL,
+                    TimeZoneId TEXT NOT NULL DEFAULT 'UTC',
                     CreatedAtUtc TEXT NOT NULL,
                     UpdatedAtUtc TEXT NOT NULL
                 );
                 """, cancellationToken);
 
+            var connection = (SqliteConnection)dbContext.Database.GetDbConnection();
+            if (!await MainColumnExistsAsync(connection, "Studios", "TimeZoneId", cancellationToken))
+            {
+                await dbContext.Database.ExecuteSqlRawAsync("""
+                    ALTER TABLE Studios
+                    ADD COLUMN TimeZoneId TEXT NOT NULL DEFAULT 'UTC';
+                    """, cancellationToken);
+            }
+
             await dbContext.Database.ExecuteSqlRawAsync("""
                 CREATE UNIQUE INDEX IF NOT EXISTS IX_Studios_StudioName_ProjectName
                 ON Studios (StudioName, ProjectName);
+                """, cancellationToken);
+
+            await dbContext.Database.ExecuteSqlRawAsync("""
+                CREATE TABLE IF NOT EXISTS StudioContacts (
+                    Id TEXT NOT NULL CONSTRAINT PK_StudioContacts PRIMARY KEY,
+                    StudioRecordId TEXT NOT NULL,
+                    DisplayOrder INTEGER NOT NULL,
+                    Name TEXT NOT NULL,
+                    Role TEXT NOT NULL,
+                    CONSTRAINT FK_StudioContacts_Studios_StudioRecordId
+                        FOREIGN KEY (StudioRecordId) REFERENCES Studios (Id) ON DELETE CASCADE
+                );
+                """, cancellationToken);
+
+            await dbContext.Database.ExecuteSqlRawAsync("""
+                CREATE INDEX IF NOT EXISTS IX_StudioContacts_StudioRecordId_DisplayOrder
+                ON StudioContacts (StudioRecordId, DisplayOrder);
                 """, cancellationToken);
 
             await dbContext.Database.ExecuteSqlRawAsync("""
@@ -278,6 +323,7 @@ internal sealed class SqliteStudioDatabaseInitializer(
 
             var childTables = new[]
             {
+                new LegacyTable("StudioContacts", "Id, StudioRecordId, DisplayOrder, Name, Role"),
                 new LegacyTable("StudioTeamMembers", "Id, StudioRecordId, DisplayOrder, Name, RolesAndResponsibilities, EmailId"),
                 new LegacyTable("StudioDevelopmentTools", "Id, StudioRecordId, DisplayOrder, Name, Description"),
                 new LegacyTable("StudioImportantLinks", "Id, StudioRecordId, DisplayOrder, Label, Url, Description")
@@ -352,6 +398,26 @@ internal sealed class SqliteStudioDatabaseInitializer(
         return await command.ExecuteScalarAsync(cancellationToken) is not null;
     }
 
+    private static async Task<bool> MainColumnExistsAsync(
+        SqliteConnection connection,
+        string tableName,
+        string columnName,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = $"PRAGMA main.table_info({tableName});";
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            if (string.Equals(reader.GetString(1), columnName, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     private static async Task<bool> AllRowsMovedAsync(
         SqliteConnection connection,
         SqliteTransaction transaction,
@@ -385,12 +451,29 @@ internal sealed class SqliteStudioDatabaseInitializer(
     private sealed record LegacyTable(string Name, string Columns);
 }
 
+internal sealed class StudioContactRecord
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public Guid StudioRecordId { get; set; }
+    public int DisplayOrder { get; set; }
+    public string Name { get; set; } = string.Empty;
+    public string Role { get; set; } = string.Empty;
+    public StudioRecord Studio { get; set; } = null!;
+}
+
+public sealed class StudioContact
+{
+    public string Name { get; set; } = string.Empty;
+    public string Role { get; set; } = string.Empty;
+}
+
 internal sealed class SqliteStudioDirectoryService(StudioDbContext dbContext) : IStudioDirectoryService
 {
     public async Task<IReadOnlyList<StudioDetails>> GetStudiosAsync(CancellationToken cancellationToken = default)
     {
         var studios = await dbContext.Studios
             .AsNoTracking()
+            .Include(studio => studio.OurContacts)
             .Include(studio => studio.TeamMembers)
             .Include(studio => studio.DevelopmentTools)
             .Include(studio => studio.ImportantLinks)
@@ -409,6 +492,7 @@ internal sealed class SqliteStudioDirectoryService(StudioDbContext dbContext) : 
 
         var studio = await dbContext.Studios
             .AsNoTracking()
+            .Include(item => item.OurContacts)
             .Include(item => item.TeamMembers)
             .Include(item => item.DevelopmentTools)
             .Include(item => item.ImportantLinks)
@@ -435,6 +519,7 @@ internal sealed class SqliteStudioDirectoryService(StudioDbContext dbContext) : 
         record.StudioName = studio.StudioName.Trim();
         record.ProjectName = studio.ProjectName.Trim();
         record.Location = studio.Location.Trim();
+        record.TimeZoneId = NormalizeTimeZoneId(studio.TimeZoneId);
         record.UpdatedAtUtc = DateTime.UtcNow;
 
         if (dbContext.Entry(record).State == EntityState.Detached)
@@ -444,6 +529,9 @@ internal sealed class SqliteStudioDirectoryService(StudioDbContext dbContext) : 
 
         await dbContext.SaveChangesAsync(cancellationToken);
 
+        await dbContext.StudioContacts
+            .Where(contact => contact.StudioRecordId == record.Id)
+            .ExecuteDeleteAsync(cancellationToken);
         await dbContext.StudioTeamMembers
             .Where(member => member.StudioRecordId == record.Id)
             .ExecuteDeleteAsync(cancellationToken);
@@ -454,6 +542,7 @@ internal sealed class SqliteStudioDirectoryService(StudioDbContext dbContext) : 
             .Where(link => link.StudioRecordId == record.Id)
             .ExecuteDeleteAsync(cancellationToken);
 
+        dbContext.StudioContacts.AddRange(CreateContactRecords(record.Id, studio.OurContacts));
         dbContext.StudioTeamMembers.AddRange(CreateTeamMemberRecords(record.Id, studio.TeamMembers));
         dbContext.StudioDevelopmentTools.AddRange(CreateDevelopmentToolsRecords(record.Id, studio.DevelopmentTools));
         dbContext.StudioImportantLinks.AddRange(CreateImportantLinkRecords(record.Id, studio.ImportantLinks));
@@ -487,6 +576,15 @@ internal sealed class SqliteStudioDirectoryService(StudioDbContext dbContext) : 
             StudioName = studio.StudioName,
             ProjectName = studio.ProjectName,
             Location = studio.Location,
+            TimeZoneId = NormalizeTimeZoneId(studio.TimeZoneId),
+            OurContacts = studio.OurContacts
+                .OrderBy(contact => contact.DisplayOrder)
+                .Select(contact => new StudioContact
+                {
+                    Name = contact.Name,
+                    Role = contact.Role
+                })
+                .ToList(),
             TeamMembers = studio.TeamMembers
                 .OrderBy(member => member.DisplayOrder)
                 .Select(member => new StudioTeamMember
@@ -514,6 +612,24 @@ internal sealed class SqliteStudioDirectoryService(StudioDbContext dbContext) : 
                 })
                 .ToList()
         };
+    }
+
+    private static IEnumerable<StudioContactRecord> CreateContactRecords(
+        Guid studioRecordId,
+        IEnumerable<StudioContact> contacts)
+    {
+        var displayOrder = 0;
+        foreach (var contact in contacts.Where(HasContactValue))
+        {
+            yield return new StudioContactRecord
+            {
+                StudioRecordId = studioRecordId,
+                DisplayOrder = displayOrder,
+                Name = contact.Name.Trim(),
+                Role = contact.Role.Trim()
+            };
+            displayOrder++;
+        }
     }
 
     private static IEnumerable<StudioTeamMemberRecord> CreateTeamMemberRecords(Guid studioRecordId, IEnumerable<StudioTeamMember> teamMembers)
@@ -570,6 +686,31 @@ internal sealed class SqliteStudioDirectoryService(StudioDbContext dbContext) : 
         => !string.IsNullOrWhiteSpace(member.Name)
             || !string.IsNullOrWhiteSpace(member.RolesAndResponsibilities)
             || !string.IsNullOrWhiteSpace(member.EmailId);
+
+    private static bool HasContactValue(StudioContact contact)
+        => !string.IsNullOrWhiteSpace(contact.Name)
+            || !string.IsNullOrWhiteSpace(contact.Role);
+
+    private static string NormalizeTimeZoneId(string? timeZoneId)
+    {
+        if (string.IsNullOrWhiteSpace(timeZoneId))
+        {
+            return TimeZoneInfo.Utc.Id;
+        }
+
+        try
+        {
+            return TimeZoneInfo.FindSystemTimeZoneById(timeZoneId.Trim()).Id;
+        }
+        catch (TimeZoneNotFoundException)
+        {
+            return TimeZoneInfo.Utc.Id;
+        }
+        catch (InvalidTimeZoneException)
+        {
+            return TimeZoneInfo.Utc.Id;
+        }
+    }
 
     private static bool HasImportantLinkValue(StudioImportantLink link)
         => !string.IsNullOrWhiteSpace(link.Label)

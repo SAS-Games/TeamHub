@@ -82,11 +82,13 @@
             </div>
             <div id="emptyProperties" class="fd-properties-empty"><span>&#9671;</span><p>Select a symbol or connector to edit its details.</p></div>
             <form id="workflowProperties" class="d-none" autocomplete="off">
-                <div class="fd-selection-label">Workflow settings</div>
-                <div class="mb-3"><label class="form-label" for="workflowKey">Workflow key</label><input class="form-control" id="workflowKey" maxlength="128" /><div class="form-text">Generated from the workflow name. Keep it stable across versions.</div></div>
+                <div class="fd-selection-label">Diagram settings</div>
                 <div class="mb-3"><label class="form-label" for="workflowDescription">Description</label><textarea class="form-control" id="workflowDescription" rows="3" maxlength="2000"></textarea></div>
-                <div class="form-check mb-3"><input class="form-check-input" id="workflowEnabled" type="checkbox" checked /><label class="form-check-label" for="workflowEnabled">Available to start</label></div>
-                <p class="small text-secondary">Select a task to configure its assignment and timing. Connect tasks to define their dependencies.</p>
+                <div class="@(Model.DiagramType == TeamHub.FlowDesigner.Core.Models.DiagramType.WorkCenterWorkflow ? "" : "d-none")">
+                    <div class="mb-3"><label class="form-label" for="workflowKey">Workflow key</label><input class="form-control" id="workflowKey" maxlength="128" /><div class="form-text">Generated from the workflow name. Keep it stable across versions.</div></div>
+                    <div class="form-check mb-3"><input class="form-check-input" id="workflowEnabled" type="checkbox" checked /><label class="form-check-label" for="workflowEnabled">Available to start</label></div>
+                    <p class="small text-secondary">Select a task to configure its assignment and timing. Connect tasks to define their dependencies.</p>
+                </div>
             </form>
             <form id="nodeProperties" class="d-none" autocomplete="off">
                 <div class="fd-selection-label">Selected symbol</div>

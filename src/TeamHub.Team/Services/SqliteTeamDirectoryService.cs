@@ -3,7 +3,7 @@ using Microsoft.EntityFrameworkCore;
 namespace TeamHub.Team;
 
 internal sealed class SqliteTeamDirectoryService(TeamDbContext dbContext)
-    : ITeamDirectoryService, ITeamConfigurationService, ITeamAchievementService
+    : ITeamDirectoryService, ITeamConfigurationService, ITeamAchievementService, IPageTextAppearanceService
 {
     public async Task<TeamDirectoryDto> GetTeamDirectoryAsync(CancellationToken cancellationToken = default)
     {
@@ -17,7 +17,10 @@ internal sealed class SqliteTeamDirectoryService(TeamDbContext dbContext)
                 Role = member.Role,
                 Gid = member.Gid,
                 Email = member.Email,
-                ContactNumber = member.ContactNumber
+                ContactNumber = member.ContactNumber,
+                Section = member.Section == TeamMemberSections.Management
+                    ? TeamMemberSections.Management
+                    : TeamMemberSections.TeamMember
             })
             .ToListAsync(cancellationToken);
 
@@ -60,6 +63,7 @@ internal sealed class SqliteTeamDirectoryService(TeamDbContext dbContext)
         record.Gid = member.Gid.Trim();
         record.Email = member.Email.Trim();
         record.ContactNumber = member.ContactNumber.Trim();
+        record.Section = TeamMemberSections.Normalize(member.Section);
         record.UpdatedAtUtc = DateTime.UtcNow;
         await dbContext.SaveChangesAsync(cancellationToken);
         return ToDto(record);
@@ -153,6 +157,62 @@ internal sealed class SqliteTeamDirectoryService(TeamDbContext dbContext)
         return ToDto(record);
     }
 
+    public async Task<PageTextAppearanceDto> GetPageAppearanceAsync(
+        string pageKey,
+        CancellationToken cancellationToken = default)
+    {
+        var normalizedPageKey = pageKey.Trim().ToLowerInvariant();
+        var columns = await dbContext.PageTextAppearances
+            .AsNoTracking()
+            .Where(appearance => appearance.PageKey == normalizedPageKey)
+            .OrderBy(appearance => appearance.ColumnKey)
+            .Select(appearance => new ColumnTextAppearanceDto
+            {
+                ColumnKey = appearance.ColumnKey,
+                IsBold = appearance.IsBold,
+                IsItalic = appearance.IsItalic
+            })
+            .ToListAsync(cancellationToken);
+
+        return new PageTextAppearanceDto
+        {
+            PageKey = normalizedPageKey,
+            Columns = columns
+        };
+    }
+
+    public async Task SavePageAppearanceAsync(
+        PageTextAppearanceDto appearance,
+        CancellationToken cancellationToken = default)
+    {
+        var pageKey = appearance.PageKey.Trim().ToLowerInvariant();
+        if (string.IsNullOrWhiteSpace(pageKey))
+        {
+            throw new ArgumentException("A page key is required.", nameof(appearance));
+        }
+
+        var existing = await dbContext.PageTextAppearances
+            .Where(item => item.PageKey == pageKey)
+            .ToListAsync(cancellationToken);
+        dbContext.PageTextAppearances.RemoveRange(existing);
+
+        foreach (var column in appearance.Columns
+                     .Where(column => !string.IsNullOrWhiteSpace(column.ColumnKey))
+                     .DistinctBy(column => column.ColumnKey, StringComparer.OrdinalIgnoreCase))
+        {
+            dbContext.PageTextAppearances.Add(new PageTextAppearanceRecord
+            {
+                PageKey = pageKey,
+                ColumnKey = column.ColumnKey.Trim().ToLowerInvariant(),
+                IsBold = column.IsBold,
+                IsItalic = column.IsItalic,
+                UpdatedAtUtc = DateTime.UtcNow
+            });
+        }
+
+        await dbContext.SaveChangesAsync(cancellationToken);
+    }
+
     private async Task<TeamMemberRecord> FindOrCreateMemberAsync(string id, CancellationToken cancellationToken)
     {
         if (Guid.TryParse(id, out var memberId))
@@ -193,7 +253,8 @@ internal sealed class SqliteTeamDirectoryService(TeamDbContext dbContext)
         Role = member.Role,
         Gid = member.Gid,
         Email = member.Email,
-        ContactNumber = member.ContactNumber
+        ContactNumber = member.ContactNumber,
+        Section = member.Section
     };
 
     private static SpecializationDto ToDto(SupportSpecializationRecord specialization) => new()

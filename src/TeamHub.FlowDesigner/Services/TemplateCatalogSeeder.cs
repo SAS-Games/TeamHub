@@ -9,14 +9,12 @@ internal sealed class TemplateCatalogSeeder(
 {
     public async Task SeedAsync(CancellationToken cancellationToken = default)
     {
-        await SeedFlowAsync(
-            "STUDIO_SUPPORT",
-            "Studio Support Workflow",
-            "Four support tracks, project-health decisions, and a continuous improvement cycle.",
-            "Studio",
-            FlowTemplate.StudioSupport,
-            adminOnly: true,
-            cancellationToken);
+        var retiredStudioSupport = await templates.GetByKeyAsync("STUDIO_SUPPORT", cancellationToken);
+        if (retiredStudioSupport is not null && retiredStudioSupport.IsActive)
+        {
+            await templates.DeleteAsync(retiredStudioSupport.Id, cancellationToken);
+        }
+
         await SeedFlowAsync(
             "INTEGRATION_QA",
             "Integration QA",

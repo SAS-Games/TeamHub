@@ -4,6 +4,5 @@ public enum FlowTemplate
 {
     Blank,
     IntegrationQa,
-    StudioSupport,
     Onboarding
 }

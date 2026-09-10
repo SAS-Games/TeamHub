@@ -25,13 +25,30 @@ public static class ConfigurationFilePaths
 
     public static string Resolve(string configuredPath, string contentRoot)
     {
-        var path = Path.GetFullPath(configuredPath, contentRoot);
-        if (Path.IsPathRooted(configuredPath) || File.Exists(path))
+        if (Path.IsPathRooted(configuredPath))
         {
-            return path;
+            return Path.GetFullPath(configuredPath);
         }
 
-        // Build/publish copies the repository configuration beside the application.
-        return Path.GetFullPath(configuredPath, AppContext.BaseDirectory);
+        var contentRootPath = Path.GetFullPath(contentRoot);
+        var isConfigurationPath = configuredPath.StartsWith($"config{Path.DirectorySeparatorChar}", StringComparison.OrdinalIgnoreCase)
+            || configuredPath.StartsWith($"config{Path.AltDirectorySeparatorChar}", StringComparison.OrdinalIgnoreCase);
+
+        for (var directory = new DirectoryInfo(contentRootPath); directory is not null; directory = directory.Parent)
+        {
+            var candidate = Path.GetFullPath(configuredPath, directory.FullName);
+            if (File.Exists(candidate))
+            {
+                return candidate;
+            }
+
+            // A repository/deployment config directory is authoritative even when an optional file is absent.
+            if (isConfigurationPath && Directory.Exists(Path.Combine(directory.FullName, "config")))
+            {
+                return candidate;
+            }
+        }
+
+        return Path.GetFullPath(configuredPath, contentRootPath);
     }
 }

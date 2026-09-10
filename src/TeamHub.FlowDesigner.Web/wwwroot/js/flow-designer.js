@@ -303,8 +303,8 @@
 
         const graph = adapter.getGraph();
         flow = { ...flow, name: nameInput.value.trim() || "Untitled flow", nodes: graph.nodes, connections: graph.connections };
+        flow.description = byId("workflowDescription").value.trim();
         if (isWorkCenter()) {
-            flow.description = byId("workflowDescription").value.trim();
             flow.metadata = {
                 ...(flow.metadata || {}),
                 workflowKey: byId("workflowKey").value.trim() || toKey(flow.name),
@@ -575,8 +575,8 @@
         selectedConnection = null;
         nodeForm.classList.add("d-none");
         connectionForm.classList.add("d-none");
-        workflowForm.classList.toggle("d-none", !isWorkCenter());
-        emptyProperties.classList.toggle("d-none", isWorkCenter());
+        workflowForm.classList.remove("d-none");
+        emptyProperties.classList.add("d-none");
     }
 
     function updateSelectedNode() {

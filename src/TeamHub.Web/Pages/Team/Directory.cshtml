@@ -13,37 +13,44 @@
 </div>
 <partial name="_TeamNav" />
 
-@if (Model.Directory.Members.Count == 0)
-{
-    <div class="alert alert-info">No team members have been configured yet.</div>
-}
-else
+@foreach (var memberSection in Model.MemberSections)
 {
     <section class="content-section">
-        <div class="table-responsive">
-        <table class="table styled-table">
-            <thead>
-                <tr>
-                    <th>Employee Name</th>
-                    <th>Role</th>
-                    <th>GID</th>
-                    <th>Email</th>
-                    <th>Contact Number</th>
-                </tr>
-            </thead>
-            <tbody>
-            @foreach (var member in Model.Directory.Members)
-            {
-                <tr>
-                    <td>@member.EmployeeName</td>
-                    <td>@member.Role</td>
-                    <td>@member.Gid</td>
-                    <td><a href="mailto:@member.Email">@member.Email</a></td>
-                    <td>@member.ContactNumber</td>
-                </tr>
-            }
-            </tbody>
-        </table>
+        <div class="section-heading">
+            <div><span>Directory</span><h2>@memberSection.Title</h2></div>
+            <strong>@memberSection.Members.Count configured</strong>
         </div>
+        @if (memberSection.Members.Count == 0)
+        {
+            <div class="p-4 text-secondary">No @memberSection.Title.ToLowerInvariant() have been configured yet.</div>
+        }
+        else
+        {
+            <div class="table-responsive">
+                <table class="table styled-table">
+                    <thead>
+                        <tr>
+                            <th class="@Model.Appearance.CssClass("employee-name")">Employee Name</th>
+                            <th class="@Model.Appearance.CssClass("role")">Role</th>
+                            <th class="@Model.Appearance.CssClass("gid")">GID</th>
+                            <th class="@Model.Appearance.CssClass("email")">Email</th>
+                            <th class="@Model.Appearance.CssClass("contact-number")">Contact Number</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                    @foreach (var member in memberSection.Members)
+                    {
+                        <tr>
+                            <td class="@Model.Appearance.CssClass("employee-name")">@member.EmployeeName</td>
+                            <td class="@Model.Appearance.CssClass("role")">@member.Role</td>
+                            <td class="@Model.Appearance.CssClass("gid")">@member.Gid</td>
+                            <td class="@Model.Appearance.CssClass("email")"><a href="mailto:@member.Email">@member.Email</a></td>
+                            <td class="@Model.Appearance.CssClass("contact-number")">@member.ContactNumber</td>
+                        </tr>
+                    }
+                    </tbody>
+                </table>
+            </div>
+        }
     </section>
 }

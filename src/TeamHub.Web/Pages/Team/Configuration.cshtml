@@ -28,6 +28,9 @@
     <a class="@(Model.ActiveSection == "achievements" ? "active" : "")" asp-page="/Team/Configuration" asp-route-section="achievements">
         Achievements <span>@Model.Achievements.Count</span>
     </a>
+    <a class="@(Model.ActiveSection == "appearance" ? "active" : "")" asp-page="/Team/Configuration" asp-route-section="appearance">
+        Text Appearance <span>@Model.AppearancePages.Count</span>
+    </a>
 </nav>
 
 @if (Model.ActiveSection == "members")
@@ -41,6 +44,14 @@
                 <form method="post" asp-page-handler="SaveMember" class="section-body">
                     <input type="hidden" asp-for="MemberInput.Id" />
                     <div asp-validation-summary="ModelOnly" class="text-danger mb-3"></div>
+                    <div class="mb-3">
+                        <label asp-for="MemberInput.Section" class="form-label">Directory Section</label>
+                        <select asp-for="MemberInput.Section" class="form-select">
+                            <option value="TeamMember">Team Member</option>
+                            <option value="Management">Management</option>
+                        </select>
+                        <span asp-validation-for="MemberInput.Section" class="text-danger"></span>
+                    </div>
                     <div class="mb-3">
                         <label asp-for="MemberInput.EmployeeName" class="form-label">Employee Name</label>
                         <input asp-for="MemberInput.EmployeeName" class="form-control" />
@@ -89,12 +100,13 @@
                 {
                     <div class="table-responsive">
                         <table class="table styled-table">
-                            <thead><tr><th>Employee</th><th>Role</th><th>GID</th><th>Actions</th></tr></thead>
+                            <thead><tr><th>Employee</th><th>Section</th><th>Role</th><th>GID</th><th>Actions</th></tr></thead>
                             <tbody>
                             @foreach (var member in Model.Directory.Members)
                             {
                                 <tr>
                                     <td><strong>@member.EmployeeName</strong><br /><small class="text-secondary">@member.Email</small></td>
+                                    <td><span class="team-section-badge">@(@member.Section == "Management" ? "Management" : "Team Member")</span></td>
                                     <td>@member.Role</td><td>@member.Gid</td>
                                     <td class="studio-actions">
                                         <a class="btn btn-sm btn-outline-primary" asp-page="/Team/Configuration" asp-route-section="members" asp-route-memberId="@member.Id">Edit</a>
@@ -181,7 +193,7 @@ else if (Model.ActiveSection == "specializations")
         </div>
     </div>
 }
-else
+else if (Model.ActiveSection == "achievements")
 {
     <div class="team-config-panel row g-4">
         <div class="col-12 col-xl-5">
@@ -243,7 +255,80 @@ else
         </div>
     </div>
 }
+else
+{
+    <div class="team-config-panel">
+        <section class="content-section m-0">
+            <div class="section-heading">
+                <div>
+                    <span>Page styling</span>
+                    <h2>Column Text Appearance</h2>
+                </div>
+                <strong>Applies to headings and values</strong>
+            </div>
+            <form method="post" asp-page-handler="SaveAppearance" class="section-body">
+                <div asp-validation-summary="ModelOnly" class="text-danger mb-3"></div>
+                <div class="mb-4">
+                    <label asp-for="AppearanceForm.PageKey" class="form-label">Page</label>
+                    <select asp-for="AppearanceForm.PageKey"
+                            class="form-select"
+                            onchange="window.location.href='?section=appearance&amp;appearancePage=' + encodeURIComponent(this.value)">
+                        @foreach (var appearancePageOption in Model.AppearancePages)
+                        {
+                            <option value="@appearancePageOption.Key">@appearancePageOption.Label</option>
+                        }
+                    </select>
+                    <span asp-validation-for="AppearanceForm.PageKey" class="text-danger"></span>
+                    <div class="form-text">Choose a page, then select one text style for each column.</div>
+                </div>
+
+                <div class="table-responsive appearance-settings">
+                    <table class="table styled-table align-middle">
+                        <thead>
+                            <tr><th>Column</th><th>Style</th><th>Preview</th></tr>
+                        </thead>
+                        <tbody>
+                        @for (var index = 0; index < Model.AppearanceForm.Columns.Count; index++)
+                        {
+                            <tr data-appearance-row>
+                                <td>
+                                    <input type="hidden" asp-for="AppearanceForm.Columns[index].ColumnKey" />
+                                    @Model.AppearanceForm.Columns[index].Label
+                                </td>
+                                <td>
+                                    <select asp-for="AppearanceForm.Columns[index].Style"
+                                            class="form-select form-select-sm"
+                                            data-appearance-style>
+                                        <option value="Normal">Normal</option>
+                                        <option value="Bold">Bold</option>
+                                        <option value="Italic">Italic</option>
+                                        <option value="BoldItalic">Bold + Italic</option>
+                                    </select>
+                                </td>
+                                <td><span class="configured-text" data-appearance-preview>Sample text</span></td>
+                            </tr>
+                        }
+                        </tbody>
+                    </table>
+                </div>
+                <button type="submit" class="btn btn-primary mt-3">Save Text Appearance</button>
+            </form>
+        </section>
+    </div>
+}
 
 @section Scripts {
     <partial name="_ValidationScriptsPartial" />
+    <script>
+        document.querySelectorAll('[data-appearance-row]').forEach(row => {
+            const style = row.querySelector('[data-appearance-style]');
+            const preview = row.querySelector('[data-appearance-preview]');
+            const refresh = () => {
+                preview.classList.toggle('configured-text-bold', style.value === 'Bold' || style.value === 'BoldItalic');
+                preview.classList.toggle('configured-text-italic', style.value === 'Italic' || style.value === 'BoldItalic');
+            };
+            style.addEventListener('change', refresh);
+            refresh();
+        });
+    </script>
 }

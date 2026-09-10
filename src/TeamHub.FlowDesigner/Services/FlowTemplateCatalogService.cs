@@ -100,6 +100,23 @@ public sealed class FlowTemplateCatalogService(
         return template;
     }
 
+    public async Task DeleteAsync(Guid templateId, CancellationToken cancellationToken = default)
+    {
+        if (!permissions.CanManageTemplates())
+        {
+            throw new UnauthorizedAccessException("Only template administrators can delete templates.");
+        }
+
+        var template = await templates.GetAsync(templateId, cancellationToken)
+            ?? throw new KeyNotFoundException($"Template '{templateId}' was not found.");
+        if (!template.IsActive)
+        {
+            throw new KeyNotFoundException($"Template '{templateId}' was not found.");
+        }
+
+        await templates.DeleteAsync(templateId, cancellationToken);
+    }
+
     private async Task<FlowDefinition> CreateFromDefinitionAsync(
         TemplateCatalogDefinition template,
         string? name,

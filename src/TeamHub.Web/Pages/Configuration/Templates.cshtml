@@ -17,6 +17,11 @@
     </div>
 </div>
 
+@if (!string.IsNullOrWhiteSpace(Model.StatusMessage))
+{
+    <div class="alert alert-success" role="status">@Model.StatusMessage</div>
+}
+
 <section class="content-section">
     <div class="section-heading"><div><span>templates.db</span><h2>Available Templates</h2></div></div>
     @if (Model.Templates.Count == 0)
@@ -38,7 +43,15 @@
                         <td>@template.DiagramType?.ToDisplayName()</td>
                         <td>@template.Version</td>
                         <td>@(template.IsBuiltIn ? "Built in" : "Team")</td>
-                        <td><a class="btn btn-sm btn-outline-primary" asp-page="/Flows/New" asp-route-templateId="@template.Id">Use</a></td>
+                        <td>
+                            <div class="d-flex gap-2 justify-content-end">
+                                <form method="post" asp-page-handler="Delete" onsubmit="return confirm('Delete this template?');">
+                                    <input type="hidden" name="id" value="@template.Id" />
+                                    <button class="btn btn-sm btn-outline-danger" type="submit">Delete</button>
+                                </form>
+                                <a class="btn btn-sm btn-outline-primary" asp-page="/Flows/New" asp-route-templateId="@template.Id">Use</a>
+                            </div>
+                        </td>
                     </tr>
                 }
                 </tbody>

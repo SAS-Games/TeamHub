@@ -93,7 +93,7 @@ public sealed class AccessControlTests
     }
 
     [Fact]
-    public async Task StudioSupportTemplate_IsRestrictedToAdmins()
+    public async Task OnboardingTemplate_IsRestrictedToAdmins()
     {
         await using var database = new TestDatabase();
         var repository = await database.CreateRepositoryAsync();
@@ -101,13 +101,11 @@ public sealed class AccessControlTests
         var adminService = CreateService(repository, "admin", isAdmin: true);
 
         await Assert.ThrowsAsync<UnauthorizedAccessException>(() =>
-            userService.CreateAsync("Studio support", template: FlowTemplate.StudioSupport));
-        await Assert.ThrowsAsync<UnauthorizedAccessException>(() =>
             userService.CreateAsync("Onboarding", template: FlowTemplate.Onboarding));
 
-        var adminDraft = await adminService.CreateAsync("Studio support", template: FlowTemplate.StudioSupport);
+        var adminDraft = await adminService.CreateAsync("Onboarding", template: FlowTemplate.Onboarding);
 
-        Assert.Equal(58, adminDraft.Nodes.Count);
+        Assert.Equal(8, adminDraft.Nodes.Count);
     }
 
     [Fact]
@@ -140,7 +138,7 @@ public sealed class AccessControlTests
         public bool CanEdit(string? ownerId) => CanView(ownerId);
         public bool CanCreate() => true;
         public bool CanUseTemplate(FlowTemplate template) =>
-            template is not FlowTemplate.StudioSupport and not FlowTemplate.Onboarding || isAdmin;
+            template is not FlowTemplate.Onboarding || isAdmin;
         public bool CanUseDiagramType(DiagramType diagramType) => diagramType != DiagramType.WorkCenterWorkflow || isAdmin;
         public bool CanManageTemplates() => isAdmin;
     }

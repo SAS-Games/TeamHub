@@ -8,6 +8,7 @@ public interface ITemplateCatalogRepository
     Task<TemplateCatalogDefinition?> GetAsync(Guid id, CancellationToken cancellationToken = default);
     Task<TemplateCatalogDefinition?> GetByKeyAsync(string templateKey, CancellationToken cancellationToken = default);
     Task SaveAsync(TemplateCatalogDefinition template, CancellationToken cancellationToken = default);
+    Task DeleteAsync(Guid id, CancellationToken cancellationToken = default);
 }
 
 public interface IFlowTemplateCatalogService
@@ -16,4 +17,5 @@ public interface IFlowTemplateCatalogService
     Task<FlowDefinition> CreateFlowAsync(Guid templateId, string? name = null, CancellationToken cancellationToken = default);
     Task<FlowDefinition> CreateFlowByKeyAsync(string templateKey, string? name = null, CancellationToken cancellationToken = default);
     Task<TemplateCatalogDefinition> SaveFlowAsync(Guid flowId, SaveFlowTemplateRequest request, CancellationToken cancellationToken = default);
+    Task DeleteAsync(Guid templateId, CancellationToken cancellationToken = default);
 }

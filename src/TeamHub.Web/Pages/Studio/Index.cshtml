@@ -44,6 +44,8 @@ else if (item is not null)
         </div>
     </section>
 
+    <div class="studio-overview-grid">
+        <div class="studio-main-column">
     <section class="roadmap-card">
         <header class="roadmap-header">
             <div>
@@ -73,7 +75,6 @@ else if (item is not null)
             </div>
         }
     </section>
-
     <section class="content-section">
         <div class="section-heading"><div><span>Team</span><h2>Roles & Responsibilities</h2></div></div>
         <div class="table-responsive">
@@ -133,4 +134,71 @@ else if (item is not null)
             </div>
         </section>
     }
+        </div>
+
+        <aside class="studio-sidebar">
+            <section class="content-section m-0">
+                <div class="section-heading"><div><span>Local time</span><h2>@studio.StudioName</h2></div></div>
+                <div class="studio-clock"
+                     data-studio-clock
+                     data-local-time="@item.LocalTime.ToString("yyyy-MM-ddTHH:mm:ss")">
+                    <div class="studio-clock-time" data-clock-value>@item.LocalTime.ToString("hh:mm:ss tt")</div>
+                    <div class="studio-clock-date" data-clock-date>@item.LocalTime.ToString("dddd, dd MMM yyyy")</div>
+                    <div class="small text-muted mt-2">@item.TimeZoneDisplayName</div>
+                </div>
+            </section>
+
+            <section class="content-section m-0">
+                <div class="section-heading"><div><span>Our team</span><h2>Our Contacts</h2></div></div>
+                @if (studio.OurContacts.Count == 0)
+                {
+                    <div class="section-body text-muted">No internal contacts have been configured.</div>
+                }
+                else
+                {
+                    <div class="table-responsive">
+                        <table class="table styled-table mb-0">
+                            <thead><tr><th>Name</th><th>Role</th></tr></thead>
+                            <tbody>
+                            @foreach (var contact in studio.OurContacts)
+                            {
+                                <tr><td>@contact.Name</td><td>@contact.Role</td></tr>
+                            }
+                            </tbody>
+                        </table>
+                    </div>
+                }
+            </section>
+        </aside>
+    </div>
+}
+
+@section Scripts {
+    <script>
+        document.querySelectorAll('[data-studio-clock]').forEach(clock => {
+            const initialTime = Date.parse(`${clock.dataset.localTime}Z`);
+            const startedAt = Date.now();
+            const timeFormatter = new Intl.DateTimeFormat(undefined, {
+                hour: '2-digit',
+                minute: '2-digit',
+                second: '2-digit',
+                hour12: true,
+                timeZone: 'UTC'
+            });
+            const dateFormatter = new Intl.DateTimeFormat(undefined, {
+                weekday: 'long',
+                day: '2-digit',
+                month: 'short',
+                year: 'numeric',
+                timeZone: 'UTC'
+            });
+            const refresh = () => {
+                const current = new Date(initialTime + (Date.now() - startedAt));
+                clock.querySelector('[data-clock-value]').textContent = timeFormatter.format(current);
+                clock.querySelector('[data-clock-date]').textContent = dateFormatter.format(current);
+            };
+            refresh();
+            window.setInterval(refresh, 1000);
+        });
+    </script>
 }

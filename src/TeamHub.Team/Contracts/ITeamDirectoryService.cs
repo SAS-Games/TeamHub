@@ -21,6 +21,12 @@ public interface ITeamAchievementService
     Task<TeamAchievementDto> AddAchievementAsync(TeamAchievementDto achievement, CancellationToken cancellationToken = default);
 }
 
+public interface IPageTextAppearanceService
+{
+    Task<PageTextAppearanceDto> GetPageAppearanceAsync(string pageKey, CancellationToken cancellationToken = default);
+    Task SavePageAppearanceAsync(PageTextAppearanceDto appearance, CancellationToken cancellationToken = default);
+}
+
 public interface ITeamDatabaseInitializer
 {
     Task InitializeAsync(CancellationToken cancellationToken = default);

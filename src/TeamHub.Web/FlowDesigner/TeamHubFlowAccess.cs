@@ -23,7 +23,7 @@ public sealed class TeamHubFlowPermissionService(IHttpContextAccessor httpContex
     public bool CanCreate() => httpContextAccessor.HttpContext?.User.Identity?.IsAuthenticated == true;
 
     public bool CanUseTemplate(FlowTemplate template) =>
-        template is not FlowTemplate.StudioSupport and not FlowTemplate.Onboarding || IsAdmin();
+        template is not FlowTemplate.Onboarding || IsAdmin();
 
     public bool CanUseDiagramType(DiagramType diagramType) => diagramType != DiagramType.WorkCenterWorkflow || IsAdmin();
 

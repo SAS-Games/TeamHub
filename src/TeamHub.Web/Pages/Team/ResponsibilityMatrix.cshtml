@@ -24,18 +24,18 @@ else
         <table class="table styled-table">
             <thead>
                 <tr>
-                    <th>Pod</th>
-                    <th>Sub-Categories / Focus Areas</th>
-                    <th>Engineers / Members</th>
+                    <th class="@Model.Appearance.CssClass("pod")">Pod</th>
+                    <th class="@Model.Appearance.CssClass("focus-areas")">Sub-Categories / Focus Areas</th>
+                    <th class="@Model.Appearance.CssClass("members")">Engineers / Members</th>
                 </tr>
             </thead>
             <tbody>
             @foreach (var spec in Model.Directory.Specializations)
             {
                 <tr>
-                    <td>@spec.Pod</td>
-                    <td>@spec.FocusAreas</td>
-                    <td>@spec.Members</td>
+                    <td class="@Model.Appearance.CssClass("pod")">@spec.Pod</td>
+                    <td class="@Model.Appearance.CssClass("focus-areas")">@spec.FocusAreas</td>
+                    <td class="@Model.Appearance.CssClass("members")">@spec.Members</td>
                 </tr>
             }
             </tbody>

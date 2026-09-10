@@ -14,6 +14,10 @@ public class ConfigurationModel(IStudioDirectoryService studioDirectoryService) 
     public StudioInput Input { get; set; } = new();
 
     public IReadOnlyList<StudioDetails> Studios { get; private set; } = [];
+    public IReadOnlyList<TimeZoneInfo> TimeZones { get; } = TimeZoneInfo.GetSystemTimeZones()
+        .OrderBy(zone => zone.BaseUtcOffset)
+        .ThenBy(zone => zone.DisplayName)
+        .ToList();
 
     [TempData]
     public string? StatusMessage { get; set; }
@@ -41,6 +45,11 @@ public class ConfigurationModel(IStudioDirectoryService studioDirectoryService) 
     {
         ShowForm = true;
         NormalizeInputRows();
+        if (!IsValidTimeZone(Input.TimeZoneId))
+        {
+            ModelState.AddModelError("Input.TimeZoneId", "Select a valid time zone.");
+        }
+
         if (!ModelState.IsValid)
         {
             await LoadStudiosAsync(cancellationToken);
@@ -81,6 +90,10 @@ public class ConfigurationModel(IStudioDirectoryService studioDirectoryService) 
 
     private void NormalizeInputRows()
     {
+        Input.OurContacts = (Input.OurContacts ?? [])
+            .Where(contact => !contact.Remove)
+            .Where(contact => !string.IsNullOrWhiteSpace(contact.Name) || !string.IsNullOrWhiteSpace(contact.Role))
+            .ToList();
         Input.TeamMembers = (Input.TeamMembers ?? [])
             .Where(member => !member.Remove)
             .Where(member => !string.IsNullOrWhiteSpace(member.Name) || !string.IsNullOrWhiteSpace(member.RolesAndResponsibilities) || !string.IsNullOrWhiteSpace(member.EmailId))
@@ -97,9 +110,32 @@ public class ConfigurationModel(IStudioDirectoryService studioDirectoryService) 
 
     private void EnsureEditableRows()
     {
+        Input.OurContacts.Add(new StudioContactInput());
         Input.TeamMembers.Add(new StudioTeamMemberInput());
         Input.DevelopmentTools.Add(new StudioDevelopmentToolInput());
         Input.ImportantLinks.Add(new StudioImportantLinkInput());
+    }
+
+    private static bool IsValidTimeZone(string? timeZoneId)
+    {
+        if (string.IsNullOrWhiteSpace(timeZoneId))
+        {
+            return false;
+        }
+
+        try
+        {
+            _ = TimeZoneInfo.FindSystemTimeZoneById(timeZoneId);
+            return true;
+        }
+        catch (TimeZoneNotFoundException)
+        {
+            return false;
+        }
+        catch (InvalidTimeZoneException)
+        {
+            return false;
+        }
     }
 
     public sealed class StudioInput
@@ -115,6 +151,10 @@ public class ConfigurationModel(IStudioDirectoryService studioDirectoryService) 
         [Required]
         public string Location { get; set; } = string.Empty;
 
+        [Required]
+        public string TimeZoneId { get; set; } = TimeZoneInfo.Utc.Id;
+
+        public List<StudioContactInput> OurContacts { get; set; } = [];
         public List<StudioTeamMemberInput> TeamMembers { get; set; } = [];
         public List<StudioDevelopmentToolInput> DevelopmentTools { get; set; } = [];
         public List<StudioImportantLinkInput> ImportantLinks { get; set; } = [];
@@ -127,6 +167,12 @@ public class ConfigurationModel(IStudioDirectoryService studioDirectoryService) 
                 StudioName = studio.StudioName,
                 ProjectName = studio.ProjectName,
                 Location = studio.Location,
+                TimeZoneId = studio.TimeZoneId,
+                OurContacts = studio.OurContacts.Select(contact => new StudioContactInput
+                {
+                    Name = contact.Name,
+                    Role = contact.Role
+                }).ToList(),
                 TeamMembers = studio.TeamMembers.Select(member => new StudioTeamMemberInput
                 {
                     Name = member.Name,
@@ -155,6 +201,12 @@ public class ConfigurationModel(IStudioDirectoryService studioDirectoryService) 
                 StudioName = StudioName,
                 ProjectName = ProjectName,
                 Location = Location,
+                TimeZoneId = TimeZoneId,
+                OurContacts = OurContacts.Select(contact => new StudioContact
+                {
+                    Name = contact.Name ?? string.Empty,
+                    Role = contact.Role ?? string.Empty
+                }).ToList(),
                 TeamMembers = TeamMembers.Select(member => new StudioTeamMember
                 {
                     Name = member.Name ?? string.Empty,
@@ -174,6 +226,13 @@ public class ConfigurationModel(IStudioDirectoryService studioDirectoryService) 
                 }).ToList()
             };
         }
+    }
+
+    public sealed class StudioContactInput
+    {
+        public string? Name { get; set; }
+        public string? Role { get; set; }
+        public bool Remove { get; set; }
     }
 
     public sealed class StudioTeamMemberInput

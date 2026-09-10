@@ -59,31 +59,6 @@ public sealed class FlowServiceTests
     }
 
     [Fact]
-    public async Task Create_StudioSupportTemplateBuildsEditableOperatingModel()
-    {
-        await using var database = new TestDatabase();
-        var repository = await database.CreateRepositoryAsync();
-        var validator = new FlowValidator();
-        var service = new FlowService(repository, validator, new SystemTextJsonFlowSerializer(), new TestUserProvider(), new AllowAllPermissionService());
-
-        var flow = await service.CreateAsync("Studio Support", template: FlowTemplate.StudioSupport);
-
-        Assert.Equal(DiagramType.BusinessWorkflow, flow.DiagramType);
-        Assert.Equal(58, flow.Nodes.Count);
-        Assert.Equal(43, flow.Connections.Count);
-        Assert.Equal(5, flow.Nodes.Count(node => node.Type == NodeType.Section));
-        Assert.Equal(10, flow.Nodes.Count(node => node.Type == NodeType.Annotation));
-        Assert.DoesNotContain(flow.Nodes, node => node.Type is NodeType.Start or NodeType.End);
-        Assert.Contains(flow.Nodes, node => node.Id == "support-title" && node.CustomProperties["presentationStyle"] == "banner");
-        Assert.Contains(flow.Nodes, node => node.Id == "direct-frame" && node.Width == 330 && node.Height == 1050 && node.CustomProperties["presentationStyle"] == "band" && node.CustomProperties["portLayout"] == "vertical");
-        Assert.Contains(flow.Nodes, node => node.Id == "health-frame" && node.CustomProperties["tone"] == "orange");
-        Assert.Contains(flow.Nodes, node => node.Id == "direct-1" && node.CustomProperties["portLayout"] == "vertical" && node.CustomProperties["sectionId"] == "direct-frame");
-        Assert.Contains(flow.Nodes, node => node.Id == "learn-1" && node.CustomProperties["portLayout"] == "horizontal");
-        Assert.Equal(44, flow.Nodes.Count(node => node.CustomProperties.ContainsKey("sectionId")));
-        Assert.Empty(validator.Validate(flow).Issues);
-    }
-
-    [Fact]
     public async Task Create_OnboardingTemplateBuildsParallelExecutableLayout()
     {
         await using var database = new TestDatabase();

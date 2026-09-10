@@ -18,7 +18,8 @@ public class IndexModel(IStudioDirectoryService studioDirectoryService, IMilesto
 
     public async Task OnGetAsync(CancellationToken cancellationToken)
     {
-        TodayUtc = DateTime.UtcNow.Date;
+        var nowUtc = DateTime.UtcNow;
+        TodayUtc = nowUtc.Date;
         var studios = await studioDirectoryService.GetStudiosAsync(cancellationToken);
         IReadOnlyList<MilestoneDto> milestones = [];
 
@@ -36,13 +37,19 @@ public class IndexModel(IStudioDirectoryService studioDirectoryService, IMilesto
         }
 
         Studios = studios
-            .Select(studio => new StudioDashboardItem(
-                studio,
-                milestones
+            .Select(studio =>
+            {
+                var timeZone = ResolveTimeZone(studio.TimeZoneId);
+                return new StudioDashboardItem(
+                    studio,
+                    milestones
                     .Where(milestone => IsProjectMilestone(studio.ProjectName, milestone))
                     .Where(milestone => !milestone.Milestone.StartsWith("Total MS", StringComparison.OrdinalIgnoreCase))
                     .OrderBy(milestone => milestone.DeliveryDate ?? DateTime.MaxValue)
-                    .ToList()))
+                    .ToList(),
+                    TimeZoneInfo.ConvertTimeFromUtc(nowUtc, timeZone),
+                    timeZone.DisplayName);
+            })
             .ToList();
 
         SelectedStudio = SelectStudio(Studios);
@@ -75,6 +82,26 @@ public class IndexModel(IStudioDirectoryService studioDirectoryService, IMilesto
         return string.Equals(milestone.Title, projectName, StringComparison.OrdinalIgnoreCase)
             || string.Equals(milestone.Program, projectName, StringComparison.OrdinalIgnoreCase);
     }
+
+    private static TimeZoneInfo ResolveTimeZone(string timeZoneId)
+    {
+        try
+        {
+            return TimeZoneInfo.FindSystemTimeZoneById(timeZoneId);
+        }
+        catch (TimeZoneNotFoundException)
+        {
+            return TimeZoneInfo.Utc;
+        }
+        catch (InvalidTimeZoneException)
+        {
+            return TimeZoneInfo.Utc;
+        }
+    }
 }
 
-public sealed record StudioDashboardItem(StudioDetails Studio, IReadOnlyList<MilestoneDto> Milestones);
+public sealed record StudioDashboardItem(
+    StudioDetails Studio,
+    IReadOnlyList<MilestoneDto> Milestones,
+    DateTime LocalTime,
+    string TimeZoneDisplayName);

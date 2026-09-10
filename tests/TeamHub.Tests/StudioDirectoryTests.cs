@@ -65,6 +65,8 @@ public sealed class StudioDirectoryTests
             });
 
             saved.StudioName.Should().Be("Solo Studio");
+            saved.TimeZoneId.Should().Be(TimeZoneInfo.Utc.Id);
+            saved.OurContacts.Should().BeEmpty();
             saved.TeamMembers.Should().BeEmpty();
             saved.ImportantLinks.Should().BeEmpty();
         }
@@ -88,12 +90,20 @@ public sealed class StudioDirectoryTests
             await using var scope = provider.CreateAsyncScope();
             await scope.ServiceProvider.GetRequiredService<IStudioDatabaseInitializer>().InitializeAsync();
             var service = scope.ServiceProvider.GetRequiredService<IStudioDirectoryService>();
+            var configuredTimeZone = TimeZoneInfo.GetSystemTimeZones()
+                .FirstOrDefault(zone => zone.Id != TimeZoneInfo.Utc.Id)?.Id ?? TimeZoneInfo.Utc.Id;
 
             var saved = await service.SaveStudioAsync(new StudioDetails
             {
                 StudioName = "North Studio",
                 ProjectName = "Project Atlas",
                 Location = "Pune",
+                TimeZoneId = configuredTimeZone,
+                OurContacts =
+                [
+                    new StudioContact { Name = "Priya", Role = "PIC" },
+                    new StudioContact { Name = "Noah", Role = "Producer" }
+                ],
                 TeamMembers =
                 [
                     new StudioTeamMember { Name = "Asha", RolesAndResponsibilities = "Producer", EmailId = "asha@example.com" },
@@ -112,6 +122,11 @@ public sealed class StudioDirectoryTests
                 StudioName = "North Studio",
                 ProjectName = "Project Atlas",
                 Location = "Mumbai",
+                TimeZoneId = configuredTimeZone,
+                OurContacts =
+                [
+                    new StudioContact { Name = "Priya", Role = "PIC" }
+                ],
                 TeamMembers =
                 [
                     new StudioTeamMember { Name = "Asha", RolesAndResponsibilities = "Production owner", EmailId = "asha@example.com" }
@@ -123,6 +138,9 @@ public sealed class StudioDirectoryTests
             });
 
             updated.Location.Should().Be("Mumbai");
+            updated.TimeZoneId.Should().Be(configuredTimeZone);
+            updated.OurContacts.Should().ContainSingle()
+                .Which.Role.Should().Be("PIC");
             updated.TeamMembers.Should().ContainSingle()
                 .Which.RolesAndResponsibilities.Should().Be("Production owner");
             updated.ImportantLinks.Should().ContainSingle()
@@ -159,7 +177,7 @@ public sealed class StudioDirectoryTests
             await scope.ServiceProvider.GetRequiredService<IStudioDatabaseInitializer>().InitializeAsync();
 
             var studioTables = await GetTableNamesAsync(studioDbPath);
-            studioTables.Should().Contain(["Studios", "StudioTeamMembers", "StudioDevelopmentTools", "StudioImportantLinks"]);
+            studioTables.Should().Contain(["Studios", "StudioContacts", "StudioTeamMembers", "StudioDevelopmentTools", "StudioImportantLinks"]);
 
             var workflowTables = await GetTableNamesAsync(workflowDbPath);
             workflowTables.Should().ContainSingle().Which.Should().Be("WorkflowOnly");
@@ -174,6 +192,48 @@ public sealed class StudioDirectoryTests
             if (File.Exists(workflowDbPath))
             {
                 File.Delete(workflowDbPath);
+            }
+        }
+    }
+
+    [Fact]
+    public async Task InitializeAsync_AddsTimeZoneToExistingStudiosTable()
+    {
+        var dbPath = Path.Combine(Path.GetTempPath(), $"teamhub-studio-{Guid.NewGuid():N}.db");
+        try
+        {
+            await using (var connection = new SqliteConnection($"Data Source={dbPath}"))
+            {
+                await connection.OpenAsync();
+                await using var command = connection.CreateCommand();
+                command.CommandText = """
+                    CREATE TABLE Studios (
+                        Id TEXT NOT NULL CONSTRAINT PK_Studios PRIMARY KEY,
+                        StudioName TEXT NOT NULL,
+                        ProjectName TEXT NOT NULL,
+                        Location TEXT NOT NULL,
+                        CreatedAtUtc TEXT NOT NULL,
+                        UpdatedAtUtc TEXT NOT NULL
+                    );
+                    """;
+                await command.ExecuteNonQueryAsync();
+            }
+
+            await using (var provider = CreateServices(dbPath))
+            await using (var scope = provider.CreateAsyncScope())
+            {
+                await scope.ServiceProvider.GetRequiredService<IStudioDatabaseInitializer>().InitializeAsync();
+            }
+
+            var columns = await GetColumnNamesAsync(dbPath, "Studios");
+            columns.Should().Contain("TimeZoneId");
+        }
+        finally
+        {
+            SqliteConnection.ClearAllPools();
+            if (File.Exists(dbPath))
+            {
+                File.Delete(dbPath);
             }
         }
     }
@@ -195,6 +255,10 @@ public sealed class StudioDirectoryTests
                     StudioName = "Legacy Studio",
                     ProjectName = "Legacy Project",
                     Location = "Pune",
+                    OurContacts =
+                    [
+                        new StudioContact { Name = "Priya", Role = "PIC" }
+                    ],
                     TeamMembers =
                     [
                         new StudioTeamMember
@@ -228,6 +292,7 @@ public sealed class StudioDirectoryTests
 
                 studios.Should().ContainSingle();
                 studios[0].StudioName.Should().Be("Legacy Studio");
+                studios[0].OurContacts.Should().ContainSingle();
                 studios[0].TeamMembers.Should().ContainSingle();
                 studios[0].DevelopmentTools.Should().ContainSingle();
                 studios[0].ImportantLinks.Should().ContainSingle();
@@ -262,6 +327,23 @@ public sealed class StudioDirectoryTests
         while (await reader.ReadAsync())
         {
             names.Add(reader.GetString(0));
+        }
+
+        return names;
+    }
+
+    private static async Task<IReadOnlyList<string>> GetColumnNamesAsync(string databasePath, string tableName)
+    {
+        await using var connection = new SqliteConnection($"Data Source={databasePath}");
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = $"PRAGMA table_info({tableName});";
+
+        var names = new List<string>();
+        await using var reader = await command.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+        {
+            names.Add(reader.GetString(1));
         }
 
         return names;

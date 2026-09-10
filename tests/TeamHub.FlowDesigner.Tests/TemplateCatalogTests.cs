@@ -19,12 +19,28 @@ public sealed class TemplateCatalogTests
         var catalog = await templates.ListAsync();
         var flow = await templates.CreateFlowByKeyAsync("ONBOARDING");
 
-        Assert.Equal(3, catalog.Count);
+        Assert.Equal(2, catalog.Count);
+        Assert.DoesNotContain(catalog, item => item.TemplateKey == "STUDIO_SUPPORT");
         Assert.Contains(catalog, item => item.TemplateKey == "ONBOARDING" && item.DiagramType == DiagramType.WorkCenterWorkflow);
         Assert.Equal(8, flow.Nodes.Count);
         Assert.Equal(8, flow.Connections.Count);
         Assert.Equal(0, flow.Version);
         Assert.DoesNotContain(await flows.ListAsync(), item => item.Id == flow.Id);
+    }
+
+    [Fact]
+    public async Task DeleteTemplate_HidesItAndDoesNotReseedIt()
+    {
+        await using var host = await TemplateTestHost.CreateAsync();
+        using var scope = host.Services.CreateScope();
+        var templates = scope.ServiceProvider.GetRequiredService<IFlowTemplateCatalogService>();
+        var template = (await templates.ListAsync()).Single(item => item.TemplateKey == "INTEGRATION_QA");
+
+        await templates.DeleteAsync(template.Id);
+        await host.Services.InitializeFlowDesignerAsync();
+
+        Assert.DoesNotContain(await templates.ListAsync(), item => item.Id == template.Id);
+        await Assert.ThrowsAsync<InvalidOperationException>(() => templates.CreateFlowAsync(template.Id));
     }
 
     [Fact]

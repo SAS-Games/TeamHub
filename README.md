@@ -45,17 +45,17 @@ dotnet run --project src/TeamHub.Web/TeamHub.Web.csproj
 
 ## Configuration file paths
 
-All file paths in `src/TeamHub.Web/appsettings.json` use portable `config/...` paths. Home JSON, Studio JSON, and configuration workbooks are copied into the build and publish output. Paths resolve against the application's content root first, then the application output directory; absolute overrides are still supported. This resolution is shared by Home, workflow imports, milestones, and Studio Jira settings.
+All file paths in `src/TeamHub.Web/appsettings.json` use portable `config/...` paths. Paths resolve to the nearest `config` directory at or above the application's content root, so local runs use the repository-level `config` directory directly. Absolute overrides are still supported. This resolution is shared by Home, workflow imports, milestones, and Studio Jira settings.
 
-After changing repository configuration files, rebuild/restart with `dotnet run` to update their output copies. Database files continue to live in the application's `data` directory.
+Repository configuration files are not copied into `bin`; changes are read from the repository-level `config` directory. Database files continue to live in the application's `data` directory.
 
 ## Home content and page background
 
 Home text, the banner image URL, and links are stored on the server in `config/Home/project-info.json` and `config/Home/useful-links.json`. Clearing browser storage does not remove this configuration.
 
-These files are copied into `config/Home` in the build and publish output. After editing the repository files, rebuild/restart with `dotnet run`. In a deployed app, edit the deployed JSON files and refresh the page; Home content is read on each request.
+After editing these repository files, refresh the page; Home content is read on each request. In a deployed app, place the files in a `config/Home` directory at or above the application's content root.
 
-`HomeConfiguration` paths in `appsettings.json` may be absolute or relative to the application's content root. Relative paths also check the application output directory, supporting local builds without machine-specific paths. Missing configuration produces an explicit server error instead of silently displaying a blank home page.
+`HomeConfiguration` paths in `appsettings.json` may be absolute or relative. Relative `config/...` paths use the nearest containing configuration directory. Missing configuration produces an explicit server error instead of silently displaying a blank home page.
 
 Set `--page-bg-color` at the top of `src/TeamHub.Web/wwwroot/css/site.css` to change the shared page background. The Home banner image remains configured by `backgroundImage` in `project-info.json`.
 
@@ -78,9 +78,11 @@ The standalone development host uses `http://localhost:5168`.
 
 ## Administration
 
-Administrators have a single **Configuration** navigation tab that links to the Team, Studio, and Workflow configuration pages. Team Configuration contains separate forms for team members and support specializations.
+Administrators have a single **Configuration** navigation tab that links to the Team, Studio, and Workflow configuration pages. Team Configuration contains forms for team members, support specializations, achievements, and text appearance. Each person can be assigned to either the Team Members or Management section. The Text Appearance panel controls bold and italic styling per column for Team Directory, Achievements, and Responsibility Matrix.
 
 Team data is stored in `data/team.db`. The Team pages no longer read `TeamInfo.xlsx`, so the application is unaffected when that spreadsheet is open, locked, empty, or absent.
+
+Studio Configuration stores each studio's time zone and an ordered list of internal contacts with Name and Role fields. The Studio dashboard shows a live local clock and the internal contacts in a responsive right-hand sidebar. Existing studio records default to UTC until another time zone is selected.
 
 ## Excel Contract
 

@@ -10,11 +10,13 @@ namespace TeamHub.Web.Pages.Team;
 public sealed class ConfigurationModel(
     ITeamDirectoryService teamDirectoryService,
     ITeamConfigurationService teamConfigurationService,
-    ITeamAchievementService achievementService) : PageModel
+    ITeamAchievementService achievementService,
+    IPageTextAppearanceService appearanceService) : PageModel
 {
     private const string MembersSection = "members";
     private const string SpecializationsSection = "specializations";
     private const string AchievementsSection = "achievements";
+    private const string AppearanceSection = "appearance";
 
     public TeamMemberInput MemberInput { get; set; } = new();
 
@@ -22,9 +24,13 @@ public sealed class ConfigurationModel(
 
     public AchievementInput AchievementForm { get; set; } = new();
 
+    public PageAppearanceInput AppearanceForm { get; set; } = new();
+
     public TeamDirectoryDto Directory { get; private set; } = new();
 
     public IReadOnlyList<TeamAchievementDto> Achievements { get; private set; } = [];
+
+    public IReadOnlyList<TeamPageAppearanceDefinition> AppearancePages => TeamPageAppearanceCatalog.Pages;
 
     public string ActiveSection { get; private set; } = MembersSection;
 
@@ -35,9 +41,11 @@ public sealed class ConfigurationModel(
         string? section = null,
         string? memberId = null,
         string? specializationId = null,
+        string? appearancePage = null,
         CancellationToken cancellationToken = default)
     {
         ActiveSection = NormalizeSection(section);
+        AppearanceForm.PageKey = NormalizeAppearancePage(appearancePage);
 
         if (!string.IsNullOrWhiteSpace(memberId))
         {
@@ -137,18 +145,74 @@ public sealed class ConfigurationModel(
         return RedirectToPage(new { section = AchievementsSection });
     }
 
+    public async Task<IActionResult> OnPostSaveAppearanceAsync(
+        [Bind(Prefix = nameof(AppearanceForm))] PageAppearanceInput input,
+        CancellationToken cancellationToken)
+    {
+        ActiveSection = AppearanceSection;
+        AppearanceForm = input;
+        var definition = TeamPageAppearanceCatalog.Find(input.PageKey);
+        if (definition is null)
+        {
+            ModelState.AddModelError("AppearanceForm.PageKey", "Select a supported page.");
+            AppearanceForm.PageKey = TeamPageAppearanceCatalog.Pages[0].Key;
+            await LoadConfigurationAsync(cancellationToken);
+            return Page();
+        }
+
+        if (!ModelState.IsValid)
+        {
+            await LoadConfigurationAsync(cancellationToken);
+            return Page();
+        }
+
+        var postedColumns = input.Columns
+            .Where(column => !string.IsNullOrWhiteSpace(column.ColumnKey))
+            .GroupBy(column => column.ColumnKey, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(group => group.Key, group => group.Last(), StringComparer.OrdinalIgnoreCase);
+        var appearance = new PageTextAppearanceDto
+        {
+            PageKey = definition.Key,
+            Columns = definition.Columns.Select(column =>
+            {
+                postedColumns.TryGetValue(column.Key, out var posted);
+                return new ColumnTextAppearanceDto
+                {
+                    ColumnKey = column.Key,
+                    IsBold = posted?.UsesBold == true,
+                    IsItalic = posted?.UsesItalic == true
+                };
+            }).ToList()
+        };
+
+        await appearanceService.SavePageAppearanceAsync(appearance, cancellationToken);
+        StatusMessage = $"Text appearance saved for {definition.Label}.";
+        return RedirectToPage(new { section = AppearanceSection, appearancePage = definition.Key });
+    }
+
     private async Task LoadConfigurationAsync(CancellationToken cancellationToken)
     {
         Directory = await teamDirectoryService.GetTeamDirectoryAsync(cancellationToken);
         Achievements = await achievementService.GetAchievementsAsync(cancellationToken);
+        if (ActiveSection == AppearanceSection)
+        {
+            var definition = TeamPageAppearanceCatalog.Find(AppearanceForm.PageKey)
+                ?? TeamPageAppearanceCatalog.Pages[0];
+            var appearance = await appearanceService.GetPageAppearanceAsync(definition.Key, cancellationToken);
+            AppearanceForm = PageAppearanceInput.From(definition, appearance);
+        }
     }
 
     private static string NormalizeSection(string? section) => section?.ToLowerInvariant() switch
     {
         SpecializationsSection => SpecializationsSection,
         AchievementsSection => AchievementsSection,
+        AppearanceSection => AppearanceSection,
         _ => MembersSection
     };
+
+    private static string NormalizeAppearancePage(string? pageKey) =>
+        TeamPageAppearanceCatalog.Find(pageKey)?.Key ?? TeamPageAppearanceCatalog.Pages[0].Key;
 
     public sealed class TeamMemberInput
     {
@@ -169,6 +233,9 @@ public sealed class ConfigurationModel(
         [StringLength(128)]
         public string? ContactNumber { get; set; }
 
+        [Required, RegularExpression("^(TeamMember|Management)$")]
+        public string Section { get; set; } = TeamMemberSections.TeamMember;
+
         public TeamMemberDto ToDto() => new()
         {
             Id = Id ?? string.Empty,
@@ -176,7 +243,8 @@ public sealed class ConfigurationModel(
             Role = Role ?? string.Empty,
             Gid = Gid ?? string.Empty,
             Email = Email ?? string.Empty,
-            ContactNumber = ContactNumber ?? string.Empty
+            ContactNumber = ContactNumber ?? string.Empty,
+            Section = Section
         };
 
         public static TeamMemberInput FromDto(TeamMemberDto member) => new()
@@ -186,8 +254,61 @@ public sealed class ConfigurationModel(
             Role = member.Role,
             Gid = member.Gid,
             Email = member.Email,
-            ContactNumber = member.ContactNumber
+            ContactNumber = member.ContactNumber,
+            Section = TeamMemberSections.Normalize(member.Section)
         };
+    }
+
+    public sealed class PageAppearanceInput
+    {
+        public string PageKey { get; set; } = TeamPageAppearanceCatalog.Directory;
+        public List<ColumnAppearanceInput> Columns { get; set; } = [];
+
+        public static PageAppearanceInput From(
+            TeamPageAppearanceDefinition definition,
+            PageTextAppearanceDto appearance)
+        {
+            var savedColumns = appearance.Columns.ToDictionary(
+                column => column.ColumnKey,
+                StringComparer.OrdinalIgnoreCase);
+            return new PageAppearanceInput
+            {
+                PageKey = definition.Key,
+                Columns = definition.Columns.Select(column =>
+                {
+                    savedColumns.TryGetValue(column.Key, out var saved);
+                    return new ColumnAppearanceInput
+                    {
+                        ColumnKey = column.Key,
+                        Label = column.Label,
+                        Style = (saved?.IsBold == true, saved?.IsItalic == true) switch
+                        {
+                            (true, true) => TextAppearanceStyle.BoldItalic,
+                            (true, false) => TextAppearanceStyle.Bold,
+                            (false, true) => TextAppearanceStyle.Italic,
+                            _ => TextAppearanceStyle.Normal
+                        }
+                    };
+                }).ToList()
+            };
+        }
+    }
+
+    public sealed class ColumnAppearanceInput
+    {
+        public string ColumnKey { get; set; } = string.Empty;
+        public string Label { get; set; } = string.Empty;
+        public TextAppearanceStyle Style { get; set; }
+        public bool UsesBold => Style is TextAppearanceStyle.Bold or TextAppearanceStyle.BoldItalic;
+        public bool UsesItalic => Style is TextAppearanceStyle.Italic or TextAppearanceStyle.BoldItalic;
+    }
+
+    public enum TextAppearanceStyle
+    {
+        Normal,
+        Bold,
+        Italic,
+        BoldItalic
     }
 
     public sealed class SpecializationInput

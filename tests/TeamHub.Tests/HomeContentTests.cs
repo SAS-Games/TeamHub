@@ -48,15 +48,28 @@ public sealed class HomeContentTests : IDisposable
     }
 
     [Fact]
-    public async Task DefaultConfigurationLoadsBundledFiles_WhenContentRootHasNoConfig()
+    public async Task DefaultConfigurationLoadsFiles_FromRepositoryConfigDirectory()
     {
-        var service = new HomeContentService(Options.Create(new HomeConfigurationOptions()), CreateEnvironment());
+        var contentRoot = Path.Combine(_root, "src", "TeamHub.Web");
+        var configHome = Path.Combine(_root, "config", "Home");
+        Directory.CreateDirectory(contentRoot);
+        Directory.CreateDirectory(configHome);
+        await File.WriteAllTextAsync(Path.Combine(configHome, "project-info.json"), """
+            { "projectName": "Repository project", "vision": "Repository vision", "backgroundImage": "/images/home/project-background.svg" }
+            """);
+        await File.WriteAllTextAsync(Path.Combine(configHome, "useful-links.json"), """
+            [{ "label": "Repository link", "url": "https://example.com" }]
+            """);
+
+        var service = new HomeContentService(
+            Options.Create(new HomeConfigurationOptions()),
+            CreateEnvironment(contentRoot));
         var content = await service.GetContentAsync();
 
-        Assert.False(string.IsNullOrWhiteSpace(content.ProjectName));
-        Assert.False(string.IsNullOrWhiteSpace(content.Vision));
+        Assert.Equal("Repository project", content.ProjectName);
+        Assert.Equal("Repository vision", content.Vision);
         Assert.Equal("/images/home/project-background.svg", content.BackgroundImage);
-        Assert.NotEmpty(content.UsefulLinks);
+        Assert.Equal("Repository link", Assert.Single(content.UsefulLinks).Label);
     }
 
     private HomeContentService CreateService(bool absolute = false) => new(
@@ -66,7 +79,8 @@ public sealed class HomeContentTests : IDisposable
             UsefulLinksPath = absolute ? Path.Combine(_root, "links.json") : "links.json"
         }), CreateEnvironment());
 
-    private IHostEnvironment CreateEnvironment() => new TestEnvironment { ContentRootPath = _root };
+    private IHostEnvironment CreateEnvironment(string? contentRoot = null) =>
+        new TestEnvironment { ContentRootPath = contentRoot ?? _root };
 
     private async Task WriteContentAsync(string title)
     {
