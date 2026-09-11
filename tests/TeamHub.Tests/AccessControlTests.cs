@@ -91,6 +91,8 @@ public sealed class AccessControlTests
     [InlineData("/Reports/Index", "Reports")]
     [InlineData("/ReleaseNotes", "Release Notes")]
     [InlineData("/Administration/Audit", "Administration")]
+    [InlineData("/Studio/JiraTickets", TeamHubModules.StudioJiraTickets)]
+    [InlineData("/Studio/WeeklyUpdates", TeamHubModules.StudioJiraTickets)]
     [InlineData("/Register", null)]
     [InlineData("/Logout", null)]
     public void PageDiscovery_UsesFirstFolderAndPreservesSpecialModules(string pagePath, string? expected)

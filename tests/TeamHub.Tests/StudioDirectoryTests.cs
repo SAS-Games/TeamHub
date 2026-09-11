@@ -2,6 +2,9 @@ using FluentAssertions;
 using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using System.Net;
+using System.Text;
+using System.Text.Json;
 using TeamHub.Studio;
 
 namespace TeamHub.Tests;
@@ -128,6 +131,8 @@ public sealed class StudioDirectoryTests
                 ConfluenceBaseUrl = "https://confluence.example.test",
                 ConfluenceSpaceKey = "WR",
                 ConfluenceParentPageId = "12345",
+                ConfluenceYearTitlePattern = "Year {Year}",
+                ConfluenceMonthTitlePattern = "{Month:00}-{Year}",
                 ConfluenceWeeklyTitlePattern = "{WeekStart:dd/MM}-{WeekEnd:dd/MM}"
             });
 
@@ -136,7 +141,95 @@ public sealed class StudioDirectoryTests
             saved.ConfluenceBaseUrl.Should().Be("https://confluence.example.test");
             saved.ConfluenceSpaceKey.Should().Be("WR");
             saved.ConfluenceParentPageId.Should().Be("12345");
+            saved.ConfluenceYearTitlePattern.Should().Be("Year {Year}");
+            saved.ConfluenceMonthTitlePattern.Should().Be("{Month:00}-{Year}");
             saved.ConfluenceWeeklyTitlePattern.Should().Be("{WeekStart:dd/MM}-{WeekEnd:dd/MM}");
+        }
+        finally
+        {
+            SqliteConnection.ClearAllPools();
+            if (File.Exists(dbPath)) File.Delete(dbPath);
+        }
+    }
+
+    [Fact]
+    public async Task GetUpdatesAsync_ReadsConfiguredStudioRowFromMatchingWeeklyConfluencePage()
+    {
+        var dbPath = Path.Combine(Path.GetTempPath(), $"teamhub-studio-{Guid.NewGuid():N}.db");
+        var storageBody = """
+            <table><tbody>
+              <tr><th>Studio</th><th>Overview (for WR)</th><th>Notes</th></tr>
+              <tr><td>HDC</td><td><strong>Studio Work:</strong><br/>Completed milestone<br/><strong>Action Item:</strong><br/>Review build</td><td>On track</td></tr>
+            </tbody></table>
+            """;
+        var responseBody = JsonSerializer.Serialize(new
+        {
+            results = new[]
+            {
+                new
+                {
+                    id = "weekly-1",
+                    title = "14/09-18/09",
+                    ancestors = new[]
+                    {
+                        new { id = "100", title = "Activities" },
+                        new { id = "101", title = "2026" },
+                        new { id = "102", title = "9/2026" }
+                    },
+                    body = new { storage = new { value = storageBody } },
+                    version = new { number = 7 },
+                    _links = new { webui = "/pages/viewpage.action?pageId=weekly-1" }
+                }
+            }
+        });
+        var handler = new StubHttpMessageHandler(request =>
+        {
+            request.Headers.Authorization?.Scheme.Should().Be("Bearer");
+            request.Headers.Authorization?.Parameter.Should().Be("personal-confluence-token");
+            request.RequestUri!.AbsoluteUri.Should().Contain("title=14%2F09-18%2F09");
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(responseBody, Encoding.UTF8, "application/json")
+            };
+        });
+
+        try
+        {
+            await using var provider = CreateServices(dbPath, confluenceHandler: handler);
+            await using var scope = provider.CreateAsyncScope();
+            await scope.ServiceProvider.GetRequiredService<IStudioDatabaseInitializer>().InitializeAsync();
+            var directory = scope.ServiceProvider.GetRequiredService<IStudioDirectoryService>();
+            var configuration = scope.ServiceProvider.GetRequiredService<IAtlassianConfigurationService>();
+            var studio = await directory.SaveStudioAsync(new StudioDetails { StudioName = "HDC Studio", ProjectName = "Game" });
+
+            await configuration.SaveSettingsAsync(new AtlassianIntegrationSettings
+            {
+                ConfluenceEnabled = true,
+                ConfluenceBaseUrl = "https://confluence.example.test",
+                ConfluenceSpaceKey = "WR",
+                ConfluenceParentPageId = "100"
+            });
+            await configuration.SaveStudioMappingsAsync([
+                new StudioAtlassianMapping { StudioId = studio.Id, ConfluenceStudioIdentifier = "HDC" }
+            ]);
+            await configuration.SaveUserTokensAsync("person@example.com", null, "personal-confluence-token");
+
+            var result = await scope.ServiceProvider.GetRequiredService<IStudioConfluenceUpdateService>().GetUpdatesAsync(
+                new StudioConfluenceUpdateQuery
+                {
+                    StudioId = studio.Id,
+                    RequestingUserId = "person@example.com",
+                    StartDate = new DateOnly(2026, 9, 16),
+                    EndDate = new DateOnly(2026, 9, 18)
+                });
+
+            result.Message.Should().BeNull();
+            result.Updates.Should().ContainSingle();
+            result.Updates[0].StudioFound.Should().BeTrue();
+            result.Updates[0].PageVersion.Should().Be(7);
+            result.Updates[0].StudioWork.Should().Be("Completed milestone");
+            result.Updates[0].ActionItems.Should().Be("Review build");
+            result.Updates[0].Notes.Should().Be("On track");
         }
         finally
         {
@@ -475,7 +568,10 @@ public sealed class StudioDirectoryTests
         return names;
     }
 
-    private static ServiceProvider CreateServices(string dbPath, string? workflowDbPath = null)
+    private static ServiceProvider CreateServices(
+        string dbPath,
+        string? workflowDbPath = null,
+        HttpMessageHandler? confluenceHandler = null)
     {
         var configuration = new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?>
@@ -488,6 +584,17 @@ public sealed class StudioDirectoryTests
         var services = new ServiceCollection();
         services.AddDataProtection();
         services.AddStudioDirectory(configuration);
+        if (confluenceHandler is not null)
+        {
+            services.AddHttpClient<IStudioConfluenceUpdateService, ConfluenceStudioUpdateService>()
+                .ConfigurePrimaryHttpMessageHandler(() => confluenceHandler);
+        }
         return services.BuildServiceProvider();
+    }
+
+    private sealed class StubHttpMessageHandler(Func<HttpRequestMessage, HttpResponseMessage> responseFactory) : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) =>
+            Task.FromResult(responseFactory(request));
     }
 }

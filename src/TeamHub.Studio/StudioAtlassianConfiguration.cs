@@ -16,6 +16,8 @@ public sealed class AtlassianIntegrationSettings
     public string ConfluenceContentApiPath { get; set; } = "/rest/api/content";
     public string ConfluenceSpaceKey { get; set; } = string.Empty;
     public string ConfluenceParentPageId { get; set; } = string.Empty;
+    public string ConfluenceYearTitlePattern { get; set; } = "{Year}";
+    public string ConfluenceMonthTitlePattern { get; set; } = "{Month}/{Year}";
     public string ConfluenceWeeklyTitlePattern { get; set; } = "{WeekStart:dd/MM}-{WeekEnd:dd/MM}";
 }
 
@@ -25,6 +27,7 @@ public sealed class StudioAtlassianMapping
     public IReadOnlyList<string> JiraProjectKeys { get; set; } = [];
     public string JiraStudioComponent { get; set; } = string.Empty;
     public string JiraSupportComponent { get; set; } = string.Empty;
+    public string ConfluenceStudioIdentifier { get; set; } = string.Empty;
 }
 
 public sealed record AtlassianConnectionStatus(
@@ -118,6 +121,12 @@ internal sealed class SqliteAtlassianConfigurationService : IAtlassianConfigurat
         record.ConfluenceContentApiPath = NormalizeApiPath(settings.ConfluenceContentApiPath, "/rest/api/content");
         record.ConfluenceSpaceKey = settings.ConfluenceSpaceKey?.Trim() ?? string.Empty;
         record.ConfluenceParentPageId = settings.ConfluenceParentPageId?.Trim() ?? string.Empty;
+        record.ConfluenceYearTitlePattern = string.IsNullOrWhiteSpace(settings.ConfluenceYearTitlePattern)
+            ? "{Year}"
+            : settings.ConfluenceYearTitlePattern.Trim();
+        record.ConfluenceMonthTitlePattern = string.IsNullOrWhiteSpace(settings.ConfluenceMonthTitlePattern)
+            ? "{Month}/{Year}"
+            : settings.ConfluenceMonthTitlePattern.Trim();
         record.ConfluenceWeeklyTitlePattern = string.IsNullOrWhiteSpace(settings.ConfluenceWeeklyTitlePattern)
             ? "{WeekStart:dd/MM}-{WeekEnd:dd/MM}"
             : settings.ConfluenceWeeklyTitlePattern.Trim();
@@ -167,6 +176,7 @@ internal sealed class SqliteAtlassianConfigurationService : IAtlassianConfigurat
             record.JiraProjectKeys = SerializeProjectKeys(mapping.JiraProjectKeys);
             record.JiraStudioComponent = mapping.JiraStudioComponent?.Trim() ?? string.Empty;
             record.JiraSupportComponent = mapping.JiraSupportComponent?.Trim() ?? string.Empty;
+            record.ConfluenceStudioIdentifier = mapping.ConfluenceStudioIdentifier?.Trim() ?? string.Empty;
             record.UpdatedAtUtc = DateTime.UtcNow;
         }
 
@@ -423,6 +433,8 @@ internal sealed class SqliteAtlassianConfigurationService : IAtlassianConfigurat
         ConfluenceContentApiPath = record.ConfluenceContentApiPath,
         ConfluenceSpaceKey = record.ConfluenceSpaceKey,
         ConfluenceParentPageId = record.ConfluenceParentPageId,
+        ConfluenceYearTitlePattern = record.ConfluenceYearTitlePattern,
+        ConfluenceMonthTitlePattern = record.ConfluenceMonthTitlePattern,
         ConfluenceWeeklyTitlePattern = record.ConfluenceWeeklyTitlePattern
     };
 
@@ -431,7 +443,8 @@ internal sealed class SqliteAtlassianConfigurationService : IAtlassianConfigurat
         StudioId = record.StudioRecordId.ToString(),
         JiraProjectKeys = ParseProjectKeys(record.JiraProjectKeys),
         JiraStudioComponent = record.JiraStudioComponent,
-        JiraSupportComponent = record.JiraSupportComponent
+        JiraSupportComponent = record.JiraSupportComponent,
+        ConfluenceStudioIdentifier = record.ConfluenceStudioIdentifier
     };
 
     private static string NormalizeBaseUrl(string? value, bool required, string systemName)

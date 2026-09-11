@@ -77,13 +77,24 @@
                             <input asp-for="Settings.ConfluenceSpaceKey" class="form-control" placeholder="Example: WR" />
                         </div>
                         <div class="col-md-7">
-                            <label asp-for="Settings.ConfluenceParentPageId" class="form-label">Parent page ID</label>
+                            <label asp-for="Settings.ConfluenceParentPageId" class="form-label">Activities root page ID</label>
                             <input asp-for="Settings.ConfluenceParentPageId" class="form-control" />
+                            <div class="form-text">The page ID for the global Activities page.</div>
+                        </div>
+                        <div class="col-md-6">
+                            <label asp-for="Settings.ConfluenceYearTitlePattern" class="form-label">Year page title pattern</label>
+                            <input asp-for="Settings.ConfluenceYearTitlePattern" class="form-control" />
+                            <div class="form-text">Example: {Year} produces 2026.</div>
+                        </div>
+                        <div class="col-md-6">
+                            <label asp-for="Settings.ConfluenceMonthTitlePattern" class="form-label">Month page title pattern</label>
+                            <input asp-for="Settings.ConfluenceMonthTitlePattern" class="form-control" />
+                            <div class="form-text">Example: {Month}/{Year} produces 9/2026.</div>
                         </div>
                         <div class="col-12">
                             <label asp-for="Settings.ConfluenceWeeklyTitlePattern" class="form-label">Weekly page title pattern</label>
                             <input asp-for="Settings.ConfluenceWeeklyTitlePattern" class="form-control" />
-                            <div class="form-text">One weekly page is created below this parent for all studios. Available placeholders: {WeekStart:dd/MM} and {WeekEnd:dd/MM}. The new weekly page ID is discovered after creation, so it is not a configuration value.</div>
+                            <div class="form-text">TeamHub reads one weekly page for all studios. Available placeholders: {WeekStart:dd/MM} and {WeekEnd:dd/MM}. The weekly page ID is discovered from the hierarchy and title, so it is not a configuration value.</div>
                         </div>
                     </div>
                 </div>
@@ -167,12 +178,12 @@
 
     <section class="content-section mt-4">
         <div class="section-heading">
-            <div><span>Per studio</span><h2>Jira Project &amp; Component Mapping</h2></div>
+            <div><span>Per studio</span><h2>Jira &amp; Confluence Studio Mapping</h2></div>
         </div>
         <div class="section-body">
             @if (Model.Mappings.Count == 0)
             {
-                <p class="text-secondary mb-0">Create a studio first, then return here to configure its Jira mapping.</p>
+                <p class="text-secondary mb-0">Create a studio first, then return here to configure its Jira mapping and Confluence table identifier.</p>
             }
             @for (var index = 0; index < Model.Mappings.Count; index++)
             {
@@ -181,20 +192,25 @@
                     <h3 class="h5 mb-1">@Model.Mappings[index].StudioName</h3>
                     <p class="small text-secondary">@Model.Mappings[index].ProjectName</p>
                     <div class="row g-3">
-                        <div class="col-md-4">
+                        <div class="col-md-3">
                             <label asp-for="Mappings[index].JiraProjectKeys" class="form-label">Jira project key(s)</label>
                             <input asp-for="Mappings[index].JiraProjectKeys" class="form-control" placeholder="GAME, TOOLS" />
                             <div class="form-text">Use the ticket prefix: GDS-123 means project key GDS. Separate multiple keys with commas.</div>
                         </div>
-                        <div class="col-md-4">
+                        <div class="col-md-3">
                             <label asp-for="Mappings[index].JiraStudioComponent" class="form-label">Studio-identifying component</label>
                             <input asp-for="Mappings[index].JiraStudioComponent" class="form-control" placeholder="studio_name" />
                             <div class="form-text">Required: the Jira component that identifies tickets belonging to this studio.</div>
                         </div>
-                        <div class="col-md-4">
+                        <div class="col-md-3">
                             <label asp-for="Mappings[index].JiraSupportComponent" class="form-label">Direct-support component override</label>
                             <input asp-for="Mappings[index].JiraSupportComponent" class="form-control" placeholder="Optional — uses the global default" />
                             <div class="form-text">Leave blank when this studio uses the default above. If provided, it must exactly match Jira, including separators.</div>
+                        </div>
+                        <div class="col-md-3">
+                            <label asp-for="Mappings[index].ConfluenceStudioIdentifier" class="form-label">Confluence studio identifier</label>
+                            <input asp-for="Mappings[index].ConfluenceStudioIdentifier" class="form-control" placeholder="Example: HDC" />
+                            <div class="form-text">Exact value in the first Studio column of the weekly table.</div>
                         </div>
                     </div>
                 </div>

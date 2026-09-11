@@ -7,12 +7,16 @@
 
 <div class="page-hero">
     <div>
-        <div class="eyebrow">Studio Jira</div>
+        <div class="eyebrow">Studio Support</div>
         <h1>@title</h1>
     </div>
     @if (Model.Studio is not null)
     {
-        <div><a class="btn btn-outline-secondary" asp-page="/Studio/Index" asp-route-studioId="@Model.Studio.Id">Back to Dashboard</a></div>
+        <div class="d-flex flex-wrap gap-2">
+            <a class="btn btn-primary" asp-page="/Studio/JiraTickets" asp-route-studioId="@Model.Studio.Id">Jira Tickets</a>
+            <a class="btn btn-outline-primary" asp-page="/Studio/WeeklyUpdates" asp-route-studioId="@Model.Studio.Id">Weekly Updates</a>
+            <a class="btn btn-outline-secondary" asp-page="/Studio/Index" asp-route-studioId="@Model.Studio.Id">Back to Dashboard</a>
+        </div>
     }
 </div>
 

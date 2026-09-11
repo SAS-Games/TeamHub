@@ -111,6 +111,8 @@ internal sealed class AtlassianIntegrationSettingsRecord
     public string ConfluenceContentApiPath { get; set; } = "/rest/api/content";
     public string ConfluenceSpaceKey { get; set; } = string.Empty;
     public string ConfluenceParentPageId { get; set; } = string.Empty;
+    public string ConfluenceYearTitlePattern { get; set; } = "{Year}";
+    public string ConfluenceMonthTitlePattern { get; set; } = "{Month}/{Year}";
     public string ConfluenceWeeklyTitlePattern { get; set; } = "{WeekStart:dd/MM}-{WeekEnd:dd/MM}";
     public string? DefaultJiraTokenProtected { get; set; }
     public string? DefaultConfluenceTokenProtected { get; set; }
@@ -134,6 +136,7 @@ internal sealed class StudioAtlassianMappingRecord
     public string JiraProjectKeys { get; set; } = string.Empty;
     public string JiraStudioComponent { get; set; } = string.Empty;
     public string JiraSupportComponent { get; set; } = string.Empty;
+    public string ConfluenceStudioIdentifier { get; set; } = string.Empty;
     public string ConfluenceSpaceKey { get; set; } = string.Empty;
     public string ConfluenceParentPageId { get; set; } = string.Empty;
     public string ConfluenceWeeklyTitlePattern { get; set; } = "{StudioName} Weekly Update - {WeekStart:yyyy-MM-dd}";
@@ -234,6 +237,8 @@ internal sealed class StudioDbContext(DbContextOptions<StudioDbContext> options)
             entity.Property(x => x.ConfluenceContentApiPath).HasMaxLength(512);
             entity.Property(x => x.ConfluenceSpaceKey).HasMaxLength(256);
             entity.Property(x => x.ConfluenceParentPageId).HasMaxLength(256);
+            entity.Property(x => x.ConfluenceYearTitlePattern).HasMaxLength(256);
+            entity.Property(x => x.ConfluenceMonthTitlePattern).HasMaxLength(256);
             entity.Property(x => x.ConfluenceWeeklyTitlePattern).HasMaxLength(512);
         });
 
@@ -251,6 +256,7 @@ internal sealed class StudioDbContext(DbContextOptions<StudioDbContext> options)
             entity.Property(x => x.JiraProjectKeys).HasMaxLength(2048);
             entity.Property(x => x.JiraStudioComponent).HasMaxLength(256);
             entity.Property(x => x.JiraSupportComponent).HasMaxLength(256);
+            entity.Property(x => x.ConfluenceStudioIdentifier).HasMaxLength(256);
             entity.Property(x => x.ConfluenceSpaceKey).HasMaxLength(256);
             entity.Property(x => x.ConfluenceParentPageId).HasMaxLength(256);
             entity.Property(x => x.ConfluenceWeeklyTitlePattern).HasMaxLength(512);
@@ -389,6 +395,8 @@ internal sealed class SqliteStudioDatabaseInitializer(
                     ConfluenceContentApiPath TEXT NOT NULL,
                     ConfluenceSpaceKey TEXT NOT NULL DEFAULT '',
                     ConfluenceParentPageId TEXT NOT NULL DEFAULT '',
+                    ConfluenceYearTitlePattern TEXT NOT NULL DEFAULT '{{Year}}',
+                    ConfluenceMonthTitlePattern TEXT NOT NULL DEFAULT '{{Month}}/{{Year}}',
                     ConfluenceWeeklyTitlePattern TEXT NOT NULL DEFAULT '{{WeekStart:dd/MM}}-{{WeekEnd:dd/MM}}',
                     DefaultJiraTokenProtected TEXT NULL,
                     DefaultConfluenceTokenProtected TEXT NULL,
@@ -424,6 +432,20 @@ internal sealed class SqliteStudioDatabaseInitializer(
                     ADD COLUMN ConfluenceWeeklyTitlePattern TEXT NOT NULL DEFAULT '{{WeekStart:dd/MM}}-{{WeekEnd:dd/MM}}';
                     """, cancellationToken);
             }
+            if (!await MainColumnExistsAsync(connection, "AtlassianIntegrationSettings", "ConfluenceYearTitlePattern", cancellationToken))
+            {
+                await dbContext.Database.ExecuteSqlRawAsync("""
+                    ALTER TABLE AtlassianIntegrationSettings
+                    ADD COLUMN ConfluenceYearTitlePattern TEXT NOT NULL DEFAULT '{{Year}}';
+                    """, cancellationToken);
+            }
+            if (!await MainColumnExistsAsync(connection, "AtlassianIntegrationSettings", "ConfluenceMonthTitlePattern", cancellationToken))
+            {
+                await dbContext.Database.ExecuteSqlRawAsync("""
+                    ALTER TABLE AtlassianIntegrationSettings
+                    ADD COLUMN ConfluenceMonthTitlePattern TEXT NOT NULL DEFAULT '{{Month}}/{{Year}}';
+                    """, cancellationToken);
+            }
             if (!await MainColumnExistsAsync(connection, "AtlassianIntegrationSettings", "DefaultConfluenceTokenProtected", cancellationToken))
             {
                 await dbContext.Database.ExecuteSqlRawAsync("""
@@ -437,11 +459,13 @@ internal sealed class SqliteStudioDatabaseInitializer(
                     (Id, JiraEnabled, JiraBaseUrl, JiraSearchApiPath, JiraMaxResults,
                      JiraDefaultSupportComponent, ConfluenceEnabled, ConfluenceBaseUrl,
                      ConfluenceContentApiPath, ConfluenceSpaceKey, ConfluenceParentPageId,
+                     ConfluenceYearTitlePattern, ConfluenceMonthTitlePattern,
                      ConfluenceWeeklyTitlePattern, DefaultJiraTokenProtected,
                      DefaultConfluenceTokenProtected, UpdatedAtUtc)
                 VALUES
                     (1, 0, '', '/rest/api/2/search', 100,
                      'StudioSupport', 0, '', '/rest/api/content', '', '',
+                     '{{Year}}', '{{Month}}/{{Year}}',
                      '{{WeekStart:dd/MM}}-{{WeekEnd:dd/MM}}', NULL, NULL, CURRENT_TIMESTAMP);
                 """, cancellationToken);
 
@@ -474,6 +498,7 @@ internal sealed class SqliteStudioDatabaseInitializer(
                     JiraProjectKeys TEXT NOT NULL,
                     JiraStudioComponent TEXT NOT NULL,
                     JiraSupportComponent TEXT NOT NULL,
+                    ConfluenceStudioIdentifier TEXT NOT NULL DEFAULT '',
                     ConfluenceSpaceKey TEXT NOT NULL,
                     ConfluenceParentPageId TEXT NOT NULL,
                     ConfluenceWeeklyTitlePattern TEXT NOT NULL,
@@ -482,6 +507,14 @@ internal sealed class SqliteStudioDatabaseInitializer(
                         FOREIGN KEY (StudioRecordId) REFERENCES Studios (Id) ON DELETE CASCADE
                 );
                 """, cancellationToken);
+
+            if (!await MainColumnExistsAsync(connection, "AtlassianStudioMappings", "ConfluenceStudioIdentifier", cancellationToken))
+            {
+                await dbContext.Database.ExecuteSqlRawAsync("""
+                    ALTER TABLE AtlassianStudioMappings
+                    ADD COLUMN ConfluenceStudioIdentifier TEXT NOT NULL DEFAULT '';
+                    """, cancellationToken);
+            }
 
             await dbContext.Database.ExecuteSqlRawAsync("""
                 CREATE UNIQUE INDEX IF NOT EXISTS IX_AtlassianStudioMappings_StudioRecordId
@@ -991,6 +1024,7 @@ public static class StudioDirectoryServiceCollectionExtensions
         services.AddScoped<IAtlassianConfigurationService>(provider => provider.GetRequiredService<SqliteAtlassianConfigurationService>());
         services.AddScoped<IAtlassianCredentialAccessor>(provider => provider.GetRequiredService<SqliteAtlassianConfigurationService>());
         services.AddHttpClient<IStudioJiraTicketService, JiraStudioTicketService>();
+        services.AddHttpClient<IStudioConfluenceUpdateService, ConfluenceStudioUpdateService>();
         return services;
     }
 }

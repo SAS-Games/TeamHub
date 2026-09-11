@@ -51,6 +51,8 @@ public sealed class AtlassianModel(
                 ConfluenceContentApiPath = Settings.ConfluenceContentApiPath ?? string.Empty,
                 ConfluenceSpaceKey = Settings.ConfluenceSpaceKey ?? string.Empty,
                 ConfluenceParentPageId = Settings.ConfluenceParentPageId ?? string.Empty,
+                ConfluenceYearTitlePattern = Settings.ConfluenceYearTitlePattern ?? string.Empty,
+                ConfluenceMonthTitlePattern = Settings.ConfluenceMonthTitlePattern ?? string.Empty,
                 ConfluenceWeeklyTitlePattern = Settings.ConfluenceWeeklyTitlePattern ?? string.Empty
             }, cancellationToken);
 
@@ -59,7 +61,8 @@ public sealed class AtlassianModel(
                 StudioId = item.StudioId ?? string.Empty,
                 JiraProjectKeys = ParseProjectKeys(item.JiraProjectKeys),
                 JiraStudioComponent = item.JiraStudioComponent ?? string.Empty,
-                JiraSupportComponent = item.JiraSupportComponent ?? string.Empty
+                JiraSupportComponent = item.JiraSupportComponent ?? string.Empty,
+                ConfluenceStudioIdentifier = item.ConfluenceStudioIdentifier ?? string.Empty
             }).ToList(), cancellationToken);
 
             await configurationService.SaveDefaultTokensAsync(
@@ -107,6 +110,8 @@ public sealed class AtlassianModel(
             ConfluenceContentApiPath = settings.ConfluenceContentApiPath,
             ConfluenceSpaceKey = settings.ConfluenceSpaceKey,
             ConfluenceParentPageId = settings.ConfluenceParentPageId,
+            ConfluenceYearTitlePattern = settings.ConfluenceYearTitlePattern,
+            ConfluenceMonthTitlePattern = settings.ConfluenceMonthTitlePattern,
             ConfluenceWeeklyTitlePattern = settings.ConfluenceWeeklyTitlePattern
         };
 
@@ -123,7 +128,8 @@ public sealed class AtlassianModel(
                 ProjectName = studio.ProjectName,
                 JiraProjectKeys = mapping is null ? string.Empty : string.Join(", ", mapping.JiraProjectKeys),
                 JiraStudioComponent = mapping?.JiraStudioComponent ?? string.Empty,
-                JiraSupportComponent = mapping?.JiraSupportComponent ?? string.Empty
+                JiraSupportComponent = mapping?.JiraSupportComponent ?? string.Empty,
+                ConfluenceStudioIdentifier = mapping?.ConfluenceStudioIdentifier ?? string.Empty
             };
         }).ToList();
 
@@ -184,6 +190,8 @@ public sealed class AtlassianModel(
         [StringLength(512)] public string? ConfluenceContentApiPath { get; set; } = "/rest/api/content";
         [StringLength(256)] public string? ConfluenceSpaceKey { get; set; }
         [StringLength(256)] public string? ConfluenceParentPageId { get; set; }
+        [StringLength(256)] public string? ConfluenceYearTitlePattern { get; set; } = "{Year}";
+        [StringLength(256)] public string? ConfluenceMonthTitlePattern { get; set; } = "{Month}/{Year}";
         [StringLength(512)] public string? ConfluenceWeeklyTitlePattern { get; set; } = "{WeekStart:dd/MM}-{WeekEnd:dd/MM}";
     }
 
@@ -195,6 +203,7 @@ public sealed class AtlassianModel(
         [StringLength(2048)] public string? JiraProjectKeys { get; set; }
         [StringLength(256)] public string? JiraStudioComponent { get; set; }
         [StringLength(256)] public string? JiraSupportComponent { get; set; }
+        [StringLength(256)] public string? ConfluenceStudioIdentifier { get; set; }
     }
 
     public sealed class DefaultCredentialsInput

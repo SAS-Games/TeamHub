@@ -152,7 +152,7 @@ public static class TeamHubAccessRoutes
         if (path.StartsWithSegments("/WorkCenter") || path.StartsWithSegments("/Workflows")) return TeamHubModules.WorkCenter;
         if (path.StartsWithSegments("/Milestones")) return TeamHubModules.Milestones;
         if (path.StartsWithSegments("/Flows") || path.StartsWithSegments("/api/flows")) return TeamHubModules.FlowDesigner;
-        if (path.StartsWithSegments("/Studio/JiraTickets")) return TeamHubModules.StudioJiraTickets;
+        if (path.StartsWithSegments("/Studio/JiraTickets") || path.StartsWithSegments("/Studio/WeeklyUpdates")) return TeamHubModules.StudioJiraTickets;
         if (path.StartsWithSegments("/Studio")) return TeamHubModules.StudioConfiguration;
         if (path.StartsWithSegments("/Team")) return TeamHubModules.Team;
         if (path == "/" || path.StartsWithSegments("/Index") || path.StartsWithSegments("/Privacy")) return TeamHubModules.Home;
