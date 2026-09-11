@@ -45,6 +45,22 @@ public sealed class WorkCenterFlowPublicationTests
         configuration.SavedDraft.Should().BeNull();
     }
 
+    [Fact]
+    public async Task Publish_AcceptsDecimalExpectedDuration()
+    {
+        var configuration = new RecordingWorkflowConfigurationService();
+        var publisher = new WorkCenterFlowPublicationService(configuration, AdminContext());
+        var flow = OnboardingFlow();
+        flow.Nodes.Single(node => node.Id == "approval").CustomProperties["expectedDurationHours"] = "1.25";
+
+        var result = await publisher.PublishAsync(flow);
+
+        result.Success.Should().BeTrue();
+        configuration.SavedDraft!.Steps
+            .Single(step => step.StepKey == "PIC_UAT_APPROVAL")
+            .ExpectedDurationHours.Should().Be(1.25);
+    }
+
     private static FlowDefinition OnboardingFlow()
     {
         return new FlowDefinition

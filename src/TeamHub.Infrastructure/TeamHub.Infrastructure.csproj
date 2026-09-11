@@ -6,6 +6,10 @@
   </ItemGroup>
 
   <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="ClosedXML" Version="0.104.0" />
     <!-- Override ClosedXML's vulnerable transitive System.IO.Packaging 8.0.0 dependency. -->
     <PackageReference Include="System.IO.Packaging" Version="10.0.11" />
@@ -15,7 +19,6 @@
       <PrivateAssets>all</PrivateAssets>
     </PackageReference>
     <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="10.0.11" />
-    <PackageReference Include="Microsoft.Extensions.Hosting" Version="10.0.11" />
   </ItemGroup>
 
   <PropertyGroup>

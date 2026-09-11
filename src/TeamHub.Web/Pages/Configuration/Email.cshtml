@@ -1,0 +1,125 @@
+@page "/Configuration/Email"
+@model TeamHub.Web.Pages.Configuration.EmailModel
+@{
+    ViewData["Title"] = "Work Center Email Configuration";
+}
+
+<div class="page-hero">
+    <div>
+        <div class="eyebrow">Configuration</div>
+        <h1>Work Center Email</h1>
+        <p>Configure secure SMTP delivery, notification templates, recipients, and retry behavior.</p>
+    </div>
+    <a class="btn btn-outline-secondary" asp-page="/Configuration/Index">All Configuration</a>
+</div>
+
+@if (!string.IsNullOrWhiteSpace(Model.StatusMessage))
+{
+    <div class="alert alert-info mt-3">@Model.StatusMessage</div>
+}
+
+<form method="post" asp-page-handler="Save">
+    <div asp-validation-summary="All" class="alert alert-danger"></div>
+    <section class="content-section">
+        <div class="section-heading"><div><span>Connection</span><h2>SMTP server</h2></div></div>
+        <div class="section-body row g-3">
+            <div class="col-12">
+                <div class="form-check form-switch">
+                    <input asp-for="Settings.Enabled" class="form-check-input" />
+                    <label asp-for="Settings.Enabled" class="form-check-label">Enable email delivery</label>
+                </div>
+            </div>
+            <div class="col-md-8"><label asp-for="Settings.Host" class="form-label">SMTP host</label><input asp-for="Settings.Host" class="form-control" /></div>
+            <div class="col-md-4"><label asp-for="Settings.Port" class="form-label">Port</label><input asp-for="Settings.Port" class="form-control" type="number" min="1" max="65535" /></div>
+            <div class="col-md-6"><label asp-for="Settings.Username" class="form-label">Username</label><input asp-for="Settings.Username" class="form-control" autocomplete="off" /></div>
+            <div class="col-md-6"><label asp-for="Settings.FromAddress" class="form-label">From address</label><input asp-for="Settings.FromAddress" class="form-control" type="email" /></div>
+            <div class="col-md-6">
+                <label asp-for="Password" class="form-label">Password</label>
+                <input asp-for="Password" class="form-control" autocomplete="new-password" placeholder="@(Model.Settings.HasPassword ? "Stored securely — leave blank to keep" : "Enter SMTP password")" />
+                <div class="form-text">The password is encrypted using TeamHub Data Protection and is never displayed again.</div>
+            </div>
+            <div class="col-md-3">
+                <label class="form-label">Transport</label>
+                <div class="form-check mt-2"><input asp-for="Settings.UseSsl" class="form-check-input" /><label asp-for="Settings.UseSsl" class="form-check-label">Use SSL/TLS</label></div>
+            </div>
+            <div class="col-md-3">
+                <label class="form-label">Stored credential</label>
+                <div class="form-check mt-2"><input asp-for="RemovePassword" class="form-check-input" /><label asp-for="RemovePassword" class="form-check-label">Remove password</label></div>
+            </div>
+        </div>
+    </section>
+
+    <section class="content-section">
+        <div class="section-heading"><div><span>Recipients</span><h2>Delivery defaults</h2></div></div>
+        <div class="section-body row g-3">
+            <div class="col-md-6"><label asp-for="Settings.DefaultCc" class="form-label">Default CC</label><input asp-for="Settings.DefaultCc" class="form-control" placeholder="name@company.com; another@company.com" /></div>
+            <div class="col-md-6"><label asp-for="Settings.DefaultBcc" class="form-label">Default BCC</label><input asp-for="Settings.DefaultBcc" class="form-control" /></div>
+            <div class="col-md-6"><label asp-for="Settings.CompletionRecipient" class="form-label">Workflow completion recipient</label><input asp-for="Settings.CompletionRecipient" class="form-control" placeholder="Leave blank to notify the final actor" /><div class="form-text">Accepts an email address or an active TeamHub user ID/display name whose User ID is an email.</div></div>
+            <div class="col-md-3"><label asp-for="Settings.MaxDeliveryAttempts" class="form-label">Maximum attempts</label><input asp-for="Settings.MaxDeliveryAttempts" class="form-control" type="number" min="1" max="10" /></div>
+            <div class="col-md-3"><label asp-for="Settings.RetryDelayMinutes" class="form-label">Retry delay (minutes)</label><input asp-for="Settings.RetryDelayMinutes" class="form-control" type="number" min="1" max="1440" /></div>
+        </div>
+    </section>
+
+    <section class="content-section">
+        <div class="section-heading"><div><span>Content</span><h2>Email templates</h2></div></div>
+        <div class="section-body">
+            <p class="text-secondary">Available placeholders: <code>{Subject}</code>, <code>{Body}</code>, and <code>{Recipient}</code>.</p>
+            <div class="row g-4">
+                <div class="col-lg-6"><h3 class="h6">Assignment</h3><input asp-for="Settings.AssignmentSubjectTemplate" class="form-control mb-2" aria-label="Assignment subject template" /><textarea asp-for="Settings.AssignmentBodyTemplate" class="form-control" rows="3" aria-label="Assignment body template"></textarea></div>
+                <div class="col-lg-6"><h3 class="h6">Reminder and overdue</h3><input asp-for="Settings.ReminderSubjectTemplate" class="form-control mb-2" aria-label="Reminder subject template" /><textarea asp-for="Settings.ReminderBodyTemplate" class="form-control" rows="3" aria-label="Reminder body template"></textarea></div>
+                <div class="col-lg-6"><h3 class="h6">Escalation</h3><input asp-for="Settings.EscalationSubjectTemplate" class="form-control mb-2" aria-label="Escalation subject template" /><textarea asp-for="Settings.EscalationBodyTemplate" class="form-control" rows="3" aria-label="Escalation body template"></textarea></div>
+                <div class="col-lg-6"><h3 class="h6">Workflow completion</h3><input asp-for="Settings.CompletionSubjectTemplate" class="form-control mb-2" aria-label="Completion subject template" /><textarea asp-for="Settings.CompletionBodyTemplate" class="form-control" rows="3" aria-label="Completion body template"></textarea></div>
+            </div>
+        </div>
+    </section>
+
+    <button class="btn btn-primary" type="submit">Save Email Configuration</button>
+</form>
+
+<section class="content-section mt-4">
+    <div class="section-heading"><div><span>Verification</span><h2>Send a test</h2></div></div>
+    <form method="post" asp-page-handler="Test" class="section-body row g-3 align-items-end">
+        <div class="col-md-8"><label asp-for="TestRecipient" class="form-label">Recipient</label><input asp-for="TestRecipient" class="form-control" type="email" required /></div>
+        <div class="col-md-4"><button class="btn btn-outline-primary w-100" type="submit">Queue Test Email</button></div>
+    </form>
+</section>
+
+<section class="content-section">
+    <div class="section-heading"><div><span>Audit</span><h2>Delivery history</h2></div></div>
+    @if (Model.History.Count == 0)
+    {
+        <div class="section-body text-secondary">No email notifications have been recorded.</div>
+    }
+    else
+    {
+        <div class="table-responsive">
+            <table class="table styled-table align-middle">
+                <thead><tr><th>Created</th><th>Type</th><th>Recipient</th><th>Subject</th><th>Status</th><th>Attempts</th><th>Details</th><th></th></tr></thead>
+                <tbody>
+                @foreach (var item in Model.History)
+                {
+                    <tr>
+                        <td>@item.CreatedAtUtc.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</td>
+                        <td>@item.Type</td>
+                        <td>@item.Recipient</td>
+                        <td>@item.Subject</td>
+                        <td><span class="badge text-bg-@(item.Status == "Sent" ? "success" : item.Status == "Failed" ? "danger" : item.Status == "Pending" ? "warning" : "secondary")">@item.Status</span></td>
+                        <td>@item.Attempts</td>
+                        <td class="small text-secondary">@item.ErrorMessage</td>
+                        <td>
+                            @if (item.Status is "Failed" or "LoggedOnly")
+                            {
+                                <form method="post" asp-page-handler="Retry" asp-route-id="@item.Id"><button class="btn btn-sm btn-outline-primary" type="submit">Retry</button></form>
+                            }
+                        </td>
+                    </tr>
+                }
+                </tbody>
+            </table>
+        </div>
+    }
+</section>
+
+@section Scripts {
+    <partial name="_ValidationScriptsPartial" />
+}

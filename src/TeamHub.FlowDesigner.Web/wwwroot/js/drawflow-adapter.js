@@ -419,7 +419,7 @@
                 return {
                     id: data.externalId || this.internalToExternal.get(String(node.id)) || `node-${node.id}`,
                     type: nodeTypes[data.type] ? data.type : "Process",
-                    title: data.title || "Untitled",
+                    title: data.title ?? "Untitled",
                     description: data.description || "",
                     x: node.pos_x,
                     y: node.pos_y,
@@ -473,7 +473,6 @@
             window.requestAnimationFrame(() => this.editor.updateConnectionNodes(`node-${internalId}`));
             this.refreshGroupAppearance();
             if (emitChange) this.changed();
-            this.callbacks.onSelectNode?.(this.getNode(externalId));
         }
 
         updateConnectionLabel(connection, label) {

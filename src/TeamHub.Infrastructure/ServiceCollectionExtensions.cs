@@ -15,7 +15,6 @@ public static class ServiceCollectionExtensions
     public static IServiceCollection AddWorkflowInfrastructure(this IServiceCollection services, IConfiguration configuration)
     {
         services.Configure<WorkflowConfigurationOptions>(configuration.GetSection(WorkflowConfigurationOptions.SectionName));
-        services.Configure<EmailNotificationOptions>(configuration.GetSection(EmailNotificationOptions.SectionName));
 
         services.AddDbContext<WorkflowDbContext>(opts =>
         {
@@ -27,10 +26,19 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IWorkflowConfigurationService, WorkflowConfigurationService>();
         services.AddScoped<IWorkflowEngine, WorkflowEngineService>();
         services.AddScoped<IWorkflowReadService, WorkflowReadService>();
+        services.AddScoped<EmailNotificationConfigurationService>();
+        services.AddScoped<IEmailNotificationConfigurationService>(provider =>
+            provider.GetRequiredService<EmailNotificationConfigurationService>());
+        services.AddScoped<IEmailCredentialAccessor>(provider =>
+            provider.GetRequiredService<EmailNotificationConfigurationService>());
+        services.AddScoped<INotificationRecipientResolver, PassthroughNotificationRecipientResolver>();
         services.AddScoped<INotificationService, SmtpNotificationService>();
+        services.AddScoped<IEmailOutboxProcessor, SmtpEmailOutboxProcessor>();
+        services.AddScoped<IWorkflowDatabaseInitializer, WorkflowDatabaseInitializer>();
         services.AddSingleton<IClock, SystemClock>();
 
         services.AddHostedService<ReminderBackgroundService>();
+        services.AddHostedService<EmailDeliveryBackgroundService>();
 
         return services;
     }

@@ -87,6 +87,7 @@
         });
 
         const canvas = byId("drawflow");
+        canvas.addEventListener("pointerdown", finalizeSelectedNodeTitle, true);
         canvas.addEventListener("dragover", event => { event.preventDefault(); event.dataTransfer.dropEffect = "copy"; });
         canvas.addEventListener("drop", event => {
             event.preventDefault();
@@ -141,6 +142,7 @@
         ["nodeTitle", "nodeDescription", "nodeNotes"].forEach(id => {
             byId(id).addEventListener("input", updateSelectedNode);
         });
+        byId("nodeTitle").addEventListener("blur", finalizeSelectedNodeTitle);
         byId("nodeType").addEventListener("change", changeSelectedNodeType);
         ["nodeTone", "nodeLayer", "nodePortLayout", "nodeSectionId", "nodePresentationStyle"].forEach(id => byId(id).addEventListener("change", updateSelectedNode));
         ["taskStepKey", "taskOwner", "taskExpectedHours", "taskReminderAfterHours", "taskReminderRepeatHours", "taskEscalationAfterHours", "taskEscalationOwner"].forEach(id => byId(id).addEventListener("input", updateSelectedNode));
@@ -291,6 +293,7 @@
 
     async function save(manual) {
         if (!flow || !canEdit) return false;
+        finalizeSelectedNodeTitle();
         if (!dirty && !isDraft) {
             if (manual) showToast("Diagram is already saved");
             return true;
@@ -605,12 +608,22 @@
             });
         }
         const changes = {
-            title: byId("nodeTitle").value || nodeTypes[selectedNode.type].title,
+            title: byId("nodeTitle").value,
             description: byId("nodeDescription").value,
             customProperties
         };
         selectedNode = { ...selectedNode, ...changes };
         adapter.updateNode(selectedNode.id, changes);
+    }
+
+    function finalizeSelectedNodeTitle() {
+        if (!selectedNode) return;
+        const input = byId("nodeTitle");
+        if (input.value.trim()) return;
+
+        const config = nodeTypes[selectedNode.type] || nodeTypes.Process;
+        input.value = config.defaultTitle || config.title || "Untitled";
+        updateSelectedNode();
     }
 
     function addNodeComment() {

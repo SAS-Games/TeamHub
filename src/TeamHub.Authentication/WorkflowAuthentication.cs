@@ -4,11 +4,11 @@ using Microsoft.EntityFrameworkCore;
 
 namespace TeamHub.Authentication;
 
-public sealed class WorkflowUser
+public sealed class BootstrapAdminOptions
 {
-    public string Username { get; set; } = string.Empty;
+    public string UserId { get; set; } = string.Empty;
+    public string DisplayName { get; set; } = string.Empty;
     public string Password { get; set; } = string.Empty;
-    public string Role { get; set; } = "User";
 }
 
 public interface IWorkflowAuthenticationService
@@ -24,8 +24,13 @@ internal sealed class AuthorizedListWorkflowAuthenticationService(IUserAccessSer
 
 public static class WorkflowAuthenticationServiceCollectionExtensions
 {
-    public static IServiceCollection AddWorkflowAuthentication(this IServiceCollection services, string connectionString)
+    public static IServiceCollection AddWorkflowAuthentication(
+        this IServiceCollection services,
+        string connectionString,
+        Action<BootstrapAdminOptions>? configureBootstrapAdmin = null)
     {
+        if (configureBootstrapAdmin is not null) services.Configure(configureBootstrapAdmin);
+        else services.Configure<BootstrapAdminOptions>(_ => { });
         services.AddDbContextFactory<AccessControlDbContext>(options => options.UseSqlite(connectionString));
         services.AddScoped<IUserAccessService, UserAccessService>();
         services.AddScoped<IWorkflowAuthenticationService, AuthorizedListWorkflowAuthenticationService>();

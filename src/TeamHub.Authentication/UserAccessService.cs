@@ -1,12 +1,12 @@
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Options;
 
 namespace TeamHub.Authentication;
 
 internal sealed class UserAccessService(
     IDbContextFactory<AccessControlDbContext> contextFactory,
-    IConfiguration configuration) : IUserAccessService
+    IOptions<BootstrapAdminOptions> bootstrapAdminOptions) : IUserAccessService
 {
     private const string BootstrapCompleteKey = "BootstrapUsersImported";
     private const string LegacyStudioSupportModule = "Studio Jira Tickets";
@@ -20,32 +20,41 @@ internal sealed class UserAccessService(
         await SeedPermissionsAsync(context, TeamHubModules.All, cancellationToken);
 
         if (await context.Settings.AnyAsync(item => item.Key == BootstrapCompleteKey, cancellationToken)) return;
-
-        var configuredUsers = configuration.GetSection("WorkflowUsers").Get<List<WorkflowUser>>() ?? [];
-        foreach (var configuredUser in configuredUsers.Where(item => !string.IsNullOrWhiteSpace(item.Username)))
+        if (await context.AuthorizedUsers.AnyAsync(
+                item => item.IsActive && item.UserType == TeamHubUserTypes.Admin,
+                cancellationToken))
         {
-            var normalized = NormalizeUserId(configuredUser.Username);
-            if (await context.AuthorizedUsers.AnyAsync(item => item.NormalizedUserId == normalized, cancellationToken)) continue;
-
-            var now = DateTime.UtcNow;
-            var entity = new AuthorizedUserEntity
-            {
-                Id = Guid.NewGuid(),
-                UserId = configuredUser.Username.Trim(),
-                NormalizedUserId = normalized,
-                DisplayName = configuredUser.Username.Trim(),
-                UserType = string.Equals(configuredUser.Role, "Admin", StringComparison.OrdinalIgnoreCase)
-                    ? TeamHubUserTypes.Admin
-                    : TeamHubUserTypes.Registered,
-                IsActive = true,
-                IsRegistered = true,
-                CreatedAtUtc = now,
-                UpdatedAtUtc = now
-            };
-            entity.PasswordHash = passwordHasher.HashPassword(entity, configuredUser.Password ?? string.Empty);
-            context.AuthorizedUsers.Add(entity);
+            context.Settings.Add(new AccessSettingEntity { Key = BootstrapCompleteKey, Value = DateTimeOffset.UtcNow.ToString("O") });
+            await context.SaveChangesAsync(cancellationToken);
+            return;
         }
 
+        var bootstrap = bootstrapAdminOptions.Value;
+        if (string.IsNullOrWhiteSpace(bootstrap.UserId) || string.IsNullOrEmpty(bootstrap.Password)) return;
+        if (bootstrap.Password.Length < 8)
+        {
+            throw new InvalidOperationException("TEAMHUB_BOOTSTRAP_ADMIN_PASSWORD must contain at least 8 characters.");
+        }
+
+        var now = DateTime.UtcNow;
+        var userId = bootstrap.UserId.Trim();
+        var normalizedUserId = NormalizeUserId(userId);
+        var entity = await context.AuthorizedUsers
+            .SingleOrDefaultAsync(item => item.NormalizedUserId == normalizedUserId, cancellationToken);
+        entity ??= new AuthorizedUserEntity
+        {
+            Id = Guid.NewGuid(),
+            CreatedAtUtc = now,
+        };
+        if (context.Entry(entity).State == EntityState.Detached) context.AuthorizedUsers.Add(entity);
+        entity.UserId = userId;
+        entity.NormalizedUserId = normalizedUserId;
+        entity.DisplayName = string.IsNullOrWhiteSpace(bootstrap.DisplayName) ? userId : bootstrap.DisplayName.Trim();
+        entity.UserType = TeamHubUserTypes.Admin;
+        entity.IsActive = true;
+        entity.IsRegistered = true;
+        entity.UpdatedAtUtc = now;
+        entity.PasswordHash = passwordHasher.HashPassword(entity, bootstrap.Password);
         context.Settings.Add(new AccessSettingEntity { Key = BootstrapCompleteKey, Value = DateTimeOffset.UtcNow.ToString("O") });
         await context.SaveChangesAsync(cancellationToken);
     }

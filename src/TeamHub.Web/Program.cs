@@ -2,6 +2,7 @@ using System.IO;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Routing;
 using TeamHub.Authentication;
+using TeamHub.Application.Interfaces;
 using TeamHub.Web.AccessControl;
 using TeamHub.FlowDesigner.Core.Contracts;
 using TeamHub.FlowDesigner.DependencyInjection;
@@ -44,11 +45,17 @@ if (OperatingSystem.IsWindows())
 }
 builder.Services.Configure<ApplicationOptions>(builder.Configuration.GetSection("Application"));
 builder.Services.Configure<List<NavigationTabOptions>>(builder.Configuration.GetSection("NavigationTabs"));
-builder.Services.AddWorkflowAuthentication($"Data Source={accessDatabasePath}");
+builder.Services.AddWorkflowAuthentication($"Data Source={accessDatabasePath}", options =>
+{
+    options.UserId = Environment.GetEnvironmentVariable("TEAMHUB_BOOTSTRAP_ADMIN_USER") ?? string.Empty;
+    options.DisplayName = Environment.GetEnvironmentVariable("TEAMHUB_BOOTSTRAP_ADMIN_NAME") ?? string.Empty;
+    options.Password = Environment.GetEnvironmentVariable("TEAMHUB_BOOTSTRAP_ADMIN_PASSWORD") ?? string.Empty;
+});
 builder.Services.AddAuthorization();
 builder.Services.AddScoped<ICurrentAccessService, CurrentAccessService>();
 builder.Services.AddSingleton<ITeamHubModuleCatalog, TeamHubModuleCatalog>();
 builder.Services.AddWorkflowInfrastructure(builder.Configuration);
+builder.Services.AddScoped<INotificationRecipientResolver, TeamHubNotificationRecipientResolver>();
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<ICurrentUserProvider, TeamHubFlowCurrentUserProvider>();
 builder.Services.AddScoped<IFlowPermissionService, TeamHubFlowPermissionService>();
@@ -70,8 +77,7 @@ using (var scope = app.Services.CreateScope())
 {
     var userAccess = scope.ServiceProvider.GetRequiredService<IUserAccessService>();
     await userAccess.InitializeAsync();
-    var db = scope.ServiceProvider.GetRequiredService<WorkflowDbContext>();
-    db.Database.EnsureCreated();
+    await scope.ServiceProvider.GetRequiredService<IWorkflowDatabaseInitializer>().InitializeAsync();
     var studioDatabase = scope.ServiceProvider.GetRequiredService<IStudioDatabaseInitializer>();
     studioDatabase.InitializeAsync().GetAwaiter().GetResult();
     var teamDatabase = scope.ServiceProvider.GetRequiredService<ITeamDatabaseInitializer>();

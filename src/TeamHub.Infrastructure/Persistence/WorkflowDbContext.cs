@@ -12,6 +12,8 @@ public sealed class WorkflowDbContext(DbContextOptions<WorkflowDbContext> option
     public DbSet<WorkflowStepInstance> WorkflowStepInstances => Set<WorkflowStepInstance>();
     public DbSet<WorkflowStepInstanceDependency> WorkflowStepInstanceDependencies => Set<WorkflowStepInstanceDependency>();
     public DbSet<NotificationLog> NotificationLogs => Set<NotificationLog>();
+    public DbSet<NotificationOutboxItem> NotificationOutbox => Set<NotificationOutboxItem>();
+    public DbSet<EmailNotificationSettingsRecord> EmailNotificationSettings => Set<EmailNotificationSettingsRecord>();
     public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
     public DbSet<WorkflowDraftDefinition> WorkflowDraftDefinitions => Set<WorkflowDraftDefinition>();
     public DbSet<WorkflowDraftStepDefinition> WorkflowDraftStepDefinitions => Set<WorkflowDraftStepDefinition>();
@@ -89,6 +91,29 @@ public sealed class WorkflowDbContext(DbContextOptions<WorkflowDbContext> option
             e.Property(x => x.Recipient).HasMaxLength(256);
             e.Property(x => x.ErrorMessage).HasMaxLength(2048);
             e.HasIndex(x => new { x.WorkflowStepInstanceId, x.Type, x.Recipient, x.SentAtUtc });
+        });
+
+        modelBuilder.Entity<NotificationOutboxItem>(e =>
+        {
+            e.ToTable("NotificationOutbox");
+            e.Property(x => x.Recipient).HasMaxLength(320);
+            e.Property(x => x.Cc).HasMaxLength(2000);
+            e.Property(x => x.Bcc).HasMaxLength(2000);
+            e.Property(x => x.Subject).HasMaxLength(1000);
+            e.Property(x => x.Status).HasMaxLength(32);
+            e.Property(x => x.LastError).HasMaxLength(2048);
+            e.HasIndex(x => new { x.Status, x.NextAttemptAtUtc });
+        });
+
+        modelBuilder.Entity<EmailNotificationSettingsRecord>(e =>
+        {
+            e.ToTable("EmailNotificationSettings");
+            e.Property(x => x.Host).HasMaxLength(500);
+            e.Property(x => x.Username).HasMaxLength(500);
+            e.Property(x => x.FromAddress).HasMaxLength(320);
+            e.Property(x => x.DefaultCc).HasMaxLength(2000);
+            e.Property(x => x.DefaultBcc).HasMaxLength(2000);
+            e.Property(x => x.CompletionRecipient).HasMaxLength(320);
         });
 
         modelBuilder.Entity<AuditLog>(e =>

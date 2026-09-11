@@ -191,15 +191,15 @@ public sealed class AccessControlTests
             var directory = Path.Combine(Path.GetTempPath(), $"teamhub-access-tests-{Guid.NewGuid():N}");
             Directory.CreateDirectory(directory);
             var databasePath = Path.Combine(directory, "access.db");
-            var configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
-            {
-                ["WorkflowUsers:0:Username"] = "admin@example.com",
-                ["WorkflowUsers:0:Password"] = "bootstrap123",
-                ["WorkflowUsers:0:Role"] = "Admin"
-            }).Build();
             var services = new ServiceCollection();
-            services.AddSingleton<IConfiguration>(configuration);
-            services.AddWorkflowAuthentication($"Data Source={databasePath};Pooling=False");
+            services.AddWorkflowAuthentication(
+                $"Data Source={databasePath};Pooling=False",
+                options =>
+                {
+                    options.UserId = "admin@example.com";
+                    options.DisplayName = "Test Admin";
+                    options.Password = "bootstrap123";
+                });
             var provider = services.BuildServiceProvider();
             using var scope = provider.CreateScope();
             await scope.ServiceProvider.GetRequiredService<IUserAccessService>().InitializeAsync();
