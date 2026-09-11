@@ -25,6 +25,17 @@
 
 <section class="content-section">
     <div class="section-heading"><div><span>Authorization policy</span><h2>Page / Module Access Matrix</h2></div></div>
+    <div class="section-body pb-3">
+        <p class="text-secondary mb-2">Access is cumulative: each level includes the capabilities to its left.</p>
+        <div class="d-flex flex-wrap gap-2 small">
+            <span class="badge text-bg-light">No Access</span>
+            <span aria-hidden="true">→</span><span class="badge text-bg-light">Read Only</span>
+            <span aria-hidden="true">→</span><span class="badge text-bg-light">Create</span>
+            <span aria-hidden="true">→</span><span class="badge text-bg-light">Edit</span>
+            <span aria-hidden="true">→</span><span class="badge text-bg-light">Delete</span>
+            <span aria-hidden="true">→</span><span class="badge text-bg-light">Full Access</span>
+        </div>
+    </div>
     <form method="post">
         <div class="table-responsive">
             <table class="table styled-table align-middle">

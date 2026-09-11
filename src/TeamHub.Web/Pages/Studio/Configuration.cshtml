@@ -2,17 +2,24 @@
 @model TeamHub.Web.Pages.Studio.ConfigurationModel
 @{
     ViewData["Title"] = "Studio Configuration";
+    var showActions = Model.CanEdit || Model.CanDelete;
 }
 
 <div class="page-hero">
     <div>
-        <div class="eyebrow">Admin</div>
+        <div class="eyebrow">Studio Management</div>
         <h1>Studio Configuration</h1>
         <p>Add, update, or delete studio details used by the dashboard.</p>
     </div>
     <div class="d-flex gap-2">
-        <a class="btn btn-outline-secondary" asp-page="/Configuration/Index">All Configuration</a>
-        <a class="btn btn-primary" asp-page="/Studio/Configuration" asp-route-create="true">Add Studio</a>
+        @if (Model.CanOpenAdministration)
+        {
+            <a class="btn btn-outline-secondary" asp-page="/Configuration/Index">All Configuration</a>
+        }
+        @if (Model.CanCreate)
+        {
+            <a class="btn btn-primary" asp-page="/Studio/Configuration" asp-route-create="true">Add Studio</a>
+        }
     </div>
 </div>
 
@@ -27,7 +34,7 @@
         <div class="section-heading"><div><span>Configured studios</span><h2>Studio Records</h2></div></div>
         <div class="table-responsive">
             <table class="table styled-table">
-                <thead><tr><th>Studio</th><th>Project</th><th>Location</th><th>Time Zone</th><th>Our Contacts</th><th>Team Members</th><th>Actions</th></tr></thead>
+                <thead><tr><th>Studio</th><th>Project</th><th>Location</th><th>Time Zone</th><th>Our Contacts</th><th>Team Members</th>@if (showActions) { <th>Actions</th> }</tr></thead>
                 <tbody>
                 @foreach (var studio in Model.Studios)
                 {
@@ -38,12 +45,21 @@
                         <td>@studio.TimeZoneId</td>
                         <td>@studio.OurContacts.Count</td>
                         <td>@studio.TeamMembers.Count</td>
-                        <td class="studio-actions">
-                            <a class="btn btn-sm btn-outline-primary" asp-page="/Studio/Configuration" asp-route-studioId="@studio.Id">Edit</a>
-                            <form method="post" asp-page-handler="Delete" asp-route-studioId="@studio.Id" class="d-inline">
-                                <button type="submit" class="btn btn-sm btn-outline-danger">Delete</button>
-                            </form>
-                        </td>
+                        @if (showActions)
+                        {
+                            <td class="studio-actions">
+                                @if (Model.CanEdit)
+                                {
+                                    <a class="btn btn-sm btn-outline-primary" asp-page="/Studio/Configuration" asp-route-studioId="@studio.Id">Edit</a>
+                                }
+                                @if (Model.CanDelete)
+                                {
+                                    <form method="post" asp-page-handler="Delete" asp-route-studioId="@studio.Id" class="d-inline" onsubmit="return confirm('Delete this studio?');">
+                                        <button type="submit" class="btn btn-sm btn-outline-danger">Delete</button>
+                                    </form>
+                                }
+                            </td>
+                        }
                     </tr>
                 }
                 </tbody>
@@ -57,7 +73,7 @@
     <section class="content-section">
         <div class="section-heading"><div><span>@(string.IsNullOrWhiteSpace(Model.Input.Id) ? "Add" : "Update")</span><h2>Studio Details</h2></div></div>
         <div class="section-body">
-            <form method="post" asp-page-handler="Save">
+            <form method="post" asp-page-handler="@(string.IsNullOrWhiteSpace(Model.Input.Id) ? "Create" : "Edit")">
                 <input type="hidden" asp-for="Input.Id" />
                 <div asp-validation-summary="All" class="text-danger"></div>
                 <div class="row g-3 mb-4">

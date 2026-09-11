@@ -3,12 +3,16 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
+using TeamHub.Authentication;
 using TeamHub.Studio;
+using TeamHub.Web.AccessControl;
 
 namespace TeamHub.Web.Pages.Studio;
 
 [Authorize]
-public class ConfigurationModel(IStudioDirectoryService studioDirectoryService) : PageModel
+public class ConfigurationModel(
+    IStudioDirectoryService studioDirectoryService,
+    ICurrentAccessService currentAccess) : PageModel
 {
     [BindProperty]
     public StudioInput Input { get; set; } = new();
@@ -23,9 +27,14 @@ public class ConfigurationModel(IStudioDirectoryService studioDirectoryService) 
     public string? StatusMessage { get; set; }
 
     public bool ShowForm { get; private set; }
+    public bool CanCreate { get; private set; }
+    public bool CanEdit { get; private set; }
+    public bool CanDelete { get; private set; }
+    public bool CanOpenAdministration { get; private set; }
 
     public async Task OnGetAsync(string? studioId = null, bool create = false, CancellationToken cancellationToken = default)
     {
+        await LoadPermissionsAsync(cancellationToken);
         await LoadStudiosAsync(cancellationToken);
         ShowForm = create || !string.IsNullOrWhiteSpace(studioId);
 
@@ -41,8 +50,25 @@ public class ConfigurationModel(IStudioDirectoryService studioDirectoryService) 
         EnsureEditableRows();
     }
 
-    public async Task<IActionResult> OnPostSaveAsync(CancellationToken cancellationToken)
+    public async Task<IActionResult> OnPostCreateAsync(CancellationToken cancellationToken)
     {
+        Input.Id = null;
+        return await SaveAsync(cancellationToken);
+    }
+
+    public async Task<IActionResult> OnPostEditAsync(CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(Input.Id)
+            || await studioDirectoryService.GetStudioAsync(Input.Id, cancellationToken) is null)
+        {
+            return NotFound();
+        }
+        return await SaveAsync(cancellationToken);
+    }
+
+    private async Task<IActionResult> SaveAsync(CancellationToken cancellationToken)
+    {
+        await LoadPermissionsAsync(cancellationToken);
         ShowForm = true;
         NormalizeInputRows();
         if (!IsValidTimeZone(Input.TimeZoneId))
@@ -77,10 +103,15 @@ public class ConfigurationModel(IStudioDirectoryService studioDirectoryService) 
     {
         await studioDirectoryService.DeleteStudioAsync(studioId, cancellationToken);
         StatusMessage = "Studio deleted.";
-        Input = new StudioInput();
-        await LoadStudiosAsync(cancellationToken);
-        EnsureEditableRows();
-        return Page();
+        return RedirectToPage();
+    }
+
+    private async Task LoadPermissionsAsync(CancellationToken cancellationToken)
+    {
+        CanCreate = await currentAccess.CanAsync(TeamHubModules.StudioConfiguration, AccessLevel.Create, cancellationToken);
+        CanEdit = await currentAccess.CanAsync(TeamHubModules.StudioConfiguration, AccessLevel.Edit, cancellationToken);
+        CanDelete = await currentAccess.CanAsync(TeamHubModules.StudioConfiguration, AccessLevel.Delete, cancellationToken);
+        CanOpenAdministration = await currentAccess.CanAsync(TeamHubModules.Administration, AccessLevel.ReadOnly, cancellationToken);
     }
 
     private async Task LoadStudiosAsync(CancellationToken cancellationToken)

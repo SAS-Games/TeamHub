@@ -152,7 +152,7 @@ public static class TeamHubAccessRoutes
         if (path.StartsWithSegments("/WorkCenter") || path.StartsWithSegments("/Workflows")) return TeamHubModules.WorkCenter;
         if (path.StartsWithSegments("/Milestones")) return TeamHubModules.Milestones;
         if (path.StartsWithSegments("/Flows") || path.StartsWithSegments("/api/flows")) return TeamHubModules.FlowDesigner;
-        if (path.StartsWithSegments("/Studio/JiraTickets") || path.StartsWithSegments("/Studio/WeeklyUpdates")) return TeamHubModules.StudioJiraTickets;
+        if (path.StartsWithSegments("/Studio/JiraTickets") || path.StartsWithSegments("/Studio/WeeklyUpdates")) return TeamHubModules.StudioSupport;
         if (path.StartsWithSegments("/Studio")) return TeamHubModules.StudioConfiguration;
         if (path.StartsWithSegments("/Team")) return TeamHubModules.Team;
         if (path == "/" || path.StartsWithSegments("/Index") || path.StartsWithSegments("/Privacy")) return TeamHubModules.Home;
@@ -164,6 +164,13 @@ public static class TeamHubAccessRoutes
         var path = request.Path.Value ?? string.Empty;
         var handler = request.Query["handler"].ToString();
         if (HttpMethods.IsDelete(request.Method) || handler.Contains("Delete", StringComparison.OrdinalIgnoreCase)) return AccessLevel.Delete;
+        if (path.StartsWith("/Studio/Configuration", StringComparison.OrdinalIgnoreCase))
+        {
+            if (HttpMethods.IsPost(request.Method) && handler.Equals("Create", StringComparison.OrdinalIgnoreCase)) return AccessLevel.Create;
+            if (HttpMethods.IsPost(request.Method) && handler.Equals("Edit", StringComparison.OrdinalIgnoreCase)) return AccessLevel.Edit;
+            if (HttpMethods.IsGet(request.Method) && request.Query.ContainsKey("studioId")) return AccessLevel.Edit;
+            if (HttpMethods.IsGet(request.Method) && request.Query.ContainsKey("create")) return AccessLevel.Create;
+        }
         if (path.Contains("/publish", StringComparison.OrdinalIgnoreCase)
             || path.Contains("/templates", StringComparison.OrdinalIgnoreCase) && !HttpMethods.IsGet(request.Method)
             || handler.Contains("Publish", StringComparison.OrdinalIgnoreCase)) return AccessLevel.FullAccess;

@@ -57,14 +57,24 @@ public sealed class StudioDirectoryTests
 
             await service.SaveDefaultTokensAsync("shared-jira-token", "shared-confluence-token");
             await service.SavePrivilegedAccessAsync([
-                new AtlassianPrivilegedAccess("privileged@example.com", true, false)
+                new AtlassianPrivilegedAccess("privileged@example.com", true, true)
             ]);
 
             var status = await service.GetDefaultCredentialStatusAsync();
             status.HasJiraToken.Should().BeTrue();
             status.HasConfluenceToken.Should().BeTrue();
             (await service.ListPrivilegedAccessAsync()).Should().ContainSingle()
-                .Which.Should().Be(new AtlassianPrivilegedAccess("privileged@example.com", true, false));
+                .Which.Should().Be(new AtlassianPrivilegedAccess("privileged@example.com", true, true));
+
+            var credentialAccessor = scope.ServiceProvider.GetRequiredService<IAtlassianCredentialAccessor>();
+            var jiraCredential = await credentialAccessor.ResolveJiraCredentialAsync("privileged@example.com", true);
+            var confluenceCredential = await credentialAccessor.ResolveConfluenceCredentialAsync("privileged@example.com", true);
+            jiraCredential.Should().NotBeNull();
+            jiraCredential!.IsShared.Should().BeTrue();
+            jiraCredential.IsReadOnly.Should().BeTrue();
+            confluenceCredential.Should().NotBeNull();
+            confluenceCredential!.IsShared.Should().BeTrue();
+            confluenceCredential.IsReadOnly.Should().BeTrue();
 
             await using var connection = new SqliteConnection($"Data Source={dbPath}");
             await connection.OpenAsync();

@@ -9,12 +9,14 @@ internal sealed class UserAccessService(
     IConfiguration configuration) : IUserAccessService
 {
     private const string BootstrapCompleteKey = "BootstrapUsersImported";
+    private const string LegacyStudioSupportModule = "Studio Jira Tickets";
     private readonly PasswordHasher<AuthorizedUserEntity> passwordHasher = new();
 
     public async Task InitializeAsync(CancellationToken cancellationToken = default)
     {
         await using var context = await contextFactory.CreateDbContextAsync(cancellationToken);
         await context.Database.EnsureCreatedAsync(cancellationToken);
+        await MigrateStudioSupportPermissionsAsync(context, cancellationToken);
         await SeedPermissionsAsync(context, TeamHubModules.All, cancellationToken);
 
         if (await context.Settings.AnyAsync(item => item.Key == BootstrapCompleteKey, cancellationToken)) return;
@@ -258,6 +260,33 @@ internal sealed class UserAccessService(
         await context.SaveChangesAsync(cancellationToken);
     }
 
+    private static async Task MigrateStudioSupportPermissionsAsync(
+        AccessControlDbContext context,
+        CancellationToken cancellationToken)
+    {
+        var legacyPermissions = await context.ModulePermissions
+            .Where(item => item.Module == LegacyStudioSupportModule)
+            .ToListAsync(cancellationToken);
+        if (legacyPermissions.Count == 0) return;
+
+        var currentPermissions = await context.ModulePermissions
+            .Where(item => item.Module == TeamHubModules.StudioSupport)
+            .ToDictionaryAsync(item => item.UserType, StringComparer.Ordinal, cancellationToken);
+        foreach (var legacy in legacyPermissions)
+        {
+            if (currentPermissions.TryGetValue(legacy.UserType, out var current))
+            {
+                current.AccessLevel = legacy.AccessLevel;
+                context.ModulePermissions.Remove(legacy);
+            }
+            else
+            {
+                legacy.Module = TeamHubModules.StudioSupport;
+            }
+        }
+        await context.SaveChangesAsync(cancellationToken);
+    }
+
     private static bool IsValidModule(string? module) =>
         !string.IsNullOrWhiteSpace(module) && module.Trim().Length <= 100;
 
@@ -285,7 +314,7 @@ internal sealed class UserAccessService(
             (TeamHubModules.FlowDesigner, TeamHubUserTypes.Privileged) => AccessLevel.FullAccess,
             (TeamHubModules.StudioConfiguration, TeamHubUserTypes.Registered) => AccessLevel.ReadOnly,
             (TeamHubModules.StudioConfiguration, TeamHubUserTypes.Privileged) => AccessLevel.Edit,
-            (TeamHubModules.StudioJiraTickets, TeamHubUserTypes.Registered or TeamHubUserTypes.Privileged) => AccessLevel.ReadOnly,
+            (TeamHubModules.StudioSupport, TeamHubUserTypes.Registered or TeamHubUserTypes.Privileged) => AccessLevel.ReadOnly,
             (TeamHubModules.AtlassianConnection, TeamHubUserTypes.Registered or TeamHubUserTypes.Privileged) => AccessLevel.Edit,
             _ => AccessLevel.NoAccess
         };

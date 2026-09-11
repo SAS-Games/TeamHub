@@ -1,5 +1,8 @@
 @page "/Studio"
 @model TeamHub.Web.Pages.Studio.IndexModel
+@using TeamHub.Authentication
+@using TeamHub.Web.AccessControl
+@inject ICurrentAccessService CurrentAccess
 @{
     var item = Model.SelectedStudio;
     var studioName = item?.Studio.StudioName;
@@ -12,7 +15,7 @@
         <div class="eyebrow">Studio</div>
         <h1>@dashboardTitle</h1>
     </div>
-    @if (item is not null)
+    @if (item is not null && await CurrentAccess.CanAsync(TeamHubModules.StudioSupport))
     {
         <div><a class="btn btn-primary" asp-page="/Studio/JiraTickets" asp-route-studioId="@item.Studio.Id">Studio Support</a></div>
     }

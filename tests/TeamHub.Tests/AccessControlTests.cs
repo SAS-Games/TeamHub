@@ -56,7 +56,7 @@ public sealed class AccessControlTests
         (await users.GetAccessLevelAsync(TeamHubModules.Home, TeamHubUserTypes.Guest)).Should().Be(AccessLevel.ReadOnly);
         (await users.GetAccessLevelAsync(TeamHubModules.FlowDesigner, TeamHubUserTypes.Registered)).Should().Be(AccessLevel.Edit);
         (await users.GetAccessLevelAsync(TeamHubModules.AtlassianConnection, TeamHubUserTypes.Registered)).Should().Be(AccessLevel.Edit);
-        (await users.GetAccessLevelAsync(TeamHubModules.StudioJiraTickets, TeamHubUserTypes.Privileged)).Should().Be(AccessLevel.ReadOnly);
+        (await users.GetAccessLevelAsync(TeamHubModules.StudioSupport, TeamHubUserTypes.Privileged)).Should().Be(AccessLevel.ReadOnly);
 
         await users.SetPermissionsAsync([
             new(TeamHubModules.Milestones, TeamHubUserTypes.Registered, AccessLevel.Create),
@@ -67,6 +67,30 @@ public sealed class AccessControlTests
         (await users.GetAccessLevelAsync(TeamHubModules.Milestones, TeamHubUserTypes.Registered)).Should().Be(AccessLevel.Create);
         (await users.GetAccessLevelAsync(TeamHubModules.UserManagement, TeamHubUserTypes.Privileged)).Should().Be(AccessLevel.NoAccess);
         (await users.GetAccessLevelAsync(TeamHubModules.Home, TeamHubUserTypes.Admin)).Should().Be(AccessLevel.FullAccess);
+    }
+
+    [Fact]
+    public async Task InitializeAsync_MigratesLegacyStudioJiraPermissionsToStudioSupport()
+    {
+        await using var host = await AccessTestHost.CreateAsync();
+        await using (var connection = new SqliteConnection($"Data Source={host.DatabasePath};Pooling=False"))
+        {
+            await connection.OpenAsync();
+            await using var command = connection.CreateCommand();
+            command.CommandText = """
+                DELETE FROM ModulePermissions WHERE Module = 'Studio Support' AND UserType = 'Registered';
+                INSERT INTO ModulePermissions (Module, UserType, AccessLevel)
+                VALUES ('Studio Jira Tickets', 'Registered', 3);
+                """;
+            await command.ExecuteNonQueryAsync();
+        }
+
+        using var scope = host.Services.CreateScope();
+        var users = scope.ServiceProvider.GetRequiredService<IUserAccessService>();
+        await users.InitializeAsync();
+
+        (await users.GetAccessLevelAsync(TeamHubModules.StudioSupport, TeamHubUserTypes.Registered)).Should().Be(AccessLevel.Edit);
+        (await users.ListPermissionsAsync()).Should().NotContain(item => item.Module == "Studio Jira Tickets");
     }
 
     [Fact]
@@ -91,8 +115,8 @@ public sealed class AccessControlTests
     [InlineData("/Reports/Index", "Reports")]
     [InlineData("/ReleaseNotes", "Release Notes")]
     [InlineData("/Administration/Audit", "Administration")]
-    [InlineData("/Studio/JiraTickets", TeamHubModules.StudioJiraTickets)]
-    [InlineData("/Studio/WeeklyUpdates", TeamHubModules.StudioJiraTickets)]
+    [InlineData("/Studio/JiraTickets", TeamHubModules.StudioSupport)]
+    [InlineData("/Studio/WeeklyUpdates", TeamHubModules.StudioSupport)]
     [InlineData("/Register", null)]
     [InlineData("/Logout", null)]
     public void PageDiscovery_UsesFirstFolderAndPreservesSpecialModules(string pagePath, string? expected)
@@ -117,6 +141,11 @@ public sealed class AccessControlTests
 
     [Theory]
     [InlineData("GET", "/Milestones", "", AccessLevel.ReadOnly)]
+    [InlineData("GET", "/Studio/Configuration", "", AccessLevel.ReadOnly)]
+    [InlineData("GET", "/Studio/Configuration", "?create=true", AccessLevel.Create)]
+    [InlineData("POST", "/Studio/Configuration", "?handler=Create", AccessLevel.Create)]
+    [InlineData("GET", "/Studio/Configuration", "?studioId=1", AccessLevel.Edit)]
+    [InlineData("POST", "/Studio/Configuration", "?handler=Edit", AccessLevel.Edit)]
     [InlineData("GET", "/Flows/New", "", AccessLevel.Create)]
     [InlineData("POST", "/Studio/Configuration", "?handler=Delete", AccessLevel.Delete)]
     [InlineData("POST", "/api/flows/id/publish", "", AccessLevel.FullAccess)]
@@ -130,14 +159,30 @@ public sealed class AccessControlTests
         TeamHubAccessRoutes.ResolveRequiredAccess(context.Request).Should().Be(expected);
     }
 
+    [Theory]
+    [InlineData(AccessLevel.NoAccess, AccessLevel.ReadOnly, false)]
+    [InlineData(AccessLevel.ReadOnly, AccessLevel.ReadOnly, true)]
+    [InlineData(AccessLevel.Create, AccessLevel.Create, true)]
+    [InlineData(AccessLevel.Create, AccessLevel.Edit, false)]
+    [InlineData(AccessLevel.Edit, AccessLevel.Create, true)]
+    [InlineData(AccessLevel.Edit, AccessLevel.Edit, true)]
+    [InlineData(AccessLevel.Delete, AccessLevel.Delete, true)]
+    [InlineData(AccessLevel.FullAccess, AccessLevel.FullAccess, true)]
+    public void AccessLevels_EnforceTheConfiguredHierarchy(AccessLevel granted, AccessLevel required, bool expected)
+    {
+        granted.Allows(required).Should().Be(expected);
+    }
+
     private sealed class AccessTestHost : IAsyncDisposable
     {
         private readonly string directory;
         public ServiceProvider Services { get; }
+        public string DatabasePath { get; }
 
-        private AccessTestHost(string directory, ServiceProvider services)
+        private AccessTestHost(string directory, string databasePath, ServiceProvider services)
         {
             this.directory = directory;
+            DatabasePath = databasePath;
             Services = services;
         }
 
@@ -145,6 +190,7 @@ public sealed class AccessControlTests
         {
             var directory = Path.Combine(Path.GetTempPath(), $"teamhub-access-tests-{Guid.NewGuid():N}");
             Directory.CreateDirectory(directory);
+            var databasePath = Path.Combine(directory, "access.db");
             var configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
             {
                 ["WorkflowUsers:0:Username"] = "admin@example.com",
@@ -153,11 +199,11 @@ public sealed class AccessControlTests
             }).Build();
             var services = new ServiceCollection();
             services.AddSingleton<IConfiguration>(configuration);
-            services.AddWorkflowAuthentication($"Data Source={Path.Combine(directory, "access.db")};Pooling=False");
+            services.AddWorkflowAuthentication($"Data Source={databasePath};Pooling=False");
             var provider = services.BuildServiceProvider();
             using var scope = provider.CreateScope();
             await scope.ServiceProvider.GetRequiredService<IUserAccessService>().InitializeAsync();
-            return new AccessTestHost(directory, provider);
+            return new AccessTestHost(directory, databasePath, provider);
         }
 
         public async ValueTask DisposeAsync()
