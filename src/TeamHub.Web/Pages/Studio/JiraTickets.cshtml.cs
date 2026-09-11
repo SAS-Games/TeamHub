@@ -37,6 +37,7 @@ public class JiraTicketsModel(IStudioDirectoryService studioDirectoryService, IS
         {
             StudioId = Studio.Id,
             RequestingUserId = User.Identity?.Name ?? string.Empty,
+            AllowPrivilegedDefaultCredential = User.IsInRole("Privileged"),
             ActiveSprintOnly = ActiveSprintOnly,
             StartDate = StartDate,
             EndDate = EndDate

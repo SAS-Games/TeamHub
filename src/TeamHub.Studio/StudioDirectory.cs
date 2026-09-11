@@ -109,6 +109,18 @@ internal sealed class AtlassianIntegrationSettingsRecord
     public bool ConfluenceEnabled { get; set; }
     public string ConfluenceBaseUrl { get; set; } = string.Empty;
     public string ConfluenceContentApiPath { get; set; } = "/rest/api/content";
+    public string? DefaultJiraTokenProtected { get; set; }
+    public string? DefaultConfluenceTokenProtected { get; set; }
+    public DateTime UpdatedAtUtc { get; set; } = DateTime.UtcNow;
+}
+
+internal sealed class AtlassianPrivilegedAccessRecord
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public string UserId { get; set; } = string.Empty;
+    public string NormalizedUserId { get; set; } = string.Empty;
+    public bool JiraReadOnlyAccess { get; set; }
+    public bool ConfluenceReadOnlyAccess { get; set; }
     public DateTime UpdatedAtUtc { get; set; } = DateTime.UtcNow;
 }
 
@@ -148,6 +160,7 @@ internal sealed class StudioDbContext(DbContextOptions<StudioDbContext> options)
     public DbSet<AtlassianIntegrationSettingsRecord> AtlassianIntegrationSettings => Set<AtlassianIntegrationSettingsRecord>();
     public DbSet<StudioAtlassianMappingRecord> StudioAtlassianMappings => Set<StudioAtlassianMappingRecord>();
     public DbSet<AtlassianUserCredentialRecord> AtlassianUserCredentials => Set<AtlassianUserCredentialRecord>();
+    public DbSet<AtlassianPrivilegedAccessRecord> AtlassianPrivilegedAccess => Set<AtlassianPrivilegedAccessRecord>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -216,6 +229,14 @@ internal sealed class StudioDbContext(DbContextOptions<StudioDbContext> options)
             entity.Property(x => x.JiraDefaultSupportComponent).HasMaxLength(256);
             entity.Property(x => x.ConfluenceBaseUrl).HasMaxLength(2048);
             entity.Property(x => x.ConfluenceContentApiPath).HasMaxLength(512);
+        });
+
+        modelBuilder.Entity<AtlassianPrivilegedAccessRecord>(entity =>
+        {
+            entity.ToTable("AtlassianPrivilegedAccess");
+            entity.Property(x => x.UserId).HasMaxLength(320);
+            entity.Property(x => x.NormalizedUserId).HasMaxLength(320);
+            entity.HasIndex(x => x.NormalizedUserId).IsUnique();
         });
 
         modelBuilder.Entity<StudioAtlassianMappingRecord>(entity =>
@@ -360,18 +381,52 @@ internal sealed class SqliteStudioDatabaseInitializer(
                     ConfluenceEnabled INTEGER NOT NULL,
                     ConfluenceBaseUrl TEXT NOT NULL,
                     ConfluenceContentApiPath TEXT NOT NULL,
+                    DefaultJiraTokenProtected TEXT NULL,
+                    DefaultConfluenceTokenProtected TEXT NULL,
                     UpdatedAtUtc TEXT NOT NULL
                 );
                 """, cancellationToken);
+
+            if (!await MainColumnExistsAsync(connection, "AtlassianIntegrationSettings", "DefaultJiraTokenProtected", cancellationToken))
+            {
+                await dbContext.Database.ExecuteSqlRawAsync("""
+                    ALTER TABLE AtlassianIntegrationSettings
+                    ADD COLUMN DefaultJiraTokenProtected TEXT NULL;
+                    """, cancellationToken);
+            }
+            if (!await MainColumnExistsAsync(connection, "AtlassianIntegrationSettings", "DefaultConfluenceTokenProtected", cancellationToken))
+            {
+                await dbContext.Database.ExecuteSqlRawAsync("""
+                    ALTER TABLE AtlassianIntegrationSettings
+                    ADD COLUMN DefaultConfluenceTokenProtected TEXT NULL;
+                    """, cancellationToken);
+            }
 
             await dbContext.Database.ExecuteSqlRawAsync("""
                 INSERT OR IGNORE INTO AtlassianIntegrationSettings
                     (Id, JiraEnabled, JiraBaseUrl, JiraSearchApiPath, JiraMaxResults,
                      JiraDefaultSupportComponent, ConfluenceEnabled, ConfluenceBaseUrl,
-                     ConfluenceContentApiPath, UpdatedAtUtc)
+                     ConfluenceContentApiPath, DefaultJiraTokenProtected,
+                     DefaultConfluenceTokenProtected, UpdatedAtUtc)
                 VALUES
                     (1, 0, '', '/rest/api/2/search', 100,
-                     'studio_Support', 0, '', '/rest/api/content', CURRENT_TIMESTAMP);
+                     'studio_Support', 0, '', '/rest/api/content', NULL, NULL, CURRENT_TIMESTAMP);
+                """, cancellationToken);
+
+            await dbContext.Database.ExecuteSqlRawAsync("""
+                CREATE TABLE IF NOT EXISTS AtlassianPrivilegedAccess (
+                    Id TEXT NOT NULL CONSTRAINT PK_AtlassianPrivilegedAccess PRIMARY KEY,
+                    UserId TEXT NOT NULL,
+                    NormalizedUserId TEXT NOT NULL,
+                    JiraReadOnlyAccess INTEGER NOT NULL,
+                    ConfluenceReadOnlyAccess INTEGER NOT NULL,
+                    UpdatedAtUtc TEXT NOT NULL
+                );
+                """, cancellationToken);
+
+            await dbContext.Database.ExecuteSqlRawAsync("""
+                CREATE UNIQUE INDEX IF NOT EXISTS IX_AtlassianPrivilegedAccess_NormalizedUserId
+                ON AtlassianPrivilegedAccess (NormalizedUserId);
                 """, cancellationToken);
 
             await dbContext.Database.ExecuteSqlRawAsync("""

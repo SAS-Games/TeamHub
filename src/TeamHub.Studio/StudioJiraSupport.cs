@@ -8,6 +8,7 @@ public sealed class StudioJiraTicketQuery
 {
     public string StudioId { get; set; } = string.Empty;
     public string RequestingUserId { get; set; } = string.Empty;
+    public bool AllowPrivilegedDefaultCredential { get; set; }
     public bool ActiveSprintOnly { get; set; } = true;
     public DateOnly? StartDate { get; set; }
     public DateOnly? EndDate { get; set; }
@@ -17,6 +18,8 @@ public sealed class StudioJiraTicketResult
 {
     public bool IsConfigured { get; set; }
     public string? Message { get; set; }
+    public bool IsReadOnly { get; set; }
+    public bool IsUsingSharedCredential { get; set; }
     public IReadOnlyList<StudioJiraTicketGroup> Groups { get; set; } = [];
 }
 
@@ -77,23 +80,36 @@ internal sealed class JiraStudioTicketService(
             return NotConfigured("Sign in and connect your Jira account to view tickets.");
         }
 
-        string? token;
         try
         {
-            token = await credentialAccessor.GetJiraTokenAsync(query.RequestingUserId, cancellationToken);
+            var resolved = await credentialAccessor.ResolveJiraCredentialAsync(
+                query.RequestingUserId,
+                query.AllowPrivilegedDefaultCredential,
+                cancellationToken);
+            if (resolved is not null)
+            {
+                return await FetchTicketsAsync(settings, mapping, query, resolved, cancellationToken);
+            }
         }
         catch (InvalidOperationException exception)
         {
             return NotConfigured(exception.Message);
         }
-        if (string.IsNullOrWhiteSpace(token))
-        {
-            return NotConfigured("Your Jira token is not connected. Open My Atlassian Connection and add your Bearer API token.");
-        }
+        return NotConfigured(query.AllowPrivilegedDefaultCredential
+            ? "No Jira credential is available. Ask an administrator to grant your privileged account read-only Jira access, or add a personal token."
+            : "Your Jira token is not connected. Open My Atlassian Connection and add your Bearer API token.");
+    }
 
+    private async Task<StudioJiraTicketResult> FetchTicketsAsync(
+        AtlassianIntegrationSettings settings,
+        StudioAtlassianMapping mapping,
+        StudioJiraTicketQuery query,
+        AtlassianResolvedCredential credential,
+        CancellationToken cancellationToken)
+    {
         var requestUri = BuildSearchUri(settings, mapping, query);
         using var request = new HttpRequestMessage(HttpMethod.Get, requestUri);
-        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", credential.Token);
         request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
         request.Headers.TryAddWithoutValidation("X-Atlassian-Token", "no-check");
 
@@ -101,9 +117,17 @@ internal sealed class JiraStudioTicketService(
         if (!response.IsSuccessStatusCode)
         {
             var message = response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden
-                ? "Jira rejected your personal token. Update it from My Atlassian Connection and confirm that your Jira account can access this project."
+                ? credential.IsShared
+                    ? "Jira rejected the shared read-only token. Ask an administrator to update the default Jira credential."
+                    : "Jira rejected your personal token. Update it from My Atlassian Connection and confirm that your Jira account can access this project."
                 : $"Jira returned {(int)response.StatusCode} {response.ReasonPhrase}. Check the Jira URL and studio mapping.";
-            return new StudioJiraTicketResult { IsConfigured = true, Message = message };
+            return new StudioJiraTicketResult
+            {
+                IsConfigured = true,
+                IsReadOnly = credential.IsReadOnly,
+                IsUsingSharedCredential = credential.IsShared,
+                Message = message
+            };
         }
 
         await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
@@ -111,6 +135,8 @@ internal sealed class JiraStudioTicketService(
         return new StudioJiraTicketResult
         {
             IsConfigured = true,
+            IsReadOnly = credential.IsReadOnly,
+            IsUsingSharedCredential = credential.IsShared,
             Groups =
             [
                 new StudioJiraTicketGroup { Name = "Direct Support", Tickets = tickets.Where(ticket => IsSupportRequest(ticket, settings, mapping)).ToList() },

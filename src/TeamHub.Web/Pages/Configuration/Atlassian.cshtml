@@ -6,9 +6,9 @@
 
 <div class="page-hero">
     <div>
-        <div class="eyebrow">Admin · Integrations</div>
+        <div class="eyebrow">Admin &middot; Integrations</div>
         <h1>Jira &amp; Confluence</h1>
-        <p>Configure shared server locations and map each studio. Users add their own tokens separately.</p>
+        <p>Configure shared server locations, encrypted read-only credentials, privileged access, and studio mappings.</p>
     </div>
     <a class="btn btn-outline-secondary" asp-page="/Configuration/Index">Back to Configuration</a>
 </div>
@@ -18,8 +18,8 @@
     <div class="alert alert-success">@statusMessage</div>
 }
 
-<form method="post">
-    <div asp-validation-summary="ModelOnly" class="text-danger mb-3"></div>
+<form method="post" autocomplete="off">
+    <div asp-validation-summary="All" class="text-danger mb-3"></div>
 
     <div class="row g-4">
         <div class="col-12 col-xl-6">
@@ -48,6 +48,7 @@
                     <div class="mt-3">
                         <label asp-for="Settings.JiraDefaultSupportComponent" class="form-label">Default direct-support component</label>
                         <input asp-for="Settings.JiraDefaultSupportComponent" class="form-control" />
+                        <div class="form-text">Used for every studio unless that studio has an override below. Example: studio_Support.</div>
                     </div>
                 </div>
             </section>
@@ -64,6 +65,7 @@
                         <label asp-for="Settings.ConfluenceBaseUrl" class="form-label">Confluence base URL</label>
                         <input asp-for="Settings.ConfluenceBaseUrl" class="form-control" placeholder="https://confluence.company.com" />
                         <span asp-validation-for="Settings.ConfluenceBaseUrl" class="text-danger"></span>
+                        <div class="form-text">Optional while Confluence integration is disabled.</div>
                     </div>
                     <div>
                         <label asp-for="Settings.ConfluenceContentApiPath" class="form-label">Content API path</label>
@@ -73,6 +75,80 @@
             </section>
         </div>
     </div>
+
+    <section class="content-section mt-4">
+        <div class="section-heading">
+            <div><span>Encrypted service credentials</span><h2>Default Read-only Connection</h2></div>
+        </div>
+        <div class="section-body">
+            <p class="text-secondary">These credentials are available only to the Privileged users selected below. Saved tokens are never displayed.</p>
+            <div class="alert alert-warning small">Use dedicated Jira and Confluence service accounts that have read-only permissions to only the required projects and spaces. TeamHub performs read operations, while the Atlassian account permissions provide the server-side safeguard.</div>
+            <div class="row g-4">
+                <div class="col-12 col-lg-6">
+                    <label asp-for="DefaultCredentials.JiraToken" class="form-label">Default Jira Bearer token</label>
+                    <div class="small mb-2 @(Model.DefaultCredentialStatus.HasJiraToken ? "text-success" : "text-secondary")">
+                        @(Model.DefaultCredentialStatus.HasJiraToken ? "A default Jira token is saved." : "No default Jira token is saved.")
+                    </div>
+                    <input asp-for="DefaultCredentials.JiraToken" class="form-control" autocomplete="new-password" placeholder="Leave empty to keep the current token" />
+                    <span asp-validation-for="DefaultCredentials.JiraToken" class="text-danger"></span>
+                    @if (Model.DefaultCredentialStatus.HasJiraToken)
+                    {
+                        <div class="form-check mt-2">
+                            <input asp-for="DefaultCredentials.RemoveJiraToken" class="form-check-input" />
+                            <label asp-for="DefaultCredentials.RemoveJiraToken" class="form-check-label">Remove saved default Jira token</label>
+                        </div>
+                    }
+                </div>
+                <div class="col-12 col-lg-6">
+                    <label asp-for="DefaultCredentials.ConfluenceToken" class="form-label">Default Confluence Bearer token</label>
+                    <div class="small mb-2 @(Model.DefaultCredentialStatus.HasConfluenceToken ? "text-success" : "text-secondary")">
+                        @(Model.DefaultCredentialStatus.HasConfluenceToken ? "A default Confluence token is saved." : "No default Confluence token is saved.")
+                    </div>
+                    <input asp-for="DefaultCredentials.ConfluenceToken" class="form-control" autocomplete="new-password" placeholder="Leave empty to keep the current token" />
+                    <span asp-validation-for="DefaultCredentials.ConfluenceToken" class="text-danger"></span>
+                    @if (Model.DefaultCredentialStatus.HasConfluenceToken)
+                    {
+                        <div class="form-check mt-2">
+                            <input asp-for="DefaultCredentials.RemoveConfluenceToken" class="form-check-input" />
+                            <label asp-for="DefaultCredentials.RemoveConfluenceToken" class="form-check-label">Remove saved default Confluence token</label>
+                        </div>
+                    }
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section class="content-section mt-4">
+        <div class="section-heading">
+            <div><span>Authorized User List</span><h2>Privileged Read-only Access</h2></div>
+        </div>
+        @if (Model.PrivilegedUsers.Count == 0)
+        {
+            <div class="section-body text-secondary">No active Privileged users are available. Add or promote users in Authorized Users first.</div>
+        }
+        else
+        {
+            <div class="table-responsive">
+                <table class="table styled-table align-middle mb-0">
+                    <thead><tr><th>User</th><th>User ID</th><th>Jira read only</th><th>Confluence read only</th></tr></thead>
+                    <tbody>
+                    @for (var index = 0; index < Model.PrivilegedUsers.Count; index++)
+                    {
+                        <tr>
+                            <td>@Model.PrivilegedUsers[index].DisplayName</td>
+                            <td>
+                                @Model.PrivilegedUsers[index].UserId
+                                <input asp-for="PrivilegedUsers[index].UserId" type="hidden" />
+                            </td>
+                            <td><input asp-for="PrivilegedUsers[index].JiraReadOnlyAccess" class="form-check-input" aria-label="Grant Jira read-only access to @Model.PrivilegedUsers[index].DisplayName" /></td>
+                            <td><input asp-for="PrivilegedUsers[index].ConfluenceReadOnlyAccess" class="form-check-input" aria-label="Grant Confluence read-only access to @Model.PrivilegedUsers[index].DisplayName" /></td>
+                        </tr>
+                    }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </section>
 
     <section class="content-section mt-4">
         <div class="section-heading">
@@ -93,14 +169,17 @@
                         <div class="col-md-4">
                             <label asp-for="Mappings[index].JiraProjectKeys" class="form-label">Jira project key(s)</label>
                             <input asp-for="Mappings[index].JiraProjectKeys" class="form-control" placeholder="GAME, TOOLS" />
+                            <div class="form-text">Use the ticket prefix: GDS-123 means project key GDS. Separate multiple keys with commas.</div>
                         </div>
                         <div class="col-md-4">
-                            <label asp-for="Mappings[index].JiraStudioComponent" class="form-label">Studio component</label>
+                            <label asp-for="Mappings[index].JiraStudioComponent" class="form-label">Studio-identifying component</label>
                             <input asp-for="Mappings[index].JiraStudioComponent" class="form-control" placeholder="studio_name" />
+                            <div class="form-text">Required: the Jira component that identifies tickets belonging to this studio.</div>
                         </div>
                         <div class="col-md-4">
-                            <label asp-for="Mappings[index].JiraSupportComponent" class="form-label">Direct-support component</label>
-                            <input asp-for="Mappings[index].JiraSupportComponent" class="form-control" placeholder="Uses global default when empty" />
+                            <label asp-for="Mappings[index].JiraSupportComponent" class="form-label">Direct-support component override</label>
+                            <input asp-for="Mappings[index].JiraSupportComponent" class="form-control" placeholder="Optional — uses the global default" />
+                            <div class="form-text">Leave blank when this studio uses the default direct-support component above.</div>
                         </div>
                         <div class="col-md-3">
                             <label asp-for="Mappings[index].ConfluenceSpaceKey" class="form-label">Confluence space key</label>

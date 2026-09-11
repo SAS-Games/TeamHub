@@ -2,6 +2,7 @@ using System.ComponentModel.DataAnnotations;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
+using TeamHub.Authentication;
 using TeamHub.Studio;
 
 namespace TeamHub.Web.Pages.Configuration;
@@ -9,13 +10,22 @@ namespace TeamHub.Web.Pages.Configuration;
 [Authorize(Roles = "Admin")]
 public sealed class AtlassianModel(
     IAtlassianConfigurationService configurationService,
-    IStudioDirectoryService studioDirectoryService) : PageModel
+    IStudioDirectoryService studioDirectoryService,
+    IUserAccessService userAccessService) : PageModel
 {
     [BindProperty]
     public SettingsInput Settings { get; set; } = new();
 
     [BindProperty]
     public List<MappingInput> Mappings { get; set; } = [];
+
+    [BindProperty]
+    public DefaultCredentialsInput DefaultCredentials { get; set; } = new();
+
+    [BindProperty]
+    public List<PrivilegedAccessInput> PrivilegedUsers { get; set; } = [];
+
+    public AtlassianDefaultCredentialStatus DefaultCredentialStatus { get; private set; } = new(false, false);
 
     public async Task OnGetAsync(CancellationToken cancellationToken) => await LoadAsync(cancellationToken);
 
@@ -32,25 +42,43 @@ public sealed class AtlassianModel(
             await configurationService.SaveSettingsAsync(new AtlassianIntegrationSettings
             {
                 JiraEnabled = Settings.JiraEnabled,
-                JiraBaseUrl = Settings.JiraBaseUrl,
-                JiraSearchApiPath = Settings.JiraSearchApiPath,
+                JiraBaseUrl = Settings.JiraBaseUrl ?? string.Empty,
+                JiraSearchApiPath = Settings.JiraSearchApiPath ?? string.Empty,
                 JiraMaxResults = Settings.JiraMaxResults,
-                JiraDefaultSupportComponent = Settings.JiraDefaultSupportComponent,
+                JiraDefaultSupportComponent = Settings.JiraDefaultSupportComponent ?? string.Empty,
                 ConfluenceEnabled = Settings.ConfluenceEnabled,
-                ConfluenceBaseUrl = Settings.ConfluenceBaseUrl,
-                ConfluenceContentApiPath = Settings.ConfluenceContentApiPath
+                ConfluenceBaseUrl = Settings.ConfluenceBaseUrl ?? string.Empty,
+                ConfluenceContentApiPath = Settings.ConfluenceContentApiPath ?? string.Empty
             }, cancellationToken);
 
             await configurationService.SaveStudioMappingsAsync(Mappings.Select(item => new StudioAtlassianMapping
             {
-                StudioId = item.StudioId,
+                StudioId = item.StudioId ?? string.Empty,
                 JiraProjectKeys = ParseProjectKeys(item.JiraProjectKeys),
-                JiraStudioComponent = item.JiraStudioComponent,
-                JiraSupportComponent = item.JiraSupportComponent,
-                ConfluenceSpaceKey = item.ConfluenceSpaceKey,
-                ConfluenceParentPageId = item.ConfluenceParentPageId,
-                ConfluenceWeeklyTitlePattern = item.ConfluenceWeeklyTitlePattern
+                JiraStudioComponent = item.JiraStudioComponent ?? string.Empty,
+                JiraSupportComponent = item.JiraSupportComponent ?? string.Empty,
+                ConfluenceSpaceKey = item.ConfluenceSpaceKey ?? string.Empty,
+                ConfluenceParentPageId = item.ConfluenceParentPageId ?? string.Empty,
+                ConfluenceWeeklyTitlePattern = item.ConfluenceWeeklyTitlePattern ?? string.Empty
             }).ToList(), cancellationToken);
+
+            await configurationService.SaveDefaultTokensAsync(
+                DefaultCredentials.JiraToken,
+                DefaultCredentials.ConfluenceToken,
+                DefaultCredentials.RemoveJiraToken,
+                DefaultCredentials.RemoveConfluenceToken,
+                cancellationToken);
+
+            var eligiblePrivilegedUsers = (await userAccessService.ListUsersAsync(cancellationToken))
+                .Where(item => item.IsActive && item.UserType == TeamHubUserTypes.Privileged)
+                .ToDictionary(item => item.UserId, StringComparer.OrdinalIgnoreCase);
+            await configurationService.SavePrivilegedAccessAsync(PrivilegedUsers
+                .Where(item => !string.IsNullOrWhiteSpace(item.UserId) && eligiblePrivilegedUsers.ContainsKey(item.UserId))
+                .Select(item => new AtlassianPrivilegedAccess(
+                    item.UserId!,
+                    item.JiraReadOnlyAccess,
+                    item.ConfluenceReadOnlyAccess))
+                .ToList(), cancellationToken);
         }
         catch (ArgumentException exception)
         {
@@ -66,6 +94,7 @@ public sealed class AtlassianModel(
     private async Task LoadAsync(CancellationToken cancellationToken)
     {
         var settings = await configurationService.GetSettingsAsync(cancellationToken);
+        DefaultCredentialStatus = await configurationService.GetDefaultCredentialStatusAsync(cancellationToken);
         Settings = new SettingsInput
         {
             JiraEnabled = settings.JiraEnabled,
@@ -97,6 +126,23 @@ public sealed class AtlassianModel(
                 ConfluenceWeeklyTitlePattern = mapping?.ConfluenceWeeklyTitlePattern ?? "{StudioName} Weekly Update - {WeekStart:yyyy-MM-dd}"
             };
         }).ToList();
+
+        var assignedAccess = (await configurationService.ListPrivilegedAccessAsync(cancellationToken))
+            .ToDictionary(item => item.UserId, StringComparer.OrdinalIgnoreCase);
+        PrivilegedUsers = (await userAccessService.ListUsersAsync(cancellationToken))
+            .Where(item => item.IsActive && item.UserType == TeamHubUserTypes.Privileged)
+            .Select(user =>
+            {
+                assignedAccess.TryGetValue(user.UserId, out var access);
+                return new PrivilegedAccessInput
+                {
+                    UserId = user.UserId,
+                    DisplayName = user.DisplayName,
+                    JiraReadOnlyAccess = access?.JiraReadOnlyAccess ?? false,
+                    ConfluenceReadOnlyAccess = access?.ConfluenceReadOnlyAccess ?? false
+                };
+            })
+            .ToList();
     }
 
     private async Task EnsureStudioNamesAsync(CancellationToken cancellationToken)
@@ -105,11 +151,18 @@ public sealed class AtlassianModel(
             .ToDictionary(item => item.Id, StringComparer.OrdinalIgnoreCase);
         foreach (var mapping in Mappings)
         {
-            if (studios.TryGetValue(mapping.StudioId, out var studio))
+            if (!string.IsNullOrWhiteSpace(mapping.StudioId) && studios.TryGetValue(mapping.StudioId, out var studio))
             {
                 mapping.StudioName = studio.StudioName;
                 mapping.ProjectName = studio.ProjectName;
             }
+        }
+        DefaultCredentialStatus = await configurationService.GetDefaultCredentialStatusAsync(cancellationToken);
+        var users = (await userAccessService.ListUsersAsync(cancellationToken))
+            .ToDictionary(item => item.UserId, StringComparer.OrdinalIgnoreCase);
+        foreach (var privilegedUser in PrivilegedUsers)
+        {
+            if (!string.IsNullOrWhiteSpace(privilegedUser.UserId) && users.TryGetValue(privilegedUser.UserId, out var user)) privilegedUser.DisplayName = user.DisplayName;
         }
     }
 
@@ -122,25 +175,45 @@ public sealed class AtlassianModel(
     public sealed class SettingsInput
     {
         public bool JiraEnabled { get; set; }
-        [StringLength(2048)] public string JiraBaseUrl { get; set; } = string.Empty;
-        [StringLength(512)] public string JiraSearchApiPath { get; set; } = "/rest/api/2/search";
+        [StringLength(2048)] public string? JiraBaseUrl { get; set; }
+        [StringLength(512)] public string? JiraSearchApiPath { get; set; } = "/rest/api/2/search";
         [Range(1, 1000)] public int JiraMaxResults { get; set; } = 100;
-        [StringLength(256)] public string JiraDefaultSupportComponent { get; set; } = "studio_Support";
+        [StringLength(256)] public string? JiraDefaultSupportComponent { get; set; } = "studio_Support";
         public bool ConfluenceEnabled { get; set; }
-        [StringLength(2048)] public string ConfluenceBaseUrl { get; set; } = string.Empty;
-        [StringLength(512)] public string ConfluenceContentApiPath { get; set; } = "/rest/api/content";
+        [StringLength(2048)] public string? ConfluenceBaseUrl { get; set; }
+        [StringLength(512)] public string? ConfluenceContentApiPath { get; set; } = "/rest/api/content";
     }
 
     public sealed class MappingInput
     {
-        public string StudioId { get; set; } = string.Empty;
-        public string StudioName { get; set; } = string.Empty;
-        public string ProjectName { get; set; } = string.Empty;
-        [StringLength(2048)] public string JiraProjectKeys { get; set; } = string.Empty;
-        [StringLength(256)] public string JiraStudioComponent { get; set; } = string.Empty;
-        [StringLength(256)] public string JiraSupportComponent { get; set; } = string.Empty;
-        [StringLength(256)] public string ConfluenceSpaceKey { get; set; } = string.Empty;
-        [StringLength(256)] public string ConfluenceParentPageId { get; set; } = string.Empty;
-        [StringLength(512)] public string ConfluenceWeeklyTitlePattern { get; set; } = string.Empty;
+        [Required] public string? StudioId { get; set; }
+        public string? StudioName { get; set; }
+        public string? ProjectName { get; set; }
+        [StringLength(2048)] public string? JiraProjectKeys { get; set; }
+        [StringLength(256)] public string? JiraStudioComponent { get; set; }
+        [StringLength(256)] public string? JiraSupportComponent { get; set; }
+        [StringLength(256)] public string? ConfluenceSpaceKey { get; set; }
+        [StringLength(256)] public string? ConfluenceParentPageId { get; set; }
+        [StringLength(512)] public string? ConfluenceWeeklyTitlePattern { get; set; }
+    }
+
+    public sealed class DefaultCredentialsInput
+    {
+        [DataType(DataType.Password)]
+        [StringLength(4096)]
+        public string? JiraToken { get; set; }
+        [DataType(DataType.Password)]
+        [StringLength(4096)]
+        public string? ConfluenceToken { get; set; }
+        public bool RemoveJiraToken { get; set; }
+        public bool RemoveConfluenceToken { get; set; }
+    }
+
+    public sealed class PrivilegedAccessInput
+    {
+        [Required] public string? UserId { get; set; }
+        public string? DisplayName { get; set; }
+        public bool JiraReadOnlyAccess { get; set; }
+        public bool ConfluenceReadOnlyAccess { get; set; }
     }
 }

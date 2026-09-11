@@ -42,6 +42,76 @@ public sealed class StudioDirectoryTests
     }
 
     [Fact]
+    public async Task DefaultAtlassianTokens_AreEncrypted_AndAssignedOnlyThroughPrivilegedAccessList()
+    {
+        var dbPath = Path.Combine(Path.GetTempPath(), $"teamhub-studio-{Guid.NewGuid():N}.db");
+        try
+        {
+            await using var provider = CreateServices(dbPath);
+            await using var scope = provider.CreateAsyncScope();
+            await scope.ServiceProvider.GetRequiredService<IStudioDatabaseInitializer>().InitializeAsync();
+            var service = scope.ServiceProvider.GetRequiredService<IAtlassianConfigurationService>();
+
+            await service.SaveDefaultTokensAsync("shared-jira-token", "shared-confluence-token");
+            await service.SavePrivilegedAccessAsync([
+                new AtlassianPrivilegedAccess("privileged@example.com", true, false)
+            ]);
+
+            var status = await service.GetDefaultCredentialStatusAsync();
+            status.HasJiraToken.Should().BeTrue();
+            status.HasConfluenceToken.Should().BeTrue();
+            (await service.ListPrivilegedAccessAsync()).Should().ContainSingle()
+                .Which.Should().Be(new AtlassianPrivilegedAccess("privileged@example.com", true, false));
+
+            await using var connection = new SqliteConnection($"Data Source={dbPath}");
+            await connection.OpenAsync();
+            await using var command = connection.CreateCommand();
+            command.CommandText = "SELECT DefaultJiraTokenProtected, DefaultConfluenceTokenProtected FROM AtlassianIntegrationSettings WHERE Id = 1;";
+            await using var reader = await command.ExecuteReaderAsync();
+            (await reader.ReadAsync()).Should().BeTrue();
+            reader.GetString(0).Should().NotContain("shared-jira-token");
+            reader.GetString(1).Should().NotContain("shared-confluence-token");
+        }
+        finally
+        {
+            SqliteConnection.ClearAllPools();
+            if (File.Exists(dbPath)) File.Delete(dbPath);
+        }
+    }
+
+    [Fact]
+    public async Task SaveSettings_AllowsJiraOnlyConfiguration_WhenConfluenceIsDisabled()
+    {
+        var dbPath = Path.Combine(Path.GetTempPath(), $"teamhub-studio-{Guid.NewGuid():N}.db");
+        try
+        {
+            await using var provider = CreateServices(dbPath);
+            await using var scope = provider.CreateAsyncScope();
+            await scope.ServiceProvider.GetRequiredService<IStudioDatabaseInitializer>().InitializeAsync();
+            var service = scope.ServiceProvider.GetRequiredService<IAtlassianConfigurationService>();
+
+            await service.SaveSettingsAsync(new AtlassianIntegrationSettings
+            {
+                JiraEnabled = true,
+                JiraBaseUrl = "https://jira.example.test",
+                ConfluenceEnabled = false,
+                ConfluenceBaseUrl = string.Empty
+            });
+
+            var saved = await service.GetSettingsAsync();
+            saved.JiraEnabled.Should().BeTrue();
+            saved.JiraBaseUrl.Should().Be("https://jira.example.test");
+            saved.ConfluenceEnabled.Should().BeFalse();
+            saved.ConfluenceBaseUrl.Should().BeEmpty();
+        }
+        finally
+        {
+            SqliteConnection.ClearAllPools();
+            if (File.Exists(dbPath)) File.Delete(dbPath);
+        }
+    }
+
+    [Fact]
     public async Task GetTicketsAsync_ReturnsConfigurationMessage_WhenJiraIntegrationIsDisabled()
     {
         var dbPath = Path.Combine(Path.GetTempPath(), $"teamhub-studio-{Guid.NewGuid():N}.db");

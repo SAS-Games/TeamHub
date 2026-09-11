@@ -33,6 +33,13 @@ public sealed record AtlassianConnectionStatus(
     bool HasConfluenceToken,
     DateTime? ConfluenceConnectedAtUtc);
 
+public sealed record AtlassianDefaultCredentialStatus(bool HasJiraToken, bool HasConfluenceToken);
+
+public sealed record AtlassianPrivilegedAccess(
+    string UserId,
+    bool JiraReadOnlyAccess,
+    bool ConfluenceReadOnlyAccess);
+
 public interface IAtlassianConfigurationService
 {
     Task<AtlassianIntegrationSettings> GetSettingsAsync(CancellationToken cancellationToken = default);
@@ -48,15 +55,26 @@ public interface IAtlassianConfigurationService
         bool removeJiraToken = false,
         bool removeConfluenceToken = false,
         CancellationToken cancellationToken = default);
+    Task<AtlassianDefaultCredentialStatus> GetDefaultCredentialStatusAsync(CancellationToken cancellationToken = default);
+    Task SaveDefaultTokensAsync(
+        string? jiraToken,
+        string? confluenceToken,
+        bool removeJiraToken = false,
+        bool removeConfluenceToken = false,
+        CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<AtlassianPrivilegedAccess>> ListPrivilegedAccessAsync(CancellationToken cancellationToken = default);
+    Task SavePrivilegedAccessAsync(IReadOnlyCollection<AtlassianPrivilegedAccess> access, CancellationToken cancellationToken = default);
     Task MoveUserTokensAsync(string currentUserId, string newUserId, CancellationToken cancellationToken = default);
     Task DeleteUserTokensAsync(string userId, CancellationToken cancellationToken = default);
 }
 
 internal interface IAtlassianCredentialAccessor
 {
-    Task<string?> GetJiraTokenAsync(string userId, CancellationToken cancellationToken = default);
-    Task<string?> GetConfluenceTokenAsync(string userId, CancellationToken cancellationToken = default);
+    Task<AtlassianResolvedCredential?> ResolveJiraCredentialAsync(string userId, bool allowPrivilegedDefault, CancellationToken cancellationToken = default);
+    Task<AtlassianResolvedCredential?> ResolveConfluenceCredentialAsync(string userId, bool allowPrivilegedDefault, CancellationToken cancellationToken = default);
 }
+
+internal sealed record AtlassianResolvedCredential(string Token, bool IsShared, bool IsReadOnly);
 
 internal sealed class SqliteAtlassianConfigurationService : IAtlassianConfigurationService, IAtlassianCredentialAccessor
 {
@@ -217,20 +235,97 @@ internal sealed class SqliteAtlassianConfigurationService : IAtlassianConfigurat
         await dbContext.SaveChangesAsync(cancellationToken);
     }
 
+    public async Task<AtlassianDefaultCredentialStatus> GetDefaultCredentialStatusAsync(CancellationToken cancellationToken = default)
+    {
+        var record = await dbContext.AtlassianIntegrationSettings.AsNoTracking()
+            .SingleOrDefaultAsync(item => item.Id == 1, cancellationToken);
+        return record is null
+            ? new(false, false)
+            : new(!string.IsNullOrWhiteSpace(record.DefaultJiraTokenProtected),
+                !string.IsNullOrWhiteSpace(record.DefaultConfluenceTokenProtected));
+    }
+
+    public async Task SaveDefaultTokensAsync(
+        string? jiraToken,
+        string? confluenceToken,
+        bool removeJiraToken = false,
+        bool removeConfluenceToken = false,
+        CancellationToken cancellationToken = default)
+    {
+        var record = await dbContext.AtlassianIntegrationSettings.SingleOrDefaultAsync(item => item.Id == 1, cancellationToken);
+        if (record is null)
+        {
+            record = new AtlassianIntegrationSettingsRecord { Id = 1 };
+            dbContext.AtlassianIntegrationSettings.Add(record);
+        }
+
+        if (removeJiraToken) record.DefaultJiraTokenProtected = null;
+        else if (!string.IsNullOrWhiteSpace(jiraToken)) record.DefaultJiraTokenProtected = tokenProtector.Protect(jiraToken.Trim());
+
+        if (removeConfluenceToken) record.DefaultConfluenceTokenProtected = null;
+        else if (!string.IsNullOrWhiteSpace(confluenceToken)) record.DefaultConfluenceTokenProtected = tokenProtector.Protect(confluenceToken.Trim());
+
+        record.UpdatedAtUtc = DateTime.UtcNow;
+        await dbContext.SaveChangesAsync(cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<AtlassianPrivilegedAccess>> ListPrivilegedAccessAsync(CancellationToken cancellationToken = default) =>
+        await dbContext.AtlassianPrivilegedAccess.AsNoTracking()
+            .OrderBy(item => item.UserId)
+            .Select(item => new AtlassianPrivilegedAccess(item.UserId, item.JiraReadOnlyAccess, item.ConfluenceReadOnlyAccess))
+            .ToListAsync(cancellationToken);
+
+    public async Task SavePrivilegedAccessAsync(IReadOnlyCollection<AtlassianPrivilegedAccess> access, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(access);
+        var existing = await dbContext.AtlassianPrivilegedAccess.ToListAsync(cancellationToken);
+        var desired = access
+            .Where(item => item.JiraReadOnlyAccess || item.ConfluenceReadOnlyAccess)
+            .GroupBy(item => NormalizeUserId(item.UserId), StringComparer.Ordinal)
+            .ToDictionary(group => group.Key, group => group.Last(), StringComparer.Ordinal);
+
+        foreach (var record in existing.Where(record => !desired.ContainsKey(record.NormalizedUserId)))
+        {
+            dbContext.AtlassianPrivilegedAccess.Remove(record);
+        }
+        foreach (var (normalizedUserId, item) in desired)
+        {
+            var record = existing.SingleOrDefault(record => record.NormalizedUserId == normalizedUserId);
+            if (record is null)
+            {
+                record = new AtlassianPrivilegedAccessRecord();
+                dbContext.AtlassianPrivilegedAccess.Add(record);
+            }
+            record.UserId = item.UserId.Trim();
+            record.NormalizedUserId = normalizedUserId;
+            record.JiraReadOnlyAccess = item.JiraReadOnlyAccess;
+            record.ConfluenceReadOnlyAccess = item.ConfluenceReadOnlyAccess;
+            record.UpdatedAtUtc = DateTime.UtcNow;
+        }
+        await dbContext.SaveChangesAsync(cancellationToken);
+    }
+
     public async Task MoveUserTokensAsync(string currentUserId, string newUserId, CancellationToken cancellationToken = default)
     {
         var currentNormalized = NormalizeUserId(currentUserId);
         var newNormalized = NormalizeUserId(newUserId);
         var record = await dbContext.AtlassianUserCredentials
             .SingleOrDefaultAsync(item => item.NormalizedUserId == currentNormalized, cancellationToken);
-        if (record is null)
+        if (record is not null)
         {
-            return;
+            record.UserId = newUserId.Trim();
+            record.NormalizedUserId = newNormalized;
+            record.UpdatedAtUtc = DateTime.UtcNow;
         }
-
-        record.UserId = newUserId.Trim();
-        record.NormalizedUserId = newNormalized;
-        record.UpdatedAtUtc = DateTime.UtcNow;
+        var privilegedAccess = await dbContext.AtlassianPrivilegedAccess
+            .SingleOrDefaultAsync(item => item.NormalizedUserId == currentNormalized, cancellationToken);
+        if (privilegedAccess is not null)
+        {
+            privilegedAccess.UserId = newUserId.Trim();
+            privilegedAccess.NormalizedUserId = newNormalized;
+            privilegedAccess.UpdatedAtUtc = DateTime.UtcNow;
+        }
+        if (record is null && privilegedAccess is null) return;
         await dbContext.SaveChangesAsync(cancellationToken);
     }
 
@@ -239,20 +334,58 @@ internal sealed class SqliteAtlassianConfigurationService : IAtlassianConfigurat
         var normalizedUserId = NormalizeUserId(userId);
         var record = await dbContext.AtlassianUserCredentials
             .SingleOrDefaultAsync(item => item.NormalizedUserId == normalizedUserId, cancellationToken);
-        if (record is null)
-        {
-            return;
-        }
-
-        dbContext.AtlassianUserCredentials.Remove(record);
+        if (record is not null) dbContext.AtlassianUserCredentials.Remove(record);
+        var privilegedAccess = await dbContext.AtlassianPrivilegedAccess
+            .SingleOrDefaultAsync(item => item.NormalizedUserId == normalizedUserId, cancellationToken);
+        if (privilegedAccess is not null) dbContext.AtlassianPrivilegedAccess.Remove(privilegedAccess);
+        if (record is null && privilegedAccess is null) return;
         await dbContext.SaveChangesAsync(cancellationToken);
     }
 
-    public Task<string?> GetJiraTokenAsync(string userId, CancellationToken cancellationToken = default) =>
-        GetTokenAsync(userId, record => record.JiraTokenProtected, cancellationToken);
+    public Task<AtlassianResolvedCredential?> ResolveJiraCredentialAsync(string userId, bool allowPrivilegedDefault, CancellationToken cancellationToken = default) =>
+        ResolveCredentialAsync(userId, allowPrivilegedDefault, true, cancellationToken);
 
-    public Task<string?> GetConfluenceTokenAsync(string userId, CancellationToken cancellationToken = default) =>
-        GetTokenAsync(userId, record => record.ConfluenceTokenProtected, cancellationToken);
+    public Task<AtlassianResolvedCredential?> ResolveConfluenceCredentialAsync(string userId, bool allowPrivilegedDefault, CancellationToken cancellationToken = default) =>
+        ResolveCredentialAsync(userId, allowPrivilegedDefault, false, cancellationToken);
+
+    private async Task<AtlassianResolvedCredential?> ResolveCredentialAsync(
+        string userId,
+        bool allowPrivilegedDefault,
+        bool jira,
+        CancellationToken cancellationToken)
+    {
+        var normalizedUserId = NormalizeUserId(userId);
+        if (allowPrivilegedDefault)
+        {
+            var permitted = await dbContext.AtlassianPrivilegedAccess.AsNoTracking()
+                .AnyAsync(item => item.NormalizedUserId == normalizedUserId
+                    && (jira ? item.JiraReadOnlyAccess : item.ConfluenceReadOnlyAccess), cancellationToken);
+            if (permitted)
+            {
+                var settings = await dbContext.AtlassianIntegrationSettings.AsNoTracking()
+                    .SingleOrDefaultAsync(item => item.Id == 1, cancellationToken);
+                var protectedToken = settings is null
+                    ? null
+                    : jira ? settings.DefaultJiraTokenProtected : settings.DefaultConfluenceTokenProtected;
+                if (string.IsNullOrWhiteSpace(protectedToken)) return null;
+
+                try
+                {
+                    return new(tokenProtector.Unprotect(protectedToken), true, true);
+                }
+                catch (CryptographicException)
+                {
+                    throw new InvalidOperationException("The shared Atlassian credential cannot be decrypted. Ask an administrator to re-enter the default token.");
+                }
+            }
+        }
+
+        var personalToken = await GetTokenAsync(
+            userId,
+            record => jira ? record.JiraTokenProtected : record.ConfluenceTokenProtected,
+            cancellationToken);
+        return string.IsNullOrWhiteSpace(personalToken) ? null : new(personalToken, false, false);
+    }
 
     private async Task<string?> GetTokenAsync(
         string userId,

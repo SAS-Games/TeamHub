@@ -58,6 +58,11 @@ else if (Model.Studio is not null)
         }
     }
 
+    @if (Model.TicketResult.IsUsingSharedCredential)
+    {
+        <div class="alert alert-secondary small">Shared Jira access is read only. Ticket changes are not permitted from TeamHub.</div>
+    }
+
     @if (Model.TicketResult.Groups.Count > 0)
     {
         @foreach (var group in Model.TicketResult.Groups)
