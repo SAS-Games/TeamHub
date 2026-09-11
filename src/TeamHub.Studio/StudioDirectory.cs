@@ -105,10 +105,13 @@ internal sealed class AtlassianIntegrationSettingsRecord
     public string JiraBaseUrl { get; set; } = string.Empty;
     public string JiraSearchApiPath { get; set; } = "/rest/api/2/search";
     public int JiraMaxResults { get; set; } = 100;
-    public string JiraDefaultSupportComponent { get; set; } = "studio_Support";
+    public string JiraDefaultSupportComponent { get; set; } = "StudioSupport";
     public bool ConfluenceEnabled { get; set; }
     public string ConfluenceBaseUrl { get; set; } = string.Empty;
     public string ConfluenceContentApiPath { get; set; } = "/rest/api/content";
+    public string ConfluenceSpaceKey { get; set; } = string.Empty;
+    public string ConfluenceParentPageId { get; set; } = string.Empty;
+    public string ConfluenceWeeklyTitlePattern { get; set; } = "{WeekStart:dd/MM}-{WeekEnd:dd/MM}";
     public string? DefaultJiraTokenProtected { get; set; }
     public string? DefaultConfluenceTokenProtected { get; set; }
     public DateTime UpdatedAtUtc { get; set; } = DateTime.UtcNow;
@@ -229,6 +232,9 @@ internal sealed class StudioDbContext(DbContextOptions<StudioDbContext> options)
             entity.Property(x => x.JiraDefaultSupportComponent).HasMaxLength(256);
             entity.Property(x => x.ConfluenceBaseUrl).HasMaxLength(2048);
             entity.Property(x => x.ConfluenceContentApiPath).HasMaxLength(512);
+            entity.Property(x => x.ConfluenceSpaceKey).HasMaxLength(256);
+            entity.Property(x => x.ConfluenceParentPageId).HasMaxLength(256);
+            entity.Property(x => x.ConfluenceWeeklyTitlePattern).HasMaxLength(512);
         });
 
         modelBuilder.Entity<AtlassianPrivilegedAccessRecord>(entity =>
@@ -381,6 +387,9 @@ internal sealed class SqliteStudioDatabaseInitializer(
                     ConfluenceEnabled INTEGER NOT NULL,
                     ConfluenceBaseUrl TEXT NOT NULL,
                     ConfluenceContentApiPath TEXT NOT NULL,
+                    ConfluenceSpaceKey TEXT NOT NULL DEFAULT '',
+                    ConfluenceParentPageId TEXT NOT NULL DEFAULT '',
+                    ConfluenceWeeklyTitlePattern TEXT NOT NULL DEFAULT '{{WeekStart:dd/MM}}-{{WeekEnd:dd/MM}}',
                     DefaultJiraTokenProtected TEXT NULL,
                     DefaultConfluenceTokenProtected TEXT NULL,
                     UpdatedAtUtc TEXT NOT NULL
@@ -392,6 +401,27 @@ internal sealed class SqliteStudioDatabaseInitializer(
                 await dbContext.Database.ExecuteSqlRawAsync("""
                     ALTER TABLE AtlassianIntegrationSettings
                     ADD COLUMN DefaultJiraTokenProtected TEXT NULL;
+                    """, cancellationToken);
+            }
+            if (!await MainColumnExistsAsync(connection, "AtlassianIntegrationSettings", "ConfluenceSpaceKey", cancellationToken))
+            {
+                await dbContext.Database.ExecuteSqlRawAsync("""
+                    ALTER TABLE AtlassianIntegrationSettings
+                    ADD COLUMN ConfluenceSpaceKey TEXT NOT NULL DEFAULT '';
+                    """, cancellationToken);
+            }
+            if (!await MainColumnExistsAsync(connection, "AtlassianIntegrationSettings", "ConfluenceParentPageId", cancellationToken))
+            {
+                await dbContext.Database.ExecuteSqlRawAsync("""
+                    ALTER TABLE AtlassianIntegrationSettings
+                    ADD COLUMN ConfluenceParentPageId TEXT NOT NULL DEFAULT '';
+                    """, cancellationToken);
+            }
+            if (!await MainColumnExistsAsync(connection, "AtlassianIntegrationSettings", "ConfluenceWeeklyTitlePattern", cancellationToken))
+            {
+                await dbContext.Database.ExecuteSqlRawAsync("""
+                    ALTER TABLE AtlassianIntegrationSettings
+                    ADD COLUMN ConfluenceWeeklyTitlePattern TEXT NOT NULL DEFAULT '{{WeekStart:dd/MM}}-{{WeekEnd:dd/MM}}';
                     """, cancellationToken);
             }
             if (!await MainColumnExistsAsync(connection, "AtlassianIntegrationSettings", "DefaultConfluenceTokenProtected", cancellationToken))
@@ -406,11 +436,19 @@ internal sealed class SqliteStudioDatabaseInitializer(
                 INSERT OR IGNORE INTO AtlassianIntegrationSettings
                     (Id, JiraEnabled, JiraBaseUrl, JiraSearchApiPath, JiraMaxResults,
                      JiraDefaultSupportComponent, ConfluenceEnabled, ConfluenceBaseUrl,
-                     ConfluenceContentApiPath, DefaultJiraTokenProtected,
+                     ConfluenceContentApiPath, ConfluenceSpaceKey, ConfluenceParentPageId,
+                     ConfluenceWeeklyTitlePattern, DefaultJiraTokenProtected,
                      DefaultConfluenceTokenProtected, UpdatedAtUtc)
                 VALUES
                     (1, 0, '', '/rest/api/2/search', 100,
-                     'studio_Support', 0, '', '/rest/api/content', NULL, NULL, CURRENT_TIMESTAMP);
+                     'StudioSupport', 0, '', '/rest/api/content', '', '',
+                     '{{WeekStart:dd/MM}}-{{WeekEnd:dd/MM}}', NULL, NULL, CURRENT_TIMESTAMP);
+                """, cancellationToken);
+
+            await dbContext.Database.ExecuteSqlRawAsync("""
+                UPDATE AtlassianIntegrationSettings
+                SET JiraDefaultSupportComponent = 'StudioSupport'
+                WHERE JiraDefaultSupportComponent = 'studio_Support';
                 """, cancellationToken);
 
             await dbContext.Database.ExecuteSqlRawAsync("""
@@ -448,6 +486,26 @@ internal sealed class SqliteStudioDatabaseInitializer(
             await dbContext.Database.ExecuteSqlRawAsync("""
                 CREATE UNIQUE INDEX IF NOT EXISTS IX_AtlassianStudioMappings_StudioRecordId
                 ON AtlassianStudioMappings (StudioRecordId);
+                """, cancellationToken);
+
+            await dbContext.Database.ExecuteSqlRawAsync("""
+                UPDATE AtlassianIntegrationSettings
+                SET ConfluenceSpaceKey = COALESCE(
+                        NULLIF(ConfluenceSpaceKey, ''),
+                        (SELECT NULLIF(ConfluenceSpaceKey, '') FROM AtlassianStudioMappings
+                         WHERE ConfluenceSpaceKey <> '' LIMIT 1),
+                        ''),
+                    ConfluenceParentPageId = COALESCE(
+                        NULLIF(ConfluenceParentPageId, ''),
+                        (SELECT NULLIF(ConfluenceParentPageId, '') FROM AtlassianStudioMappings
+                         WHERE ConfluenceParentPageId <> '' LIMIT 1),
+                        ''),
+                    ConfluenceWeeklyTitlePattern = COALESCE(
+                        NULLIF(ConfluenceWeeklyTitlePattern, ''),
+                        (SELECT NULLIF(ConfluenceWeeklyTitlePattern, '') FROM AtlassianStudioMappings
+                         WHERE ConfluenceWeeklyTitlePattern <> '' LIMIT 1),
+                        '{{WeekStart:dd/MM}}-{{WeekEnd:dd/MM}}')
+                WHERE Id = 1;
                 """, cancellationToken);
 
             await dbContext.Database.ExecuteSqlRawAsync("""

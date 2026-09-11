@@ -112,6 +112,40 @@ public sealed class StudioDirectoryTests
     }
 
     [Fact]
+    public async Task SaveSettings_PersistsGlobalConfluenceWeeklyPageConfiguration()
+    {
+        var dbPath = Path.Combine(Path.GetTempPath(), $"teamhub-studio-{Guid.NewGuid():N}.db");
+        try
+        {
+            await using var provider = CreateServices(dbPath);
+            await using var scope = provider.CreateAsyncScope();
+            await scope.ServiceProvider.GetRequiredService<IStudioDatabaseInitializer>().InitializeAsync();
+            var service = scope.ServiceProvider.GetRequiredService<IAtlassianConfigurationService>();
+
+            await service.SaveSettingsAsync(new AtlassianIntegrationSettings
+            {
+                ConfluenceEnabled = true,
+                ConfluenceBaseUrl = "https://confluence.example.test",
+                ConfluenceSpaceKey = "WR",
+                ConfluenceParentPageId = "12345",
+                ConfluenceWeeklyTitlePattern = "{WeekStart:dd/MM}-{WeekEnd:dd/MM}"
+            });
+
+            var saved = await service.GetSettingsAsync();
+            saved.ConfluenceEnabled.Should().BeTrue();
+            saved.ConfluenceBaseUrl.Should().Be("https://confluence.example.test");
+            saved.ConfluenceSpaceKey.Should().Be("WR");
+            saved.ConfluenceParentPageId.Should().Be("12345");
+            saved.ConfluenceWeeklyTitlePattern.Should().Be("{WeekStart:dd/MM}-{WeekEnd:dd/MM}");
+        }
+        finally
+        {
+            SqliteConnection.ClearAllPools();
+            if (File.Exists(dbPath)) File.Delete(dbPath);
+        }
+    }
+
+    [Fact]
     public async Task GetTicketsAsync_ReturnsConfigurationMessage_WhenJiraIntegrationIsDisabled()
     {
         var dbPath = Path.Combine(Path.GetTempPath(), $"teamhub-studio-{Guid.NewGuid():N}.db");

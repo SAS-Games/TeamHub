@@ -10,10 +10,13 @@ public sealed class AtlassianIntegrationSettings
     public string JiraBaseUrl { get; set; } = string.Empty;
     public string JiraSearchApiPath { get; set; } = "/rest/api/2/search";
     public int JiraMaxResults { get; set; } = 100;
-    public string JiraDefaultSupportComponent { get; set; } = "studio_Support";
+    public string JiraDefaultSupportComponent { get; set; } = "StudioSupport";
     public bool ConfluenceEnabled { get; set; }
     public string ConfluenceBaseUrl { get; set; } = string.Empty;
     public string ConfluenceContentApiPath { get; set; } = "/rest/api/content";
+    public string ConfluenceSpaceKey { get; set; } = string.Empty;
+    public string ConfluenceParentPageId { get; set; } = string.Empty;
+    public string ConfluenceWeeklyTitlePattern { get; set; } = "{WeekStart:dd/MM}-{WeekEnd:dd/MM}";
 }
 
 public sealed class StudioAtlassianMapping
@@ -22,9 +25,6 @@ public sealed class StudioAtlassianMapping
     public IReadOnlyList<string> JiraProjectKeys { get; set; } = [];
     public string JiraStudioComponent { get; set; } = string.Empty;
     public string JiraSupportComponent { get; set; } = string.Empty;
-    public string ConfluenceSpaceKey { get; set; } = string.Empty;
-    public string ConfluenceParentPageId { get; set; } = string.Empty;
-    public string ConfluenceWeeklyTitlePattern { get; set; } = "{StudioName} Weekly Update - {WeekStart:yyyy-MM-dd}";
 }
 
 public sealed record AtlassianConnectionStatus(
@@ -116,6 +116,11 @@ internal sealed class SqliteAtlassianConfigurationService : IAtlassianConfigurat
         record.ConfluenceEnabled = settings.ConfluenceEnabled;
         record.ConfluenceBaseUrl = confluenceBaseUrl;
         record.ConfluenceContentApiPath = NormalizeApiPath(settings.ConfluenceContentApiPath, "/rest/api/content");
+        record.ConfluenceSpaceKey = settings.ConfluenceSpaceKey?.Trim() ?? string.Empty;
+        record.ConfluenceParentPageId = settings.ConfluenceParentPageId?.Trim() ?? string.Empty;
+        record.ConfluenceWeeklyTitlePattern = string.IsNullOrWhiteSpace(settings.ConfluenceWeeklyTitlePattern)
+            ? "{WeekStart:dd/MM}-{WeekEnd:dd/MM}"
+            : settings.ConfluenceWeeklyTitlePattern.Trim();
         record.UpdatedAtUtc = DateTime.UtcNow;
         await dbContext.SaveChangesAsync(cancellationToken);
     }
@@ -162,11 +167,6 @@ internal sealed class SqliteAtlassianConfigurationService : IAtlassianConfigurat
             record.JiraProjectKeys = SerializeProjectKeys(mapping.JiraProjectKeys);
             record.JiraStudioComponent = mapping.JiraStudioComponent?.Trim() ?? string.Empty;
             record.JiraSupportComponent = mapping.JiraSupportComponent?.Trim() ?? string.Empty;
-            record.ConfluenceSpaceKey = mapping.ConfluenceSpaceKey?.Trim() ?? string.Empty;
-            record.ConfluenceParentPageId = mapping.ConfluenceParentPageId?.Trim() ?? string.Empty;
-            record.ConfluenceWeeklyTitlePattern = string.IsNullOrWhiteSpace(mapping.ConfluenceWeeklyTitlePattern)
-                ? "{StudioName} Weekly Update - {WeekStart:yyyy-MM-dd}"
-                : mapping.ConfluenceWeeklyTitlePattern.Trim();
             record.UpdatedAtUtc = DateTime.UtcNow;
         }
 
@@ -420,7 +420,10 @@ internal sealed class SqliteAtlassianConfigurationService : IAtlassianConfigurat
         JiraDefaultSupportComponent = record.JiraDefaultSupportComponent,
         ConfluenceEnabled = record.ConfluenceEnabled,
         ConfluenceBaseUrl = record.ConfluenceBaseUrl,
-        ConfluenceContentApiPath = record.ConfluenceContentApiPath
+        ConfluenceContentApiPath = record.ConfluenceContentApiPath,
+        ConfluenceSpaceKey = record.ConfluenceSpaceKey,
+        ConfluenceParentPageId = record.ConfluenceParentPageId,
+        ConfluenceWeeklyTitlePattern = record.ConfluenceWeeklyTitlePattern
     };
 
     private static StudioAtlassianMapping ToModel(StudioAtlassianMappingRecord record) => new()
@@ -428,10 +431,7 @@ internal sealed class SqliteAtlassianConfigurationService : IAtlassianConfigurat
         StudioId = record.StudioRecordId.ToString(),
         JiraProjectKeys = ParseProjectKeys(record.JiraProjectKeys),
         JiraStudioComponent = record.JiraStudioComponent,
-        JiraSupportComponent = record.JiraSupportComponent,
-        ConfluenceSpaceKey = record.ConfluenceSpaceKey,
-        ConfluenceParentPageId = record.ConfluenceParentPageId,
-        ConfluenceWeeklyTitlePattern = record.ConfluenceWeeklyTitlePattern
+        JiraSupportComponent = record.JiraSupportComponent
     };
 
     private static string NormalizeBaseUrl(string? value, bool required, string systemName)

@@ -77,13 +77,14 @@ else if (Model.Studio is not null)
                 {
                     <div class="table-responsive">
                         <table class="table styled-table">
-                            <thead><tr><th>Ticket Id</th><th>Summary</th><th>Assigned User</th><th>Status</th><th>Priority</th></tr></thead>
+                            <thead><tr><th>Ticket Id</th><th>Summary</th><th>Components</th><th>Assigned User</th><th>Status</th><th>Priority</th></tr></thead>
                             <tbody>
                             @foreach (var ticket in group.Tickets)
                             {
                                 <tr>
                                     <td><a href="@ticket.Url" target="_blank" rel="noopener">@ticket.TicketId</a></td>
                                     <td><a href="@ticket.Url" target="_blank" rel="noopener">@ticket.Summary</a></td>
+                                    <td>@string.Join(", ", ticket.Components)</td>
                                     <td>@ticket.AssignedUser</td>
                                     <td>@ticket.Status</td>
                                     <td>@ticket.Priority</td>
