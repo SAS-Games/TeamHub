@@ -23,6 +23,7 @@ public static class TeamHubModules
     public const string Milestones = "Milestones";
     public const string FlowDesigner = "Flow Designer";
     public const string StudioConfiguration = "Studio Configuration";
+    public const string AtlassianConnection = "Atlassian Connection";
     public const string Administration = "Administration";
     public const string UserManagement = "User Management";
     public const string AccessManagement = "Access Management";
@@ -36,6 +37,7 @@ public static class TeamHubModules
         Milestones,
         FlowDesigner,
         StudioConfiguration,
+        AtlassianConnection,
         Administration,
         UserManagement,
         AccessManagement

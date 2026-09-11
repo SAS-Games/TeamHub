@@ -1,0 +1,74 @@
+@page "/Profile/Atlassian"
+@model TeamHub.Web.Pages.Profile.AtlassianModel
+@{
+    ViewData["Title"] = "My Atlassian Connection";
+}
+
+<div class="page-hero">
+    <div>
+        <div class="eyebrow">Personal credentials</div>
+        <h1>My Atlassian Connection</h1>
+        <p>Connect Jira and Confluence as yourself so reads and future updates are performed with your identity and permissions.</p>
+    </div>
+</div>
+
+@if (TempData["StatusMessage"] is string statusMessage)
+{
+    <div class="alert alert-success">@statusMessage</div>
+}
+
+<div class="alert alert-info">
+    Tokens are encrypted before they are stored. An administrator can configure server addresses and see whether a connection exists, but this page never displays a saved token.
+</div>
+
+<form method="post" autocomplete="off">
+    <div asp-validation-summary="ModelOnly" class="text-danger mb-3"></div>
+    <div class="row g-4">
+        <div class="col-12 col-lg-6">
+            <section class="content-section h-100 m-0">
+                <div class="section-heading">
+                    <div><span>@(Model.Status.HasJiraToken ? "Connected" : "Not connected")</span><h2>Jira</h2></div>
+                </div>
+                <div class="section-body">
+                    <label asp-for="Input.JiraToken" class="form-label">Bearer API token</label>
+                    <input asp-for="Input.JiraToken" class="form-control" autocomplete="new-password" placeholder="Leave empty to keep the current token" />
+                    <span asp-validation-for="Input.JiraToken" class="text-danger"></span>
+                    @if (Model.Status.HasJiraToken)
+                    {
+                        <div class="form-check mt-3">
+                            <input asp-for="Input.RemoveJiraToken" class="form-check-input" />
+                            <label asp-for="Input.RemoveJiraToken" class="form-check-label">Remove my saved Jira token</label>
+                        </div>
+                    }
+                </div>
+            </section>
+        </div>
+        <div class="col-12 col-lg-6">
+            <section class="content-section h-100 m-0">
+                <div class="section-heading">
+                    <div><span>@(Model.Status.HasConfluenceToken ? "Connected" : "Not connected")</span><h2>Confluence</h2></div>
+                </div>
+                <div class="section-body">
+                    <label asp-for="Input.ConfluenceToken" class="form-label">Bearer API token</label>
+                    <input asp-for="Input.ConfluenceToken" class="form-control" autocomplete="new-password" placeholder="Leave empty to keep the current token" />
+                    <span asp-validation-for="Input.ConfluenceToken" class="text-danger"></span>
+                    @if (Model.Status.HasConfluenceToken)
+                    {
+                        <div class="form-check mt-3">
+                            <input asp-for="Input.RemoveConfluenceToken" class="form-check-input" />
+                            <label asp-for="Input.RemoveConfluenceToken" class="form-check-label">Remove my saved Confluence token</label>
+                        </div>
+                    }
+                </div>
+            </section>
+        </div>
+    </div>
+
+    <div class="d-flex justify-content-end mt-3">
+        <button type="submit" class="btn btn-primary">Save My Tokens</button>
+    </div>
+</form>
+
+@section Scripts {
+    <partial name="_ValidationScriptsPartial" />
+}

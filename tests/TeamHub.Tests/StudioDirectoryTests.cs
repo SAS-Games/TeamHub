@@ -9,24 +9,50 @@ namespace TeamHub.Tests;
 public sealed class StudioDirectoryTests
 {
     [Fact]
+    public async Task AtlassianTokens_AreEncryptedInDatabase_AndConnectionStatusDoesNotExposeThem()
+    {
+        var dbPath = Path.Combine(Path.GetTempPath(), $"teamhub-studio-{Guid.NewGuid():N}.db");
+        try
+        {
+            await using var provider = CreateServices(dbPath);
+            await using var scope = provider.CreateAsyncScope();
+            await scope.ServiceProvider.GetRequiredService<IStudioDatabaseInitializer>().InitializeAsync();
+            var service = scope.ServiceProvider.GetRequiredService<IAtlassianConfigurationService>();
+
+            await service.SaveUserTokensAsync("person@example.com", "jira-secret-token", "confluence-secret-token");
+            var status = await service.GetConnectionStatusAsync("PERSON@example.com");
+
+            status.HasJiraToken.Should().BeTrue();
+            status.HasConfluenceToken.Should().BeTrue();
+
+            await using var connection = new SqliteConnection($"Data Source={dbPath}");
+            await connection.OpenAsync();
+            await using var command = connection.CreateCommand();
+            command.CommandText = "SELECT JiraTokenProtected, ConfluenceTokenProtected FROM AtlassianUserCredentials LIMIT 1;";
+            await using var reader = await command.ExecuteReaderAsync();
+            (await reader.ReadAsync()).Should().BeTrue();
+            reader.GetString(0).Should().NotBe("jira-secret-token").And.NotContain("jira-secret-token");
+            reader.GetString(1).Should().NotBe("confluence-secret-token").And.NotContain("confluence-secret-token");
+        }
+        finally
+        {
+            SqliteConnection.ClearAllPools();
+            if (File.Exists(dbPath)) File.Delete(dbPath);
+        }
+    }
+
+    [Fact]
     public async Task GetTicketsAsync_ReturnsConfigurationMessage_WhenJiraIntegrationIsDisabled()
     {
         var dbPath = Path.Combine(Path.GetTempPath(), $"teamhub-studio-{Guid.NewGuid():N}.db");
-        var configPath = Path.Combine(Path.GetTempPath(), $"teamhub-jira-{Guid.NewGuid():N}.json");
         try
         {
-            await File.WriteAllTextAsync(configPath, """
-                {
-                  "enabled": false,
-                  "baseUrl": "https://example.atlassian.net",
-                  "studioMappings": []
-                }
-                """);
+            await using var provider = CreateServices(dbPath);
+            await using var scope = provider.CreateAsyncScope();
+            await scope.ServiceProvider.GetRequiredService<IStudioDatabaseInitializer>().InitializeAsync();
+            var service = scope.ServiceProvider.GetRequiredService<IStudioJiraTicketService>();
 
-            await using var provider = CreateServices(dbPath, configPath);
-            var service = provider.GetRequiredService<IStudioJiraTicketService>();
-
-            var result = await service.GetTicketsAsync(new StudioJiraTicketQuery { StudioProjectName = "Project Zero" });
+            var result = await service.GetTicketsAsync(new StudioJiraTicketQuery { StudioId = Guid.NewGuid().ToString(), RequestingUserId = "person@example.com" });
 
             result.IsConfigured.Should().BeFalse();
             result.Message.Should().Contain("disabled");
@@ -38,10 +64,6 @@ public sealed class StudioDirectoryTests
             if (File.Exists(dbPath))
             {
                 File.Delete(dbPath);
-            }
-            if (File.Exists(configPath))
-            {
-                File.Delete(configPath);
             }
         }
     }
@@ -349,18 +371,18 @@ public sealed class StudioDirectoryTests
         return names;
     }
 
-    private static ServiceProvider CreateServices(string dbPath, string? jiraConfigPath = null, string? workflowDbPath = null)
+    private static ServiceProvider CreateServices(string dbPath, string? workflowDbPath = null)
     {
         var configuration = new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?>
             {
                 ["ConnectionStrings:StudioDb"] = $"Data Source={dbPath}",
-                ["ConnectionStrings:WorkflowDb"] = workflowDbPath is null ? null : $"Data Source={workflowDbPath}",
-                ["StudioJiraConfiguration:ConfigPath"] = jiraConfigPath
+                ["ConnectionStrings:WorkflowDb"] = workflowDbPath is null ? null : $"Data Source={workflowDbPath}"
             })
             .Build();
 
         var services = new ServiceCollection();
+        services.AddDataProtection();
         services.AddStudioDirectory(configuration);
         return services.BuildServiceProvider();
     }

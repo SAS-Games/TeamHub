@@ -148,6 +148,7 @@ public static class TeamHubAccessRoutes
         if (path.StartsWithSegments("/Administration/Access")) return TeamHubModules.AccessManagement;
         if (path.StartsWithSegments("/Configuration/Templates")) return TeamHubModules.FlowDesigner;
         if (path.StartsWithSegments("/Configuration")) return TeamHubModules.Administration;
+        if (path.StartsWithSegments("/Profile/Atlassian")) return TeamHubModules.AtlassianConnection;
         if (path.StartsWithSegments("/WorkCenter") || path.StartsWithSegments("/Workflows")) return TeamHubModules.WorkCenter;
         if (path.StartsWithSegments("/Milestones")) return TeamHubModules.Milestones;
         if (path.StartsWithSegments("/Flows") || path.StartsWithSegments("/api/flows")) return TeamHubModules.FlowDesigner;

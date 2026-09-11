@@ -32,7 +32,6 @@ public sealed class ConfigurationFilePathsTests : IDisposable
         var contentRoot = Path.Combine(_root, "src", "TeamHub.Web");
         Directory.CreateDirectory(contentRoot);
         Directory.CreateDirectory(Path.Combine(_root, "config", "Home"));
-        Directory.CreateDirectory(Path.Combine(_root, "config", "Studio"));
 
         var configuration = new ConfigurationBuilder()
             .SetBasePath(AppContext.BaseDirectory)
@@ -46,8 +45,7 @@ public sealed class ConfigurationFilePathsTests : IDisposable
             ["WorkflowConfiguration:ExcelPath"] = Path.Combine(_root, "config", "Workflows.xlsx"),
             ["MilestoneConfiguration:ExcelPath"] = Path.Combine(_root, "config", "MilestoneTracker.xlsx"),
             ["HomeConfiguration:ProjectInfoPath"] = Path.Combine(_root, "config", "Home", "project-info.json"),
-            ["HomeConfiguration:UsefulLinksPath"] = Path.Combine(_root, "config", "Home", "useful-links.json"),
-            ["StudioJiraConfiguration:ConfigPath"] = Path.Combine(_root, "config", "Studio", "jira-settings.json")
+            ["HomeConfiguration:UsefulLinksPath"] = Path.Combine(_root, "config", "Home", "useful-links.json")
         };
 
         foreach (var (key, expectedPath) in expectedPaths)

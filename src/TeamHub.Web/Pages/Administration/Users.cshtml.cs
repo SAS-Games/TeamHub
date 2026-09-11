@@ -2,11 +2,12 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
 using TeamHub.Authentication;
+using TeamHub.Studio;
 
 namespace TeamHub.Web.Pages.Administration;
 
 [Authorize(Roles = TeamHubUserTypes.Admin)]
-public sealed class UsersModel(IUserAccessService users) : PageModel
+public sealed class UsersModel(IUserAccessService users, IAtlassianConfigurationService atlassianConfiguration) : PageModel
 {
     public IReadOnlyList<AuthorizedUserRecord> AuthorizedUsers { get; private set; } = [];
     public IReadOnlyList<string> UserTypes { get; } =
@@ -40,13 +41,20 @@ public sealed class UsersModel(IUserAccessService users) : PageModel
     {
         try
         {
-            await users.SaveUserAsync(new SaveAuthorizedUserRequest(
+            var previousUser = Input.Id.HasValue
+                ? await users.GetUserAsync(Input.Id.Value, cancellationToken)
+                : null;
+            var savedUser = await users.SaveUserAsync(new SaveAuthorizedUserRequest(
                 Input.Id,
                 Input.UserId,
                 Input.DisplayName,
                 Input.UserType,
                 Input.IsActive,
                 Input.TemporaryPassword), User.Identity?.Name, cancellationToken);
+            if (previousUser is not null && !string.Equals(previousUser.UserId, savedUser.UserId, StringComparison.OrdinalIgnoreCase))
+            {
+                await atlassianConfiguration.MoveUserTokensAsync(previousUser.UserId, savedUser.UserId, cancellationToken);
+            }
             StatusMessage = Input.Id.HasValue ? "Authorized user updated." : "Authorized user added.";
             return RedirectToPage();
         }
@@ -76,7 +84,10 @@ public sealed class UsersModel(IUserAccessService users) : PageModel
     {
         try
         {
+            var user = await users.GetUserAsync(id, cancellationToken)
+                ?? throw new KeyNotFoundException("Authorized user was not found.");
             await users.DeleteUserAsync(id, User.Identity?.Name, cancellationToken);
+            await atlassianConfiguration.DeleteUserTokensAsync(user.UserId, cancellationToken);
             StatusMessage = "Authorized user removed.";
         }
         catch (Exception exception) when (exception is InvalidOperationException or KeyNotFoundException)

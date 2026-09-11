@@ -1,4 +1,5 @@
 using System.IO;
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Routing;
 using TeamHub.Authentication;
 using TeamHub.Web.AccessControl;
@@ -29,9 +30,18 @@ builder.Configuration["ConnectionStrings:StudioDb"] = $"Data Source={Path.Combin
 var accessDatabasePath = Path.Combine(dataDir, "access.db");
 var flowDesignerDatabasePath = Path.Combine(dataDir, "flowdesigner.db");
 var templateDatabasePath = Path.Combine(dataDir, "templates.db");
+var dataProtectionKeysPath = Path.Combine(dataDir, "protection-keys");
+Directory.CreateDirectory(dataProtectionKeysPath);
 
 // Add services to the container.
 builder.Services.AddRazorPages();
+var dataProtection = builder.Services.AddDataProtection()
+    .PersistKeysToFileSystem(new DirectoryInfo(dataProtectionKeysPath))
+    .SetApplicationName("TeamHub");
+if (OperatingSystem.IsWindows())
+{
+    dataProtection.ProtectKeysWithDpapi(protectToLocalMachine: true);
+}
 builder.Services.Configure<ApplicationOptions>(builder.Configuration.GetSection("Application"));
 builder.Services.Configure<List<NavigationTabOptions>>(builder.Configuration.GetSection("NavigationTabs"));
 builder.Services.AddWorkflowAuthentication($"Data Source={accessDatabasePath}");

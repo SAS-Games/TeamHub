@@ -1,0 +1,131 @@
+@page "/Configuration/Atlassian"
+@model TeamHub.Web.Pages.Configuration.AtlassianModel
+@{
+    ViewData["Title"] = "Jira & Confluence Configuration";
+}
+
+<div class="page-hero">
+    <div>
+        <div class="eyebrow">Admin · Integrations</div>
+        <h1>Jira &amp; Confluence</h1>
+        <p>Configure shared server locations and map each studio. Users add their own tokens separately.</p>
+    </div>
+    <a class="btn btn-outline-secondary" asp-page="/Configuration/Index">Back to Configuration</a>
+</div>
+
+@if (TempData["StatusMessage"] is string statusMessage)
+{
+    <div class="alert alert-success">@statusMessage</div>
+}
+
+<form method="post">
+    <div asp-validation-summary="ModelOnly" class="text-danger mb-3"></div>
+
+    <div class="row g-4">
+        <div class="col-12 col-xl-6">
+            <section class="content-section h-100 m-0">
+                <div class="section-heading"><div><span>Shared settings</span><h2>Jira Access</h2></div></div>
+                <div class="section-body">
+                    <div class="form-check form-switch mb-3">
+                        <input asp-for="Settings.JiraEnabled" class="form-check-input" />
+                        <label asp-for="Settings.JiraEnabled" class="form-check-label">Enable Jira integration</label>
+                    </div>
+                    <div class="mb-3">
+                        <label asp-for="Settings.JiraBaseUrl" class="form-label">Jira base URL</label>
+                        <input asp-for="Settings.JiraBaseUrl" class="form-control" placeholder="https://jira.company.com" />
+                        <span asp-validation-for="Settings.JiraBaseUrl" class="text-danger"></span>
+                    </div>
+                    <div class="row g-3">
+                        <div class="col-md-8">
+                            <label asp-for="Settings.JiraSearchApiPath" class="form-label">Search API path</label>
+                            <input asp-for="Settings.JiraSearchApiPath" class="form-control" />
+                        </div>
+                        <div class="col-md-4">
+                            <label asp-for="Settings.JiraMaxResults" class="form-label">Max results</label>
+                            <input asp-for="Settings.JiraMaxResults" class="form-control" />
+                        </div>
+                    </div>
+                    <div class="mt-3">
+                        <label asp-for="Settings.JiraDefaultSupportComponent" class="form-label">Default direct-support component</label>
+                        <input asp-for="Settings.JiraDefaultSupportComponent" class="form-control" />
+                    </div>
+                </div>
+            </section>
+        </div>
+        <div class="col-12 col-xl-6">
+            <section class="content-section h-100 m-0">
+                <div class="section-heading"><div><span>Shared settings</span><h2>Confluence Access</h2></div></div>
+                <div class="section-body">
+                    <div class="form-check form-switch mb-3">
+                        <input asp-for="Settings.ConfluenceEnabled" class="form-check-input" />
+                        <label asp-for="Settings.ConfluenceEnabled" class="form-check-label">Enable Confluence integration</label>
+                    </div>
+                    <div class="mb-3">
+                        <label asp-for="Settings.ConfluenceBaseUrl" class="form-label">Confluence base URL</label>
+                        <input asp-for="Settings.ConfluenceBaseUrl" class="form-control" placeholder="https://confluence.company.com" />
+                        <span asp-validation-for="Settings.ConfluenceBaseUrl" class="text-danger"></span>
+                    </div>
+                    <div>
+                        <label asp-for="Settings.ConfluenceContentApiPath" class="form-label">Content API path</label>
+                        <input asp-for="Settings.ConfluenceContentApiPath" class="form-control" />
+                    </div>
+                </div>
+            </section>
+        </div>
+    </div>
+
+    <section class="content-section mt-4">
+        <div class="section-heading">
+            <div><span>Per studio</span><h2>Project &amp; Page Mapping</h2></div>
+        </div>
+        <div class="section-body">
+            @if (Model.Mappings.Count == 0)
+            {
+                <p class="text-secondary mb-0">Create a studio first, then return here to configure its Jira and Confluence mapping.</p>
+            }
+            @for (var index = 0; index < Model.Mappings.Count; index++)
+            {
+                <input asp-for="Mappings[index].StudioId" type="hidden" />
+                <div class="border rounded-3 p-3 mb-3">
+                    <h3 class="h5 mb-1">@Model.Mappings[index].StudioName</h3>
+                    <p class="small text-secondary">@Model.Mappings[index].ProjectName</p>
+                    <div class="row g-3">
+                        <div class="col-md-4">
+                            <label asp-for="Mappings[index].JiraProjectKeys" class="form-label">Jira project key(s)</label>
+                            <input asp-for="Mappings[index].JiraProjectKeys" class="form-control" placeholder="GAME, TOOLS" />
+                        </div>
+                        <div class="col-md-4">
+                            <label asp-for="Mappings[index].JiraStudioComponent" class="form-label">Studio component</label>
+                            <input asp-for="Mappings[index].JiraStudioComponent" class="form-control" placeholder="studio_name" />
+                        </div>
+                        <div class="col-md-4">
+                            <label asp-for="Mappings[index].JiraSupportComponent" class="form-label">Direct-support component</label>
+                            <input asp-for="Mappings[index].JiraSupportComponent" class="form-control" placeholder="Uses global default when empty" />
+                        </div>
+                        <div class="col-md-3">
+                            <label asp-for="Mappings[index].ConfluenceSpaceKey" class="form-label">Confluence space key</label>
+                            <input asp-for="Mappings[index].ConfluenceSpaceKey" class="form-control" />
+                        </div>
+                        <div class="col-md-3">
+                            <label asp-for="Mappings[index].ConfluenceParentPageId" class="form-label">Parent page ID</label>
+                            <input asp-for="Mappings[index].ConfluenceParentPageId" class="form-control" />
+                        </div>
+                        <div class="col-md-6">
+                            <label asp-for="Mappings[index].ConfluenceWeeklyTitlePattern" class="form-label">Weekly page title pattern</label>
+                            <input asp-for="Mappings[index].ConfluenceWeeklyTitlePattern" class="form-control" />
+                            <div class="form-text">Available placeholders: {StudioName} and {WeekStart:yyyy-MM-dd}.</div>
+                        </div>
+                    </div>
+                </div>
+            }
+        </div>
+    </section>
+
+    <div class="d-flex justify-content-end mt-3">
+        <button type="submit" class="btn btn-primary">Save Integration Configuration</button>
+    </div>
+</form>
+
+@section Scripts {
+    <partial name="_ValidationScriptsPartial" />
+}

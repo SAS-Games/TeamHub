@@ -1,5 +1,5 @@
-@page "/Studio/Support"
-@model TeamHub.Web.Pages.Studio.SupportModel
+@page "/Studio/JiraTickets"
+@model TeamHub.Web.Pages.Studio.JiraTicketsModel
 @{
     var title = Model.Studio is null ? "Studio Jira Tickets" : $"{Model.Studio.StudioName} Jira Tickets";
     ViewData["Title"] = title;
@@ -7,7 +7,7 @@
 
 <div class="page-hero">
     <div>
-        <div class="eyebrow">Studio support</div>
+        <div class="eyebrow">Studio Jira</div>
         <h1>@title</h1>
     </div>
     @if (Model.Studio is not null)
@@ -52,6 +52,10 @@ else if (Model.Studio is not null)
     @if (!string.IsNullOrWhiteSpace(Model.TicketResult.Message))
     {
         <div class="alert @(Model.TicketResult.IsConfigured ? "alert-warning" : "alert-info")">@Model.TicketResult.Message</div>
+        @if (Model.TicketResult.Message.Contains("token", StringComparison.OrdinalIgnoreCase))
+        {
+            <p><a class="btn btn-outline-primary" asp-page="/Profile/Atlassian">Open My Atlassian Connection</a></p>
+        }
     }
 
     @if (Model.TicketResult.Groups.Count > 0)

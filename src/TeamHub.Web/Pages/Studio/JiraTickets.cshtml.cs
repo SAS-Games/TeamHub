@@ -4,7 +4,7 @@ using TeamHub.Studio;
 
 namespace TeamHub.Web.Pages.Studio;
 
-public class SupportModel(IStudioDirectoryService studioDirectoryService, IStudioJiraTicketService jiraTicketService) : PageModel
+public class JiraTicketsModel(IStudioDirectoryService studioDirectoryService, IStudioJiraTicketService jiraTicketService) : PageModel
 {
     [BindProperty(SupportsGet = true)]
     public string? StudioId { get; set; }
@@ -35,7 +35,8 @@ public class SupportModel(IStudioDirectoryService studioDirectoryService, IStudi
 
         TicketResult = await jiraTicketService.GetTicketsAsync(new StudioJiraTicketQuery
         {
-            StudioProjectName = Studio.ProjectName,
+            StudioId = Studio.Id,
+            RequestingUserId = User.Identity?.Name ?? string.Empty,
             ActiveSprintOnly = ActiveSprintOnly,
             StartDate = StartDate,
             EndDate = EndDate

@@ -55,6 +55,7 @@ public sealed class AccessControlTests
 
         (await users.GetAccessLevelAsync(TeamHubModules.Home, TeamHubUserTypes.Guest)).Should().Be(AccessLevel.ReadOnly);
         (await users.GetAccessLevelAsync(TeamHubModules.FlowDesigner, TeamHubUserTypes.Registered)).Should().Be(AccessLevel.Edit);
+        (await users.GetAccessLevelAsync(TeamHubModules.AtlassianConnection, TeamHubUserTypes.Registered)).Should().Be(AccessLevel.Edit);
 
         await users.SetPermissionsAsync([
             new(TeamHubModules.Milestones, TeamHubUserTypes.Registered, AccessLevel.Create),

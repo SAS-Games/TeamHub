@@ -98,6 +98,46 @@ internal sealed class StudioImportantLinkRecord
     public StudioRecord Studio { get; set; } = null!;
 }
 
+internal sealed class AtlassianIntegrationSettingsRecord
+{
+    public int Id { get; set; } = 1;
+    public bool JiraEnabled { get; set; }
+    public string JiraBaseUrl { get; set; } = string.Empty;
+    public string JiraSearchApiPath { get; set; } = "/rest/api/2/search";
+    public int JiraMaxResults { get; set; } = 100;
+    public string JiraDefaultSupportComponent { get; set; } = "studio_Support";
+    public bool ConfluenceEnabled { get; set; }
+    public string ConfluenceBaseUrl { get; set; } = string.Empty;
+    public string ConfluenceContentApiPath { get; set; } = "/rest/api/content";
+    public DateTime UpdatedAtUtc { get; set; } = DateTime.UtcNow;
+}
+
+internal sealed class StudioAtlassianMappingRecord
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public Guid StudioRecordId { get; set; }
+    public string JiraProjectKeys { get; set; } = string.Empty;
+    public string JiraStudioComponent { get; set; } = string.Empty;
+    public string JiraSupportComponent { get; set; } = string.Empty;
+    public string ConfluenceSpaceKey { get; set; } = string.Empty;
+    public string ConfluenceParentPageId { get; set; } = string.Empty;
+    public string ConfluenceWeeklyTitlePattern { get; set; } = "{StudioName} Weekly Update - {WeekStart:yyyy-MM-dd}";
+    public DateTime UpdatedAtUtc { get; set; } = DateTime.UtcNow;
+    public StudioRecord Studio { get; set; } = null!;
+}
+
+internal sealed class AtlassianUserCredentialRecord
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public string UserId { get; set; } = string.Empty;
+    public string NormalizedUserId { get; set; } = string.Empty;
+    public string? JiraTokenProtected { get; set; }
+    public string? ConfluenceTokenProtected { get; set; }
+    public DateTime? JiraConnectedAtUtc { get; set; }
+    public DateTime? ConfluenceConnectedAtUtc { get; set; }
+    public DateTime UpdatedAtUtc { get; set; } = DateTime.UtcNow;
+}
+
 internal sealed class StudioDbContext(DbContextOptions<StudioDbContext> options) : DbContext(options)
 {
     public DbSet<StudioRecord> Studios => Set<StudioRecord>();
@@ -105,6 +145,9 @@ internal sealed class StudioDbContext(DbContextOptions<StudioDbContext> options)
     public DbSet<StudioTeamMemberRecord> StudioTeamMembers => Set<StudioTeamMemberRecord>();
     public DbSet<StudioDevelopmentToolsRecord> StudioDevelopmentTools => Set<StudioDevelopmentToolsRecord>();
     public DbSet<StudioImportantLinkRecord> StudioImportantLinks => Set<StudioImportantLinkRecord>();
+    public DbSet<AtlassianIntegrationSettingsRecord> AtlassianIntegrationSettings => Set<AtlassianIntegrationSettingsRecord>();
+    public DbSet<StudioAtlassianMappingRecord> StudioAtlassianMappings => Set<StudioAtlassianMappingRecord>();
+    public DbSet<AtlassianUserCredentialRecord> AtlassianUserCredentials => Set<AtlassianUserCredentialRecord>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -163,6 +206,40 @@ internal sealed class StudioDbContext(DbContextOptions<StudioDbContext> options)
                 .WithMany(x => x.ImportantLinks)
                 .HasForeignKey(x => x.StudioRecordId)
                 .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<AtlassianIntegrationSettingsRecord>(entity =>
+        {
+            entity.ToTable("AtlassianIntegrationSettings");
+            entity.Property(x => x.JiraBaseUrl).HasMaxLength(2048);
+            entity.Property(x => x.JiraSearchApiPath).HasMaxLength(512);
+            entity.Property(x => x.JiraDefaultSupportComponent).HasMaxLength(256);
+            entity.Property(x => x.ConfluenceBaseUrl).HasMaxLength(2048);
+            entity.Property(x => x.ConfluenceContentApiPath).HasMaxLength(512);
+        });
+
+        modelBuilder.Entity<StudioAtlassianMappingRecord>(entity =>
+        {
+            entity.ToTable("AtlassianStudioMappings");
+            entity.Property(x => x.JiraProjectKeys).HasMaxLength(2048);
+            entity.Property(x => x.JiraStudioComponent).HasMaxLength(256);
+            entity.Property(x => x.JiraSupportComponent).HasMaxLength(256);
+            entity.Property(x => x.ConfluenceSpaceKey).HasMaxLength(256);
+            entity.Property(x => x.ConfluenceParentPageId).HasMaxLength(256);
+            entity.Property(x => x.ConfluenceWeeklyTitlePattern).HasMaxLength(512);
+            entity.HasIndex(x => x.StudioRecordId).IsUnique();
+            entity.HasOne(x => x.Studio)
+                .WithMany()
+                .HasForeignKey(x => x.StudioRecordId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<AtlassianUserCredentialRecord>(entity =>
+        {
+            entity.ToTable("AtlassianUserCredentials");
+            entity.Property(x => x.UserId).HasMaxLength(320);
+            entity.Property(x => x.NormalizedUserId).HasMaxLength(320);
+            entity.HasIndex(x => x.NormalizedUserId).IsUnique();
         });
     }
 }
@@ -270,6 +347,70 @@ internal sealed class SqliteStudioDatabaseInitializer(
             await dbContext.Database.ExecuteSqlRawAsync("""
                 CREATE INDEX IF NOT EXISTS IX_StudioImportantLinks_StudioRecordId_DisplayOrder
                 ON StudioImportantLinks (StudioRecordId, DisplayOrder);
+                """, cancellationToken);
+
+            await dbContext.Database.ExecuteSqlRawAsync("""
+                CREATE TABLE IF NOT EXISTS AtlassianIntegrationSettings (
+                    Id INTEGER NOT NULL CONSTRAINT PK_AtlassianIntegrationSettings PRIMARY KEY,
+                    JiraEnabled INTEGER NOT NULL,
+                    JiraBaseUrl TEXT NOT NULL,
+                    JiraSearchApiPath TEXT NOT NULL,
+                    JiraMaxResults INTEGER NOT NULL,
+                    JiraDefaultSupportComponent TEXT NOT NULL,
+                    ConfluenceEnabled INTEGER NOT NULL,
+                    ConfluenceBaseUrl TEXT NOT NULL,
+                    ConfluenceContentApiPath TEXT NOT NULL,
+                    UpdatedAtUtc TEXT NOT NULL
+                );
+                """, cancellationToken);
+
+            await dbContext.Database.ExecuteSqlRawAsync("""
+                INSERT OR IGNORE INTO AtlassianIntegrationSettings
+                    (Id, JiraEnabled, JiraBaseUrl, JiraSearchApiPath, JiraMaxResults,
+                     JiraDefaultSupportComponent, ConfluenceEnabled, ConfluenceBaseUrl,
+                     ConfluenceContentApiPath, UpdatedAtUtc)
+                VALUES
+                    (1, 0, '', '/rest/api/2/search', 100,
+                     'studio_Support', 0, '', '/rest/api/content', CURRENT_TIMESTAMP);
+                """, cancellationToken);
+
+            await dbContext.Database.ExecuteSqlRawAsync("""
+                CREATE TABLE IF NOT EXISTS AtlassianStudioMappings (
+                    Id TEXT NOT NULL CONSTRAINT PK_AtlassianStudioMappings PRIMARY KEY,
+                    StudioRecordId TEXT NOT NULL,
+                    JiraProjectKeys TEXT NOT NULL,
+                    JiraStudioComponent TEXT NOT NULL,
+                    JiraSupportComponent TEXT NOT NULL,
+                    ConfluenceSpaceKey TEXT NOT NULL,
+                    ConfluenceParentPageId TEXT NOT NULL,
+                    ConfluenceWeeklyTitlePattern TEXT NOT NULL,
+                    UpdatedAtUtc TEXT NOT NULL,
+                    CONSTRAINT FK_AtlassianStudioMappings_Studios_StudioRecordId
+                        FOREIGN KEY (StudioRecordId) REFERENCES Studios (Id) ON DELETE CASCADE
+                );
+                """, cancellationToken);
+
+            await dbContext.Database.ExecuteSqlRawAsync("""
+                CREATE UNIQUE INDEX IF NOT EXISTS IX_AtlassianStudioMappings_StudioRecordId
+                ON AtlassianStudioMappings (StudioRecordId);
+                """, cancellationToken);
+
+            await dbContext.Database.ExecuteSqlRawAsync("""
+                CREATE TABLE IF NOT EXISTS AtlassianUserCredentials (
+                    Id TEXT NOT NULL CONSTRAINT PK_AtlassianUserCredentials PRIMARY KEY,
+                    UserId TEXT NOT NULL,
+                    NormalizedUserId TEXT NOT NULL,
+                    JiraTokenProtected TEXT NULL,
+                    ConfluenceTokenProtected TEXT NULL,
+                    JiraConnectedAtUtc TEXT NULL,
+                    ConfluenceConnectedAtUtc TEXT NULL,
+                    UpdatedAtUtc TEXT NOT NULL
+                );
+                """, cancellationToken);
+
+            await dbContext.Database.ExecuteSqlRawAsync("""
+                CREATE UNIQUE INDEX IF NOT EXISTS IX_AtlassianUserCredentials_NormalizedUserId
+                ON AtlassianUserCredentials (NormalizedUserId);
                 """, cancellationToken);
 
             await MoveLegacyStudioTablesAsync(cancellationToken);
@@ -733,6 +874,9 @@ public static class StudioDirectoryServiceCollectionExtensions
         });
         services.AddScoped<IStudioDatabaseInitializer, SqliteStudioDatabaseInitializer>();
         services.AddScoped<IStudioDirectoryService, SqliteStudioDirectoryService>();
+        services.AddScoped<SqliteAtlassianConfigurationService>();
+        services.AddScoped<IAtlassianConfigurationService>(provider => provider.GetRequiredService<SqliteAtlassianConfigurationService>());
+        services.AddScoped<IAtlassianCredentialAccessor>(provider => provider.GetRequiredService<SqliteAtlassianConfigurationService>());
         services.AddHttpClient<IStudioJiraTicketService, JiraStudioTicketService>();
         return services;
     }

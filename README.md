@@ -45,7 +45,7 @@ dotnet run --project src/TeamHub.Web/TeamHub.Web.csproj
 
 ## Configuration file paths
 
-All file paths in `src/TeamHub.Web/appsettings.json` use portable `config/...` paths. Paths resolve to the nearest `config` directory at or above the application's content root, so local runs use the repository-level `config` directory directly. Absolute overrides are still supported. This resolution is shared by Home, workflow imports, milestones, and Studio Jira settings.
+All file paths in `src/TeamHub.Web/appsettings.json` use portable `config/...` paths. Paths resolve to the nearest `config` directory at or above the application's content root, so local runs use the repository-level `config` directory directly. Absolute overrides are still supported. This resolution is shared by Home, workflow imports, and milestones.
 
 Repository configuration files are not copied into `bin`; changes are read from the repository-level `config` directory. Database files continue to live in the application's `data` directory.
 
@@ -93,6 +93,8 @@ TeamHub can map an externally authenticated organization identity to an authoriz
 Team data is stored in `data/team.db`. The Team pages no longer read `TeamInfo.xlsx`, so the application is unaffected when that spreadsheet is open, locked, empty, or absent.
 
 Studio Configuration stores each studio's time zone and an ordered list of internal contacts with Name and Role fields. The Studio dashboard shows a live local clock and the internal contacts in a responsive right-hand sidebar. Existing studio records default to UTC until another time zone is selected.
+
+Jira and Confluence are configured from **Configuration → Jira & Confluence**. Admins manage the shared server URLs, API paths, and per-studio project/component/page mappings; no API tokens are stored in JSON or application settings. Each authorized user opens **My Atlassian Connection** and supplies their own Bearer API tokens. Tokens are encrypted with ASP.NET Core Data Protection before storage in `data/studio.db`, never displayed after saving, and Jira requests run with the signed-in user's identity. Keep the `data/protection-keys` directory private and back it up with the database because stored tokens cannot be decrypted without those keys.
 
 ## Excel Contract
 

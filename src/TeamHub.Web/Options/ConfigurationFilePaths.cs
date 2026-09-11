@@ -9,8 +9,7 @@ public static class ConfigurationFilePaths
             "WorkflowConfiguration:ExcelPath",
             "MilestoneConfiguration:ExcelPath",
             "HomeConfiguration:ProjectInfoPath",
-            "HomeConfiguration:UsefulLinksPath",
-            "StudioJiraConfiguration:ConfigPath"
+            "HomeConfiguration:UsefulLinksPath"
         ];
 
         foreach (var key in keys)
