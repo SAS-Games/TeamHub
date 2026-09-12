@@ -42,6 +42,34 @@ public sealed class FlowServiceTests
     }
 
     [Fact]
+    public async Task List_ShowsOnlyRootDiagramsWhileLinkTargetsIncludeNestedDiagrams()
+    {
+        await using var database = new TestDatabase();
+        var repository = await database.CreateRepositoryAsync();
+        var service = new FlowService(repository, new FlowValidator(), new SystemTextJsonFlowSerializer(), new TestUserProvider(), new AllowAllPermissionService());
+        var root = ValidationTests.ConnectedFlow();
+        root.Name = "Root";
+        var child = ValidationTests.ConnectedFlow();
+        child.Name = "Child";
+        var grandchild = ValidationTests.ConnectedFlow();
+        grandchild.Name = "Grandchild";
+        root.Nodes[0].ChildFlowId = child.Id;
+        child.Nodes[0].ChildFlowId = grandchild.Id;
+        await repository.SaveAsync(grandchild);
+        await repository.SaveAsync(child);
+        await repository.SaveAsync(root);
+
+        var catalog = await service.ListAsync();
+        var linkTargets = await service.ListLinkTargetsAsync(root.Id);
+
+        Assert.Single(catalog);
+        Assert.Equal(root.Id, catalog[0].Id);
+        Assert.Equal(2, linkTargets.Count);
+        Assert.Contains(linkTargets, flow => flow.Id == child.Id);
+        Assert.Contains(linkTargets, flow => flow.Id == grandchild.Id);
+    }
+
+    [Fact]
     public async Task Create_IntegrationQaTemplateBuildsCompleteExample()
     {
         await using var database = new TestDatabase();
@@ -111,6 +139,97 @@ public sealed class FlowServiceTests
         Assert.Equal(0, copy.Version);
         Assert.Equal(source.Nodes.Select(node => node.Id), copy.Nodes.Select(node => node.Id));
         Assert.NotNull(await repository.GetAsync(copy.Id));
+    }
+
+    [Fact]
+    public async Task Save_RejectsMissingChildDiagram()
+    {
+        await using var database = new TestDatabase();
+        var repository = await database.CreateRepositoryAsync();
+        var service = new FlowService(repository, new FlowValidator(), new SystemTextJsonFlowSerializer(), new TestUserProvider(), new AllowAllPermissionService());
+        var parent = ValidationTests.ConnectedFlow();
+        await repository.SaveAsync(parent);
+        parent.Nodes[0].ChildFlowId = Guid.NewGuid();
+
+        var result = await service.SaveAsync(parent);
+
+        Assert.False(result.IsValid);
+        Assert.Contains(result.Issues, issue => issue.Code == "child-flow-missing");
+    }
+
+    [Fact]
+    public async Task Save_RejectsCycleAcrossLinkedDiagrams()
+    {
+        await using var database = new TestDatabase();
+        var repository = await database.CreateRepositoryAsync();
+        var service = new FlowService(repository, new FlowValidator(), new SystemTextJsonFlowSerializer(), new TestUserProvider(), new AllowAllPermissionService());
+        var parent = ValidationTests.ConnectedFlow();
+        var child = ValidationTests.ConnectedFlow();
+        child.Nodes[0].ChildFlowId = parent.Id;
+        await repository.SaveAsync(parent);
+        await repository.SaveAsync(child);
+        parent.Nodes[0].ChildFlowId = child.Id;
+
+        var result = await service.SaveAsync(parent);
+
+        Assert.False(result.IsValid);
+        Assert.Contains(result.Issues, issue => issue.Code == "child-flow-cycle");
+    }
+
+    [Fact]
+    public async Task Delete_RejectsDiagramReferencedByParent()
+    {
+        await using var database = new TestDatabase();
+        var repository = await database.CreateRepositoryAsync();
+        var service = new FlowService(repository, new FlowValidator(), new SystemTextJsonFlowSerializer(), new TestUserProvider(), new AllowAllPermissionService());
+        var child = ValidationTests.ConnectedFlow();
+        var parent = ValidationTests.ConnectedFlow();
+        parent.Nodes[0].ChildFlowId = child.Id;
+        await repository.SaveAsync(child);
+        await repository.SaveAsync(parent);
+
+        var error = await Assert.ThrowsAsync<InvalidOperationException>(() => service.DeleteAsync(child.Id));
+
+        Assert.Contains("linked from another diagram", error.Message);
+        Assert.NotNull(await repository.GetAsync(child.Id));
+    }
+
+    [Fact]
+    public async Task Share_RequiresEveryLinkedDiagramToBeShared()
+    {
+        await using var database = new TestDatabase();
+        var repository = await database.CreateRepositoryAsync();
+        var service = new FlowService(repository, new FlowValidator(), new SystemTextJsonFlowSerializer(), new TestUserProvider(), new AllowAllPermissionService());
+        var child = ValidationTests.ConnectedFlow();
+        var parent = ValidationTests.ConnectedFlow();
+        parent.Nodes[0].ChildFlowId = child.Id;
+        await repository.SaveAsync(child);
+        await repository.SaveAsync(parent);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => service.SetSharedAsync(parent.Id, true));
+        await service.SetSharedAsync(child.Id, true);
+        var sharedParent = await service.SetSharedAsync(parent.Id, true);
+
+        Assert.True(sharedParent.IsShared);
+    }
+
+    [Fact]
+    public async Task Save_RejectsPrivateChildAddedToSharedDiagram()
+    {
+        await using var database = new TestDatabase();
+        var repository = await database.CreateRepositoryAsync();
+        var service = new FlowService(repository, new FlowValidator(), new SystemTextJsonFlowSerializer(), new TestUserProvider(), new AllowAllPermissionService());
+        var child = ValidationTests.ConnectedFlow();
+        var parent = ValidationTests.ConnectedFlow();
+        parent.IsShared = true;
+        await repository.SaveAsync(child);
+        await repository.SaveAsync(parent);
+        parent.Nodes[0].ChildFlowId = child.Id;
+
+        var result = await service.SaveAsync(parent);
+
+        Assert.False(result.IsValid);
+        Assert.Contains(result.Issues, issue => issue.Code == "child-flow-private");
     }
 
     private sealed class TestUserProvider : ICurrentUserProvider

@@ -13,8 +13,9 @@ public sealed class FlowTemplateCatalogService(
 {
     public async Task<IReadOnlyList<TemplateCatalogSummary>> ListAsync(CancellationToken cancellationToken = default)
     {
-        var available = await templates.ListAsync(TemplateKinds.FlowDiagram, cancellationToken);
+        var available = await templates.ListAsync(cancellationToken: cancellationToken);
         return available
+            .Where(template => template.TemplateKind is TemplateKinds.FlowDiagram or TemplateKinds.FlowDiagramBundle)
             .Where(template => template.DiagramType.HasValue)
             .Where(template => !template.AdminOnly || permissions.CanManageTemplates())
             .Where(template => permissions.CanUseDiagramType(template.DiagramType!.Value))
@@ -122,7 +123,9 @@ public sealed class FlowTemplateCatalogService(
         string? name,
         CancellationToken cancellationToken)
     {
-        if (!template.IsActive || template.TemplateKind != TemplateKinds.FlowDiagram || !template.DiagramType.HasValue)
+        if (!template.IsActive
+            || template.TemplateKind is not (TemplateKinds.FlowDiagram or TemplateKinds.FlowDiagramBundle)
+            || !template.DiagramType.HasValue)
         {
             throw new InvalidOperationException("This catalog entry is not an active flow diagram template.");
         }
@@ -131,6 +134,11 @@ public sealed class FlowTemplateCatalogService(
             || template.AdminOnly && !permissions.CanManageTemplates())
         {
             throw new UnauthorizedAccessException("The current user cannot create a diagram from this template.");
+        }
+
+        if (template.TemplateKind == TemplateKinds.FlowDiagramBundle)
+        {
+            return await CreateBundleAsync(template, name, cancellationToken);
         }
 
         var flow = serializer.Deserialize(template.PayloadJson);
@@ -145,6 +153,65 @@ public sealed class FlowTemplateCatalogService(
         flow.Version = 0;
         await flows.SaveAsync(flow, cancellationToken);
         return flow;
+    }
+
+    private async Task<FlowDefinition> CreateBundleAsync(
+        TemplateCatalogDefinition template,
+        string? name,
+        CancellationToken cancellationToken)
+    {
+        var bundle = serializer.DeserializeBundle(template.PayloadJson);
+        if (bundle.RootFlowId == Guid.Empty || bundle.Flows.Count == 0)
+        {
+            throw new InvalidOperationException("The diagram bundle does not define a root diagram.");
+        }
+        if (bundle.Flows.Any(flow => flow.Id == Guid.Empty)
+            || bundle.Flows.Select(flow => flow.Id).Distinct().Count() != bundle.Flows.Count)
+        {
+            throw new InvalidOperationException("The diagram bundle contains invalid or duplicate diagram IDs.");
+        }
+
+        var idMap = bundle.Flows.ToDictionary(flow => flow.Id, _ => Guid.NewGuid());
+        if (!idMap.ContainsKey(bundle.RootFlowId))
+        {
+            throw new InvalidOperationException("The diagram bundle's root diagram is missing.");
+        }
+
+        var now = DateTimeOffset.UtcNow;
+        var created = new List<(Guid SourceId, FlowDefinition Flow)>(bundle.Flows.Count);
+        foreach (var source in bundle.Flows)
+        {
+            var flow = serializer.Deserialize(serializer.Serialize(source));
+            flow.Id = idMap[source.Id];
+            flow.Name = source.Id == bundle.RootFlowId
+                ? string.IsNullOrWhiteSpace(name) ? template.Name : NormalizeRequired(name, "Diagram name", 200)
+                : source.Name;
+            flow.DiagramType = template.DiagramType!.Value;
+            flow.CreatedAt = now;
+            flow.UpdatedAt = now;
+            flow.CreatedBy = currentUser.GetCurrentUserId();
+            flow.IsShared = false;
+            flow.Version = 0;
+
+            foreach (var node in flow.Nodes.Where(node => node.ChildFlowId.HasValue))
+            {
+                if (!idMap.TryGetValue(node.ChildFlowId!.Value, out var childId))
+                {
+                    throw new InvalidOperationException($"The diagram bundle contains a link to missing diagram '{node.ChildFlowId}'.");
+                }
+                node.ChildFlowId = childId;
+            }
+
+            created.Add((source.Id, flow));
+        }
+
+        foreach (var item in created.Where(item => item.SourceId != bundle.RootFlowId))
+        {
+            await flows.SaveAsync(item.Flow, cancellationToken);
+        }
+        var root = created.Single(item => item.SourceId == bundle.RootFlowId).Flow;
+        await flows.SaveAsync(root, cancellationToken);
+        return root;
     }
 
     private static string NormalizeKey(string value)

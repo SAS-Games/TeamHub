@@ -69,6 +69,49 @@ public sealed class TemplateCatalogTests
         Assert.Equal(0, created.Version);
     }
 
+    [Fact]
+    public async Task CreateBundle_CreatesHierarchyWithFreshRemappedIds()
+    {
+        await using var host = await TemplateTestHost.CreateAsync();
+        using var scope = host.Services.CreateScope();
+        var templates = scope.ServiceProvider.GetRequiredService<IFlowTemplateCatalogService>();
+        var repository = scope.ServiceProvider.GetRequiredService<ITemplateCatalogRepository>();
+        var flows = scope.ServiceProvider.GetRequiredService<IFlowService>();
+        var flowRepository = scope.ServiceProvider.GetRequiredService<IFlowRepository>();
+        var serializer = scope.ServiceProvider.GetRequiredService<IFlowSerializer>();
+        var child = ValidationTests.ConnectedFlow();
+        child.Name = "Child detail";
+        var root = ValidationTests.ConnectedFlow();
+        root.Name = "Root source";
+        root.Nodes[0].ChildFlowId = child.Id;
+        root.Nodes[0].Comments = [new NodeComment { Body = "Official source: https://example.test/spec" }];
+        var bundle = new FlowDiagramTemplateBundle { RootFlowId = root.Id, Flows = [root, child] };
+        var definition = new TemplateCatalogDefinition
+        {
+            TemplateKey = "BUNDLE_TEST",
+            Name = "Hierarchy",
+            Description = "A hierarchy template.",
+            Category = "Tests",
+            TemplateKind = TemplateKinds.FlowDiagramBundle,
+            DiagramType = DiagramType.CodeFlow,
+            PayloadJson = serializer.SerializeBundle(bundle),
+            IsBuiltIn = true
+        };
+        await repository.SaveAsync(definition);
+
+        var createdRoot = await templates.CreateFlowByKeyAsync("BUNDLE_TEST", "Created hierarchy");
+        var createdDefinitions = await flowRepository.ListDefinitionsAsync();
+        var createdChildId = createdRoot.Nodes[0].ChildFlowId;
+
+        Assert.NotEqual(root.Id, createdRoot.Id);
+        Assert.NotEqual(child.Id, createdChildId);
+        Assert.Equal("Created hierarchy", createdRoot.Name);
+        Assert.Contains("https://example.test/spec", createdRoot.Nodes[0].Comments[0].Body);
+        Assert.Contains(createdDefinitions, flow => flow.Id == createdChildId && flow.Name == "Child detail");
+        Assert.Equal(2, createdDefinitions.Count);
+        Assert.Empty(await flows.ListAsync());
+    }
+
     private sealed class TemplateTestHost : IAsyncDisposable
     {
         private readonly string directory;

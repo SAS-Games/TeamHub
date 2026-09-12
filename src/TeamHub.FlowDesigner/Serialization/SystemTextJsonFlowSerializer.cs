@@ -17,6 +17,12 @@ public sealed class SystemTextJsonFlowSerializer : IFlowSerializer
 
     public string Serialize(FlowDefinition flow) => JsonSerializer.Serialize(flow, Options);
 
+    public string SerializeBundle(FlowDiagramTemplateBundle bundle) => JsonSerializer.Serialize(bundle, Options);
+
+    public FlowDiagramTemplateBundle DeserializeBundle(string json) =>
+        JsonSerializer.Deserialize<FlowDiagramTemplateBundle>(json, Options)
+        ?? throw new JsonException("The flow diagram bundle was empty or invalid.");
+
     public FlowDefinition Deserialize(string json)
     {
         var document = JsonNode.Parse(json)?.AsObject()

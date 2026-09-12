@@ -1,9 +1,0 @@
-using Microsoft.AspNetCore.Mvc;
-using Microsoft.AspNetCore.Mvc.RazorPages;
-
-namespace TeamHub.FlowDesigner.Standalone.Pages;
-
-public sealed class IndexModel : PageModel
-{
-    public IActionResult OnGet() => RedirectToPage("/Flows/Index");
-}

@@ -3,7 +3,14 @@ namespace TeamHub.FlowDesigner.Core.Models;
 public static class TemplateKinds
 {
     public const string FlowDiagram = "FlowDiagram";
+    public const string FlowDiagramBundle = "FlowDiagramBundle";
     public const string WorkflowDefinition = "WorkflowDefinition";
+}
+
+public sealed class FlowDiagramTemplateBundle
+{
+    public Guid RootFlowId { get; set; }
+    public List<FlowDefinition> Flows { get; set; } = [];
 }
 
 public sealed class TemplateCatalogDefinition

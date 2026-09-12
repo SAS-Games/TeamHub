@@ -6,4 +6,6 @@ public interface IFlowSerializer
 {
     string Serialize(FlowDefinition flow);
     FlowDefinition Deserialize(string json);
+    string SerializeBundle(FlowDiagramTemplateBundle bundle);
+    FlowDiagramTemplateBundle DeserializeBundle(string json);
 }

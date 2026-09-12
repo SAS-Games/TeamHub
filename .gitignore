@@ -19,7 +19,7 @@ TestResults/
 # Local application databases, including SQLite journal/WAL files
 **/data/*.db*
 **/data/protection-keys/
-!**/data/templates.db
+!src/TeamHub.Web/data/templates.db
 
 # Browser QA profiles and captures
 .browser-qa/

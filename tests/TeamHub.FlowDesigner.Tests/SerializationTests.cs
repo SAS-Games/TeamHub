@@ -8,11 +8,12 @@ public sealed class SerializationTests
     [Fact]
     public void RoundTrip_PreservesGenericGraph()
     {
+        var childFlowId = Guid.NewGuid();
         var flow = new FlowDefinition
         {
             Name = "Release plan",
             DiagramType = DiagramType.CodeFlow,
-            Nodes = [new FlowNode { Id = "start", Type = NodeType.Start, X = 123.5, CustomProperties = { ["notes"] = "Entry point" }, Comments = [new NodeComment { Author = "Sam", Body = "Looks good" }] }],
+            Nodes = [new FlowNode { Id = "start", Type = NodeType.Start, X = 123.5, ChildFlowId = childFlowId, CustomProperties = { ["notes"] = "Entry point" }, Comments = [new NodeComment { Author = "Sam", Body = "Looks good" }] }],
             Connections = []
         };
         var serializer = new SystemTextJsonFlowSerializer();
@@ -23,6 +24,7 @@ public sealed class SerializationTests
         Assert.Equal(NodeType.Start, restored.Nodes.Single().Type);
         Assert.Equal(DiagramType.CodeFlow, restored.DiagramType);
         Assert.Equal(123.5, restored.Nodes.Single().X);
+        Assert.Equal(childFlowId, restored.Nodes.Single().ChildFlowId);
         Assert.Equal("Entry point", restored.Nodes.Single().CustomProperties["notes"]);
         Assert.Equal("Looks good", restored.Nodes.Single().Comments.Single().Body);
     }

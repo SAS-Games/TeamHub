@@ -20,7 +20,6 @@ This solution is a local Windows-first POC for a generic workflow automation pla
 - src/TeamHub.FlowDesigner.Core: Flow diagram contracts and domain models
 - src/TeamHub.FlowDesigner: Flow persistence, validation, and application services
 - src/TeamHub.FlowDesigner.Web: Reusable Razor Class Library UI and API endpoints
-- src/TeamHub.FlowDesigner.Standalone: Optional standalone development host
 - tests/TeamHub.Tests: Unit tests for engine and validation
 - tests/TeamHub.FlowDesigner.Tests: Unit tests for flow behavior and access control
 
@@ -68,13 +67,10 @@ After signing in, open the **Flow Designer** tab in the normal TeamHub navigatio
 - Diagram data is isolated in `data/flowdesigner.db`; the existing workflow database and workflow engine are unchanged.
 - The host port is `5051` for HTTP (`7288` for the HTTPS launch profile).
 
-For isolated Flow Designer development, run:
-
-```powershell
-dotnet run --project src/TeamHub.FlowDesigner.Standalone/TeamHub.FlowDesigner.Standalone.csproj
-```
-
-The standalone development host uses `http://localhost:5168`.
+The five-diagram ray-tracing knowledge map is stored as a built-in hierarchical
+template in `src/TeamHub.Web/data/templates.db`. From **New diagram**, select the
+Ray Tracing template to create the master diagram and all linked detail diagrams
+with fresh IDs. Only the master appears in the Flow Designer catalog.
 
 ## Administration
 
