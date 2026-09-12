@@ -87,6 +87,7 @@ public sealed class FlowService(
         {
             throw new UnauthorizedAccessException("The current user cannot edit this flow diagram.");
         }
+        NormalizeAndAuthorizeComments(existing, flow);
 
         var result = validator.Validate(flow);
         if (result.IsValid)
@@ -97,27 +98,6 @@ public sealed class FlowService(
                 result = new FlowValidationResult { Issues = [.. result.Issues, .. linkIssues] };
             }
         }
-        if (result.IsValid && existing.IsShared)
-        {
-            try
-            {
-                await EnsureLinkedFlowsAreSharedAsync(flow, cancellationToken);
-            }
-            catch (InvalidOperationException)
-            {
-                result = new FlowValidationResult
-                {
-                    Issues =
-                    [
-                        .. result.Issues,
-                        new FlowValidationIssue(
-                            "child-flow-private",
-                            "Share every linked child diagram before linking it from this shared diagram.",
-                            ValidationSeverity.Error)
-                    ]
-                };
-            }
-        }
         if (!result.IsValid)
         {
             return result;
@@ -125,7 +105,8 @@ public sealed class FlowService(
 
         flow.CreatedAt = existing.CreatedAt;
         flow.CreatedBy = existing.CreatedBy;
-        flow.IsShared = existing.IsShared;
+        // Legacy shared flags no longer grant visibility. Publication is the only public path.
+        flow.IsShared = false;
         flow.Version = Math.Max(existing.Version + 1, 1);
         flow.UpdatedAt = DateTimeOffset.UtcNow;
         await repository.SaveAsync(flow, cancellationToken);
@@ -158,30 +139,6 @@ public sealed class FlowService(
         }
         await repository.SaveAsync(flow, cancellationToken);
         return comment;
-    }
-
-    public async Task<FlowDefinition> SetSharedAsync(Guid id, bool isShared, CancellationToken cancellationToken = default)
-    {
-        var flow = await RequiredFlowAsync(id, requireEdit: true, cancellationToken);
-        if (flow.Version <= 0)
-        {
-            throw new InvalidOperationException("Save the diagram before sharing it.");
-        }
-
-        if (flow.IsShared == isShared)
-        {
-            return flow;
-        }
-        if (isShared)
-        {
-            await EnsureLinkedFlowsAreSharedAsync(flow, cancellationToken);
-        }
-
-        flow.IsShared = isShared;
-        flow.UpdatedAt = DateTimeOffset.UtcNow;
-        flow.Version++;
-        await repository.SaveAsync(flow, cancellationToken);
-        return flow;
     }
 
     public async Task RenameAsync(Guid id, string name, CancellationToken cancellationToken = default)
@@ -231,6 +188,82 @@ public sealed class FlowService(
         }
         await repository.DeleteAsync(id, cancellationToken);
     }
+
+    private void NormalizeAndAuthorizeComments(FlowDefinition existing, FlowDefinition updated)
+    {
+        var author = currentUser.GetCurrentUserId() ?? "Anonymous";
+        var existingNodes = existing.Nodes.ToDictionary(node => node.Id, StringComparer.Ordinal);
+
+        foreach (var node in updated.Nodes)
+        {
+            node.Comments ??= [];
+            var originalComments = existingNodes.TryGetValue(node.Id, out var originalNode)
+                ? originalNode.Comments ?? []
+                : [];
+            var originalById = originalComments
+                .Where(comment => !string.IsNullOrWhiteSpace(comment.Id))
+                .GroupBy(comment => comment.Id, StringComparer.Ordinal)
+                .ToDictionary(group => group.Key, group => group.First(), StringComparer.Ordinal);
+            var retainedIds = new HashSet<string>(StringComparer.Ordinal);
+
+            foreach (var comment in node.Comments)
+            {
+                var normalizedBody = comment.Body?.Trim();
+                if (string.IsNullOrWhiteSpace(normalizedBody))
+                {
+                    throw new ArgumentException("A comment is required.", nameof(updated));
+                }
+
+                if (string.IsNullOrWhiteSpace(comment.Id) || !retainedIds.Add(comment.Id))
+                {
+                    comment.Id = Guid.NewGuid().ToString("N");
+                    retainedIds.Add(comment.Id);
+                }
+
+                if (originalById.TryGetValue(comment.Id, out var original))
+                {
+                    if (!IsCommentAuthor(original, author))
+                    {
+                        if (!CommentsMatch(original, comment))
+                        {
+                            throw new UnauthorizedAccessException("You can edit only your own comments.");
+                        }
+
+                        comment.Body = original.Body;
+                        comment.Author = original.Author;
+                        comment.CreatedAt = original.CreatedAt;
+                        continue;
+                    }
+
+                    comment.Author = original.Author;
+                    comment.CreatedAt = original.CreatedAt;
+                }
+                else
+                {
+                    comment.Author = author;
+                    comment.CreatedAt = DateTimeOffset.UtcNow;
+                }
+
+                comment.Body = normalizedBody.Length <= 2000 ? normalizedBody : normalizedBody[..2000];
+            }
+
+            foreach (var removed in originalComments.Where(comment => !retainedIds.Contains(comment.Id)))
+            {
+                if (!IsCommentAuthor(removed, author))
+                {
+                    throw new UnauthorizedAccessException("You can delete only your own comments.");
+                }
+            }
+        }
+    }
+
+    private static bool IsCommentAuthor(NodeComment comment, string author) =>
+        string.Equals(comment.Author, author, StringComparison.OrdinalIgnoreCase);
+
+    private static bool CommentsMatch(NodeComment original, NodeComment updated) =>
+        string.Equals(original.Body, updated.Body, StringComparison.Ordinal)
+        && string.Equals(original.Author, updated.Author, StringComparison.Ordinal)
+        && original.CreatedAt == updated.CreatedAt;
 
     private async Task<IReadOnlyList<FlowValidationIssue>> ValidateChildLinksAsync(
         FlowDefinition flow,
@@ -294,32 +327,6 @@ public sealed class FlowService(
             .ToList();
     }
 
-    private async Task EnsureLinkedFlowsAreSharedAsync(FlowDefinition flow, CancellationToken cancellationToken)
-    {
-        var definitions = await repository.ListDefinitionsAsync(cancellationToken);
-        var byId = definitions.ToDictionary(item => item.Id);
-        var pending = new Stack<Guid>(flow.Nodes
-            .Where(node => node.ChildFlowId.HasValue)
-            .Select(node => node.ChildFlowId!.Value));
-        var visited = new HashSet<Guid>();
-
-        while (pending.TryPop(out var childId))
-        {
-            if (!visited.Add(childId)) continue;
-            if (!byId.TryGetValue(childId, out var child) || !child.IsShared)
-            {
-                throw new InvalidOperationException("Share every linked child diagram before sharing this diagram.");
-            }
-
-            foreach (var descendantId in child.Nodes
-                         .Where(node => node.ChildFlowId.HasValue)
-                         .Select(node => node.ChildFlowId!.Value))
-            {
-                pending.Push(descendantId);
-            }
-        }
-    }
-
     private async Task<FlowDefinition> RequiredFlowAsync(Guid id, bool requireEdit, CancellationToken cancellationToken)
     {
         var flow = await repository.GetAsync(id, cancellationToken)
@@ -329,7 +336,7 @@ public sealed class FlowService(
     }
 
     private bool CanView(string? ownerId, bool isShared) =>
-        permissions.CanView(ownerId) || isShared && permissions.CanViewShared();
+        permissions.CanView(ownerId);
 
     private static string NormalizeName(string? name)
     {

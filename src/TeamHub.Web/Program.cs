@@ -31,6 +31,7 @@ builder.Configuration["ConnectionStrings:StudioDb"] = $"Data Source={Path.Combin
 var accessDatabasePath = Path.Combine(dataDir, "access.db");
 var flowDesignerDatabasePath = Path.Combine(dataDir, "flowdesigner.db");
 var templateDatabasePath = Path.Combine(dataDir, "templates.db");
+var publishedDiagramDatabasePath = Path.Combine(dataDir, "published-diagrams.db");
 var dataProtectionKeysPath = Path.Combine(dataDir, "protection-keys");
 Directory.CreateDirectory(dataProtectionKeysPath);
 
@@ -64,6 +65,7 @@ builder.Services.AddFlowDesigner(options =>
 {
     options.ConnectionString = $"Data Source={flowDesignerDatabasePath}";
     options.TemplateConnectionString = $"Data Source={templateDatabasePath}";
+    options.PublishedConnectionString = $"Data Source={publishedDiagramDatabasePath}";
 });
 builder.Services.AddMilestoneTracker(builder.Configuration);
 builder.Services.AddTeamDirectory(builder.Configuration);

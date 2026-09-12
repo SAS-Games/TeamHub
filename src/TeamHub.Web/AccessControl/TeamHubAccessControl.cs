@@ -164,6 +164,12 @@ public static class TeamHubAccessRoutes
         var path = request.Path.Value ?? string.Empty;
         var handler = request.Query["handler"].ToString();
         if (HttpMethods.IsDelete(request.Method) || handler.Contains("Delete", StringComparison.OrdinalIgnoreCase)) return AccessLevel.Delete;
+        if (path.StartsWith("/Flows/Review", StringComparison.OrdinalIgnoreCase)
+            || path.StartsWith("/api/flows/publication-requests/", StringComparison.OrdinalIgnoreCase)
+            || handler.Contains("Approve", StringComparison.OrdinalIgnoreCase)
+            || handler.Contains("Reject", StringComparison.OrdinalIgnoreCase)) return AccessLevel.FullAccess;
+        if (path.StartsWith("/api/flows/published/", StringComparison.OrdinalIgnoreCase)
+            && !HttpMethods.IsGet(request.Method)) return AccessLevel.FullAccess;
         if (path.StartsWith("/Studio/Configuration", StringComparison.OrdinalIgnoreCase))
         {
             if (HttpMethods.IsPost(request.Method) && handler.Equals("Create", StringComparison.OrdinalIgnoreCase)) return AccessLevel.Create;
@@ -171,7 +177,7 @@ public static class TeamHubAccessRoutes
             if (HttpMethods.IsGet(request.Method) && request.Query.ContainsKey("studioId")) return AccessLevel.Edit;
             if (HttpMethods.IsGet(request.Method) && request.Query.ContainsKey("create")) return AccessLevel.Create;
         }
-        if (path.Contains("/publish", StringComparison.OrdinalIgnoreCase)
+        if (path.EndsWith("/publish", StringComparison.OrdinalIgnoreCase)
             || path.Contains("/templates", StringComparison.OrdinalIgnoreCase) && !HttpMethods.IsGet(request.Method)
             || handler.Contains("Publish", StringComparison.OrdinalIgnoreCase)) return AccessLevel.FullAccess;
         if (HttpMethods.IsPost(request.Method)

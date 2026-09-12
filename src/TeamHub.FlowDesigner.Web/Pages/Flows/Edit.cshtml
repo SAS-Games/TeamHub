@@ -10,7 +10,7 @@
     <link rel="stylesheet" href="~/_content/TeamHub.FlowDesigner.Web/css/flowdesigner.css" asp-append-version="true" />
 }
 
-<div class="fd-designer@(Model.CanEdit ? "" : " is-view-only")" id="flowDesigner" data-flow-id="@Model.FlowId" data-diagram-type="@Model.DiagramType" data-can-edit="@Model.CanEdit.ToString().ToLowerInvariant()" data-is-shared="@Model.IsShared.ToString().ToLowerInvariant()" data-trail="@Model.Trail">
+<div class="fd-designer@(Model.CanEdit ? "" : " is-view-only")" id="flowDesigner" data-flow-id="@Model.FlowId" data-load-url="@Model.LoadUrl" data-save-url="@Model.SaveUrl" data-link-targets-url="@Model.LinkTargetsUrl" data-review-request-id="@Model.ReviewRequestId" data-published-view="@Model.IsPublishedView.ToString().ToLowerInvariant()" data-diagram-type="@Model.DiagramType" data-can-edit="@Model.CanEdit.ToString().ToLowerInvariant()" data-is-shared="@Model.IsShared.ToString().ToLowerInvariant()" data-current-user="@(User.Identity?.Name ?? "You")" data-trail="@Model.Trail">
     <div class="fd-designer-toolbar">
         <div class="d-flex align-items-center gap-2 min-w-0">
             <a class="btn btn-sm btn-light fd-icon-button" id="backToFlows" href="@Model.BackPath" aria-label="Back" title="Back">&larr;</a>
@@ -26,6 +26,22 @@
                 <label class="visually-hidden" for="flowName">Flow name</label>
                 <input id="flowName" class="fd-flow-title" maxlength="200" value="@Model.FlowName" />
                 <div class="fd-save-state" id="saveState"><span class="fd-status-dot"></span><span>Loading...</span></div>
+                @if (Model.IsPublishedView || Model.IsReviewPreview)
+                {
+                    <div class="small text-secondary">@(Model.IsReviewPreview ? "Frozen submission under review" : "Approved published snapshot")</div>
+                }
+                @if (Model.IsPublishedView && Model.CanEdit)
+                {
+                    <div class="small text-success">Admin editing is enabled. Saving creates a new published hierarchy version.</div>
+                }
+                @if (Model.LatestPublicationStatus == TeamHub.FlowDesigner.Core.Models.FlowPublicationRequestStatus.Rejected)
+                {
+                    <div class="small text-danger" title="@Model.PublicationReviewNote">Publication rejected: @Model.PublicationReviewNote</div>
+                }
+                else if (Model.LatestPublicationStatus == TeamHub.FlowDesigner.Core.Models.FlowPublicationRequestStatus.Approved)
+                {
+                    <div class="small text-success">The submitted version was approved.</div>
+                }
             </div>
         </div>
         <div class="fd-toolbar-actions">
@@ -33,9 +49,9 @@
             <button class="btn btn-sm btn-light fd-edit-only" id="undoButton" type="button" title="Undo (Ctrl+Z)" disabled>&#8630; <span class="d-none d-lg-inline">Undo</span></button>
             <button class="btn btn-sm btn-light fd-edit-only" id="redoButton" type="button" title="Redo (Ctrl+Y)" disabled>&#8631; <span class="d-none d-lg-inline">Redo</span></button>
             <button class="btn btn-sm btn-light" id="presentationButton" type="button" aria-pressed="false" title="Open a read-only presentation">Present</button>
-            @if (Model.CanEdit)
+            @if (Model.CanRequestPublication)
             {
-                <button class="btn btn-sm btn-light fd-edit-only" id="shareButton" type="button" aria-pressed="@Model.IsShared.ToString().ToLowerInvariant()"><span id="shareButtonText">@(Model.IsShared ? "Unshare" : "Share")</span></button>
+                <button class="btn btn-sm btn-outline-success fd-edit-only" id="requestPublicationButton" type="button" disabled="@(Model.HasPendingPublicationRequest ? "disabled" : null)"><span id="requestPublicationButtonText">@(Model.HasPendingPublicationRequest ? "Pending admin review" : "Request publication")</span></button>
             }
             <div class="dropdown">
                 <button class="btn btn-sm btn-light dropdown-toggle" data-bs-toggle="dropdown" type="button">Export</button>
@@ -48,10 +64,6 @@
             @if (Model.CanSaveAsTemplate)
             {
                 <button class="btn btn-sm btn-light" id="saveAsTemplateButton" type="button" data-bs-toggle="modal" data-bs-target="#saveTemplateModal">Save as template</button>
-            }
-            @if (Model.CanPublish)
-            {
-                <button class="btn btn-sm btn-success" id="publishButton" type="button"><span id="publishButtonText">Publish to Work Center</span></button>
             }
             <button class="btn btn-sm btn-light fd-mobile-panel-button fd-edit-only" id="toggleProperties" type="button">Properties</button>
         </div>
@@ -118,7 +130,7 @@
                     <div class="form-text">Linked nodes display a drill-down marker. Double-click a linked node to open it.</div>
                     <div class="d-grid gap-2 mt-2">
                         <button class="btn btn-sm btn-primary" id="openChildFlow" type="button">Open detailed diagram</button>
-                        <button class="btn btn-sm btn-outline-secondary" id="createChildFlow" type="button" data-bs-toggle="modal" data-bs-target="#createChildFlowModal">Create new detailed diagram</button>
+                        <button class="btn btn-sm btn-outline-secondary@(Model.IsPublishedView ? " d-none" : "")" id="createChildFlow" type="button" data-bs-toggle="modal" data-bs-target="#createChildFlowModal">Create new detailed diagram</button>
                         <button class="btn btn-sm btn-link text-danger" id="unlinkChildFlow" type="button">Remove diagram link</button>
                     </div>
                 </section>
@@ -137,7 +149,7 @@
                     <div class="form-check"><input class="form-check-input" id="taskRequired" type="checkbox" checked /><label class="form-check-label" for="taskRequired">Required for workflow completion</label></div>
                     <div class="form-check mb-3"><input class="form-check-input" id="taskEnabled" type="checkbox" checked /><label class="form-check-label" for="taskEnabled">Enabled</label></div>
                 </section>
-                <section class="fd-comments" aria-labelledby="nodeCommentsHeading">
+                <section class="fd-comments@(Model.IsPublishedView ? " d-none" : "")" aria-labelledby="nodeCommentsHeading">
                     <div class="d-flex align-items-center justify-content-between mb-2">
                         <h3 id="nodeCommentsHeading">Comments</h3>
                         <span class="fd-comment-count" id="nodeCommentCount">0</span>

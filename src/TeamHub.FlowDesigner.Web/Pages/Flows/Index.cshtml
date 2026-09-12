@@ -20,10 +20,15 @@
             <p class="text-secondary mb-0">Map a process, capture decisions, and keep every path understandable.</p>
         </div>
         <div class="d-flex gap-2">
+            @if (Model.CanReviewPublications)
+            {
+                <a class="btn btn-outline-secondary btn-lg" asp-page="/Flows/Review">Review requests <span class="badge text-bg-danger">@Model.PendingReviewCount</span></a>
+            }
             <a class="btn btn-primary btn-lg" asp-page="/Flows/New"><span aria-hidden="true">＋</span> New diagram</a>
         </div>
     </div>
 
+    <div class="fd-eyebrow mb-2">Authoring workspace</div>
     @if (Model.Flows.Count == 0)
     {
         <div class="fd-empty-state">
@@ -46,7 +51,7 @@
                             <div class="fd-flow-icon" aria-hidden="true">⌁</div>
                             <div class="d-flex flex-wrap justify-content-end gap-1">
                                 <span class="badge fd-mode-badge">@flow.DiagramType.ToDisplayName()</span>
-                                <span class="badge @(flow.IsShared ? "text-bg-success" : "text-bg-light")">@(flow.IsShared ? "Shared" : "Private")</span>
+                                <span class="badge text-bg-light">Authoring</span>
                             </div>
                         </div>
                         <h2 class="h5 mt-4 mb-2 text-truncate" title="@flow.Name">@flow.Name</h2>
@@ -75,6 +80,40 @@
             }
         </div>
     }
+
+    <section id="published" class="mt-5" aria-labelledby="publishedHeading">
+        <div class="d-flex align-items-end justify-content-between gap-3 mb-3">
+            <div><div class="fd-eyebrow">Approved library</div><h2 class="h3 mb-0" id="publishedHeading">Published diagrams</h2></div>
+            <span class="text-secondary small">Admin-reviewed, immutable snapshots</span>
+        </div>
+        @if (Model.PublishedFlows.Count == 0)
+        {
+            <div class="alert alert-light border text-secondary">No diagrams have been approved for publication yet.</div>
+        }
+        else
+        {
+            <div class="row g-3">
+                @foreach (var flow in Model.PublishedFlows)
+                {
+                    <div class="col-12 col-md-6 col-xl-4">
+                        <article class="fd-flow-card h-100">
+                            <div class="d-flex align-items-start justify-content-between gap-3">
+                                <div class="fd-flow-icon" aria-hidden="true">&#10003;</div>
+                                <div class="d-flex flex-wrap justify-content-end gap-1">
+                                    <span class="badge fd-mode-badge">@flow.DiagramType.ToDisplayName()</span>
+                                    <span class="badge text-bg-success">Published v@flow.PublicationVersion</span>
+                                </div>
+                            </div>
+                            <h3 class="h5 mt-4 mb-2 text-truncate" title="@flow.Name">@flow.Name</h3>
+                            <p class="text-secondary small fd-card-description">@(string.IsNullOrWhiteSpace(flow.Description) ? "No description" : flow.Description)</p>
+                            <div class="fd-card-meta"><span>@flow.NodeCount nodes</span><span>Approved @flow.PublishedAt.LocalDateTime.ToString("MMM d, yyyy")</span></div>
+                            <a class="btn btn-outline-success w-100 mt-4" asp-page="/Flows/Edit" asp-route-id="@flow.SourceFlowId" asp-route-published="true">@(Model.CanReviewPublications ? "Edit published hierarchy" : "View published hierarchy")</a>
+                        </article>
+                    </div>
+                }
+            </div>
+        }
+    </section>
 </div>
 
 <div class="modal fade" id="renameModal" tabindex="-1" aria-hidden="true">

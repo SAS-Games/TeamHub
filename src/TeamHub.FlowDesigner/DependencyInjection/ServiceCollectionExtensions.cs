@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using TeamHub.FlowDesigner.Core.Contracts;
@@ -19,8 +20,10 @@ public static class ServiceCollectionExtensions
         var options = new FlowDesignerOptions();
         configure?.Invoke(options);
 
+        var publishedConnectionString = options.PublishedConnectionString ?? DerivePublishedConnectionString(options.ConnectionString);
         services.AddDbContextFactory<FlowDesignerDbContext>(builder => builder.UseSqlite(options.ConnectionString));
         services.AddDbContextFactory<TemplateCatalogDbContext>(builder => builder.UseSqlite(options.TemplateConnectionString));
+        services.AddDbContextFactory<PublishedFlowDbContext>(builder => builder.UseSqlite(publishedConnectionString));
         services.AddSingleton<IFlowSerializer, SystemTextJsonFlowSerializer>();
         services.AddSingleton<IFlowValidator, FlowValidator>();
         services.AddScoped<IFlowRepository, SqliteFlowRepository>();
@@ -28,6 +31,8 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IFlowTemplateCatalogService, FlowTemplateCatalogService>();
         services.AddScoped<TemplateCatalogSeeder>();
         services.AddScoped<IFlowService, FlowService>();
+        services.AddScoped<IFlowPublicationWorkflowService, FlowPublicationWorkflowService>();
+        services.AddScoped<PublishedFlowRecoveryService>();
         services.TryAddSingleton<ICurrentUserProvider, AnonymousCurrentUserProvider>();
         services.TryAddSingleton<IFlowPermissionService, AllowAllFlowPermissionService>();
         services.TryAddSingleton<IFlowThemeProvider, DefaultFlowThemeProvider>();
@@ -42,11 +47,55 @@ public static class ServiceCollectionExtensions
         var factory = scope.ServiceProvider.GetRequiredService<IDbContextFactory<FlowDesignerDbContext>>();
         await using var context = await factory.CreateDbContextAsync(cancellationToken);
         await context.Database.EnsureCreatedAsync(cancellationToken);
+        await EnsurePublicationRequestTableAsync(context, cancellationToken);
+        var publishedFactory = scope.ServiceProvider.GetRequiredService<IDbContextFactory<PublishedFlowDbContext>>();
+        await using var publishedContext = await publishedFactory.CreateDbContextAsync(cancellationToken);
+        await publishedContext.Database.EnsureCreatedAsync(cancellationToken);
+        await scope.ServiceProvider.GetRequiredService<PublishedFlowRecoveryService>().RecoverIfEmptyAsync(cancellationToken);
         var templateFactory = scope.ServiceProvider.GetRequiredService<IDbContextFactory<TemplateCatalogDbContext>>();
         await using var templateContext = await templateFactory.CreateDbContextAsync(cancellationToken);
         await templateContext.Database.EnsureCreatedAsync(cancellationToken);
         await scope.ServiceProvider.GetRequiredService<TemplateCatalogSeeder>().SeedAsync(cancellationToken);
     }
+
+    private static string DerivePublishedConnectionString(string authoringConnectionString)
+    {
+        var builder = new SqliteConnectionStringBuilder(authoringConnectionString);
+        if (string.IsNullOrWhiteSpace(builder.DataSource) || builder.DataSource == ":memory:")
+        {
+            return authoringConnectionString;
+        }
+
+        var fullAuthoringPath = Path.GetFullPath(builder.DataSource);
+        builder.DataSource = Path.Combine(Path.GetDirectoryName(fullAuthoringPath)!, "published-diagrams.db");
+        return builder.ToString();
+    }
+
+    private static Task EnsurePublicationRequestTableAsync(
+        FlowDesignerDbContext context,
+        CancellationToken cancellationToken) =>
+        context.Database.ExecuteSqlRawAsync("""
+            CREATE TABLE IF NOT EXISTS FlowPublicationRequests (
+                Id TEXT NOT NULL CONSTRAINT PK_FlowPublicationRequests PRIMARY KEY,
+                FlowId TEXT NOT NULL,
+                FlowName TEXT NOT NULL,
+                DiagramType TEXT NOT NULL,
+                SourceVersion INTEGER NOT NULL,
+                NodeCount INTEGER NOT NULL,
+                SnapshotJson TEXT NOT NULL,
+                SnapshotHash TEXT NOT NULL,
+                RequestedBy TEXT NOT NULL,
+                RequestedAt TEXT NOT NULL,
+                Status TEXT NOT NULL,
+                ReviewedBy TEXT NULL,
+                ReviewedAt TEXT NULL,
+                ReviewNote TEXT NULL
+            );
+            CREATE INDEX IF NOT EXISTS IX_FlowPublicationRequests_Status_RequestedAt
+                ON FlowPublicationRequests (Status, RequestedAt);
+            CREATE INDEX IF NOT EXISTS IX_FlowPublicationRequests_FlowId_RequestedAt
+                ON FlowPublicationRequests (FlowId, RequestedAt);
+            """, cancellationToken);
 
     private sealed class AnonymousCurrentUserProvider : ICurrentUserProvider
     {
@@ -63,6 +112,7 @@ public static class ServiceCollectionExtensions
         public bool CanUseTemplate(FlowTemplate template) => true;
         public bool CanUseDiagramType(DiagramType diagramType) => true;
         public bool CanManageTemplates() => true;
+        public bool CanReviewPublications() => true;
     }
 
     private sealed class NoFlowPublicationService : IFlowPublicationService

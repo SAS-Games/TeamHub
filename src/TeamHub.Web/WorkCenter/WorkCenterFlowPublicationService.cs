@@ -24,8 +24,7 @@ public sealed class WorkCenterFlowPublicationService(
 
     public bool CanPublish(FlowDefinition flow) =>
         flow.DiagramType == DiagramType.WorkCenterWorkflow
-        && (httpContextAccessor.HttpContext?.User.IsInRole(TeamHubUserTypes.Admin) == true
-            || httpContextAccessor.HttpContext?.User.IsInRole(TeamHubUserTypes.Privileged) == true);
+        && httpContextAccessor.HttpContext?.User.IsInRole(TeamHubUserTypes.Admin) == true;
 
     public async Task<FlowPublicationResult> PublishAsync(
         FlowDefinition flow,

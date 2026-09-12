@@ -17,6 +17,7 @@ public interface IFlowPermissionService
     bool CanUseTemplate(FlowTemplate template);
     bool CanUseDiagramType(DiagramType diagramType);
     bool CanManageTemplates();
+    bool CanReviewPublications();
 }
 
 public interface IFlowPublicationService

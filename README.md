@@ -64,13 +64,23 @@ After signing in, open the **Flow Designer** tab in the normal TeamHub navigatio
 
 - A regular user can create, view, edit, duplicate, and delete only their own diagrams.
 - An administrator can view and manage every user's diagrams.
-- Diagram data is isolated in `data/flowdesigner.db`; the existing workflow database and workflow engine are unchanged.
+- Owners submit a saved diagram with **Request publication**. A request made from a child resolves its single root parent and freezes the entire recursive parent/child hierarchy.
+- Only root diagrams appear in the authoring and published catalogs. Child diagrams are reached by drilling down from their parent.
+- Only Admin users can open the publication review queue, traverse the frozen hierarchy, and approve or reject it.
+- Approval writes the complete hierarchy as one immutable, versioned bundle in `data/published-diagrams.db`. The catalog reads only the current root bundle.
+- Admins can edit a live published parent or child. Each save creates a new immutable version of the complete published hierarchy; it does not silently overwrite the owner's authoring draft.
+- Publication requests and their original snapshots remain in `data/flowdesigner.db`, providing an independent recovery copy of approved content.
+- If `published-diagrams.db` is deleted and recreated empty, startup reconstructs approved bundle history-including descendants-from those retained snapshots after verifying their SHA-256 hashes.
+- Collaboration comments and author identity are omitted from published snapshots. Comment authors can edit or delete only their own comments.
+- `flowdesigner.db`, `published-diagrams.db`, and `templates.db` are separate SQLite files; the existing workflow database is unchanged.
+- Separate files reduce corruption blast radius but are not backups. Production deployments should copy them to versioned off-host backup storage.
 - The host port is `5051` for HTTP (`7288` for the HTTPS launch profile).
 
-The five-diagram ray-tracing knowledge map is stored as a built-in hierarchical
-template in `src/TeamHub.Web/data/templates.db`. From **New diagram**, select the
-Ray Tracing template to create the master diagram and all linked detail diagrams
-with fresh IDs. Only the master appears in the Flow Designer catalog.
+The six-diagram ray-tracing knowledge map is stored as a built-in hierarchical
+template in `src/TeamHub.Web/data/templates.db` and has a reproducible source
+definition in `RayTracingKnowledgeMapTemplate.cs`. From **New diagram**, select
+the Ray Tracing template to create the master diagram and all linked detail
+diagrams with fresh IDs. Only the master appears in the Flow Designer catalog.
 
 ## Administration
 

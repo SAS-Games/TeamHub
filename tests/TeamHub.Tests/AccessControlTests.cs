@@ -148,7 +148,11 @@ public sealed class AccessControlTests
     [InlineData("POST", "/Studio/Configuration", "?handler=Edit", AccessLevel.Edit)]
     [InlineData("GET", "/Flows/New", "", AccessLevel.Create)]
     [InlineData("POST", "/Studio/Configuration", "?handler=Delete", AccessLevel.Delete)]
-    [InlineData("POST", "/api/flows/id/publish", "", AccessLevel.FullAccess)]
+    [InlineData("GET", "/Flows/Review", "", AccessLevel.FullAccess)]
+    [InlineData("GET", "/api/flows/publication-requests/id/snapshot", "", AccessLevel.FullAccess)]
+    [InlineData("POST", "/api/flows/id/publication-requests", "", AccessLevel.Edit)]
+    [InlineData("GET", "/api/flows/published/id", "", AccessLevel.ReadOnly)]
+    [InlineData("PUT", "/api/flows/published/id", "", AccessLevel.FullAccess)]
     public void RouteAccess_MapsOperationsToRequiredLevels(string method, string path, string query, AccessLevel expected)
     {
         var context = new DefaultHttpContext();

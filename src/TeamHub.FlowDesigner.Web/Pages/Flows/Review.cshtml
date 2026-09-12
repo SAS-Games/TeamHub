@@ -1,0 +1,62 @@
+@page "/flows/review"
+@model TeamHub.FlowDesigner.Web.Pages.Flows.ReviewModel
+@{
+    ViewData["Title"] = "Publication review";
+}
+
+@section Styles {
+    <link rel="stylesheet" href="~/_content/TeamHub.FlowDesigner.Web/css/flowdesigner.css" asp-append-version="true" />
+}
+
+<div class="fd-page container-xl py-4 py-lg-5">
+    <div class="d-flex flex-column flex-md-row align-items-md-end justify-content-between gap-3 mb-4">
+        <div>
+            <div class="fd-eyebrow">Administrator review</div>
+            <h1 class="display-6 fw-semibold mb-2">Publication requests</h1>
+            <p class="text-secondary mb-0">Review the exact frozen version submitted by each diagram owner.</p>
+        </div>
+        <a class="btn btn-outline-secondary" asp-page="/Flows/Index">Back to diagrams</a>
+    </div>
+
+    @if (TempData["PublicationMessage"] is string message)
+    {
+        <div class="alert alert-success" role="status">@message</div>
+    }
+    @if (TempData["PublicationError"] is string error)
+    {
+        <div class="alert alert-danger" role="alert">@error</div>
+    }
+
+    @if (Model.Requests.Count == 0)
+    {
+        <div class="fd-empty-state"><h2 class="h4">Review queue is clear</h2><p class="text-secondary mb-0">New publication requests will appear here.</p></div>
+    }
+    else
+    {
+        <div class="row g-3">
+            @foreach (var request in Model.Requests)
+            {
+                <div class="col-12 col-xl-6">
+                    <article class="fd-flow-card h-100">
+                        <div class="d-flex justify-content-between gap-3">
+                            <div><span class="badge fd-mode-badge">@request.DiagramType.ToDisplayName()</span><h2 class="h4 mt-3 mb-1">@request.FlowName</h2></div>
+                            <span class="badge text-bg-warning align-self-start">Pending</span>
+                        </div>
+                        <p class="text-secondary small">Submitted by <strong>@request.RequestedBy</strong> on @request.RequestedAt.LocalDateTime.ToString("MMM d, yyyy h:mm tt")</p>
+                        <div class="fd-card-meta mb-3"><span>Source version @request.SourceVersion</span><span>@request.NodeCount nodes</span></div>
+                        <a class="btn btn-outline-primary w-100 mb-3" asp-page="/Flows/Edit" asp-route-id="@request.FlowId" asp-route-request-id="@request.Id">Preview frozen submission</a>
+                        <form method="post">
+                            <input type="hidden" name="id" value="@request.Id" />
+                            <label class="form-label" for="reviewNote-@request.Id">Review note</label>
+                            <textarea class="form-control" id="reviewNote-@request.Id" name="reviewNote" rows="2" maxlength="2000" placeholder="Required when rejecting"></textarea>
+                            <div class="d-flex gap-2 mt-3">
+                                <button class="btn btn-success flex-grow-1" type="submit" asp-page-handler="Approve">Approve and publish</button>
+                                <button class="btn btn-outline-danger" type="submit" asp-page-handler="Reject">Reject</button>
+                            </div>
+                        </form>
+                    </article>
+                </div>
+            }
+        </div>
+    }
+</div>

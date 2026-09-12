@@ -123,6 +123,69 @@ public sealed class FlowServiceTests
     }
 
     [Fact]
+    public async Task Save_AllowsAuthorToEditAndDeleteOwnComments()
+    {
+        await using var database = new TestDatabase();
+        var repository = await database.CreateRepositoryAsync();
+        var service = new FlowService(repository, new FlowValidator(), new SystemTextJsonFlowSerializer(), new TestUserProvider(), new AllowAllPermissionService());
+        var flow = ValidationTests.ConnectedFlow();
+        flow.Nodes[0].Comments =
+        [
+            new NodeComment { Id = "edit", Author = "test", Body = "Before" },
+            new NodeComment { Id = "delete", Author = "test", Body = "Remove me" }
+        ];
+        await repository.SaveAsync(flow);
+
+        flow.Nodes[0].Comments[0].Body = "After";
+        flow.Nodes[0].Comments.RemoveAt(1);
+        var result = await service.SaveAsync(flow);
+        var restored = await repository.GetAsync(flow.Id);
+
+        Assert.True(result.IsValid);
+        Assert.Single(restored!.Nodes[0].Comments);
+        Assert.Equal("After", restored.Nodes[0].Comments[0].Body);
+    }
+
+    [Fact]
+    public async Task Save_RejectsEditingOrDeletingAnotherAuthorsComment()
+    {
+        await using var database = new TestDatabase();
+        var repository = await database.CreateRepositoryAsync();
+        var service = new FlowService(repository, new FlowValidator(), new SystemTextJsonFlowSerializer(), new TestUserProvider(), new AllowAllPermissionService());
+        var flow = ValidationTests.ConnectedFlow();
+        flow.Nodes[0].Comments = [new NodeComment { Id = "alice-comment", Author = "alice", Body = "Original" }];
+        await repository.SaveAsync(flow);
+
+        var edited = await repository.GetAsync(flow.Id);
+        edited!.Nodes[0].Comments[0].Body = "Changed";
+        await Assert.ThrowsAsync<UnauthorizedAccessException>(() => service.SaveAsync(edited));
+
+        var deleted = await repository.GetAsync(flow.Id);
+        deleted!.Nodes[0].Comments.Clear();
+        await Assert.ThrowsAsync<UnauthorizedAccessException>(() => service.SaveAsync(deleted));
+
+        var restored = await repository.GetAsync(flow.Id);
+        Assert.Equal("Original", restored!.Nodes[0].Comments.Single().Body);
+    }
+
+    [Fact]
+    public async Task Save_AssignsAuthenticatedAuthorToNewComments()
+    {
+        await using var database = new TestDatabase();
+        var repository = await database.CreateRepositoryAsync();
+        var service = new FlowService(repository, new FlowValidator(), new SystemTextJsonFlowSerializer(), new TestUserProvider(), new AllowAllPermissionService());
+        var flow = ValidationTests.ConnectedFlow();
+        await repository.SaveAsync(flow);
+        flow.Nodes[0].Comments = [new NodeComment { Author = "admin", Body = "New comment" }];
+
+        var result = await service.SaveAsync(flow);
+        var restored = await repository.GetAsync(flow.Id);
+
+        Assert.True(result.IsValid);
+        Assert.Equal("test", restored!.Nodes[0].Comments.Single().Author);
+    }
+
+    [Fact]
     public async Task Duplicate_CreatesIndependentFlowWithSameGraph()
     {
         await using var database = new TestDatabase();
@@ -194,44 +257,6 @@ public sealed class FlowServiceTests
         Assert.NotNull(await repository.GetAsync(child.Id));
     }
 
-    [Fact]
-    public async Task Share_RequiresEveryLinkedDiagramToBeShared()
-    {
-        await using var database = new TestDatabase();
-        var repository = await database.CreateRepositoryAsync();
-        var service = new FlowService(repository, new FlowValidator(), new SystemTextJsonFlowSerializer(), new TestUserProvider(), new AllowAllPermissionService());
-        var child = ValidationTests.ConnectedFlow();
-        var parent = ValidationTests.ConnectedFlow();
-        parent.Nodes[0].ChildFlowId = child.Id;
-        await repository.SaveAsync(child);
-        await repository.SaveAsync(parent);
-
-        await Assert.ThrowsAsync<InvalidOperationException>(() => service.SetSharedAsync(parent.Id, true));
-        await service.SetSharedAsync(child.Id, true);
-        var sharedParent = await service.SetSharedAsync(parent.Id, true);
-
-        Assert.True(sharedParent.IsShared);
-    }
-
-    [Fact]
-    public async Task Save_RejectsPrivateChildAddedToSharedDiagram()
-    {
-        await using var database = new TestDatabase();
-        var repository = await database.CreateRepositoryAsync();
-        var service = new FlowService(repository, new FlowValidator(), new SystemTextJsonFlowSerializer(), new TestUserProvider(), new AllowAllPermissionService());
-        var child = ValidationTests.ConnectedFlow();
-        var parent = ValidationTests.ConnectedFlow();
-        parent.IsShared = true;
-        await repository.SaveAsync(child);
-        await repository.SaveAsync(parent);
-        parent.Nodes[0].ChildFlowId = child.Id;
-
-        var result = await service.SaveAsync(parent);
-
-        Assert.False(result.IsValid);
-        Assert.Contains(result.Issues, issue => issue.Code == "child-flow-private");
-    }
-
     private sealed class TestUserProvider : ICurrentUserProvider
     {
         public string GetCurrentUserId() => "test";
@@ -247,5 +272,6 @@ public sealed class FlowServiceTests
         public bool CanUseTemplate(FlowTemplate template) => true;
         public bool CanUseDiagramType(DiagramType diagramType) => true;
         public bool CanManageTemplates() => true;
+        public bool CanReviewPublications() => true;
     }
 }

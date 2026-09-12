@@ -61,6 +61,18 @@ public sealed class WorkCenterFlowPublicationTests
             .ExpectedDurationHours.Should().Be(1.25);
     }
 
+    [Fact]
+    public async Task Publish_RequiresAdminRole()
+    {
+        var configuration = new RecordingWorkflowConfigurationService();
+        var publisher = new WorkCenterFlowPublicationService(configuration, RoleContext("Privileged"));
+        var flow = OnboardingFlow();
+
+        publisher.CanPublish(flow).Should().BeFalse();
+        await FluentActions.Invoking(() => publisher.PublishAsync(flow))
+            .Should().ThrowAsync<UnauthorizedAccessException>();
+    }
+
     private static FlowDefinition OnboardingFlow()
     {
         return new FlowDefinition
@@ -120,12 +132,14 @@ public sealed class WorkCenterFlowPublicationTests
         TargetNodeId = target
     };
 
-    private static IHttpContextAccessor AdminContext()
+    private static IHttpContextAccessor AdminContext() => RoleContext("Admin");
+
+    private static IHttpContextAccessor RoleContext(string role)
     {
         var identity = new ClaimsIdentity(
         [
             new Claim(ClaimTypes.Name, "admin"),
-            new Claim(ClaimTypes.Role, "Admin")
+            new Claim(ClaimTypes.Role, role)
         ], "Test");
         return new HttpContextAccessor
         {

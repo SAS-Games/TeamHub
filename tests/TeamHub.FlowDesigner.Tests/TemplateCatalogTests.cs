@@ -19,13 +19,76 @@ public sealed class TemplateCatalogTests
         var catalog = await templates.ListAsync();
         var flow = await templates.CreateFlowByKeyAsync("ONBOARDING");
 
-        Assert.Equal(2, catalog.Count);
+        Assert.Equal(3, catalog.Count);
         Assert.DoesNotContain(catalog, item => item.TemplateKey == "STUDIO_SUPPORT");
         Assert.Contains(catalog, item => item.TemplateKey == "ONBOARDING" && item.DiagramType == DiagramType.WorkCenterWorkflow);
+        Assert.Contains(catalog, item => item.TemplateKey == "RAY_TRACING_MASTER_OVERVIEW" && item.Version == 3 && item.TemplateKind == TemplateKinds.FlowDiagramBundle);
         Assert.Equal(8, flow.Nodes.Count);
         Assert.Equal(8, flow.Connections.Count);
         Assert.Equal(0, flow.Version);
         Assert.DoesNotContain(await flows.ListAsync(), item => item.Id == flow.Id);
+    }
+
+    [Fact]
+    public async Task RayTracingTemplate_CreatesGenericCompleteHierarchy()
+    {
+        await using var host = await TemplateTestHost.CreateAsync();
+        using var scope = host.Services.CreateScope();
+        var templates = scope.ServiceProvider.GetRequiredService<IFlowTemplateCatalogService>();
+        var flowRepository = scope.ServiceProvider.GetRequiredService<IFlowRepository>();
+
+        var root = await templates.CreateFlowByKeyAsync("RAY_TRACING_MASTER_OVERVIEW");
+        var created = await flowRepository.ListDefinitionsAsync();
+        var directChildren = root.Nodes
+            .Where(node => node.ChildFlowId.HasValue)
+            .Select(node => node.ChildFlowId!.Value)
+            .ToHashSet();
+        var allText = string.Join(
+            "\n",
+            created.SelectMany(flow =>
+                new[] { flow.Name, flow.Description }
+                    .Concat(flow.Metadata.Select(item => $"{item.Key} {item.Value}"))
+                    .Concat(flow.Nodes.SelectMany(node =>
+                        new[] { node.Title, node.Description }
+                            .Concat(node.CustomProperties.Select(item => $"{item.Key} {item.Value}"))
+                            .Concat(node.Comments.Select(comment => comment.Body))))));
+
+        Assert.Equal(6, created.Count);
+        Assert.Equal(5, directChildren.Count);
+        Assert.All(directChildren, childId => Assert.Contains(created, flow => flow.Id == childId));
+        Assert.Equal(
+            [
+                "Scene / Frame Data",
+                "Prepare Acceleration Structures",
+                "Ray Generation",
+                "Ray Traversal + Primitive Intersection",
+                "Hit / Miss Processing",
+                "Lighting + Secondary Rays",
+                "Ray-Traced Result",
+                "Denoising",
+                "Composite / Post Process",
+                "Final Frame"
+            ],
+            root.Nodes.Select(node => node.Title));
+        Assert.DoesNotContain("DXR", allText, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("Committed Hit", allText, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("TraceRay caller", allText, StringComparison.OrdinalIgnoreCase);
+        Assert.All(created.SelectMany(flow => flow.Nodes), node => Assert.Empty(node.Comments));
+        foreach (var flow in created)
+        {
+            var nodesById = flow.Nodes.ToDictionary(node => node.Id);
+            Assert.All(flow.Connections, edge =>
+            {
+                var source = nodesById[edge.SourceNodeId];
+                var maximumOutput = source.Type == NodeType.Decision ? 2 : 1;
+                Assert.StartsWith("output_", edge.SourcePort);
+                Assert.InRange(int.Parse(edge.SourcePort!["output_".Length..]), 1, maximumOutput);
+            });
+        }
+        Assert.Contains(root.Connections, edge =>
+            edge.SourceNodeId == "overview-lighting"
+            && edge.TargetNodeId == "overview-traversal"
+            && edge.Label == "Secondary rays");
     }
 
     [Fact]

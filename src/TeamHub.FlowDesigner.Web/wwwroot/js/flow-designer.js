@@ -6,16 +6,19 @@
 
     const byId = id => document.getElementById(id);
     const flowId = root.dataset.flowId;
+    const loadUrl = root.dataset.loadUrl || `/api/flows/${flowId}`;
+    const saveUrl = root.dataset.saveUrl || `/api/flows/${flowId}`;
+    const linkTargetsUrl = root.dataset.linkTargetsUrl || `/api/flows/${flowId}/link-targets`;
+    const reviewRequestId = root.dataset.reviewRequestId || "";
     const zoomStorageKey = "teamhub.flowDesigner.zoom.v1";
     const canEdit = root.dataset.canEdit === "true";
+    const currentUser = root.dataset.currentUser || "You";
     const nameInput = byId("flowName");
     const saveState = byId("saveState");
     const saveButton = byId("saveButton");
     const saveButtonText = byId("saveButtonText");
-    const shareButton = byId("shareButton");
-    const shareButtonText = byId("shareButtonText");
-    const publishButton = byId("publishButton");
-    const publishButtonText = byId("publishButtonText");
+    const requestPublicationButton = byId("requestPublicationButton");
+    const requestPublicationButtonText = byId("requestPublicationButtonText");
     const saveTemplateForm = byId("saveTemplateForm");
     const nodeForm = byId("nodeProperties");
     const connectionForm = byId("connectionProperties");
@@ -56,10 +59,10 @@
     });
 
     async function initialize() {
-        const response = await fetch(`/api/flows/${flowId}`);
+        const response = await fetch(loadUrl);
         if (!response.ok) throw new Error(`Load failed (${response.status})`);
         flow = await response.json();
-        await loadLinkTargets();
+        if (canEdit) await loadLinkTargets();
         isDraft = Number(flow.version) <= 0;
         nameInput.value = flow.name;
         root.dataset.diagramType = flow.diagramType;
@@ -77,7 +80,6 @@
         updateHistoryButtons();
         updateCanvasHint();
         applyValidation(localValidation());
-        updateShareButton();
         setSaveState(canEdit ? (isDraft ? "unsaved" : "saved") : "saved", canEdit ? (isDraft ? "Not saved yet" : "Saved") : "View only");
         bindUi();
         clearProperties();
@@ -126,8 +128,7 @@
         });
 
         saveButton.addEventListener("click", () => save(true));
-        shareButton?.addEventListener("click", toggleSharing);
-        publishButton?.addEventListener("click", publish);
+        requestPublicationButton?.addEventListener("click", requestPublication);
         saveTemplateForm?.addEventListener("submit", saveAsTemplate);
         byId("saveTemplateModal")?.addEventListener("show.bs.modal", () => {
             if (!byId("templateName").value) byId("templateName").value = nameInput.value.trim();
@@ -248,7 +249,7 @@
 
     async function loadLinkTargets() {
         try {
-            const response = await fetch(`/api/flows/${flowId}/link-targets`);
+            const response = await fetch(linkTargetsUrl);
             if (!response.ok) throw new Error(`Link target load failed (${response.status})`);
             linkTargets = await response.json();
         } catch (error) {
@@ -357,7 +358,7 @@
         }
 
         try {
-            const response = await fetch(`/api/flows/${flowId}`, {
+            const response = await fetch(saveUrl, {
                 method: "PUT",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify(flow)
@@ -384,73 +385,24 @@
         }
     }
 
-    async function publish() {
-        if (!publishButton || saving) return;
+    async function requestPublication() {
+        if (!requestPublicationButton || saving || !canEdit) return;
         if (!(await save(false))) return;
 
-        publishButton.disabled = true;
-        publishButtonText.textContent = "Publishingâ€¦";
+        requestPublicationButton.disabled = true;
+        requestPublicationButtonText.textContent = "Submitting...";
         try {
-            const response = await fetch(`/api/flows/${flowId}/publish`, { method: "POST" });
-            const result = await response.json();
-            if (!response.ok) {
-                const issues = (result.errors || [result.message || "Publish failed"]).map((message, index) => ({
-                    severity: "Error",
-                    code: `publish-${index}`,
-                    message
-                }));
-                applyValidation([...localValidation(), ...issues]);
-                byId("validationPopover").classList.remove("d-none");
-                throw new Error(issues[0]?.message || "Publish failed");
-            }
-            flow.isShared = true;
-            updateShareButton();
-            showToast(result.message || "Workflow published to Work Center");
-            publishButtonText.textContent = "Published";
-            window.setTimeout(() => { publishButtonText.textContent = "Publish to Work Center"; }, 1800);
+            const response = await fetch(`/api/flows/${flowId}/publication-requests`, { method: "POST" });
+            const result = await response.json().catch(() => ({}));
+            if (!response.ok) throw new Error(result.message || "The publication request could not be submitted.");
+            requestPublicationButtonText.textContent = "Pending admin review";
+            showToast(`Publication request sent for the complete "${result.flowName || flow.name}" hierarchy`);
         } catch (error) {
             console.error(error);
-            showToast(error.message || "Publish failed");
-            publishButtonText.textContent = "Publish to Work Center";
-        } finally {
-            publishButton.disabled = false;
+            requestPublicationButton.disabled = false;
+            requestPublicationButtonText.textContent = "Request publication";
+            showToast(error.message || "The publication request could not be submitted.");
         }
-    }
-
-    async function toggleSharing() {
-        if (!shareButton || saving || !canEdit) return;
-        if (!(await save(false))) return;
-
-        const nextShared = !Boolean(flow.isShared);
-        shareButton.disabled = true;
-        shareButtonText.textContent = nextShared ? "Sharing..." : "Updating...";
-        try {
-            const response = await fetch(`/api/flows/${flowId}/share`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ isShared: nextShared })
-            });
-            const result = await response.json();
-            if (!response.ok) throw new Error(result.message || "Could not update sharing");
-            flow = result;
-            updateShareButton();
-            showToast(flow.isShared ? "Diagram shared with all users" : "Diagram is private");
-        } catch (error) {
-            console.error(error);
-            showToast(error.message || "Could not update sharing");
-            updateShareButton();
-        } finally {
-            shareButton.disabled = false;
-        }
-    }
-
-    function updateShareButton() {
-        if (!shareButton || !shareButtonText) return;
-        const isShared = Boolean(flow?.isShared);
-        root.dataset.isShared = String(isShared);
-        shareButton.setAttribute("aria-pressed", String(isShared));
-        shareButtonText.textContent = isShared ? "Unshare" : "Share";
-        shareButton.title = isShared ? "Make this diagram private" : "Allow all users to view this diagram";
     }
 
     async function saveAsTemplate(event) {
@@ -698,7 +650,13 @@
         const ancestors = (root.dataset.trail || "").split(",").filter(Boolean);
         if (!ancestors.includes(flowId)) ancestors.push(flowId);
         const nextTrail = ancestors.slice(-20).join(",");
-        window.location.assign(`/flows/${childFlowId}/edit?trail=${encodeURIComponent(nextTrail)}`);
+        if (root.dataset.publishedView === "true") {
+            window.location.assign(`/flows/${childFlowId}/edit?published=true`);
+        } else if (reviewRequestId) {
+            window.location.assign(`/flows/${childFlowId}/edit?requestId=${encodeURIComponent(reviewRequestId)}`);
+        } else {
+            window.location.assign(`/flows/${childFlowId}/edit?trail=${encodeURIComponent(nextTrail)}`);
+        }
     }
 
     async function createChildFlow(event) {
@@ -755,13 +713,71 @@
         const input = byId("newNodeComment");
         const body = input.value.trim();
         if (!body) return;
-        const comment = { id: crypto.randomUUID(), body, author: "You", createdAt: new Date().toISOString() };
+        const comment = { id: crypto.randomUUID(), body, author: currentUser, createdAt: new Date().toISOString() };
         const comments = [...(selectedNode.comments || []), comment];
+        updateSelectedNodeComments(comments);
+        input.value = "";
+        showToast("Comment added — save to keep it");
+    }
+
+    function updateSelectedNodeComments(comments) {
+        if (!selectedNode) return;
         selectedNode = { ...selectedNode, comments };
         adapter.updateNode(selectedNode.id, { comments });
-        input.value = "";
         renderNodeComments(comments);
-        showToast("Comment added — save to keep it");
+    }
+
+    function ownsNodeComment(comment) {
+        return String(comment?.author || "").localeCompare(currentUser, undefined, { sensitivity: "accent" }) === 0;
+    }
+
+    function editNodeComment(comment) {
+        if (!selectedNode || !ownsNodeComment(comment)) return;
+        const item = byId("nodeComments").querySelector(`[data-comment-id="${CSS.escape(comment.id)}"]`);
+        if (!item) return;
+
+        const body = item.querySelector(".fd-comment-body");
+        const actions = item.querySelector(".fd-comment-actions");
+        const editor = document.createElement("textarea");
+        editor.className = "form-control form-control-sm fd-comment-editor";
+        editor.rows = 3;
+        editor.maxLength = 2000;
+        editor.value = comment.body || "";
+
+        const save = document.createElement("button");
+        save.className = "btn btn-sm btn-primary";
+        save.type = "button";
+        save.textContent = "Save";
+        save.addEventListener("click", () => {
+            const nextBody = editor.value.trim();
+            if (!nextBody) {
+                editor.setCustomValidity("A comment is required.");
+                editor.reportValidity();
+                return;
+            }
+            const comments = (selectedNode.comments || []).map(existing =>
+                existing.id === comment.id ? { ...existing, body: nextBody } : existing);
+            updateSelectedNodeComments(comments);
+            showToast("Comment updated — save to keep it");
+        });
+
+        const cancel = document.createElement("button");
+        cancel.className = "btn btn-sm btn-light";
+        cancel.type = "button";
+        cancel.textContent = "Cancel";
+        cancel.addEventListener("click", () => renderNodeComments(selectedNode?.comments || []));
+
+        body.replaceWith(editor);
+        actions.replaceChildren(save, cancel);
+        editor.focus();
+        editor.setSelectionRange(editor.value.length, editor.value.length);
+    }
+
+    function deleteNodeComment(comment) {
+        if (!selectedNode || !ownsNodeComment(comment) || !window.confirm("Delete this comment?")) return;
+        const comments = (selectedNode.comments || []).filter(existing => existing.id !== comment.id);
+        updateSelectedNodeComments(comments);
+        showToast("Comment deleted — save to keep it");
     }
 
     function renderNodeComments(comments) {
@@ -778,6 +794,7 @@
         for (const comment of [...comments].sort((left, right) => new Date(left.createdAt) - new Date(right.createdAt))) {
             const item = document.createElement("article");
             item.className = "fd-comment";
+            item.dataset.commentId = comment.id;
             const header = document.createElement("div");
             header.className = "fd-comment-meta";
             const author = document.createElement("strong");
@@ -787,8 +804,26 @@
             time.textContent = new Date(comment.createdAt).toLocaleString([], { dateStyle: "medium", timeStyle: "short" });
             header.append(author, time);
             const body = document.createElement("p");
+            body.className = "fd-comment-body";
             appendLinkedCommentText(body, comment.body || "");
+            const actions = document.createElement("div");
+            actions.className = "fd-comment-actions";
+            const edit = document.createElement("button");
+            edit.className = "btn btn-sm btn-link";
+            edit.type = "button";
+            edit.textContent = "Edit";
+            edit.setAttribute("aria-label", `Edit comment by ${comment.author || "Unknown user"}`);
+            edit.addEventListener("click", () => editNodeComment(comment));
+            const remove = document.createElement("button");
+            remove.className = "btn btn-sm btn-link text-danger";
+            remove.type = "button";
+            remove.textContent = "Delete";
+            remove.setAttribute("aria-label", `Delete comment by ${comment.author || "Unknown user"}`);
+            remove.addEventListener("click", () => deleteNodeComment(comment));
+            const ownsComment = ownsNodeComment(comment);
+            if (ownsComment) actions.append(edit, remove);
             item.append(header, body);
+            if (ownsComment) item.append(actions);
             list.appendChild(item);
         }
     }

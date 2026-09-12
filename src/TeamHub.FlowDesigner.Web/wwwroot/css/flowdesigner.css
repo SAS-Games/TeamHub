@@ -309,6 +309,10 @@
 .fd-comment-meta strong { color: #455752; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .fd-comment p { margin: 5px 0 0; color: var(--fd-text); font-size: .72rem; line-height: 1.4; white-space: pre-wrap; overflow-wrap: anywhere; }
 .fd-comment p a { color: var(--fd-accent); text-decoration: underline; text-underline-offset: 2px; }
+.fd-comment-actions { display: flex; justify-content: flex-end; gap: 2px; margin-top: 4px; }
+.fd-comment-actions .btn-link { padding: 2px 4px; font-size: .65rem; text-decoration: none; }
+.fd-comment-actions .btn-link:hover { text-decoration: underline; }
+.fd-comment-editor { min-height: 68px; margin-top: 8px; resize: vertical; font-size: .72rem; }
 .fd-statusbar { display: flex; align-items: center; gap: 1rem; padding: 0 14px; color: var(--fd-muted); background: #fff; border-top: 1px solid var(--fd-border); font-size: .68rem; z-index: 13; }
 .fd-validation-button { display: flex; align-items: center; gap: 5px; padding: 0; color: var(--fd-muted); background: none; border: 0; }
 .fd-validation-button.has-warning { color: #a16207; }

@@ -31,6 +31,37 @@ internal sealed class TemplateCatalogSeeder(
             FlowTemplate.Onboarding,
             adminOnly: true,
             cancellationToken);
+        await SeedRayTracingAsync(cancellationToken);
+    }
+
+    private async Task SeedRayTracingAsync(CancellationToken cancellationToken)
+    {
+        var existing = await templates.GetByKeyAsync(RayTracingKnowledgeMapTemplate.TemplateKey, cancellationToken);
+        if (existing is not null
+            && (!existing.IsActive || !existing.IsBuiltIn || existing.Version >= RayTracingKnowledgeMapTemplate.Version))
+        {
+            return;
+        }
+
+        var now = DateTimeOffset.UtcNow;
+        await templates.SaveAsync(new TemplateCatalogDefinition
+        {
+            Id = existing?.Id ?? Guid.Parse("6bb6152e-58bc-4d99-a083-8b2fd18f037d"),
+            TemplateKey = RayTracingKnowledgeMapTemplate.TemplateKey,
+            Name = "Ray Tracing - Master Overview",
+            Description = "A beginner-friendly, drill-down map of a complete ray-tracing renderer.",
+            Category = "Graphics",
+            TemplateKind = TemplateKinds.FlowDiagramBundle,
+            DiagramType = DiagramType.StandardFlowchart,
+            PayloadJson = serializer.SerializeBundle(RayTracingKnowledgeMapTemplate.Create()),
+            Version = RayTracingKnowledgeMapTemplate.Version,
+            IsActive = true,
+            IsBuiltIn = true,
+            AdminOnly = false,
+            CreatedBy = existing?.CreatedBy ?? "system",
+            CreatedAt = existing?.CreatedAt ?? now,
+            UpdatedAt = now
+        }, cancellationToken);
     }
 
     private async Task SeedFlowAsync(

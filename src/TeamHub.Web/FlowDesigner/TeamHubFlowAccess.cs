@@ -32,6 +32,9 @@ public sealed class TeamHubFlowPermissionService(IHttpContextAccessor httpContex
 
     public bool CanManageTemplates() => HasFullAccess();
 
+    public bool CanReviewPublications() =>
+        httpContextAccessor.HttpContext?.User.IsInRole(TeamHubUserTypes.Admin) == true;
+
     private bool HasFullAccess() => CurrentAccessLevel() == AccessLevel.FullAccess;
 
     private AccessLevel CurrentAccessLevel() =>

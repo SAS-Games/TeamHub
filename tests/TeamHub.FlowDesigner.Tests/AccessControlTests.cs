@@ -52,13 +52,14 @@ public sealed class AccessControlTests
     }
 
     [Fact]
-    public async Task SharedFlow_IsVisibleButNotEditableByOtherUsers()
+    public async Task SharedLegacyFlow_IsNotVisibleWithoutPublication()
     {
         await using var database = new TestDatabase();
         var repository = await database.CreateRepositoryAsync();
         var adminFlow = ValidationTests.ConnectedFlow();
         adminFlow.CreatedBy = "admin";
         adminFlow.Name = "Published support workflow";
+        adminFlow.IsShared = true;
         var privateFlow = ValidationTests.ConnectedFlow();
         privateFlow.Id = Guid.NewGuid();
         privateFlow.CreatedBy = "bob";
@@ -66,30 +67,13 @@ public sealed class AccessControlTests
         await repository.SaveAsync(adminFlow);
         await repository.SaveAsync(privateFlow);
 
-        var adminService = CreateService(repository, "admin", isAdmin: true);
-        var shared = await adminService.SetSharedAsync(adminFlow.Id, true);
         var aliceService = CreateService(repository, "alice", isAdmin: false);
 
-        Assert.True(shared.IsShared);
         var visible = await aliceService.ListAsync();
-        Assert.Single(visible);
-        Assert.Equal(adminFlow.Id, visible[0].Id);
-        Assert.True(visible[0].IsShared);
-        Assert.NotNull(await aliceService.GetAsync(adminFlow.Id));
+        Assert.Empty(visible);
+        Assert.Null(await aliceService.GetAsync(adminFlow.Id));
         Assert.Null(await aliceService.GetAsync(privateFlow.Id));
         await Assert.ThrowsAsync<UnauthorizedAccessException>(() => aliceService.RenameAsync(adminFlow.Id, "Not allowed"));
-        await Assert.ThrowsAsync<UnauthorizedAccessException>(() => aliceService.SetSharedAsync(adminFlow.Id, false));
-    }
-
-    [Fact]
-    public async Task Draft_CannotBeShared()
-    {
-        await using var database = new TestDatabase();
-        var repository = await database.CreateRepositoryAsync();
-        var adminService = CreateService(repository, "admin", isAdmin: true);
-        var draft = await adminService.CreateAsync("Unsaved flow");
-
-        await Assert.ThrowsAsync<InvalidOperationException>(() => adminService.SetSharedAsync(draft.Id, true));
     }
 
     [Fact]
@@ -142,5 +126,6 @@ public sealed class AccessControlTests
             template is not FlowTemplate.Onboarding || isAdmin;
         public bool CanUseDiagramType(DiagramType diagramType) => diagramType != DiagramType.WorkCenterWorkflow || isAdmin;
         public bool CanManageTemplates() => isAdmin;
+        public bool CanReviewPublications() => isAdmin;
     }
 }

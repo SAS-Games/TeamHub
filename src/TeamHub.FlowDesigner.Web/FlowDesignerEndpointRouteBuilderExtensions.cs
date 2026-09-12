@@ -15,6 +15,107 @@ public static class FlowDesignerEndpointRouteBuilderExtensions
         api.MapGet("/", async (IFlowService flows, CancellationToken cancellationToken) =>
             Results.Ok(await flows.ListAsync(cancellationToken)));
 
+        api.MapGet("/published/{sourceFlowId:guid}", async (
+            Guid sourceFlowId,
+            IFlowPublicationWorkflowService publications,
+            CancellationToken cancellationToken) =>
+        {
+            var published = await publications.GetPublishedBySourceAsync(sourceFlowId, cancellationToken);
+            return published is null ? Results.NotFound() : Results.Ok(published.Definition);
+        });
+
+        api.MapGet("/published/{sourceFlowId:guid}/link-targets", async (
+            Guid sourceFlowId,
+            IFlowPublicationWorkflowService publications,
+            CancellationToken cancellationToken) =>
+        {
+            var targets = (await publications.ListPublishedBundleAsync(sourceFlowId, cancellationToken))
+                .Select(item => new { item.Id, item.Name, item.DiagramType });
+            return Results.Ok(targets);
+        });
+
+        api.MapPut("/published/{sourceFlowId:guid}", async (
+            Guid sourceFlowId,
+            FlowDefinition flow,
+            IFlowPublicationWorkflowService publications,
+            CancellationToken cancellationToken) =>
+        {
+            if (sourceFlowId != flow.Id)
+            {
+                return Results.BadRequest(new { message = "The route and document IDs do not match." });
+            }
+            try
+            {
+                var updated = await publications.UpdatePublishedAsync(sourceFlowId, flow, cancellationToken);
+                return Results.Ok(new { flow = updated, issues = Array.Empty<object>() });
+            }
+            catch (ArgumentException exception)
+            {
+                return Results.BadRequest(new { message = exception.Message });
+            }
+            catch (InvalidOperationException exception)
+            {
+                return Results.BadRequest(new { message = exception.Message });
+            }
+            catch (UnauthorizedAccessException)
+            {
+                return Results.Forbid();
+            }
+            catch (KeyNotFoundException)
+            {
+                return Results.NotFound();
+            }
+        });
+
+        api.MapGet("/publication-requests/{requestId:guid}/snapshot", async (
+            Guid requestId,
+            Guid? flowId,
+            IFlowPublicationWorkflowService publications,
+            CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                if (flowId.HasValue)
+                {
+                    var diagram = await publications.GetRequestDiagramAsync(requestId, flowId.Value, cancellationToken);
+                    return diagram is null ? Results.NotFound() : Results.Ok(diagram);
+                }
+                var request = await publications.GetRequestAsync(requestId, cancellationToken);
+                return request is null ? Results.NotFound() : Results.Ok(request.Snapshot);
+            }
+            catch (UnauthorizedAccessException)
+            {
+                return Results.Forbid();
+            }
+        });
+
+        api.MapPost("/{id:guid}/publication-requests", async (
+            Guid id,
+            IFlowPublicationWorkflowService publications,
+            CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                return Results.Ok(await publications.RequestAsync(id, cancellationToken));
+            }
+            catch (ArgumentException exception)
+            {
+                return Results.BadRequest(new { message = exception.Message });
+            }
+            catch (InvalidOperationException exception)
+            {
+                return Results.BadRequest(new { message = exception.Message });
+            }
+            catch (UnauthorizedAccessException)
+            {
+                return Results.Forbid();
+            }
+            catch (KeyNotFoundException)
+            {
+                return Results.NotFound();
+            }
+        });
+
         api.MapPost("/", async (
             CreateFlowRequest request,
             IFlowService flows,
@@ -119,57 +220,6 @@ public static class FlowDesignerEndpointRouteBuilderExtensions
         api.MapPost("/{id:guid}/validate", (Guid id, FlowDefinition flow, IFlowValidator validator) =>
             id == flow.Id ? Results.Ok(validator.Validate(flow)) : Results.BadRequest());
 
-        api.MapPost("/{id:guid}/share", async (
-            Guid id,
-            SetFlowSharingRequest request,
-            IFlowService flows,
-            CancellationToken cancellationToken) =>
-        {
-            try
-            {
-                return Results.Ok(await flows.SetSharedAsync(id, request.IsShared, cancellationToken));
-            }
-            catch (InvalidOperationException exception)
-            {
-                return Results.BadRequest(new { message = exception.Message });
-            }
-            catch (UnauthorizedAccessException)
-            {
-                return Results.Forbid();
-            }
-            catch (KeyNotFoundException)
-            {
-                return Results.NotFound();
-            }
-        });
-
-        api.MapPost("/{id:guid}/publish", async (
-            Guid id,
-            IFlowService flows,
-            IFlowPublicationService publicationService,
-            CancellationToken cancellationToken) =>
-        {
-            var flow = await flows.GetAsync(id, cancellationToken);
-            if (flow is null)
-            {
-                return Results.NotFound();
-            }
-
-            if (!publicationService.CanPublish(flow))
-            {
-                return Results.Forbid();
-            }
-
-            var result = await publicationService.PublishAsync(flow, cancellationToken);
-            if (!result.Success)
-            {
-                return Results.BadRequest(result);
-            }
-
-            await flows.SetSharedAsync(id, true, cancellationToken);
-            return Results.Ok(result);
-        });
-
         api.MapPost("/{id:guid}/templates", async (
             Guid id,
             SaveFlowTemplateRequest request,
@@ -250,5 +300,4 @@ public static class FlowDesignerEndpointRouteBuilderExtensions
     public sealed record AddNodeCommentRequest(string Body);
     public sealed record CreateChildFlowRequest(string Name);
     public sealed record CreateFlowRequest(string Name, string? Description, DiagramType DiagramType);
-    public sealed record SetFlowSharingRequest(bool IsShared);
 }
