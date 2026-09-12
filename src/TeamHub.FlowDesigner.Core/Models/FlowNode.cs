@@ -10,6 +10,7 @@ public sealed class FlowNode
     public double Y { get; set; }
     public double? Width { get; set; }
     public double? Height { get; set; }
+    public Guid? ChildFlowId { get; set; }
     public Dictionary<string, string> Metadata { get; set; } = new(StringComparer.OrdinalIgnoreCase);
     public Dictionary<string, string> CustomProperties { get; set; } = new(StringComparer.OrdinalIgnoreCase);
     public List<NodeComment> Comments { get; set; } = [];

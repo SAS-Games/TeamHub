@@ -29,6 +29,17 @@ public sealed class SqliteFlowRepository(
             .ToList();
     }
 
+    public async Task<IReadOnlyList<FlowDefinition>> ListDefinitionsAsync(CancellationToken cancellationToken = default)
+    {
+        await using var context = await contextFactory.CreateDbContextAsync(cancellationToken);
+        var documents = await context.Flows
+            .AsNoTracking()
+            .Select(flow => flow.GraphJson)
+            .ToListAsync(cancellationToken);
+
+        return documents.Select(serializer.Deserialize).ToList();
+    }
+
     public async Task<FlowDefinition?> GetAsync(Guid id, CancellationToken cancellationToken = default)
     {
         await using var context = await contextFactory.CreateDbContextAsync(cancellationToken);

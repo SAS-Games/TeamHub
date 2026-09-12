@@ -9,6 +9,10 @@
 }
 
 <div class="fd-page container-xl py-4 py-lg-5">
+    @if (TempData["FlowError"] is string flowError)
+    {
+        <div class="alert alert-warning" role="alert">@flowError</div>
+    }
     <div class="d-flex flex-column flex-md-row align-items-md-end justify-content-between gap-3 mb-4">
         <div>
             <div class="fd-eyebrow">Workspace</div>

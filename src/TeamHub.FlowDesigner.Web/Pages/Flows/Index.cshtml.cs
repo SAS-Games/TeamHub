@@ -68,5 +68,10 @@ public sealed class IndexModel(
         {
             return Forbid();
         }
+        catch (InvalidOperationException exception)
+        {
+            TempData["FlowError"] = exception.Message;
+            return RedirectToPage();
+        }
     }
 }

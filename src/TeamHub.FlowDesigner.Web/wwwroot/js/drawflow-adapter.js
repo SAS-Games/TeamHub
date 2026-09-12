@@ -86,7 +86,8 @@
         const layerClass = ["background", "foreground"].includes(layer) ? ` fd-layer-${layer}` : "";
         const portClass = portLayout === "vertical" ? " fd-ports-vertical" : "";
         const styleClass = ["step", "card", "banner", "plain", "band"].includes(presentationStyle) ? ` fd-style-${presentationStyle}` : "";
-        return `${toneClass}${layerClass}${portClass}${styleClass}`;
+        const childClass = data?.childFlowId ? " fd-has-child" : "";
+        return `${toneClass}${layerClass}${portClass}${styleClass}${childClass}`;
     }
 
     class DrawflowAdapter {
@@ -295,6 +296,7 @@
                 window.removeEventListener("pointerup", finish);
                 window.removeEventListener("pointercancel", finish);
                 nodeElement.classList.remove("is-resizing");
+                this.ensureNodeFitsContent(internalId);
                 this.captureNodeSize(internalId);
                 if (isSection && this.reconcileSectionMembership(false)) this.changed();
                 this.refreshGroupAppearance();
@@ -361,6 +363,7 @@
                 type: resolvedType,
                 title: supplied.title || config.defaultTitle || config.title,
                 description: supplied.description || "",
+                childFlowId: supplied.childFlowId || null,
                 metadata: supplied.metadata || {},
                 customProperties: supplied.customProperties || {},
                 comments: supplied.comments || [],
@@ -408,7 +411,8 @@
             const commentCount = data.comments?.length || 0;
             const comments = commentCount ? `<span class="fd-node-comments" title="${commentCount} comment${commentCount === 1 ? "" : "s"}">${commentCount}</span>` : "";
             const description = data.description ? `<span class="fd-node-description">${text(data.description)}</span>` : "";
-            return `<div class="fd-node-content"><span class="fd-tool-icon fd-type-${data.type.toLowerCase()}">${config.icon}</span><span class="fd-node-copy"><span class="fd-node-type">${text(config.title)}</span><span class="fd-node-title">${text(data.title)}</span>${description}${comments}</span></div>`;
+            const drilldown = data.childFlowId ? '<span class="fd-node-drilldown" title="Open detailed diagram" aria-hidden="true">&#8599;</span>' : "";
+            return `<div class="fd-node-content"><span class="fd-tool-icon fd-type-${data.type.toLowerCase()}">${config.icon}</span><span class="fd-node-copy"><span class="fd-node-type">${text(config.title)}</span><span class="fd-node-title">${text(data.title)}</span>${description}${comments}</span>${drilldown}</div>`;
         }
 
         getGraph() {
@@ -425,6 +429,7 @@
                     y: node.pos_y,
                     width: dom ? dom.offsetWidth : data.width,
                     height: dom ? dom.offsetHeight : data.height,
+                    childFlowId: data.childFlowId || null,
                     metadata: data.metadata || {},
                     customProperties: data.customProperties || {},
                     comments: data.comments || []
@@ -458,6 +463,13 @@
             return this.getGraph().nodes.find(node => node.id === externalId) || null;
         }
 
+        getNodeFromElement(element) {
+            const nodeElement = element?.closest?.(".drawflow-node");
+            if (!nodeElement?.id?.startsWith("node-")) return null;
+            const externalId = this.internalToExternal.get(nodeElement.id.slice(5));
+            return externalId ? this.getNode(externalId) : null;
+        }
+
         nodeData(internalId) {
             return this.editor.drawflow.drawflow.Home.data[String(internalId)]?.data || null;
         }
@@ -470,7 +482,10 @@
             this.refreshNodeAppearance(internalId, node.data);
             const content = document.querySelector(`#node-${internalId} .drawflow_content_node`);
             if (content) content.innerHTML = this.nodeHtml(node.data);
-            window.requestAnimationFrame(() => this.editor.updateConnectionNodes(`node-${internalId}`));
+            window.requestAnimationFrame(() => {
+                this.ensureNodeFitsContent(internalId);
+                this.editor.updateConnectionNodes(`node-${internalId}`);
+            });
             this.refreshGroupAppearance();
             if (emitChange) this.changed();
         }
@@ -558,6 +573,18 @@
         zoomIn() { this.editor.zoom_in(); }
         zoomOut() { this.editor.zoom_out(); }
         resetZoom() { this.editor.zoom_reset(); }
+        setZoom(value) {
+            if (value === null || value === undefined || value === "") return false;
+
+            const zoom = Number(value);
+            if (!Number.isFinite(zoom)) return false;
+
+            this.editor.zoom = Math.min(
+                this.editor.zoom_max,
+                Math.max(this.editor.zoom_min, zoom));
+            this.editor.zoom_refresh();
+            return true;
+        }
         getZoom() { return this.editor.zoom; }
         setGrid(enabled) { this.snapToGrid = enabled; this.element.classList.toggle("no-grid", !enabled); }
         setSpacePanning(enabled) { this.spacePanning = enabled; this.element.classList.toggle("is-space-pan", enabled); }
@@ -681,7 +708,7 @@
             const element = document.getElementById(`node-${internalId}`);
             if (!element) return;
             for (const className of [...element.classList]) {
-                if (className.startsWith("fd-tone-") || className.startsWith("fd-layer-") || className.startsWith("fd-ports-") || className.startsWith("fd-style-")) element.classList.remove(className);
+                if (className.startsWith("fd-tone-") || className.startsWith("fd-layer-") || className.startsWith("fd-ports-") || className.startsWith("fd-style-") || className === "fd-has-child") element.classList.remove(className);
             }
             nodeAppearanceClasses(data).trim().split(/\s+/).filter(Boolean).forEach(className => element.classList.add(className));
         }
@@ -736,6 +763,24 @@
             }
         }
 
+        ensureNodeFitsContent(internalId) {
+            const id = String(internalId);
+            const node = this.editor.drawflow.drawflow.Home.data[id];
+            const dom = document.getElementById(`node-${id}`);
+            if (!node || !dom || node.data.type === "Section") return false;
+
+            const content = dom.querySelector(":scope > .drawflow_content_node");
+            if (!content) return false;
+
+            const borderHeight = Math.max(0, dom.offsetHeight - dom.clientHeight);
+            const requiredHeight = Math.ceil(content.scrollHeight + borderHeight);
+            if (requiredHeight <= dom.offsetHeight) return false;
+
+            dom.style.height = `${requiredHeight}px`;
+            node.data.height = dom.offsetHeight;
+            return true;
+        }
+
         applySavedSizes(nodes) {
             for (const node of nodes) {
                 const internal = this.externalToInternal.get(node.id);
@@ -745,6 +790,7 @@
                 const browserResizableNode = getComputedStyle(dom).resize !== "none";
                 if (node.width && (resizablePresentationNode || browserResizableNode)) dom.style.width = `${Math.max(node.type === "Section" ? 260 : 150, node.width)}px`;
                 if (node.height && (resizablePresentationNode || browserResizableNode)) dom.style.height = `${Math.max(node.type === "Section" ? 180 : 76, node.height)}px`;
+                this.ensureNodeFitsContent(internal);
             }
         }
 

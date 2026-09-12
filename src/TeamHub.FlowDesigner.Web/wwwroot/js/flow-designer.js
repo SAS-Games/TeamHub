@@ -6,6 +6,7 @@
 
     const byId = id => document.getElementById(id);
     const flowId = root.dataset.flowId;
+    const zoomStorageKey = "teamhub.flowDesigner.zoom.v1";
     const canEdit = root.dataset.canEdit === "true";
     const nameInput = byId("flowName");
     const saveState = byId("saveState");
@@ -37,6 +38,8 @@
     let applyingHistory = false;
     let workflowKeyTouched = false;
     let presentationMode = false;
+    let linkTargets = [];
+    let creatingChildForNodeId = null;
 
     const adapter = new window.FlowDesignerAdapters.DrawflowAdapter(byId("drawflow"), {
         onChange: handleCanvasChange,
@@ -56,11 +59,16 @@
         const response = await fetch(`/api/flows/${flowId}`);
         if (!response.ok) throw new Error(`Load failed (${response.status})`);
         flow = await response.json();
+        await loadLinkTargets();
         isDraft = Number(flow.version) <= 0;
         nameInput.value = flow.name;
         root.dataset.diagramType = flow.diagramType;
         root.classList.add(`fd-mode-${flow.diagramType.toLowerCase()}`);
         adapter.setGraph(flow);
+        const storedZoom = readStoredZoom();
+        if (!adapter.setZoom(storedZoom)) {
+            updateZoom(adapter.getZoom());
+        }
         adapter.setReadOnly(!canEdit);
         nameInput.readOnly = !canEdit;
         initializeWorkflowProperties();
@@ -99,11 +107,22 @@
             adapter.addNode(type, position.x, position.y);
         });
         canvas.addEventListener("dblclick", event => {
+            const linkedNode = adapter.getNodeFromElement(event.target);
+            if (linkedNode?.childFlowId) {
+                event.preventDefault();
+                openChildFlowById(linkedNode.childFlowId);
+                return;
+            }
             if (!canEdit || presentationMode) return;
             if (event.target !== canvas && !event.target.classList.contains("drawflow")) return;
             const point = adapter.screenToCanvas(event.clientX, event.clientY);
             const position = nodePosition(activePalette().primary, point);
             adapter.addNode(activePalette().primary, position.x, position.y);
+        });
+        canvas.addEventListener("click", event => {
+            if (canEdit && !presentationMode) return;
+            const linkedNode = adapter.getNodeFromElement(event.target);
+            if (linkedNode?.childFlowId) openChildFlowById(linkedNode.childFlowId);
         });
 
         saveButton.addEventListener("click", () => save(true));
@@ -145,6 +164,16 @@
         byId("nodeTitle").addEventListener("blur", finalizeSelectedNodeTitle);
         byId("nodeType").addEventListener("change", changeSelectedNodeType);
         ["nodeTone", "nodeLayer", "nodePortLayout", "nodeSectionId", "nodePresentationStyle"].forEach(id => byId(id).addEventListener("change", updateSelectedNode));
+        byId("nodeChildFlowId").addEventListener("change", updateSelectedChildFlow);
+        byId("openChildFlow").addEventListener("click", () => {
+            if (selectedNode?.childFlowId) openChildFlowById(selectedNode.childFlowId);
+        });
+        byId("unlinkChildFlow").addEventListener("click", unlinkSelectedChildFlow);
+        byId("createChildFlowModal").addEventListener("show.bs.modal", () => {
+            creatingChildForNodeId = selectedNode?.id || null;
+            byId("childFlowName").value = selectedNode?.title?.trim() || "Detailed diagram";
+        });
+        byId("createChildFlowForm").addEventListener("submit", createChildFlow);
         ["taskStepKey", "taskOwner", "taskExpectedHours", "taskReminderAfterHours", "taskReminderRepeatHours", "taskEscalationAfterHours", "taskEscalationOwner"].forEach(id => byId(id).addEventListener("input", updateSelectedNode));
         ["taskOwnerType", "taskRequired", "taskEnabled"].forEach(id => byId(id).addEventListener("change", updateSelectedNode));
         byId("addNodeComment").addEventListener("click", addNodeComment);
@@ -215,6 +244,18 @@
 
     function isWorkCenter() {
         return flow?.diagramType === "WorkCenterWorkflow";
+    }
+
+    async function loadLinkTargets() {
+        try {
+            const response = await fetch(`/api/flows/${flowId}/link-targets`);
+            if (!response.ok) throw new Error(`Link target load failed (${response.status})`);
+            linkTargets = await response.json();
+        } catch (error) {
+            console.error(error);
+            linkTargets = [];
+            showToast("Existing diagrams could not be loaded.");
+        }
     }
 
     function toKey(value) {
@@ -532,6 +573,9 @@
         populateSectionOptions(node);
         byId("nodePresentationStyle").value = node.customProperties?.presentationStyle || "";
         byId("nodeNotes").value = node.customProperties?.notes || "";
+        const supportsChildFlow = node.type !== "Section" && node.type !== "Annotation";
+        byId("nodeChildFlowSection").classList.toggle("d-none", !supportsChildFlow);
+        if (supportsChildFlow) populateChildFlowOptions(node);
         const isTask = isWorkCenter() && node.type === "Activity";
         byId("workCenterTaskProperties").classList.toggle("d-none", !isTask);
         byId("taskStepKey").value = node.customProperties?.stepKey || toKey(node.title);
@@ -556,6 +600,21 @@
         }
         select.value = node.customProperties?.sectionId || "";
         byId("nodeSectionField").classList.toggle("d-none", node.type === "Section");
+    }
+
+    function populateChildFlowOptions(node) {
+        const select = byId("nodeChildFlowId");
+        select.replaceChildren(new Option("No detailed diagram", ""));
+        for (const target of linkTargets) {
+            select.add(new Option(`${target.name} (${diagramTypes[target.diagramType]?.title || target.diagramType})`, target.id));
+        }
+        if (node.childFlowId && !linkTargets.some(target => target.id === node.childFlowId)) {
+            select.add(new Option("Linked diagram is unavailable", node.childFlowId));
+        }
+        select.value = node.childFlowId || "";
+        const hasChild = Boolean(node.childFlowId);
+        byId("openChildFlow").disabled = !hasChild;
+        byId("unlinkChildFlow").disabled = !hasChild;
     }
 
     function showConnectionProperties(connection) {
@@ -616,6 +675,71 @@
         adapter.updateNode(selectedNode.id, changes);
     }
 
+    function updateSelectedChildFlow() {
+        if (!selectedNode) return;
+        const childFlowId = byId("nodeChildFlowId").value || null;
+        selectedNode = { ...selectedNode, childFlowId };
+        adapter.updateNode(selectedNode.id, { childFlowId });
+        populateChildFlowOptions(selectedNode);
+    }
+
+    function unlinkSelectedChildFlow() {
+        if (!selectedNode?.childFlowId) return;
+        selectedNode = { ...selectedNode, childFlowId: null };
+        adapter.updateNode(selectedNode.id, { childFlowId: null });
+        populateChildFlowOptions(selectedNode);
+        showToast("Detailed diagram link removed");
+    }
+
+    async function openChildFlowById(childFlowId) {
+        if (!childFlowId) return;
+        if (canEdit && !(await save(false))) return;
+
+        const ancestors = (root.dataset.trail || "").split(",").filter(Boolean);
+        if (!ancestors.includes(flowId)) ancestors.push(flowId);
+        const nextTrail = ancestors.slice(-20).join(",");
+        window.location.assign(`/flows/${childFlowId}/edit?trail=${encodeURIComponent(nextTrail)}`);
+    }
+
+    async function createChildFlow(event) {
+        event.preventDefault();
+        const parentNode = creatingChildForNodeId ? adapter.getNode(creatingChildForNodeId) : null;
+        if (!parentNode) {
+            showToast("Select a node before creating a detailed diagram.");
+            return;
+        }
+
+        const button = byId("confirmCreateChildFlow");
+        button.disabled = true;
+        button.textContent = "Creating...";
+        try {
+            const response = await fetch(`/api/flows/${flowId}/children`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ name: byId("childFlowName").value.trim() })
+            });
+            const child = await response.json().catch(() => ({}));
+            if (!response.ok) throw new Error(child.message || "The detailed diagram could not be created.");
+
+            linkTargets.push({ id: child.id, name: child.name, diagramType: child.diagramType });
+            adapter.updateNode(parentNode.id, { childFlowId: child.id });
+            if (selectedNode?.id === parentNode.id) {
+                selectedNode = { ...selectedNode, childFlowId: child.id };
+                populateChildFlowOptions(selectedNode);
+            }
+            if (!(await save(false))) return;
+
+            bootstrap.Modal.getInstance(byId("createChildFlowModal"))?.hide();
+            await openChildFlowById(child.id);
+        } catch (error) {
+            console.error(error);
+            showToast(error.message || "The detailed diagram could not be created.");
+        } finally {
+            button.disabled = false;
+            button.textContent = "Create and open";
+        }
+    }
+
     function finalizeSelectedNodeTitle() {
         if (!selectedNode) return;
         const input = byId("nodeTitle");
@@ -663,10 +787,26 @@
             time.textContent = new Date(comment.createdAt).toLocaleString([], { dateStyle: "medium", timeStyle: "short" });
             header.append(author, time);
             const body = document.createElement("p");
-            body.textContent = comment.body;
+            appendLinkedCommentText(body, comment.body || "");
             item.append(header, body);
             list.appendChild(item);
         }
+    }
+
+    function appendLinkedCommentText(container, value) {
+        const urlPattern = /https?:\/\/[^\s]+/g;
+        let offset = 0;
+        for (const match of value.matchAll(urlPattern)) {
+            if (match.index > offset) container.append(document.createTextNode(value.slice(offset, match.index)));
+            const link = document.createElement("a");
+            link.href = match[0];
+            link.target = "_blank";
+            link.rel = "noopener noreferrer";
+            link.textContent = match[0];
+            container.append(link);
+            offset = match.index + match[0].length;
+        }
+        if (offset < value.length) container.append(document.createTextNode(value.slice(offset)));
     }
 
     function changeSelectedNodeType() {
@@ -676,6 +816,7 @@
         if (!node) return;
         node.type = byId("nodeType").value;
         if (node.type === "Section") delete node.customProperties?.sectionId;
+        if (node.type === "Section" || node.type === "Annotation") node.childFlowId = null;
         adapter.setGraph(graph);
         selectedNode = node;
         window.requestAnimationFrame(() => adapter.selectNode(node.id));
@@ -841,7 +982,24 @@
     }
 
     function updateZoom(zoom) {
-        byId("zoomReset").textContent = `${Math.round(Number(zoom) * 100)}%`;
+        const numericZoom = Number(zoom);
+        if (!Number.isFinite(numericZoom)) return;
+
+        byId("zoomReset").textContent = `${Math.round(numericZoom * 100)}%`;
+        try {
+            window.localStorage.setItem(zoomStorageKey, String(numericZoom));
+        } catch {
+            // Storage can be unavailable in privacy-restricted browser contexts.
+        }
+    }
+
+    function readStoredZoom() {
+        try {
+            const storedZoom = Number.parseFloat(window.localStorage.getItem(zoomStorageKey));
+            return Number.isFinite(storedZoom) ? storedZoom : null;
+        } catch {
+            return null;
+        }
     }
 
     function exportSvg() {

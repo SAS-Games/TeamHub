@@ -6,6 +6,7 @@ namespace TeamHub.FlowDesigner.Core.Contracts;
 public interface IFlowService
 {
     Task<IReadOnlyList<FlowSummary>> ListAsync(CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<FlowSummary>> ListLinkTargetsAsync(Guid sourceFlowId, CancellationToken cancellationToken = default);
     Task<FlowDefinition?> GetAsync(Guid id, CancellationToken cancellationToken = default);
     Task<FlowDefinition> CreateAsync(string name, string? description = null, DiagramType diagramType = DiagramType.StandardFlowchart, FlowTemplate template = FlowTemplate.Blank, CancellationToken cancellationToken = default);
     Task<FlowValidationResult> SaveAsync(FlowDefinition flow, CancellationToken cancellationToken = default);

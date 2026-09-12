@@ -10,11 +10,19 @@
     <link rel="stylesheet" href="~/_content/TeamHub.FlowDesigner.Web/css/flowdesigner.css" asp-append-version="true" />
 }
 
-<div class="fd-designer@(Model.CanEdit ? "" : " is-view-only")" id="flowDesigner" data-flow-id="@Model.FlowId" data-diagram-type="@Model.DiagramType" data-can-edit="@Model.CanEdit.ToString().ToLowerInvariant()" data-is-shared="@Model.IsShared.ToString().ToLowerInvariant()">
+<div class="fd-designer@(Model.CanEdit ? "" : " is-view-only")" id="flowDesigner" data-flow-id="@Model.FlowId" data-diagram-type="@Model.DiagramType" data-can-edit="@Model.CanEdit.ToString().ToLowerInvariant()" data-is-shared="@Model.IsShared.ToString().ToLowerInvariant()" data-trail="@Model.Trail">
     <div class="fd-designer-toolbar">
         <div class="d-flex align-items-center gap-2 min-w-0">
             <a class="btn btn-sm btn-light fd-icon-button" id="backToFlows" href="@Model.BackPath" aria-label="Back" title="Back">&larr;</a>
             <div class="min-w-0">
+                <nav class="fd-breadcrumbs" aria-label="Diagram hierarchy">
+                    <a asp-page="/Flows/Index">Diagrams</a>
+                    @foreach (var breadcrumb in Model.Breadcrumbs)
+                    {
+                        <span aria-hidden="true">/</span><a href="@breadcrumb.Url">@breadcrumb.Name</a>
+                    }
+                    <span aria-hidden="true">/</span><span aria-current="page">@Model.FlowName</span>
+                </nav>
                 <label class="visually-hidden" for="flowName">Flow name</label>
                 <input id="flowName" class="fd-flow-title" maxlength="200" value="@Model.FlowName" />
                 <div class="fd-save-state" id="saveState"><span class="fd-status-dot"></span><span>Loading...</span></div>
@@ -103,6 +111,17 @@
                 <div class="mb-3" id="nodeSectionField"><label class="form-label" for="nodeSectionId">Section group</label><div id="nodeSectionHelp" class="form-text mt-0 mb-1">Drag the node into or out of a section, or choose one here.</div><select class="form-select" id="nodeSectionId" aria-describedby="nodeSectionHelp"><option value="">No section</option></select></div>
                 <div class="mb-3"><label class="form-label" for="nodePresentationStyle">Visual style</label><select class="form-select" id="nodePresentationStyle"><option value="">Standard symbol</option><option value="step">Compact step</option><option value="card">Information card</option><option value="banner">Solid banner</option><option value="plain">Plain text</option><option value="band">Section with header band</option></select></div>
                 <div class="mb-3"><label class="form-label" for="nodeNotes">Notes</label><textarea class="form-control" id="nodeNotes" rows="3" maxlength="1000" placeholder="Optional supporting detail"></textarea></div>
+                <section class="fd-child-flow mb-3" id="nodeChildFlowSection" aria-labelledby="nodeChildFlowHeading">
+                    <h3 id="nodeChildFlowHeading">Detailed diagram</h3>
+                    <label class="form-label" for="nodeChildFlowId">Linked diagram</label>
+                    <select class="form-select" id="nodeChildFlowId"><option value="">No detailed diagram</option></select>
+                    <div class="form-text">Linked nodes display a drill-down marker. Double-click a linked node to open it.</div>
+                    <div class="d-grid gap-2 mt-2">
+                        <button class="btn btn-sm btn-primary" id="openChildFlow" type="button">Open detailed diagram</button>
+                        <button class="btn btn-sm btn-outline-secondary" id="createChildFlow" type="button" data-bs-toggle="modal" data-bs-target="#createChildFlowModal">Create new detailed diagram</button>
+                        <button class="btn btn-sm btn-link text-danger" id="unlinkChildFlow" type="button">Remove diagram link</button>
+                    </div>
+                </section>
                 <section id="workCenterTaskProperties" class="d-none" aria-labelledby="workCenterTaskHeading">
                     <h3 id="workCenterTaskHeading" class="h6 mb-3">Work Center task</h3>
                     <div class="mb-3"><label class="form-label" for="taskStepKey">Task key</label><input class="form-control" id="taskStepKey" maxlength="128" placeholder="Generated from task name" /></div>
@@ -146,6 +165,22 @@
     </div>
     <div class="fd-validation-popover d-none" id="validationPopover"><div class="d-flex justify-content-between align-items-center"><strong>Diagram check</strong><button class="btn-close" id="closeValidation" type="button"></button></div><div id="validationIssues" class="mt-3"></div></div>
     <div class="fd-toast" id="toast" role="status" aria-live="polite"></div>
+
+    <div class="modal fade" id="createChildFlowModal" tabindex="-1" aria-labelledby="createChildFlowTitle" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <form id="createChildFlowForm">
+                    <div class="modal-header"><h2 class="modal-title fs-5" id="createChildFlowTitle">Create detailed diagram</h2><button class="btn-close" type="button" data-bs-dismiss="modal" aria-label="Close"></button></div>
+                    <div class="modal-body">
+                        <label class="form-label" for="childFlowName">Diagram name</label>
+                        <input class="form-control" id="childFlowName" maxlength="200" required />
+                        <div class="form-text">The new diagram uses the same diagram type as its parent.</div>
+                    </div>
+                    <div class="modal-footer"><button class="btn btn-light" type="button" data-bs-dismiss="modal">Cancel</button><button class="btn btn-primary" id="confirmCreateChildFlow" type="submit">Create and open</button></div>
+                </form>
+            </div>
+        </div>
+    </div>
 
     <div class="modal fade" id="leaveDiagramModal" tabindex="-1" aria-labelledby="leaveDiagramTitle" aria-hidden="true">
         <div class="modal-dialog modal-dialog-centered">

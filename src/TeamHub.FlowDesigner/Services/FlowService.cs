@@ -13,11 +13,28 @@ public sealed class FlowService(
 {
     public async Task<IReadOnlyList<FlowSummary>> ListAsync(CancellationToken cancellationToken = default)
     {
-        var flows = await repository.ListAsync(cancellationToken);
-        return flows
-            .Where(flow => flow.Version > 0 && CanView(flow.CreatedBy, flow.IsShared))
+        var visibleFlows = await ListVisibleAsync(cancellationToken);
+        if (visibleFlows.Count == 0) return visibleFlows;
+
+        var visibleIds = visibleFlows.Select(flow => flow.Id).ToHashSet();
+        var linkedChildIds = (await repository.ListDefinitionsAsync(cancellationToken))
+            .Where(flow => visibleIds.Contains(flow.Id))
+            .SelectMany(flow => flow.Nodes)
+            .Where(node => node.ChildFlowId.HasValue)
+            .Select(node => node.ChildFlowId!.Value)
+            .ToHashSet();
+
+        return visibleFlows
+            .Where(flow => !linkedChildIds.Contains(flow.Id))
             .ToList();
     }
+
+    public async Task<IReadOnlyList<FlowSummary>> ListLinkTargetsAsync(
+        Guid sourceFlowId,
+        CancellationToken cancellationToken = default) =>
+        (await ListVisibleAsync(cancellationToken))
+            .Where(flow => flow.Id != sourceFlowId)
+            .ToList();
 
     public async Task<FlowDefinition?> GetAsync(Guid id, CancellationToken cancellationToken = default)
     {
@@ -72,6 +89,35 @@ public sealed class FlowService(
         }
 
         var result = validator.Validate(flow);
+        if (result.IsValid)
+        {
+            var linkIssues = await ValidateChildLinksAsync(flow, cancellationToken);
+            if (linkIssues.Count > 0)
+            {
+                result = new FlowValidationResult { Issues = [.. result.Issues, .. linkIssues] };
+            }
+        }
+        if (result.IsValid && existing.IsShared)
+        {
+            try
+            {
+                await EnsureLinkedFlowsAreSharedAsync(flow, cancellationToken);
+            }
+            catch (InvalidOperationException)
+            {
+                result = new FlowValidationResult
+                {
+                    Issues =
+                    [
+                        .. result.Issues,
+                        new FlowValidationIssue(
+                            "child-flow-private",
+                            "Share every linked child diagram before linking it from this shared diagram.",
+                            ValidationSeverity.Error)
+                    ]
+                };
+            }
+        }
         if (!result.IsValid)
         {
             return result;
@@ -126,6 +172,10 @@ public sealed class FlowService(
         {
             return flow;
         }
+        if (isShared)
+        {
+            await EnsureLinkedFlowsAreSharedAsync(flow, cancellationToken);
+        }
 
         flow.IsShared = isShared;
         flow.UpdatedAt = DateTimeOffset.UtcNow;
@@ -172,7 +222,102 @@ public sealed class FlowService(
         {
             throw new UnauthorizedAccessException("The current user cannot delete this flow diagram.");
         }
+        var referenced = (await repository.ListDefinitionsAsync(cancellationToken))
+            .Where(parent => parent.Id != id)
+            .Any(parent => parent.Nodes.Any(node => node.ChildFlowId == id));
+        if (referenced)
+        {
+            throw new InvalidOperationException("This diagram is linked from another diagram. Remove the link before deleting it.");
+        }
         await repository.DeleteAsync(id, cancellationToken);
+    }
+
+    private async Task<IReadOnlyList<FlowValidationIssue>> ValidateChildLinksAsync(
+        FlowDefinition flow,
+        CancellationToken cancellationToken)
+    {
+        var linkedNodes = flow.Nodes.Where(node => node.ChildFlowId.HasValue).ToList();
+        if (linkedNodes.Count == 0) return [];
+
+        var definitions = await repository.ListDefinitionsAsync(cancellationToken);
+        var byId = definitions.ToDictionary(item => item.Id);
+        byId[flow.Id] = flow;
+        var issues = new List<FlowValidationIssue>();
+
+        foreach (var node in linkedNodes)
+        {
+            var childId = node.ChildFlowId!.Value;
+            if (childId == flow.Id)
+            {
+                issues.Add(new("child-flow-self-link", $"'{node.Title}' cannot link to its own diagram.", ValidationSeverity.Error, node.Id));
+                continue;
+            }
+            if (!byId.TryGetValue(childId, out var child))
+            {
+                issues.Add(new("child-flow-missing", $"The detailed diagram linked from '{node.Title}' no longer exists.", ValidationSeverity.Error, node.Id));
+                continue;
+            }
+            if (!CanView(child.CreatedBy, child.IsShared))
+            {
+                issues.Add(new("child-flow-forbidden", $"You cannot access the detailed diagram linked from '{node.Title}'.", ValidationSeverity.Error, node.Id));
+                continue;
+            }
+            if (Reaches(childId, flow.Id, byId, []))
+            {
+                issues.Add(new("child-flow-cycle", $"Linking '{node.Title}' would create a cycle in the diagram hierarchy.", ValidationSeverity.Error, node.Id));
+            }
+        }
+
+        return issues;
+    }
+
+    private static bool Reaches(
+        Guid currentId,
+        Guid targetId,
+        IReadOnlyDictionary<Guid, FlowDefinition> definitions,
+        HashSet<Guid> visited)
+    {
+        if (currentId == targetId) return true;
+        if (!visited.Add(currentId) || !definitions.TryGetValue(currentId, out var current)) return false;
+
+        return current.Nodes
+            .Where(node => node.ChildFlowId.HasValue)
+            .Select(node => node.ChildFlowId!.Value)
+            .Any(childId => Reaches(childId, targetId, definitions, visited));
+    }
+
+    private async Task<List<FlowSummary>> ListVisibleAsync(CancellationToken cancellationToken)
+    {
+        var flows = await repository.ListAsync(cancellationToken);
+        return flows
+            .Where(flow => flow.Version > 0 && CanView(flow.CreatedBy, flow.IsShared))
+            .ToList();
+    }
+
+    private async Task EnsureLinkedFlowsAreSharedAsync(FlowDefinition flow, CancellationToken cancellationToken)
+    {
+        var definitions = await repository.ListDefinitionsAsync(cancellationToken);
+        var byId = definitions.ToDictionary(item => item.Id);
+        var pending = new Stack<Guid>(flow.Nodes
+            .Where(node => node.ChildFlowId.HasValue)
+            .Select(node => node.ChildFlowId!.Value));
+        var visited = new HashSet<Guid>();
+
+        while (pending.TryPop(out var childId))
+        {
+            if (!visited.Add(childId)) continue;
+            if (!byId.TryGetValue(childId, out var child) || !child.IsShared)
+            {
+                throw new InvalidOperationException("Share every linked child diagram before sharing this diagram.");
+            }
+
+            foreach (var descendantId in child.Nodes
+                         .Where(node => node.ChildFlowId.HasValue)
+                         .Select(node => node.ChildFlowId!.Value))
+            {
+                pending.Push(descendantId);
+            }
+        }
     }
 
     private async Task<FlowDefinition> RequiredFlowAsync(Guid id, bool requireEdit, CancellationToken cancellationToken)
