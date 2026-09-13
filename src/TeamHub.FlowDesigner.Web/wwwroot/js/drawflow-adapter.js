@@ -122,8 +122,13 @@
         }
 
         bindEvents() {
-            ["nodeCreated", "nodeRemoved", "connectionRemoved"].forEach(eventName => {
+            ["nodeCreated", "nodeRemoved"].forEach(eventName => {
                 this.editor.on(eventName, () => this.changed());
+            });
+
+            this.editor.on("connectionRemoved", detail => {
+                this.connectionState.delete(this.connectionKey(detail.output_id, detail.input_id, detail.output_class, detail.input_class));
+                this.changed();
             });
 
             this.editor.on("nodeMoved", internalId => {
@@ -373,12 +378,14 @@
             if (!data.customProperties.portLayout && emitChange) {
                 data.customProperties = { ...data.customProperties, portLayout: this.defaultPortLayout };
             }
+            const inputCount = this.portCount(config.inputs, data.customProperties.inputPins);
+            const outputCount = this.portCount(config.outputs, data.customProperties.outputPins);
             const previousSuppress = this.suppressChanges;
             if (!emitChange) this.suppressChanges = true;
             const internalId = this.editor.addNode(
                 externalId,
-                config.inputs,
-                config.outputs,
+                inputCount,
+                outputCount,
                 Math.max(10, Number(x) || 100),
                 Math.max(10, Number(y) || 100),
                 `fd-node-${data.type.toLowerCase()} fd-shape-${config.shape}${nodeAppearanceClasses(data)}`,
@@ -478,7 +485,9 @@
             const internalId = this.externalToInternal.get(externalId);
             if (!internalId) return;
             const node = this.editor.drawflow.drawflow.Home.data[internalId];
-            node.data = { ...node.data, ...changes };
+            const nextData = { ...node.data, ...changes };
+            this.syncNodePorts(internalId, nextData);
+            node.data = nextData;
             this.refreshNodeAppearance(internalId, node.data);
             const content = document.querySelector(`#node-${internalId} .drawflow_content_node`);
             if (content) content.innerHTML = this.nodeHtml(node.data);
@@ -855,6 +864,41 @@
             const endX = coordinates.at(-2);
             const endY = coordinates.at(-1);
             path.setAttribute("d", connectionPath(startX, startY, endX, endY, sourceVertical, targetVertical));
+        }
+
+        portCount(defaultCount, configuredCount) {
+            if (defaultCount === 0) return 0;
+            const count = Number(configuredCount);
+            return Number.isInteger(count) && count >= 1 && count <= 6 ? count : defaultCount;
+        }
+
+        getPortCount(externalId, kind) {
+            const internalId = this.externalToInternal.get(externalId);
+            const node = internalId ? this.editor.drawflow.drawflow.Home.data[internalId] : null;
+            return node ? Object.keys(kind === "output" ? node.outputs : node.inputs).length : 0;
+        }
+
+        syncNodePorts(internalId, data) {
+            const config = nodeTypes[data.type] || nodeTypes.Process;
+            this.syncPortKind(internalId, "input", this.portCount(config.inputs, data.customProperties?.inputPins));
+            this.syncPortKind(internalId, "output", this.portCount(config.outputs, data.customProperties?.outputPins));
+        }
+
+        syncPortKind(internalId, kind, desiredCount) {
+            const node = this.editor.drawflow.drawflow.Home.data[internalId];
+            const collection = kind === "output" ? node.outputs : node.inputs;
+            let currentCount = Object.keys(collection).length;
+            while (currentCount < desiredCount) {
+                if (kind === "output") this.editor.addNodeOutput(internalId);
+                else this.editor.addNodeInput(internalId);
+                currentCount++;
+            }
+            while (currentCount > desiredCount) {
+                const portName = `${kind}_${currentCount}`;
+                if (kind === "output") this.editor.removeNodeOutput(internalId, portName);
+                else this.editor.removeNodeInput(internalId, portName);
+                currentCount--;
+            }
         }
 
         validPort(internalId, requested, kind) {

@@ -119,7 +119,33 @@
                     <div class="col-6"><label class="form-label" for="nodeTone">Color</label><select class="form-select" id="nodeTone"><option value="">Automatic</option><option value="blue">Blue</option><option value="green">Green</option><option value="red">Red</option><option value="orange">Orange</option><option value="purple">Purple</option></select></div>
                     <div class="col-6"><label class="form-label" for="nodeLayer">Layer</label><select class="form-select" id="nodeLayer"><option value="">Automatic</option><option value="background">Background</option><option value="foreground">Foreground</option></select></div>
                 </div>
-                <div class="mb-3"><label class="form-label" for="nodePortLayout">Connector pins</label><select class="form-select" id="nodePortLayout"><option value="horizontal">Left input / right output</option><option value="vertical">Top input / bottom output</option></select></div>
+                <fieldset class="fd-pin-options mb-3">
+                    <legend>Connector pins</legend>
+                    <label class="form-label" for="nodePortLayout">Placement</label>
+                    <select class="form-select mb-2" id="nodePortLayout">
+                        <option value="horizontal">Left input / right output</option>
+                        <option value="vertical">Top input / bottom output</option>
+                    </select>
+                    <div class="row g-2">
+                        <div class="col-6">
+                            <label class="form-label" for="nodeInputPins">Input pins</label>
+                            <select class="form-select" id="nodeInputPins">
+                                <option value="">Automatic</option>
+                                <option value="1">1</option><option value="2">2</option><option value="3">3</option>
+                                <option value="4">4</option><option value="5">5</option><option value="6">6</option>
+                            </select>
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label" for="nodeOutputPins">Output pins</label>
+                            <select class="form-select" id="nodeOutputPins">
+                                <option value="">Automatic</option>
+                                <option value="1">1</option><option value="2">2</option><option value="3">3</option>
+                                <option value="4">4</option><option value="5">5</option><option value="6">6</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="form-text">Use extra pins to separate branches and converging paths.</div>
+                </fieldset>
                 <div class="mb-3" id="nodeSectionField"><label class="form-label" for="nodeSectionId">Section group</label><div id="nodeSectionHelp" class="form-text mt-0 mb-1">Drag the node into or out of a section, or choose one here.</div><select class="form-select" id="nodeSectionId" aria-describedby="nodeSectionHelp"><option value="">No section</option></select></div>
                 <div class="mb-3"><label class="form-label" for="nodePresentationStyle">Visual style</label><select class="form-select" id="nodePresentationStyle"><option value="">Standard symbol</option><option value="step">Compact step</option><option value="card">Information card</option><option value="banner">Solid banner</option><option value="plain">Plain text</option><option value="band">Section with header band</option></select></div>
                 <div class="mb-3"><label class="form-label" for="nodeNotes">Notes</label><textarea class="form-control" id="nodeNotes" rows="3" maxlength="1000" placeholder="Optional supporting detail"></textarea></div>

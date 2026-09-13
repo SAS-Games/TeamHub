@@ -165,6 +165,7 @@
         byId("nodeTitle").addEventListener("blur", finalizeSelectedNodeTitle);
         byId("nodeType").addEventListener("change", changeSelectedNodeType);
         ["nodeTone", "nodeLayer", "nodePortLayout", "nodeSectionId", "nodePresentationStyle"].forEach(id => byId(id).addEventListener("change", updateSelectedNode));
+        ["nodeInputPins", "nodeOutputPins"].forEach(id => byId(id).addEventListener("change", updateConnectorPins));
         byId("nodeChildFlowId").addEventListener("change", updateSelectedChildFlow);
         byId("openChildFlow").addEventListener("click", () => {
             if (selectedNode?.childFlowId) openChildFlowById(selectedNode.childFlowId);
@@ -522,6 +523,7 @@
         byId("nodeTone").value = node.customProperties?.tone || "";
         byId("nodeLayer").value = node.customProperties?.layer || "";
         byId("nodePortLayout").value = node.customProperties?.portLayout || "horizontal";
+        configureConnectorPinControls(node);
         populateSectionOptions(node);
         byId("nodePresentationStyle").value = node.customProperties?.presentationStyle || "";
         byId("nodeNotes").value = node.customProperties?.notes || "";
@@ -542,6 +544,49 @@
         byId("taskEnabled").checked = String(node.customProperties?.enabled ?? "true").toLowerCase() !== "false";
         byId("newNodeComment").value = "";
         renderNodeComments(node.comments || []);
+    }
+
+    function configureConnectorPinControls(node) {
+        const config = nodeTypes[node.type] || nodeTypes.Process;
+        configureConnectorPinSelect(byId("nodeInputPins"), config.inputs, node.customProperties?.inputPins);
+        configureConnectorPinSelect(byId("nodeOutputPins"), config.outputs, node.customProperties?.outputPins);
+    }
+
+    function configureConnectorPinSelect(select, defaultCount, configuredCount) {
+        const supported = defaultCount > 0;
+        select.disabled = !supported;
+        select.options[0].textContent = supported ? `Automatic (${defaultCount})` : "Not available";
+        const count = Number(configuredCount);
+        select.value = supported && Number.isInteger(count) && count >= 1 && count <= 6
+            ? String(count)
+            : "";
+    }
+
+    function updateConnectorPins(event) {
+        if (!selectedNode) return;
+        const kind = event.currentTarget.id === "nodeInputPins" ? "input" : "output";
+        const config = nodeTypes[selectedNode.type] || nodeTypes.Process;
+        const defaultCount = kind === "input" ? config.inputs : config.outputs;
+        const desiredCount = adapter.portCount(defaultCount, event.currentTarget.value);
+        const currentCount = adapter.getPortCount(selectedNode.id, kind);
+
+        if (desiredCount < currentCount) {
+            const prefix = `${kind}_`;
+            const affectedConnections = adapter.getGraph().connections.filter(connection => {
+                const ownsPort = kind === "input"
+                    ? connection.targetNodeId === selectedNode.id
+                    : connection.sourceNodeId === selectedNode.id;
+                const port = kind === "input" ? connection.targetPort : connection.sourcePort;
+                return ownsPort && port?.startsWith(prefix) && Number(port.slice(prefix.length)) > desiredCount;
+            });
+            if (affectedConnections.length > 0
+                && !window.confirm(`Reducing ${kind} pins will remove ${affectedConnections.length} connected path${affectedConnections.length === 1 ? "" : "s"}. Continue?`)) {
+                configureConnectorPinControls(selectedNode);
+                return;
+            }
+        }
+
+        updateSelectedNode();
     }
 
     function populateSectionOptions(node) {
@@ -604,6 +649,11 @@
             presentationStyle: byId("nodePresentationStyle").value,
             notes: byId("nodeNotes").value
         };
+        delete customProperties.inputPins;
+        delete customProperties.outputPins;
+        if (!byId("nodeInputPins").disabled && byId("nodeInputPins").value) customProperties.inputPins = byId("nodeInputPins").value;
+        if (!byId("nodeOutputPins").disabled && byId("nodeOutputPins").value) customProperties.outputPins = byId("nodeOutputPins").value;
+
         if (isWorkCenter() && selectedNode.type === "Activity") {
             Object.assign(customProperties, {
                 stepKey: byId("taskStepKey").value,
@@ -850,6 +900,9 @@
         const node = graph.nodes.find(item => item.id === selectedNode.id);
         if (!node) return;
         node.type = byId("nodeType").value;
+        const config = nodeTypes[node.type] || nodeTypes.Process;
+        if (config.inputs === 0) delete node.customProperties?.inputPins;
+        if (config.outputs === 0) delete node.customProperties?.outputPins;
         if (node.type === "Section") delete node.customProperties?.sectionId;
         if (node.type === "Section" || node.type === "Annotation") node.childFlowId = null;
         adapter.setGraph(graph);
@@ -1104,8 +1157,8 @@
             const source = nodes.get(connection.sourceNodeId);
             const target = nodes.get(connection.targetNodeId);
             if (!source || !target) continue;
-            const start = exportPortPoint(source, "output", offsetX, offsetY);
-            const end = exportPortPoint(target, "input", offsetX, offsetY);
+            const start = exportPortPoint(source, "output", connection.sourcePort, offsetX, offsetY);
+            const end = exportPortPoint(target, "input", connection.targetPort, offsetX, offsetY);
             const bothVertical = source.customProperties?.portLayout === "vertical" && target.customProperties?.portLayout === "vertical";
             const curve = Math.max(45, Math.abs(bothVertical ? end.y - start.y : end.x - start.x) * .45);
             const path = bothVertical
@@ -1192,13 +1245,22 @@
         return `<rect x="${x}" y="${y}" width="${width}" height="${height}" rx="${radius}" ${common}/>${extra}`;
     }
 
-    function exportPortPoint(node, kind, offsetX, offsetY) {
+    function exportPortPoint(node, kind, portName, offsetX, offsetY) {
         const width = node.width || 184;
         const height = node.height || 76;
+        const config = nodeTypes[node.type] || nodeTypes.Process;
+        const defaultCount = kind === "output" ? config.outputs : config.inputs;
+        const configuredCount = Number(node.customProperties?.[kind === "output" ? "outputPins" : "inputPins"]);
+        const count = defaultCount > 0 && Number.isInteger(configuredCount) && configuredCount >= 1 && configuredCount <= 6
+            ? configuredCount
+            : defaultCount;
+        const match = String(portName || "").match(/_(\d+)$/);
+        const index = Math.min(count, Math.max(1, Number(match?.[1]) || 1));
+        const position = count > 0 ? index / (count + 1) : .5;
         if (node.customProperties?.portLayout === "vertical") {
-            return { x: node.x + width / 2 + offsetX, y: node.y + (kind === "output" ? height : 0) + offsetY };
+            return { x: node.x + width * position + offsetX, y: node.y + (kind === "output" ? height : 0) + offsetY };
         }
-        return { x: node.x + (kind === "output" ? width : 0) + offsetX, y: node.y + height / 2 + offsetY };
+        return { x: node.x + (kind === "output" ? width : 0) + offsetX, y: node.y + height * position + offsetY };
     }
 
     function exportMultilineText(value, x, y, maxCharacters, lineHeight, attributes, maxLines) {

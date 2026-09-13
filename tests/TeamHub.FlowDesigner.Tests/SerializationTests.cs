@@ -13,20 +13,28 @@ public sealed class SerializationTests
         {
             Name = "Release plan",
             DiagramType = DiagramType.CodeFlow,
-            Nodes = [new FlowNode { Id = "start", Type = NodeType.Start, X = 123.5, ChildFlowId = childFlowId, CustomProperties = { ["notes"] = "Entry point" }, Comments = [new NodeComment { Author = "Sam", Body = "Looks good" }] }],
+            Nodes =
+            [
+                new FlowNode { Id = "start", Type = NodeType.Start, X = 123.5, ChildFlowId = childFlowId, CustomProperties = { ["notes"] = "Entry point" }, Comments = [new NodeComment { Author = "Sam", Body = "Looks good" }] },
+                new FlowNode { Id = "router", Type = NodeType.Process, CustomProperties = { ["inputPins"] = "3", ["outputPins"] = "4" } }
+            ],
             Connections = []
         };
         var serializer = new SystemTextJsonFlowSerializer();
 
         var restored = serializer.Deserialize(serializer.Serialize(flow));
+        var restoredStart = restored.Nodes.Single(node => node.Id == "start");
+        var restoredRouter = restored.Nodes.Single(node => node.Id == "router");
 
         Assert.Equal(flow.Id, restored.Id);
-        Assert.Equal(NodeType.Start, restored.Nodes.Single().Type);
+        Assert.Equal(NodeType.Start, restoredStart.Type);
         Assert.Equal(DiagramType.CodeFlow, restored.DiagramType);
-        Assert.Equal(123.5, restored.Nodes.Single().X);
-        Assert.Equal(childFlowId, restored.Nodes.Single().ChildFlowId);
-        Assert.Equal("Entry point", restored.Nodes.Single().CustomProperties["notes"]);
-        Assert.Equal("Looks good", restored.Nodes.Single().Comments.Single().Body);
+        Assert.Equal(123.5, restoredStart.X);
+        Assert.Equal(childFlowId, restoredStart.ChildFlowId);
+        Assert.Equal("Entry point", restoredStart.CustomProperties["notes"]);
+        Assert.Equal("3", restoredRouter.CustomProperties["inputPins"]);
+        Assert.Equal("4", restoredRouter.CustomProperties["outputPins"]);
+        Assert.Equal("Looks good", restoredStart.Comments.Single().Body);
     }
 
     [Fact]

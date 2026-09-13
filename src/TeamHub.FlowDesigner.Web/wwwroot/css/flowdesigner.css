@@ -268,8 +268,14 @@
 .drawflow .drawflow-node.fd-shape-event .drawflow_content_node { min-height: 116px; padding: 28px 18px; }
 .fd-mode-businessworkflow .drawflow-node.fd-shape-terminator { width: 120px; min-height: 120px; border-radius: 50%; resize: none; }
 .fd-mode-businessworkflow .drawflow-node.fd-shape-terminator .drawflow_content_node { min-height: 118px; padding: 28px 17px; }
+.drawflow .drawflow-node:not(.fd-ports-vertical) .inputs,
+.drawflow .drawflow-node:not(.fd-ports-vertical) .outputs { position: absolute; top: 8px; bottom: 8px; z-index: 4; display: flex; flex-direction: column; justify-content: space-evenly; width: 16px; pointer-events: none; }
+.drawflow .drawflow-node:not(.fd-ports-vertical) .inputs { left: -8px; }
+.drawflow .drawflow-node:not(.fd-ports-vertical) .outputs { right: -8px; }
+.drawflow .drawflow-node:not(.fd-ports-vertical) .input,
+.drawflow .drawflow-node:not(.fd-ports-vertical) .output { position: static; inset: auto; float: none; margin: 0; transform: none; pointer-events: auto; }
 .drawflow .drawflow-node.fd-ports-vertical .inputs,
-.drawflow .drawflow-node.fd-ports-vertical .outputs { position: absolute; left: 0; z-index: 4; display: flex; justify-content: center; gap: 18px; width: 100%; height: 16px; pointer-events: none; }
+.drawflow .drawflow-node.fd-ports-vertical .outputs { position: absolute; left: 8px; z-index: 4; display: flex; justify-content: space-evenly; width: calc(100% - 16px); height: 16px; pointer-events: none; }
 .drawflow .drawflow-node.fd-ports-vertical .inputs { top: -8px; }
 .drawflow .drawflow-node.fd-ports-vertical .outputs { top: auto; bottom: -8px; }
 .drawflow .drawflow-node.fd-ports-vertical .input,
@@ -297,6 +303,9 @@
 .fd-selection-label { color: var(--fd-accent); margin: 16px 0 14px; padding-bottom: 8px; border-bottom: 1px solid var(--fd-border); font-size: .7rem; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
 .fd-properties .form-label { margin-bottom: .3rem; color: #4b5d58; font-size: .72rem; font-weight: 700; }
 .fd-properties .form-control, .fd-properties .form-select { font-size: .8rem; }
+.fd-pin-options { min-width: 0; padding: 12px; border: 1px solid var(--fd-border); border-radius: 8px; }
+.fd-pin-options legend { float: none; width: auto; margin: 0 0 8px; padding: 0 5px; color: #354943; font-size: .78rem; font-weight: 800; }
+.fd-pin-options .form-text { margin-top: 8px; font-size: .68rem; }
 .fd-child-flow { padding: 14px 0; border-top: 1px solid var(--fd-border); border-bottom: 1px solid var(--fd-border); }
 .fd-child-flow h3 { margin: 0 0 10px; font-size: .78rem; font-weight: 800; }
 .fd-comments { margin: 18px 0; padding: 14px 0; border-top: 1px solid var(--fd-border); border-bottom: 1px solid var(--fd-border); }
