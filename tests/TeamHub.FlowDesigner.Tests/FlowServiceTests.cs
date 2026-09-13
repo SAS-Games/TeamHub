@@ -240,6 +240,24 @@ public sealed class FlowServiceTests
     }
 
     [Fact]
+    public async Task Delete_AllowsCreatorToDiscardOnlyOwnUnsavedDraft()
+    {
+        await using var database = new TestDatabase();
+        var repository = await database.CreateRepositoryAsync();
+        var service = new FlowService(repository, new FlowValidator(), new SystemTextJsonFlowSerializer(), new TestUserProvider(), new CreateOnlyPermissionService());
+        var draft = await service.CreateAsync("Discard me");
+        var saved = ValidationTests.ConnectedFlow();
+        saved.CreatedBy = "test";
+        await repository.SaveAsync(saved);
+
+        await service.DeleteAsync(draft.Id);
+
+        Assert.Null(await repository.GetAsync(draft.Id));
+        await Assert.ThrowsAsync<UnauthorizedAccessException>(() => service.DeleteAsync(saved.Id));
+        Assert.NotNull(await repository.GetAsync(saved.Id));
+    }
+
+    [Fact]
     public async Task Delete_RejectsDiagramReferencedByParent()
     {
         await using var database = new TestDatabase();
@@ -273,5 +291,18 @@ public sealed class FlowServiceTests
         public bool CanUseDiagramType(DiagramType diagramType) => true;
         public bool CanManageTemplates() => true;
         public bool CanReviewPublications() => true;
+    }
+
+    private sealed class CreateOnlyPermissionService : IFlowPermissionService
+    {
+        public bool CanView(string? ownerId) => string.Equals(ownerId, "test", StringComparison.OrdinalIgnoreCase);
+        public bool CanViewShared() => false;
+        public bool CanEdit(string? ownerId) => false;
+        public bool CanDelete(string? ownerId) => false;
+        public bool CanCreate() => true;
+        public bool CanUseTemplate(FlowTemplate template) => true;
+        public bool CanUseDiagramType(DiagramType diagramType) => true;
+        public bool CanManageTemplates() => false;
+        public bool CanReviewPublications() => false;
     }
 }

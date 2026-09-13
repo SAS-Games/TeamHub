@@ -21,7 +21,13 @@ public sealed class TeamHubFlowPermissionService(IHttpContextAccessor httpContex
 
     public bool CanEdit(string? ownerId) => CurrentAccessLevel().Allows(AccessLevel.Edit) && (HasFullAccess() || IsOwner(ownerId));
 
-    public bool CanDelete(string? ownerId) => CurrentAccessLevel().Allows(AccessLevel.Delete) && (HasFullAccess() || IsOwner(ownerId));
+    public bool CanDelete(string? ownerId)
+    {
+        var accessLevel = CurrentAccessLevel();
+        return IsOwner(ownerId)
+            ? accessLevel.Allows(AccessLevel.Edit)
+            : accessLevel == AccessLevel.FullAccess;
+    }
 
     public bool CanCreate() => CurrentAccessLevel().Allows(AccessLevel.Create);
 

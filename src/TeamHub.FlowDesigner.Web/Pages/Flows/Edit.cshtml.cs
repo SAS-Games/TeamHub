@@ -22,6 +22,7 @@ public sealed class EditModel(
     public bool CanSaveAsTemplate { get; private set; }
     public bool IsPublishedView { get; private set; }
     public bool IsReviewPreview { get; private set; }
+    public bool StartInPresentation { get; private set; }
     public string LoadUrl { get; private set; } = string.Empty;
     public string SaveUrl { get; private set; } = string.Empty;
     public string LinkTargetsUrl { get; private set; } = string.Empty;
@@ -34,9 +35,11 @@ public sealed class EditModel(
         Guid id,
         string? trail,
         bool published = false,
+        bool present = false,
         Guid? requestId = null,
         CancellationToken cancellationToken = default)
     {
+        StartInPresentation = present;
         if (requestId.HasValue)
         {
             if (!publications.CanReview) return Forbid();
@@ -46,7 +49,17 @@ public sealed class EditModel(
             IsReviewPreview = true;
             ReviewRequestId = requestId;
             LoadUrl = $"/api/flows/publication-requests/{requestId.Value}/snapshot?flowId={id}";
-            BackPath = Url.Page("/Flows/Review") ?? "/flows/review";
+            await LoadBreadcrumbsAsync(
+                id,
+                trail,
+                (ancestorId, token) => publications.GetRequestDiagramAsync(requestId.Value, ancestorId, token),
+                published: false,
+                requestId: requestId,
+                present: present,
+                cancellationToken: cancellationToken);
+            BackPath = Breadcrumbs.Count > 0
+                ? Breadcrumbs[^1].Url
+                : Url.Page("/Flows/Review") ?? "/flows/review";
             return Page();
         }
 
@@ -62,7 +75,18 @@ public sealed class EditModel(
             LoadUrl = $"/api/flows/published/{id}";
             SaveUrl = $"/api/flows/published/{id}";
             LinkTargetsUrl = $"/api/flows/published/{id}/link-targets";
-            BackPath = (Url.Page("/Flows/Index") ?? "/flows") + "#published";
+            await LoadBreadcrumbsAsync(
+                id,
+                trail,
+                async (ancestorId, token) =>
+                    (await publications.GetPublishedBySourceAsync(ancestorId, token))?.Definition,
+                published: true,
+                requestId: null,
+                present: present,
+                cancellationToken: cancellationToken);
+            BackPath = Breadcrumbs.Count > 0
+                ? Breadcrumbs[^1].Url
+                : (Url.Page("/Flows/Index") ?? "/flows") + "#published";
             return Page();
         }
 
@@ -81,7 +105,14 @@ public sealed class EditModel(
         HasPendingPublicationRequest = latestRequest?.Status == FlowPublicationRequestStatus.Pending;
         LatestPublicationStatus = latestRequest?.Status;
         PublicationReviewNote = latestRequest?.ReviewNote;
-        await LoadBreadcrumbsAsync(id, trail, cancellationToken);
+        await LoadBreadcrumbsAsync(
+            id,
+            trail,
+            (ancestorId, token) => flows.GetAsync(ancestorId, token),
+            published: false,
+            requestId: null,
+            present: present,
+            cancellationToken: cancellationToken);
         BackPath = Breadcrumbs.Count > 0
             ? Breadcrumbs[^1].Url
             : flow.DiagramType == DiagramType.WorkCenterWorkflow
@@ -106,7 +137,14 @@ public sealed class EditModel(
         DiagramType = flow.DiagramType;
     }
 
-    private async Task LoadBreadcrumbsAsync(Guid currentId, string? trail, CancellationToken cancellationToken)
+    private async Task LoadBreadcrumbsAsync(
+        Guid currentId,
+        string? trail,
+        Func<Guid, CancellationToken, Task<FlowDefinition?>> loadAncestor,
+        bool published,
+        Guid? requestId,
+        bool present,
+        CancellationToken cancellationToken)
     {
         var breadcrumbs = new List<FlowBreadcrumb>();
         var prefix = new List<Guid>();
@@ -120,10 +158,16 @@ public sealed class EditModel(
         foreach (var id in ids)
         {
             if (!seen.Add(id)) break;
-            var ancestor = await flows.GetAsync(id, cancellationToken);
+            var ancestor = await loadAncestor(id, cancellationToken);
             if (ancestor is null) break;
             var ancestorTrail = string.Join(',', prefix);
-            var url = Url.Page("/Flows/Edit", new { id, trail = ancestorTrail }) ?? $"/flows/{id}/edit";
+            var presentation = present ? true : (bool?)null;
+            var url = requestId.HasValue
+                ? Url.Page("/Flows/Edit", new { id, trail = ancestorTrail, requestId, present = presentation })
+                : published
+                    ? Url.Page("/Flows/Edit", new { id, trail = ancestorTrail, published = true, present = presentation })
+                    : Url.Page("/Flows/Edit", new { id, trail = ancestorTrail, present = presentation });
+            url ??= $"/flows/{id}/edit";
             breadcrumbs.Add(new FlowBreadcrumb(id, ancestor.Name, url));
             prefix.Add(id);
         }

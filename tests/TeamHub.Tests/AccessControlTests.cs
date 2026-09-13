@@ -1,4 +1,5 @@
 using FluentAssertions;
+using System.Security.Claims;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc.RazorPages;
 using Microsoft.AspNetCore.Routing;
@@ -8,6 +9,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using TeamHub.Authentication;
 using TeamHub.Web.AccessControl;
+using TeamHub.Web.FlowDesigner;
 
 namespace TeamHub.Tests;
 
@@ -165,6 +167,9 @@ public sealed class AccessControlTests
     [InlineData("GET", "/Studio/Configuration", "?studioId=1", AccessLevel.Edit)]
     [InlineData("POST", "/Studio/Configuration", "?handler=Edit", AccessLevel.Edit)]
     [InlineData("GET", "/Flows/New", "", AccessLevel.Create)]
+    [InlineData("DELETE", "/api/flows/00000000-0000-0000-0000-000000000001", "", AccessLevel.Create)]
+    [InlineData("POST", "/Flows", "?handler=Delete", AccessLevel.Edit)]
+    [InlineData("POST", "/Flows", "?handler=DeletePublished", AccessLevel.FullAccess)]
     [InlineData("POST", "/Studio/Configuration", "?handler=Delete", AccessLevel.Delete)]
     [InlineData("GET", "/Flows/Review", "", AccessLevel.FullAccess)]
     [InlineData("GET", "/api/flows/publication-requests/id/snapshot", "", AccessLevel.FullAccess)]
@@ -180,6 +185,22 @@ public sealed class AccessControlTests
         context.Request.QueryString = new QueryString(query);
 
         TeamHubAccessRoutes.ResolveRequiredAccess(context.Request).Should().Be(expected);
+    }
+
+    [Fact]
+    public void FlowOwner_WithEditAccess_CanDeleteOnlyOwnDiagrams()
+    {
+        var context = new DefaultHttpContext
+        {
+            User = new ClaimsPrincipal(new ClaimsIdentity(
+                [new Claim(ClaimTypes.Name, "alice")],
+                "Test"))
+        };
+        context.Items["TeamHub.AccessLevel"] = AccessLevel.Edit;
+        var permissions = new TeamHubFlowPermissionService(new HttpContextAccessor { HttpContext = context });
+
+        permissions.CanDelete("alice").Should().BeTrue();
+        permissions.CanDelete("bob").Should().BeFalse();
     }
 
     [Theory]

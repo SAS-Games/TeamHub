@@ -165,13 +165,18 @@ public static class TeamHubAccessRoutes
     {
         var path = request.Path.Value ?? string.Empty;
         var handler = request.Query["handler"].ToString();
-        if (HttpMethods.IsDelete(request.Method) || handler.Contains("Delete", StringComparison.OrdinalIgnoreCase)) return AccessLevel.Delete;
         if (path.StartsWith("/Flows/Review", StringComparison.OrdinalIgnoreCase)
             || path.StartsWith("/api/flows/publication-requests/", StringComparison.OrdinalIgnoreCase)
             || handler.Contains("Approve", StringComparison.OrdinalIgnoreCase)
-            || handler.Contains("Reject", StringComparison.OrdinalIgnoreCase)) return AccessLevel.FullAccess;
+            || handler.Contains("Reject", StringComparison.OrdinalIgnoreCase)
+            || handler.Equals("DeletePublished", StringComparison.OrdinalIgnoreCase)) return AccessLevel.FullAccess;
         if (path.StartsWith("/api/flows/published/", StringComparison.OrdinalIgnoreCase)
             && !HttpMethods.IsGet(request.Method)) return AccessLevel.FullAccess;
+        if (HttpMethods.IsDelete(request.Method)
+            && path.StartsWith("/api/flows/", StringComparison.OrdinalIgnoreCase)) return AccessLevel.Create;
+        if (path.StartsWith("/Flows", StringComparison.OrdinalIgnoreCase)
+            && handler.Equals("Delete", StringComparison.OrdinalIgnoreCase)) return AccessLevel.Edit;
+        if (HttpMethods.IsDelete(request.Method) || handler.Contains("Delete", StringComparison.OrdinalIgnoreCase)) return AccessLevel.Delete;
         if (path.StartsWith("/Studio/Configuration", StringComparison.OrdinalIgnoreCase))
         {
             if (HttpMethods.IsPost(request.Method) && handler.Equals("Create", StringComparison.OrdinalIgnoreCase)) return AccessLevel.Create;

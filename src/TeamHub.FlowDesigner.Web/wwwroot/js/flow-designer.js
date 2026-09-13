@@ -85,6 +85,7 @@
         setSaveState(canEdit ? (isDraft ? "unsaved" : "saved") : "saved", canEdit ? (isDraft ? "Not saved yet" : "Saved") : "View only");
         bindUi();
         clearProperties();
+        if (root.dataset.startPresentation === "true") await enterPresentation(false);
     }
 
     function bindUi() {
@@ -147,8 +148,12 @@
         byId("workflowEnabled").addEventListener("change", markDirty);
         byId("undoButton").addEventListener("click", undo);
         byId("redoButton").addEventListener("click", redo);
-        byId("presentationButton").addEventListener("click", enterPresentation);
-        byId("exitPresentation").addEventListener("click", exitPresentation);
+        byId("presentationButton").addEventListener("click", () => enterPresentation());
+        byId("exitPresentation").addEventListener("click", () => exitPresentation());
+        byId("presentationBack").addEventListener("click", event => {
+            event.preventDefault();
+            requestLeave(event.currentTarget.href);
+        });
         byId("zoomIn").addEventListener("click", () => adapter.zoomIn());
         byId("zoomOut").addEventListener("click", () => adapter.zoomOut());
         byId("zoomReset").addEventListener("click", () => adapter.resetZoom());
@@ -702,13 +707,11 @@
         const ancestors = (root.dataset.trail || "").split(",").filter(Boolean);
         if (!ancestors.includes(flowId)) ancestors.push(flowId);
         const nextTrail = ancestors.slice(-20).join(",");
-        if (root.dataset.publishedView === "true") {
-            window.location.assign(`/flows/${childFlowId}/edit?published=true`);
-        } else if (reviewRequestId) {
-            window.location.assign(`/flows/${childFlowId}/edit?requestId=${encodeURIComponent(reviewRequestId)}`);
-        } else {
-            window.location.assign(`/flows/${childFlowId}/edit?trail=${encodeURIComponent(nextTrail)}`);
-        }
+        const parameters = new URLSearchParams({ trail: nextTrail });
+        if (root.dataset.publishedView === "true") parameters.set("published", "true");
+        else if (reviewRequestId) parameters.set("requestId", reviewRequestId);
+        if (presentationMode) parameters.set("present", "true");
+        window.location.assign(`/flows/${childFlowId}/edit?${parameters}`);
     }
 
     async function createChildFlow(event) {
@@ -951,9 +954,10 @@
         else if (event.key === "Delete" || event.key === "Backspace") { if (adapter.deleteSelected()) event.preventDefault(); }
     }
 
-    async function enterPresentation() {
+    async function enterPresentation(requestFullscreen = true) {
         if (presentationMode) return;
         presentationMode = true;
+        setPresentationUrl(true);
         root.classList.add("is-presenting");
         byId("presentationButton").setAttribute("aria-pressed", "true");
         byId("toolbox").classList.remove("open");
@@ -965,7 +969,7 @@
             byId("exitPresentation").focus({ preventScroll: true });
         });
 
-        if (document.fullscreenEnabled && !document.fullscreenElement) {
+        if (requestFullscreen && document.fullscreenEnabled && !document.fullscreenElement) {
             try {
                 await root.requestFullscreen();
             } catch {
@@ -988,14 +992,22 @@
     function finishPresentationExit() {
         if (!presentationMode) return;
         presentationMode = false;
+        setPresentationUrl(false);
         root.classList.remove("is-presenting");
         byId("presentationButton").setAttribute("aria-pressed", "false");
         adapter.setSpacePanning(false);
-        adapter.setReadOnly(false);
+        adapter.setReadOnly(!canEdit);
         window.requestAnimationFrame(() => {
             adapter.fitToView();
             byId("presentationButton").focus({ preventScroll: true });
         });
+    }
+
+    function setPresentationUrl(enabled) {
+        const url = new URL(window.location.href);
+        if (enabled) url.searchParams.set("present", "true");
+        else url.searchParams.delete("present");
+        window.history.replaceState(window.history.state, "", url);
     }
 
     function pasteNode() {

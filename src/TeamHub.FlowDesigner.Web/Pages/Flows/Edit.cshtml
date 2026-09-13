@@ -10,9 +10,9 @@
     <link rel="stylesheet" href="~/_content/TeamHub.FlowDesigner.Web/css/flowdesigner.css" asp-append-version="true" />
 }
 
-<div class="fd-designer@(Model.CanEdit ? "" : " is-view-only")" id="flowDesigner" data-flow-id="@Model.FlowId" data-load-url="@Model.LoadUrl" data-save-url="@Model.SaveUrl" data-link-targets-url="@Model.LinkTargetsUrl" data-review-request-id="@Model.ReviewRequestId" data-published-view="@Model.IsPublishedView.ToString().ToLowerInvariant()" data-diagram-type="@Model.DiagramType" data-can-edit="@Model.CanEdit.ToString().ToLowerInvariant()" data-is-shared="@Model.IsShared.ToString().ToLowerInvariant()" data-current-user="@(User.Identity?.Name ?? "You")" data-trail="@Model.Trail">
+<div class="fd-designer@(Model.CanEdit ? "" : " is-view-only")" id="flowDesigner" data-flow-id="@Model.FlowId" data-load-url="@Model.LoadUrl" data-save-url="@Model.SaveUrl" data-link-targets-url="@Model.LinkTargetsUrl" data-review-request-id="@Model.ReviewRequestId" data-published-view="@Model.IsPublishedView.ToString().ToLowerInvariant()" data-start-presentation="@Model.StartInPresentation.ToString().ToLowerInvariant()" data-diagram-type="@Model.DiagramType" data-can-edit="@Model.CanEdit.ToString().ToLowerInvariant()" data-is-shared="@Model.IsShared.ToString().ToLowerInvariant()" data-current-user="@(User.Identity?.Name ?? "You")" data-trail="@Model.Trail">
     <div class="fd-designer-toolbar">
-        <div class="d-flex align-items-center gap-2 min-w-0">
+        <div class="fd-toolbar-identity d-flex align-items-center gap-2 min-w-0">
             <a class="btn btn-sm btn-light fd-icon-button" id="backToFlows" href="@Model.BackPath" aria-label="Back" title="Back">&larr;</a>
             <div class="min-w-0">
                 <nav class="fd-breadcrumbs" aria-label="Diagram hierarchy">
@@ -84,7 +84,10 @@
             <div class="fd-canvas-hint" id="canvasHint"><strong>Start building</strong><span>Drag a symbol here from the toolbox</span></div>
             <div class="fd-presentation-controls" aria-live="polite">
                 <span><strong>Presentation mode</strong><small>Drag to pan &middot; Scroll to zoom</small></span>
-                <button class="btn btn-sm btn-light" id="exitPresentation" type="button">Exit <span aria-hidden="true">Esc</span></button>
+                <div class="d-flex gap-1">
+                    <a class="btn btn-sm btn-light" id="presentationBack" href="@Model.BackPath">&larr; Back</a>
+                    <button class="btn btn-sm btn-light" id="exitPresentation" type="button">Exit <span aria-hidden="true">Esc</span></button>
+                </div>
             </div>
             <div class="fd-canvas-controls" aria-label="Canvas controls">
                 <button class="btn btn-sm btn-light" id="zoomOut" type="button" title="Zoom out">&minus;</button>

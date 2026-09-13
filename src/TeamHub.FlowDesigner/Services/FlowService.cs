@@ -175,7 +175,10 @@ public sealed class FlowService(
     {
         var flow = await repository.GetAsync(id, cancellationToken)
             ?? throw new KeyNotFoundException($"Flow '{id}' was not found.");
-        if (!permissions.CanDelete(flow.CreatedBy))
+        var canDiscardOwnDraft = flow.Version <= 0
+            && permissions.CanCreate()
+            && string.Equals(flow.CreatedBy, currentUser.GetCurrentUserId(), StringComparison.OrdinalIgnoreCase);
+        if (!canDiscardOwnDraft && !permissions.CanDelete(flow.CreatedBy))
         {
             throw new UnauthorizedAccessException("The current user cannot delete this flow diagram.");
         }
