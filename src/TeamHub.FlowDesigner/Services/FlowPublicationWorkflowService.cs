@@ -341,6 +341,64 @@ public sealed class FlowPublicationWorkflowService(
         return sanitized.Flows.Single(item => item.Id == sourceFlowId);
     }
 
+    public async Task<PublishedFlowSummary> DeletePublishedAsync(
+        Guid sourceFlowId,
+        CancellationToken cancellationToken = default)
+    {
+        RequireReviewer();
+        var deletedBy = RequiredCurrentUser();
+
+        await using var publishedContext = await publishedContextFactory.CreateDbContextAsync(cancellationToken);
+        var current = await FindPublishedBundleAsync(
+            publishedContext,
+            sourceFlowId,
+            tracking: false,
+            cancellationToken)
+            ?? throw new KeyNotFoundException($"Published diagram '{sourceFlowId}' was not found.");
+        var deleted = ToSummary(current.Entity);
+        var rootFlowId = current.Entity.SourceFlowId;
+        var publicationRequestIds = await publishedContext.PublishedFlows
+            .AsNoTracking()
+            .Where(item => item.SourceFlowId == rootFlowId)
+            .Select(item => item.PublicationRequestId)
+            .ToListAsync(cancellationToken);
+
+        await using var authoringContext = await authoringContextFactory.CreateDbContextAsync(cancellationToken);
+        var approvedRequests = await authoringContext.PublicationRequests
+            .Where(item =>
+                (publicationRequestIds.Contains(item.Id) || item.FlowId == rootFlowId)
+                && item.Status == FlowPublicationRequestStatus.Approved.ToString())
+            .ToListAsync(cancellationToken);
+        var deletedAt = DateTime.UtcNow;
+        foreach (var request in approvedRequests)
+        {
+            request.Status = FlowPublicationRequestStatus.Deleted.ToString();
+            request.DeletedBy = deletedBy;
+            request.DeletedAt = deletedAt;
+        }
+        await authoringContext.SaveChangesAsync(cancellationToken);
+
+        try
+        {
+            await publishedContext.PublishedFlows
+                .Where(item => item.SourceFlowId == rootFlowId)
+                .ExecuteDeleteAsync(cancellationToken);
+        }
+        catch
+        {
+            foreach (var request in approvedRequests)
+            {
+                request.Status = FlowPublicationRequestStatus.Approved.ToString();
+                request.DeletedBy = null;
+                request.DeletedAt = null;
+            }
+            await authoringContext.SaveChangesAsync(CancellationToken.None);
+            throw;
+        }
+
+        return deleted;
+    }
+
     private async Task<FlowDiagramTemplateBundle> LoadAuthoringBundleAsync(
         Guid flowId,
         CancellationToken cancellationToken)
@@ -629,7 +687,8 @@ public sealed class FlowPublicationWorkflowService(
     private static FlowPublicationRequestSummary ToSummary(FlowPublicationRequestEntity entity) =>
         new(entity.Id, entity.FlowId, entity.FlowName, ParseDiagramType(entity.DiagramType), entity.SourceVersion,
             entity.NodeCount, entity.RequestedBy, AsUtc(entity.RequestedAt), ParseStatus(entity.Status), entity.ReviewedBy,
-            entity.ReviewedAt.HasValue ? AsUtc(entity.ReviewedAt.Value) : null, entity.ReviewNote);
+            entity.ReviewedAt.HasValue ? AsUtc(entity.ReviewedAt.Value) : null, entity.ReviewNote, entity.DeletedBy,
+            entity.DeletedAt.HasValue ? AsUtc(entity.DeletedAt.Value) : null);
 
     private static PublishedFlowSummary ToSummary(PublishedFlowEntity entity) =>
         new(entity.Id, entity.SourceFlowId, entity.Name, entity.Description, ParseDiagramType(entity.DiagramType),

@@ -16,4 +16,5 @@ public interface IFlowPublicationWorkflowService
     Task<IReadOnlyList<FlowSummary>> ListPublishedBundleAsync(Guid sourceFlowId, CancellationToken cancellationToken = default);
     Task<FlowDefinition?> GetRequestDiagramAsync(Guid requestId, Guid flowId, CancellationToken cancellationToken = default);
     Task<FlowDefinition> UpdatePublishedAsync(Guid sourceFlowId, FlowDefinition flow, CancellationToken cancellationToken = default);
+    Task<PublishedFlowSummary> DeletePublishedAsync(Guid sourceFlowId, CancellationToken cancellationToken = default);
 }

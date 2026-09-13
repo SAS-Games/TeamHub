@@ -30,6 +30,7 @@ public sealed class FlowDesignerDbContext(DbContextOptions<FlowDesignerDbContext
         request.Property(item => item.Status).HasMaxLength(30).IsRequired();
         request.Property(item => item.ReviewedBy).HasMaxLength(200);
         request.Property(item => item.ReviewNote).HasMaxLength(2000);
+        request.Property(item => item.DeletedBy).HasMaxLength(200);
         request.HasIndex(item => new { item.Status, item.RequestedAt });
         request.HasIndex(item => new { item.FlowId, item.RequestedAt });
     }

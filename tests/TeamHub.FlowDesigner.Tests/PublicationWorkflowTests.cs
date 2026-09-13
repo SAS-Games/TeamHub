@@ -168,6 +168,66 @@ public sealed class PublicationWorkflowTests
     }
 
     [Fact]
+    public async Task Admin_DeletePublishedHierarchy_RemovesAllVersionsPreservesDraftsAndPreventsRecovery()
+    {
+        await using var database = new TestDatabase();
+        var repository = await database.CreateRepositoryAsync();
+        await database.InitializePublishedStoreAsync();
+        var parent = ValidationTests.ConnectedFlow();
+        parent.CreatedBy = "alice";
+        parent.Name = "Published Parent";
+        var child = ValidationTests.ConnectedFlow();
+        child.CreatedBy = "alice";
+        child.Name = "Published Child";
+        parent.Nodes[0].ChildFlowId = child.Id;
+        await repository.SaveAsync(child);
+        await repository.SaveAsync(parent);
+        var alice = CreateService(database, repository, "alice", isAdmin: false);
+        var admin = CreateService(database, repository, "admin", isAdmin: true);
+
+        var firstRequest = await alice.RequestAsync(parent.Id);
+        await admin.ApproveAsync(firstRequest.Id, null);
+        parent.Name = "Published Parent v2";
+        parent.Version++;
+        await repository.SaveAsync(parent);
+        var secondRequest = await alice.RequestAsync(parent.Id);
+        await admin.ApproveAsync(secondRequest.Id, null);
+
+        await Assert.ThrowsAsync<UnauthorizedAccessException>(
+            () => alice.DeletePublishedAsync(parent.Id));
+        var deleted = await admin.DeletePublishedAsync(child.Id);
+
+        Assert.Equal(parent.Id, deleted.SourceFlowId);
+        Assert.Empty(await admin.ListPublishedAsync());
+        Assert.Null(await admin.GetPublishedBySourceAsync(parent.Id));
+        Assert.Null(await admin.GetPublishedBySourceAsync(child.Id));
+        await using (var publishedContext = await database.PublishedFactory.CreateDbContextAsync())
+        {
+            var storedVersions = await publishedContext.Database
+                .SqlQueryRaw<int>("SELECT COUNT(*) AS Value FROM PublishedDiagrams")
+                .SingleAsync();
+            Assert.Equal(0, storedVersions);
+        }
+        Assert.NotNull(await repository.GetAsync(parent.Id));
+        Assert.NotNull(await repository.GetAsync(child.Id));
+
+        var firstAudit = (await admin.GetRequestAsync(firstRequest.Id))!.Summary;
+        var secondAudit = (await admin.GetRequestAsync(secondRequest.Id))!.Summary;
+        Assert.Equal(FlowPublicationRequestStatus.Deleted, firstAudit.Status);
+        Assert.Equal(FlowPublicationRequestStatus.Deleted, secondAudit.Status);
+        Assert.Equal("admin", firstAudit.DeletedBy);
+        Assert.Equal("admin", secondAudit.DeletedBy);
+        Assert.NotNull(firstAudit.DeletedAt);
+        Assert.NotNull(secondAudit.DeletedAt);
+
+        await new PublishedFlowRecoveryService(
+            database.Factory,
+            database.PublishedFactory,
+            new SystemTextJsonFlowSerializer()).RecoverIfEmptyAsync();
+        Assert.Null(await admin.GetPublishedBySourceAsync(parent.Id));
+        Assert.Null(await admin.GetPublishedBySourceAsync(child.Id));
+    }
+    [Fact]
     public async Task Admin_CanEditAPublishedChildAndCreatesANewHierarchyVersion()
     {
         await using var database = new TestDatabase();

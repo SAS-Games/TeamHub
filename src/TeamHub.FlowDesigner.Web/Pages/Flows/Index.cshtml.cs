@@ -83,4 +83,23 @@ public sealed class IndexModel(
             return RedirectToPage();
         }
     }
+
+    public async Task<IActionResult> OnPostDeletePublishedAsync(Guid id, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var deleted = await publications.DeletePublishedAsync(id, cancellationToken);
+            TempData["FlowMessage"] = $"{deleted.Name} and its published child pages were permanently deleted. Authoring drafts were not changed.";
+            return RedirectToPage();
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return Forbid();
+        }
+        catch (KeyNotFoundException exception)
+        {
+            TempData["FlowError"] = exception.Message;
+            return RedirectToPage();
+        }
+    }
 }

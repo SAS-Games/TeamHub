@@ -13,6 +13,10 @@
     {
         <div class="alert alert-warning" role="alert">@flowError</div>
     }
+    @if (TempData["FlowMessage"] is string flowMessage)
+    {
+        <div class="alert alert-success" role="status">@flowMessage</div>
+    }
     <div class="d-flex flex-column flex-md-row align-items-md-end justify-content-between gap-3 mb-4">
         <div>
             <div class="fd-eyebrow">Workspace</div>
@@ -107,7 +111,13 @@
                             <h3 class="h5 mt-4 mb-2 text-truncate" title="@flow.Name">@flow.Name</h3>
                             <p class="text-secondary small fd-card-description">@(string.IsNullOrWhiteSpace(flow.Description) ? "No description" : flow.Description)</p>
                             <div class="fd-card-meta"><span>@flow.NodeCount nodes</span><span>Approved @flow.PublishedAt.LocalDateTime.ToString("MMM d, yyyy")</span></div>
-                            <a class="btn btn-outline-success w-100 mt-4" asp-page="/Flows/Edit" asp-route-id="@flow.SourceFlowId" asp-route-published="true">@(Model.CanReviewPublications ? "Edit published hierarchy" : "View published hierarchy")</a>
+                            <div class="d-flex gap-2 mt-4">
+                                <a class="btn btn-outline-success flex-grow-1" asp-page="/Flows/Edit" asp-route-id="@flow.SourceFlowId" asp-route-published="true">@(Model.CanReviewPublications ? "Edit published hierarchy" : "View published hierarchy")</a>
+                                @if (Model.CanReviewPublications)
+                                {
+                                    <button class="btn btn-outline-danger" type="button" data-bs-toggle="modal" data-bs-target="#deletePublishedModal" data-flow-id="@flow.SourceFlowId" data-flow-name="@flow.Name" aria-label="Delete published hierarchy">Delete</button>
+                                }
+                            </div>
                         </article>
                     </div>
                 }
@@ -136,6 +146,20 @@
     </div></div>
 </div>
 
+<div class="modal fade" id="deletePublishedModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered"><div class="modal-content">
+        <form method="post" asp-page-handler="DeletePublished">
+            <div class="modal-header"><h2 class="modal-title fs-5">Delete published hierarchy?</h2><button class="btn-close" type="button" data-bs-dismiss="modal"></button></div>
+            <div class="modal-body">
+                <input type="hidden" name="id" />
+                <p>Permanently remove <strong data-delete-published-name></strong> and all its published child pages?</p>
+                <p class="mb-0 text-secondary small">Authoring drafts will remain available. This action cannot be undone.</p>
+            </div>
+            <div class="modal-footer"><button class="btn btn-light" type="button" data-bs-dismiss="modal">Cancel</button><button class="btn btn-danger" type="submit">Delete Published Hierarchy</button></div>
+        </form>
+    </div></div>
+</div>
+
 @section Scripts {
 <script>
 document.getElementById('renameModal')?.addEventListener('show.bs.modal', event => {
@@ -147,6 +171,11 @@ document.getElementById('deleteModal')?.addEventListener('show.bs.modal', event 
     const button = event.relatedTarget;
     event.target.querySelector('[name=id]').value = button.dataset.flowId;
     event.target.querySelector('[data-delete-name]').textContent = button.dataset.flowName;
+});
+document.getElementById('deletePublishedModal')?.addEventListener('show.bs.modal', event => {
+    const button = event.relatedTarget;
+    event.target.querySelector('[name=id]').value = button.dataset.flowId;
+    event.target.querySelector('[data-delete-published-name]').textContent = button.dataset.flowName;
 });
 </script>
 }

@@ -48,6 +48,7 @@ public static class ServiceCollectionExtensions
         await using var context = await factory.CreateDbContextAsync(cancellationToken);
         await context.Database.EnsureCreatedAsync(cancellationToken);
         await EnsurePublicationRequestTableAsync(context, cancellationToken);
+        await EnsurePublicationRequestDeletionColumnsAsync(context, cancellationToken);
         var publishedFactory = scope.ServiceProvider.GetRequiredService<IDbContextFactory<PublishedFlowDbContext>>();
         await using var publishedContext = await publishedFactory.CreateDbContextAsync(cancellationToken);
         await publishedContext.Database.EnsureCreatedAsync(cancellationToken);
@@ -89,13 +90,57 @@ public static class ServiceCollectionExtensions
                 Status TEXT NOT NULL,
                 ReviewedBy TEXT NULL,
                 ReviewedAt TEXT NULL,
-                ReviewNote TEXT NULL
+                ReviewNote TEXT NULL,
+                DeletedBy TEXT NULL,
+                DeletedAt TEXT NULL
             );
             CREATE INDEX IF NOT EXISTS IX_FlowPublicationRequests_Status_RequestedAt
                 ON FlowPublicationRequests (Status, RequestedAt);
             CREATE INDEX IF NOT EXISTS IX_FlowPublicationRequests_FlowId_RequestedAt
                 ON FlowPublicationRequests (FlowId, RequestedAt);
             """, cancellationToken);
+
+    private static async Task EnsurePublicationRequestDeletionColumnsAsync(
+        FlowDesignerDbContext context,
+        CancellationToken cancellationToken)
+    {
+        await context.Database.OpenConnectionAsync(cancellationToken);
+        try
+        {
+            if (!await ColumnExistsAsync(context, "FlowPublicationRequests", "DeletedBy", cancellationToken))
+            {
+                await context.Database.ExecuteSqlRawAsync(
+                    "ALTER TABLE FlowPublicationRequests ADD COLUMN DeletedBy TEXT NULL;",
+                    cancellationToken);
+            }
+            if (!await ColumnExistsAsync(context, "FlowPublicationRequests", "DeletedAt", cancellationToken))
+            {
+                await context.Database.ExecuteSqlRawAsync(
+                    "ALTER TABLE FlowPublicationRequests ADD COLUMN DeletedAt TEXT NULL;",
+                    cancellationToken);
+            }
+        }
+        finally
+        {
+            await context.Database.CloseConnectionAsync();
+        }
+    }
+
+    private static async Task<bool> ColumnExistsAsync(
+        FlowDesignerDbContext context,
+        string tableName,
+        string columnName,
+        CancellationToken cancellationToken)
+    {
+        await using var command = context.Database.GetDbConnection().CreateCommand();
+        command.CommandText = $"PRAGMA table_info({tableName});";
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            if (string.Equals(reader.GetString(1), columnName, StringComparison.OrdinalIgnoreCase)) return true;
+        }
+        return false;
+    }
 
     private sealed class AnonymousCurrentUserProvider : ICurrentUserProvider
     {

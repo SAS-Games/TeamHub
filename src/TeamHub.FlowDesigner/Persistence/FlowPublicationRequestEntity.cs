@@ -16,4 +16,6 @@ internal sealed class FlowPublicationRequestEntity
     public string? ReviewedBy { get; set; }
     public DateTime? ReviewedAt { get; set; }
     public string? ReviewNote { get; set; }
+    public string? DeletedBy { get; set; }
+    public DateTime? DeletedAt { get; set; }
 }

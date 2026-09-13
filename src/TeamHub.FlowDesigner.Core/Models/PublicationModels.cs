@@ -4,7 +4,8 @@ public enum FlowPublicationRequestStatus
 {
     Pending,
     Approved,
-    Rejected
+    Rejected,
+    Deleted
 }
 
 public sealed record FlowPublicationRequestSummary(
@@ -19,7 +20,9 @@ public sealed record FlowPublicationRequestSummary(
     FlowPublicationRequestStatus Status,
     string? ReviewedBy,
     DateTimeOffset? ReviewedAt,
-    string? ReviewNote);
+    string? ReviewNote,
+    string? DeletedBy,
+    DateTimeOffset? DeletedAt);
 
 public sealed record PublishedFlowSummary(
     Guid Id,
