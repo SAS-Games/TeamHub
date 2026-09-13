@@ -105,6 +105,17 @@
         return `M ${startX} ${startY} C ${sourceControl.x} ${sourceControl.y}, ${targetControl.x} ${targetControl.y}, ${endX} ${endY}`;
     }
 
+    function diamondPortPoint(side, progress) {
+        const position = Math.max(0, Math.min(1, Number(progress) || 0));
+        const edgeOffset = Math.abs(position - .5);
+        return {
+            top: { x: position, y: edgeOffset },
+            bottom: { x: position, y: 1 - edgeOffset },
+            left: { x: edgeOffset, y: position },
+            right: { x: 1 - edgeOffset, y: position }
+        }[side] || { x: 1, y: position };
+    }
+
     function nodeAppearanceClasses(data) {
         const tone = String(data?.customProperties?.tone || "").toLowerCase();
         const layer = String(data?.customProperties?.layer || "").toLowerCase();
@@ -425,6 +436,7 @@
             this.externalToInternal.set(externalId, String(internalId));
             this.internalToExternal.set(String(internalId), externalId);
             this.nodePositions.set(String(internalId), { x: Math.max(10, Number(x) || 100), y: Math.max(10, Number(y) || 100) });
+            this.positionShapePorts(String(internalId));
             this.suppressChanges = previousSuppress;
             if (emitChange) {
                 this.updateNodeSectionMembership(String(internalId));
@@ -519,6 +531,7 @@
             this.syncNodePorts(internalId, nextData);
             node.data = nextData;
             this.refreshNodeAppearance(internalId, node.data);
+            this.positionShapePorts(internalId);
             const content = document.querySelector(`#node-${internalId} .drawflow_content_node`);
             if (content) content.innerHTML = this.nodeHtml(node.data);
             window.requestAnimationFrame(() => {
@@ -839,8 +852,31 @@
             }
         }
 
+        positionShapePorts(internalId) {
+            const node = this.editor.drawflow.drawflow.Home.data[String(internalId)];
+            const element = document.getElementById(`node-${internalId}`);
+            const shape = nodeTypes[node?.data?.type]?.shape;
+            if (!node || !element || !["decision", "gateway"].includes(shape)) return;
+
+            const sides = portSides(node.data);
+            this.positionDiamondPortKind(element.querySelector(":scope > .inputs"), sides.input);
+            this.positionDiamondPortKind(element.querySelector(":scope > .outputs"), sides.output);
+        }
+
+        positionDiamondPortKind(container, side) {
+            const ports = [...(container?.children || [])];
+            ports.forEach((port, index) => {
+                const point = diamondPortPoint(side, (index + 1) / (ports.length + 1));
+                port.style.position = "absolute";
+                port.style.left = `${point.x * 100}%`;
+                port.style.top = `${point.y * 100}%`;
+                port.style.transform = "translate(-50%, -50%)";
+            });
+        }
+
         updateAllConnections() {
             for (const internalId of this.internalToExternal.keys()) {
+                this.positionShapePorts(internalId);
                 this.editor.updateConnectionNodes(`node-${internalId}`);
             }
             this.refreshConnectionLabels();
@@ -952,5 +988,5 @@
         }
     }
 
-    window.FlowDesignerAdapters = { DrawflowAdapter, nodeTypes, diagramTypes, palettes, connectionPath, normalizePortLayout, portSides };
+    window.FlowDesignerAdapters = { DrawflowAdapter, nodeTypes, diagramTypes, palettes, connectionPath, diamondPortPoint, normalizePortLayout, portSides };
 })();
