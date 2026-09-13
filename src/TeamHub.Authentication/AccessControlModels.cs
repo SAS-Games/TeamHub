@@ -84,6 +84,7 @@ public interface IUserAccessService
 {
     Task InitializeAsync(CancellationToken cancellationToken = default);
     Task EnsureModulesAsync(IReadOnlyCollection<string> modules, CancellationToken cancellationToken = default);
+    Task RemoveModulesAsync(IReadOnlyCollection<string> modules, CancellationToken cancellationToken = default);
     Task<AuthorizedUserRecord?> ValidateCredentialsAsync(string userId, string password, CancellationToken cancellationToken = default);
     Task<AuthorizedUserRecord?> FindActiveUserAsync(string userId, CancellationToken cancellationToken = default);
     Task<RegistrationResult> RegisterAsync(RegisterAuthorizedUserRequest request, CancellationToken cancellationToken = default);

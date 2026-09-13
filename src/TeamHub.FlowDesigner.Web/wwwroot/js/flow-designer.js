@@ -27,6 +27,8 @@
     const nodeTypes = window.FlowDesignerAdapters.nodeTypes;
     const diagramTypes = window.FlowDesignerAdapters.diagramTypes;
     const palettes = window.FlowDesignerAdapters.palettes;
+    const normalizePortLayout = window.FlowDesignerAdapters.normalizePortLayout;
+    const portSides = window.FlowDesignerAdapters.portSides;
     let flow = null;
     let selectedNode = null;
     let selectedConnection = null;
@@ -522,7 +524,7 @@
         byId("nodeType").value = node.type;
         byId("nodeTone").value = node.customProperties?.tone || "";
         byId("nodeLayer").value = node.customProperties?.layer || "";
-        byId("nodePortLayout").value = node.customProperties?.portLayout || "horizontal";
+        byId("nodePortLayout").value = normalizePortLayout(node.customProperties?.portLayout);
         configureConnectorPinControls(node);
         populateSectionOptions(node);
         byId("nodePresentationStyle").value = node.customProperties?.presentationStyle || "";
@@ -1159,11 +1161,13 @@
             if (!source || !target) continue;
             const start = exportPortPoint(source, "output", connection.sourcePort, offsetX, offsetY);
             const end = exportPortPoint(target, "input", connection.targetPort, offsetX, offsetY);
-            const bothVertical = source.customProperties?.portLayout === "vertical" && target.customProperties?.portLayout === "vertical";
-            const curve = Math.max(45, Math.abs(bothVertical ? end.y - start.y : end.x - start.x) * .45);
-            const path = bothVertical
-                ? `M ${start.x} ${start.y} C ${start.x} ${start.y + curve}, ${end.x} ${end.y - curve}, ${end.x} ${end.y}`
-                : `M ${start.x} ${start.y} C ${start.x + curve} ${start.y}, ${end.x - curve} ${end.y}, ${end.x} ${end.y}`;
+            const path = window.FlowDesignerAdapters.connectionPath(
+                start.x,
+                start.y,
+                end.x,
+                end.y,
+                portSides(source).output,
+                portSides(target).input);
             const tone = String(connection.metadata?.tone || "").toLowerCase();
             const resolvedTone = Object.hasOwn(connectorTones, tone) ? tone : "default";
             const connectorColor = connectorTones[resolvedTone];
@@ -1257,10 +1261,11 @@
         const match = String(portName || "").match(/_(\d+)$/);
         const index = Math.min(count, Math.max(1, Number(match?.[1]) || 1));
         const position = count > 0 ? index / (count + 1) : .5;
-        if (node.customProperties?.portLayout === "vertical") {
-            return { x: node.x + width * position + offsetX, y: node.y + (kind === "output" ? height : 0) + offsetY };
+        const side = portSides(node)[kind];
+        if (side === "top" || side === "bottom") {
+            return { x: node.x + width * position + offsetX, y: node.y + (side === "bottom" ? height : 0) + offsetY };
         }
-        return { x: node.x + (kind === "output" ? width : 0) + offsetX, y: node.y + height * position + offsetY };
+        return { x: node.x + (side === "right" ? width : 0) + offsetX, y: node.y + height * position + offsetY };
     }
 
     function exportMultilineText(value, x, y, maxCharacters, lineHeight, attributes, maxLines) {

@@ -16,7 +16,7 @@ public sealed class SerializationTests
             Nodes =
             [
                 new FlowNode { Id = "start", Type = NodeType.Start, X = 123.5, ChildFlowId = childFlowId, CustomProperties = { ["notes"] = "Entry point" }, Comments = [new NodeComment { Author = "Sam", Body = "Looks good" }] },
-                new FlowNode { Id = "router", Type = NodeType.Process, CustomProperties = { ["inputPins"] = "3", ["outputPins"] = "4" } }
+                new FlowNode { Id = "router", Type = NodeType.Process, CustomProperties = { ["inputPins"] = "3", ["outputPins"] = "4", ["portLayout"] = "left-bottom" } }
             ],
             Connections = []
         };
@@ -34,6 +34,7 @@ public sealed class SerializationTests
         Assert.Equal("Entry point", restoredStart.CustomProperties["notes"]);
         Assert.Equal("3", restoredRouter.CustomProperties["inputPins"]);
         Assert.Equal("4", restoredRouter.CustomProperties["outputPins"]);
+        Assert.Equal("left-bottom", restoredRouter.CustomProperties["portLayout"]);
         Assert.Equal("Looks good", restoredStart.Comments.Single().Body);
     }
 

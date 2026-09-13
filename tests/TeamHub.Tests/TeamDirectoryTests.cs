@@ -224,6 +224,139 @@ public sealed class TeamDirectoryTests
         }
     }
 
+    [Fact]
+    public async Task CustomTabs_StoreSchemasRowsAndAuditHistoryInTeamDatabase()
+    {
+        var dbPath = CreateDatabasePath();
+        try
+        {
+            await using var provider = CreateServices(dbPath);
+            await using var scope = provider.CreateAsyncScope();
+            await scope.ServiceProvider.GetRequiredService<ITeamDatabaseInitializer>().InitializeAsync();
+            var tabs = scope.ServiceProvider.GetRequiredService<ICustomTeamTabService>();
+
+            var tab = await tabs.SaveTabAsync(new(null, "Support Metrics", 2));
+            var table = await tabs.SaveTableAsync(new(tab.Id, null, "Weekly Metrics"));
+            var status = await tabs.SaveColumnAsync(new(
+                table.Id, null, "Status", CustomTeamFieldTypes.Choice, true, ["Green", "Amber", "Red"]));
+            var hours = await tabs.SaveColumnAsync(new(
+                table.Id, null, "Hours", CustomTeamFieldTypes.Number, false, []));
+
+            var created = await tabs.SaveRowAsync(new(
+                table.Id,
+                null,
+                0,
+                new Dictionary<string, string?> { [status.Key] = "Green", [hours.Key] = "12.5" },
+                "asha@example.com"));
+            var loaded = await tabs.GetTabAsync("support-metrics");
+
+            loaded.Should().NotBeNull();
+            loaded!.Tables.Should().ContainSingle();
+            loaded.Tables[0].Columns.Should().HaveCount(2);
+            loaded.Tables[0].Rows.Should().ContainSingle().Which.Values[status.Key].Should().Be("Green");
+
+            var updated = await tabs.SaveRowAsync(new(
+                table.Id,
+                created.Id,
+                created.Version,
+                new Dictionary<string, string?> { [status.Key] = "Amber", [hours.Key] = "14" },
+                "dev@example.com"));
+            var staleUpdate = () => tabs.SaveRowAsync(new(
+                table.Id,
+                created.Id,
+                created.Version,
+                new Dictionary<string, string?> { [status.Key] = "Red" },
+                "stale@example.com"));
+            await staleUpdate.Should().ThrowAsync<InvalidOperationException>()
+                .WithMessage("*changed by another user*");
+
+            await tabs.RemoveRowAsync(table.Id, updated.Id, updated.Version, "admin@example.com");
+            (await tabs.GetTabAsync(tab.Slug))!.Tables[0].Rows.Should().BeEmpty();
+
+            await using var connection = new SqliteConnection($"Data Source={dbPath}");
+            await connection.OpenAsync();
+            await using var command = connection.CreateCommand();
+            command.CommandText = "SELECT COUNT(*) FROM CustomTeamRowAudits;";
+            Convert.ToInt32(await command.ExecuteScalarAsync()).Should().Be(3);
+        }
+        finally
+        {
+            DeleteDatabase(dbPath);
+        }
+    }
+
+    [Fact]
+    public async Task DeleteCustomTab_PermanentlyRemovesItsSchemaRowsAndAuditHistory()
+    {
+        var dbPath = CreateDatabasePath();
+        try
+        {
+            await using var provider = CreateServices(dbPath);
+            await using var scope = provider.CreateAsyncScope();
+            await scope.ServiceProvider.GetRequiredService<ITeamDatabaseInitializer>().InitializeAsync();
+            var tabs = scope.ServiceProvider.GetRequiredService<ICustomTeamTabService>();
+
+            var tab = await tabs.SaveTabAsync(new(null, "Temporary Planning"));
+            var table = await tabs.SaveTableAsync(new(tab.Id, null, "Draft Schedule"));
+            var column = await tabs.SaveColumnAsync(new(
+                table.Id, null, "Owner", CustomTeamFieldTypes.Text, true, []));
+            await tabs.SaveRowAsync(new(
+                table.Id,
+                null,
+                0,
+                new Dictionary<string, string?> { [column.Key] = "Asha" },
+                "admin@example.com"));
+
+            await tabs.DeleteTabAsync(tab.Id);
+
+            (await tabs.GetTabAsync(tab.Slug)).Should().BeNull();
+            await using var connection = new SqliteConnection($"Data Source={dbPath}");
+            await connection.OpenAsync();
+            await using var command = connection.CreateCommand();
+            command.CommandText = """
+                SELECT
+                    (SELECT COUNT(*) FROM CustomTeamTabs)
+                  + (SELECT COUNT(*) FROM CustomTeamTables)
+                  + (SELECT COUNT(*) FROM CustomTeamColumns)
+                  + (SELECT COUNT(*) FROM CustomTeamRows)
+                  + (SELECT COUNT(*) FROM CustomTeamRowAudits);
+                """;
+            Convert.ToInt32(await command.ExecuteScalarAsync()).Should().Be(0);
+        }
+        finally
+        {
+            DeleteDatabase(dbPath);
+        }
+    }
+    [Fact]
+    public async Task CustomTabs_ValidateRequiredAndTypedColumnValues()
+    {
+        var dbPath = CreateDatabasePath();
+        try
+        {
+            await using var provider = CreateServices(dbPath);
+            await using var scope = provider.CreateAsyncScope();
+            await scope.ServiceProvider.GetRequiredService<ITeamDatabaseInitializer>().InitializeAsync();
+            var tabs = scope.ServiceProvider.GetRequiredService<ICustomTeamTabService>();
+            var tab = await tabs.SaveTabAsync(new(null, "Planning"));
+            var table = await tabs.SaveTableAsync(new(tab.Id, null, "Dates"));
+            var date = await tabs.SaveColumnAsync(new(
+                table.Id, null, "Due date", CustomTeamFieldTypes.Date, true, []));
+
+            var missing = () => tabs.SaveRowAsync(new(
+                table.Id, null, 0, new Dictionary<string, string?>(), "user@example.com"));
+            var invalid = () => tabs.SaveRowAsync(new(
+                table.Id, null, 0, new Dictionary<string, string?> { [date.Key] = "tomorrow" }, "user@example.com"));
+
+            await missing.Should().ThrowAsync<ArgumentException>().WithMessage("*required*");
+            await invalid.Should().ThrowAsync<ArgumentException>().WithMessage("*valid value*");
+        }
+        finally
+        {
+            DeleteDatabase(dbPath);
+        }
+    }
+
     private static string CreateDatabasePath() =>
         Path.Combine(Path.GetTempPath(), $"teamhub-team-{Guid.NewGuid():N}.db");
 

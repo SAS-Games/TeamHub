@@ -44,13 +44,13 @@
                 @foreach (var module in Model.Modules)
                 {
                     <tr>
-                        <td><strong>@module</strong></td>
+                        <td><strong>@module.Label</strong></td>
                         @foreach (var type in Model.UserTypes)
                         {
-                            var level = Model.GetLevel(module, type);
-                            var locked = Model.IsLocked(module, type);
+                            var level = Model.GetLevel(module.Key, type);
+                            var locked = Model.IsLocked(module.Key, type);
                             <td>
-                                <input type="hidden" name="Input[@inputIndex].Module" value="@module" />
+                                <input type="hidden" name="Input[@inputIndex].Module" value="@module.Key" />
                                 <input type="hidden" name="Input[@inputIndex].UserType" value="@type" />
                                 @if (locked)
                                 {
@@ -59,8 +59,8 @@
                                 }
                                 else
                                 {
-                                    <select class="form-select form-select-sm" name="Input[@inputIndex].AccessLevel" aria-label="@module access for @type">
-                                        @foreach (var option in Model.AccessLevels)
+                                    <select class="form-select form-select-sm" name="Input[@inputIndex].AccessLevel" aria-label="@module.Label access for @type">
+                                        @foreach (var option in Model.GetAccessLevels(module.Key))
                                         {
                                             <option value="@option" selected="@(option == level)">@option.ToDisplayName()</option>
                                         }

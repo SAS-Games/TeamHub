@@ -50,6 +50,11 @@ internal sealed class TeamDbContext(DbContextOptions<TeamDbContext> options) : D
     public DbSet<SupportSpecializationRecord> SupportSpecializations => Set<SupportSpecializationRecord>();
     public DbSet<TeamAchievementRecord> TeamAchievements => Set<TeamAchievementRecord>();
     public DbSet<PageTextAppearanceRecord> PageTextAppearances => Set<PageTextAppearanceRecord>();
+    internal DbSet<CustomTeamTabRecord> CustomTeamTabs => Set<CustomTeamTabRecord>();
+    internal DbSet<CustomTeamTableRecord> CustomTeamTables => Set<CustomTeamTableRecord>();
+    internal DbSet<CustomTeamColumnRecord> CustomTeamColumns => Set<CustomTeamColumnRecord>();
+    internal DbSet<CustomTeamRowRecord> CustomTeamRows => Set<CustomTeamRowRecord>();
+    internal DbSet<CustomTeamRowAuditRecord> CustomTeamRowAudits => Set<CustomTeamRowAuditRecord>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -87,6 +92,52 @@ internal sealed class TeamDbContext(DbContextOptions<TeamDbContext> options) : D
             entity.HasKey(x => new { x.PageKey, x.ColumnKey });
             entity.Property(x => x.PageKey).HasMaxLength(128);
             entity.Property(x => x.ColumnKey).HasMaxLength(128);
+        });
+
+        modelBuilder.Entity<CustomTeamTabRecord>(entity =>
+        {
+            entity.ToTable("CustomTeamTabs");
+            entity.Property(x => x.Name).HasMaxLength(80);
+            entity.Property(x => x.Slug).HasMaxLength(80);
+            entity.HasIndex(x => x.Slug).IsUnique();
+        });
+
+        modelBuilder.Entity<CustomTeamTableRecord>(entity =>
+        {
+            entity.ToTable("CustomTeamTables");
+            entity.Property(x => x.Name).HasMaxLength(100);
+            entity.HasIndex(x => new { x.TabId, x.DisplayOrder });
+            entity.HasOne<CustomTeamTabRecord>().WithMany().HasForeignKey(x => x.TabId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<CustomTeamColumnRecord>(entity =>
+        {
+            entity.ToTable("CustomTeamColumns");
+            entity.Property(x => x.Key).HasMaxLength(80);
+            entity.Property(x => x.Label).HasMaxLength(80);
+            entity.Property(x => x.FieldType).HasMaxLength(32);
+            entity.HasIndex(x => new { x.TableId, x.Key }).IsUnique();
+            entity.HasOne<CustomTeamTableRecord>().WithMany().HasForeignKey(x => x.TableId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<CustomTeamRowRecord>(entity =>
+        {
+            entity.ToTable("CustomTeamRows");
+            entity.Property(x => x.Version).IsConcurrencyToken();
+            entity.Property(x => x.CreatedBy).HasMaxLength(256);
+            entity.Property(x => x.UpdatedBy).HasMaxLength(256);
+            entity.Property(x => x.DeletedBy).HasMaxLength(256);
+            entity.HasIndex(x => new { x.TableId, x.IsDeleted, x.CreatedAtUtc });
+            entity.HasOne<CustomTeamTableRecord>().WithMany().HasForeignKey(x => x.TableId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<CustomTeamRowAuditRecord>(entity =>
+        {
+            entity.ToTable("CustomTeamRowAudits");
+            entity.Property(x => x.Action).HasMaxLength(16);
+            entity.Property(x => x.Actor).HasMaxLength(256);
+            entity.HasIndex(x => new { x.RowId, x.CreatedAtUtc });
+            entity.HasOne<CustomTeamRowRecord>().WithMany().HasForeignKey(x => x.RowId).OnDelete(DeleteBehavior.Cascade);
         });
     }
 }

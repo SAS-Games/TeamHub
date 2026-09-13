@@ -2,14 +2,18 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
 using TeamHub.Authentication;
+using TeamHub.Team;
 using TeamHub.Web.AccessControl;
 
 namespace TeamHub.Web.Pages.Administration;
 
 [Authorize(Roles = TeamHubUserTypes.Admin)]
-public sealed class AccessModel(IUserAccessService users, ITeamHubModuleCatalog moduleCatalog) : PageModel
+public sealed class AccessModel(
+    IUserAccessService users,
+    ITeamHubModuleCatalog moduleCatalog,
+    ICustomTeamTabService customTabs) : PageModel
 {
-    public IReadOnlyList<string> Modules => moduleCatalog.Modules;
+    public IReadOnlyList<ModuleOption> Modules { get; private set; } = [];
     public IReadOnlyList<string> UserTypes { get; } = TeamHubUserTypes.All;
     public IReadOnlyList<AccessLevel> AccessLevels { get; } = Enum.GetValues<AccessLevel>();
     public IReadOnlyDictionary<string, AccessLevel> Permissions { get; private set; } =
@@ -34,17 +38,35 @@ public sealed class AccessModel(IUserAccessService users, ITeamHubModuleCatalog 
     public AccessLevel GetLevel(string module, string userType) =>
         Permissions.GetValueOrDefault(Key(module, userType), AccessLevel.NoAccess);
 
+    public IReadOnlyList<AccessLevel> GetAccessLevels(string module) =>
+        module.StartsWith(CustomTeamTabAccess.ModulePrefix, StringComparison.Ordinal)
+            ? [AccessLevel.NoAccess, AccessLevel.ReadOnly, AccessLevel.Edit]
+            : AccessLevels;
+
     public bool IsLocked(string module, string userType) =>
         userType == TeamHubUserTypes.Admin
         || module is TeamHubModules.UserManagement or TeamHubModules.AccessManagement;
 
     private async Task LoadAsync(CancellationToken cancellationToken)
     {
+        var tabs = await customTabs.ListTabsAsync(cancellationToken);
+        var dynamicModules = tabs
+            .Select(tab => new ModuleOption(CustomTeamTabAccess.ModuleForSlug(tab.Slug), $"Team - {tab.Name}"))
+            .ToList();
+        await users.EnsureModulesAsync(dynamicModules.Select(item => item.Key).ToList(), cancellationToken);
+
+        Modules = moduleCatalog.Modules
+            .Where(module => !module.StartsWith(CustomTeamTabAccess.ModulePrefix, StringComparison.Ordinal))
+            .Select(module => new ModuleOption(module, module))
+            .Concat(dynamicModules)
+            .ToList();
         Permissions = (await users.ListPermissionsAsync(cancellationToken))
             .ToDictionary(item => Key(item.Module, item.UserType), item => item.AccessLevel);
     }
 
     private static string Key(string module, string userType) => module + "|" + userType;
+
+    public sealed record ModuleOption(string Key, string Label);
 
     public sealed class PermissionInput
     {

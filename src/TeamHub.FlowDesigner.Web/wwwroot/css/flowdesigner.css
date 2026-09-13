@@ -262,24 +262,37 @@
 .drawflow .drawflow-node:is(.fd-shape-decision,.fd-shape-gateway) .fd-tool-icon { display: none; }
 .drawflow .drawflow-node:is(.fd-shape-decision,.fd-shape-gateway) .fd-node-copy { display: block; width: 100%; min-width: 0; }
 .drawflow .drawflow-node:is(.fd-shape-decision,.fd-shape-gateway) .fd-node-title { overflow-wrap: break-word; word-break: normal; }
-.drawflow .drawflow-node.fd-shape-connector { width: 96px; min-height: 96px; border-radius: 50%; resize: none; }
-.drawflow .drawflow-node.fd-shape-connector .drawflow_content_node { min-height: 94px; padding: 21px 14px; }
+.drawflow .drawflow-node.fd-shape-connector { width: 200px; min-width: 180px; min-height: 120px; border-radius: 50%; resize: none; }
+.drawflow .drawflow-node.fd-shape-connector .drawflow_content_node { min-height: 118px; padding: 20px 30px 26px; }
+.drawflow .drawflow-node.fd-shape-connector .fd-node-content { display: block; min-height: 72px; text-align: center; }
+.drawflow .drawflow-node.fd-shape-connector .fd-tool-icon { width: 31px; margin: 0 auto 6px; }
+.drawflow .drawflow-node.fd-shape-connector .fd-node-copy { display: block; width: 100%; }
+.drawflow .drawflow-node.fd-shape-connector :is(.fd-node-title,.fd-node-description) { overflow-wrap: break-word; word-break: normal; }
+.drawflow .drawflow-node.fd-shape-connector .fd-resize-handle { right: 10px; bottom: 10px; }
 .drawflow .drawflow-node.fd-shape-event { width: 122px; min-height: 122px; border: 4px double var(--fd-node-color); border-radius: 50%; resize: none; }
 .drawflow .drawflow-node.fd-shape-event .drawflow_content_node { min-height: 116px; padding: 28px 18px; }
 .fd-mode-businessworkflow .drawflow-node.fd-shape-terminator { width: 120px; min-height: 120px; border-radius: 50%; resize: none; }
 .fd-mode-businessworkflow .drawflow-node.fd-shape-terminator .drawflow_content_node { min-height: 118px; padding: 28px 17px; }
-.drawflow .drawflow-node:not(.fd-ports-vertical) .inputs,
-.drawflow .drawflow-node:not(.fd-ports-vertical) .outputs { position: absolute; top: 8px; bottom: 8px; z-index: 4; display: flex; flex-direction: column; justify-content: space-evenly; width: 16px; pointer-events: none; }
-.drawflow .drawflow-node:not(.fd-ports-vertical) .inputs { left: -8px; }
-.drawflow .drawflow-node:not(.fd-ports-vertical) .outputs { right: -8px; }
-.drawflow .drawflow-node:not(.fd-ports-vertical) .input,
-.drawflow .drawflow-node:not(.fd-ports-vertical) .output { position: static; inset: auto; float: none; margin: 0; transform: none; pointer-events: auto; }
-.drawflow .drawflow-node.fd-ports-vertical .inputs,
-.drawflow .drawflow-node.fd-ports-vertical .outputs { position: absolute; left: 8px; z-index: 4; display: flex; justify-content: space-evenly; width: calc(100% - 16px); height: 16px; pointer-events: none; }
-.drawflow .drawflow-node.fd-ports-vertical .inputs { top: -8px; }
-.drawflow .drawflow-node.fd-ports-vertical .outputs { top: auto; bottom: -8px; }
-.drawflow .drawflow-node.fd-ports-vertical .input,
-.drawflow .drawflow-node.fd-ports-vertical .output { position: static; inset: auto; float: none; margin: 0; transform: none; pointer-events: auto; }
+.drawflow .drawflow-node .inputs,
+.drawflow .drawflow-node .outputs { position: absolute; z-index: 4; display: flex; justify-content: space-evenly; pointer-events: none; }
+.drawflow .drawflow-node.fd-input-left .inputs,
+.drawflow .drawflow-node.fd-input-right .inputs,
+.drawflow .drawflow-node.fd-output-left .outputs,
+.drawflow .drawflow-node.fd-output-right .outputs { top: 8px; bottom: 8px; flex-direction: column; width: 16px; }
+.drawflow .drawflow-node.fd-input-top .inputs,
+.drawflow .drawflow-node.fd-input-bottom .inputs,
+.drawflow .drawflow-node.fd-output-top .outputs,
+.drawflow .drawflow-node.fd-output-bottom .outputs { left: 8px; width: calc(100% - 16px); height: 16px; }
+.drawflow .drawflow-node.fd-input-left .inputs,
+.drawflow .drawflow-node.fd-output-left .outputs { left: -8px; }
+.drawflow .drawflow-node.fd-input-right .inputs,
+.drawflow .drawflow-node.fd-output-right .outputs { right: -8px; }
+.drawflow .drawflow-node.fd-input-top .inputs,
+.drawflow .drawflow-node.fd-output-top .outputs { top: -8px; }
+.drawflow .drawflow-node.fd-input-bottom .inputs,
+.drawflow .drawflow-node.fd-output-bottom .outputs { bottom: -8px; }
+.drawflow .drawflow-node .input,
+.drawflow .drawflow-node .output { position: static; inset: auto; float: none; margin: 0; transform: none; pointer-events: auto; }
 .drawflow .drawflow-node .input, .drawflow .drawflow-node .output { width: 13px; height: 13px; background: #fff; border: 2px solid var(--fd-node-color); }
 .drawflow .drawflow-node .input:hover, .drawflow .drawflow-node .output:hover { background: var(--fd-accent); border-color: var(--fd-accent); }
 .fd-connection-definitions { position: absolute; width: 0; height: 0; overflow: hidden; pointer-events: none; }

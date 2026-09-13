@@ -3,20 +3,25 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
 using TeamHub.Team;
+using TeamHub.Authentication;
+using TeamHub.Web.AccessControl;
 
 namespace TeamHub.Web.Pages.Team;
 
-[Authorize]
+[Authorize(Roles = TeamHubUserTypes.Admin)]
 public sealed class ConfigurationModel(
     ITeamDirectoryService teamDirectoryService,
     ITeamConfigurationService teamConfigurationService,
     ITeamAchievementService achievementService,
-    IPageTextAppearanceService appearanceService) : PageModel
+    IPageTextAppearanceService appearanceService,
+    ICustomTeamTabService customTabs,
+    IUserAccessService users) : PageModel
 {
     private const string MembersSection = "members";
     private const string SpecializationsSection = "specializations";
     private const string AchievementsSection = "achievements";
     private const string AppearanceSection = "appearance";
+    private const string CustomTabsSection = "custom-tabs";
 
     public TeamMemberInput MemberInput { get; set; } = new();
 
@@ -32,20 +37,30 @@ public sealed class ConfigurationModel(
 
     public IReadOnlyList<TeamPageAppearanceDefinition> AppearancePages => TeamPageAppearanceCatalog.Pages;
 
+    public IReadOnlyList<CustomTeamTabDto> CustomTabs { get; private set; } = [];
+    public CustomTeamTabDto? SelectedCustomTab { get; private set; }
+    public string? SelectedCustomTabId { get; private set; }
+    public IReadOnlyList<string> CustomFieldTypes => CustomTeamFieldTypes.All;
+
     public string ActiveSection { get; private set; } = MembersSection;
 
     [TempData]
     public string? StatusMessage { get; set; }
+
+    [TempData]
+    public string? ErrorMessage { get; set; }
 
     public async Task<IActionResult> OnGetAsync(
         string? section = null,
         string? memberId = null,
         string? specializationId = null,
         string? appearancePage = null,
+        string? customTabId = null,
         CancellationToken cancellationToken = default)
     {
         ActiveSection = NormalizeSection(section);
         AppearanceForm.PageKey = NormalizeAppearancePage(appearancePage);
+        SelectedCustomTabId = customTabId;
 
         if (!string.IsNullOrWhiteSpace(memberId))
         {
@@ -190,10 +205,117 @@ public sealed class ConfigurationModel(
         return RedirectToPage(new { section = AppearanceSection, appearancePage = definition.Key });
     }
 
+    public async Task<IActionResult> OnPostSaveCustomTabAsync(
+        string? id, string name, int displayOrder, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var saved = await customTabs.SaveTabAsync(new SaveCustomTeamTabRequest(id, name, displayOrder), cancellationToken);
+            await users.EnsureModulesAsync([CustomTeamTabAccess.ModuleForSlug(saved.Slug)], cancellationToken);
+            StatusMessage = $"Team tab saved: {saved.Name}.";
+            return CustomRedirect(saved.Id);
+        }
+        catch (Exception exception) when (exception is ArgumentException or KeyNotFoundException)
+        {
+            ErrorMessage = exception.Message;
+            return CustomRedirect(id);
+        }
+    }
+
+    public async Task<IActionResult> OnPostArchiveCustomTabAsync(string id, CancellationToken cancellationToken)
+    {
+        await customTabs.ArchiveTabAsync(id, cancellationToken);
+        StatusMessage = "Team tab archived. Its schema and data remain in the Team Hub database.";
+        return CustomRedirect();
+    }
+
+    public async Task<IActionResult> OnPostDeleteCustomTabAsync(string id, CancellationToken cancellationToken)
+    {
+        var tab = await customTabs.GetTabByIdAsync(id, cancellationToken);
+        if (tab is null)
+        {
+            ErrorMessage = "Team tab was not found.";
+            return CustomRedirect();
+        }
+
+        await customTabs.DeleteTabAsync(id, cancellationToken);
+        await users.RemoveModulesAsync([CustomTeamTabAccess.ModuleForSlug(tab.Slug)], cancellationToken);
+        StatusMessage = $"Team tab permanently deleted: {tab.Name}.";
+        return CustomRedirect();
+    }
+
+    public async Task<IActionResult> OnPostSaveCustomTableAsync(
+        string tabId, string? tableId, string name, int displayOrder, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var saved = await customTabs.SaveTableAsync(
+                new SaveCustomTeamTableRequest(tabId, tableId, name, displayOrder), cancellationToken);
+            StatusMessage = $"Table saved: {saved.Name}.";
+        }
+        catch (Exception exception) when (exception is ArgumentException or KeyNotFoundException)
+        {
+            ErrorMessage = exception.Message;
+        }
+        return CustomRedirect(tabId);
+    }
+
+    public async Task<IActionResult> OnPostArchiveCustomTableAsync(
+        string tabId, string tableId, CancellationToken cancellationToken)
+    {
+        await customTabs.ArchiveTableAsync(tableId, cancellationToken);
+        StatusMessage = "Table archived. Existing rows remain recoverable in the Team Hub database.";
+        return CustomRedirect(tabId);
+    }
+
+    public async Task<IActionResult> OnPostSaveCustomColumnAsync(
+        string tabId,
+        string tableId,
+        string? columnId,
+        string label,
+        string fieldType,
+        bool isRequired,
+        string? options,
+        int displayOrder,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var parsedOptions = options?.Split([',', '\r', '\n'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries) ?? [];
+            var saved = await customTabs.SaveColumnAsync(new SaveCustomTeamColumnRequest(
+                tableId, columnId, label, fieldType, isRequired, parsedOptions, displayOrder), cancellationToken);
+            StatusMessage = $"Column saved: {saved.Label}.";
+        }
+        catch (Exception exception) when (exception is ArgumentException or KeyNotFoundException)
+        {
+            ErrorMessage = exception.Message;
+        }
+        return CustomRedirect(tabId);
+    }
+
+    public async Task<IActionResult> OnPostArchiveCustomColumnAsync(
+        string tabId, string columnId, CancellationToken cancellationToken)
+    {
+        await customTabs.ArchiveColumnAsync(columnId, cancellationToken);
+        StatusMessage = "Column archived. Existing values remain stored for recovery.";
+        return CustomRedirect(tabId);
+    }
+
+    private RedirectToPageResult CustomRedirect(string? customTabId = null) =>
+        RedirectToPage(new { section = CustomTabsSection, customTabId });
+
     private async Task LoadConfigurationAsync(CancellationToken cancellationToken)
     {
         Directory = await teamDirectoryService.GetTeamDirectoryAsync(cancellationToken);
         Achievements = await achievementService.GetAchievementsAsync(cancellationToken);
+        CustomTabs = await customTabs.ListTabsAsync(cancellationToken);
+        if (ActiveSection == CustomTabsSection)
+        {
+            SelectedCustomTabId ??= CustomTabs.FirstOrDefault()?.Id;
+            SelectedCustomTab = string.IsNullOrWhiteSpace(SelectedCustomTabId)
+                ? null
+                : await customTabs.GetTabByIdAsync(SelectedCustomTabId, cancellationToken);
+        }
         if (ActiveSection == AppearanceSection)
         {
             var definition = TeamPageAppearanceCatalog.Find(AppearanceForm.PageKey)
@@ -208,6 +330,7 @@ public sealed class ConfigurationModel(
         SpecializationsSection => SpecializationsSection,
         AchievementsSection => AchievementsSection,
         AppearanceSection => AppearanceSection,
+        CustomTabsSection => CustomTabsSection,
         _ => MembersSection
     };
 

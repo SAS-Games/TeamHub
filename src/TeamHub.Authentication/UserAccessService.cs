@@ -66,6 +66,21 @@ internal sealed class UserAccessService(
         await SeedPermissionsAsync(context, modules, cancellationToken);
     }
 
+    public async Task RemoveModulesAsync(IReadOnlyCollection<string> modules, CancellationToken cancellationToken = default)
+    {
+        var removable = modules
+            .Where(module => !string.IsNullOrWhiteSpace(module) && !TeamHubModules.All.Contains(module.Trim()))
+            .Select(module => module.Trim())
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+        if (removable.Count == 0) return;
+
+        await using var context = await contextFactory.CreateDbContextAsync(cancellationToken);
+        await context.ModulePermissions
+            .Where(item => removable.Contains(item.Module))
+            .ExecuteDeleteAsync(cancellationToken);
+    }
+
     public async Task<AuthorizedUserRecord?> ValidateCredentialsAsync(string userId, string password, CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(userId) || string.IsNullOrEmpty(password)) return null;

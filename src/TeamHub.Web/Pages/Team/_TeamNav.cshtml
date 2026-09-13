@@ -1,8 +1,29 @@
+@using TeamHub.Authentication
+@using TeamHub.Team
+@using TeamHub.Web.AccessControl
+@inject ICustomTeamTabService CustomTabs
+@inject ICurrentAccessService CurrentAccess
+@inject IUserAccessService UserAccess
 @{
     var current = (string)ViewData["TeamTab"]!;
+    var customTabs = await CustomTabs.ListTabsAsync(Context.RequestAborted);
+    var currentSnapshot = await CurrentAccess.GetCurrentAsync(Context.RequestAborted);
+    var visibleModules = currentSnapshot.UserType == TeamHubUserTypes.Admin
+        ? new HashSet<string>(customTabs.Select(tab => CustomTeamTabAccess.ModuleForSlug(tab.Slug)), StringComparer.Ordinal)
+        : (await UserAccess.ListPermissionsAsync(Context.RequestAborted))
+            .Where(permission => permission.UserType == currentSnapshot.UserType && permission.AccessLevel.Allows(AccessLevel.ReadOnly))
+            .Select(permission => permission.Module)
+            .ToHashSet(StringComparer.Ordinal);
 }
 <nav class="page-switcher" aria-label="Team views">
     <a class="@(current == "Directory" ? "active" : "")" asp-page="/Team/Directory">Team Directory</a>
     <a class="@(current == "ResponsibilityMatrix" ? "active" : "")" asp-page="/Team/ResponsibilityMatrix">Responsibility Matrix</a>
     <a class="@(current == "Achievements" ? "active" : "")" asp-page="/Team/Achievements">Achievements</a>
+    @foreach (var tab in customTabs)
+    {
+        if (visibleModules.Contains(CustomTeamTabAccess.ModuleForSlug(tab.Slug)))
+        {
+            <a class="@(current == "Custom:" + tab.Slug ? "active" : "")" asp-page="/Team/Custom" asp-route-slug="@tab.Slug">@tab.Name</a>
+        }
+    }
 </nav>

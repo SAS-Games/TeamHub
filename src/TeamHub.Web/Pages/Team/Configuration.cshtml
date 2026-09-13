@@ -17,6 +17,10 @@
 {
     <div class="alert alert-info mt-3">@Model.StatusMessage</div>
 }
+@if (!string.IsNullOrWhiteSpace(Model.ErrorMessage))
+{
+    <div class="alert alert-danger mt-3">@Model.ErrorMessage</div>
+}
 
 <nav class="team-config-tabs" aria-label="Team configuration sections">
     <a class="@(Model.ActiveSection == "members" ? "active" : "")" asp-page="/Team/Configuration" asp-route-section="members">
@@ -30,6 +34,9 @@
     </a>
     <a class="@(Model.ActiveSection == "appearance" ? "active" : "")" asp-page="/Team/Configuration" asp-route-section="appearance">
         Text Appearance <span>@Model.AppearancePages.Count</span>
+    </a>
+    <a class="@(Model.ActiveSection == "custom-tabs" ? "active" : "")" asp-page="/Team/Configuration" asp-route-section="custom-tabs">
+        Custom Tabs <span>@Model.CustomTabs.Count</span>
     </a>
 </nav>
 
@@ -255,7 +262,7 @@ else if (Model.ActiveSection == "achievements")
         </div>
     </div>
 }
-else
+else if (Model.ActiveSection == "appearance")
 {
     <div class="team-config-panel">
         <section class="content-section m-0">
@@ -314,6 +321,133 @@ else
                 <button type="submit" class="btn btn-primary mt-3">Save Text Appearance</button>
             </form>
         </section>
+    </div>
+}
+
+else
+{
+    <div class="team-config-panel row g-4">
+        <div class="col-12 col-xl-4">
+            <section class="content-section h-100 m-0">
+                <div class="section-heading"><div><span>Navigation</span><h2>Create Team Tab</h2></div></div>
+                <form method="post" asp-page-handler="SaveCustomTab" class="section-body">
+                    <div class="mb-3"><label class="form-label" for="new-tab-name">Tab name</label><input id="new-tab-name" name="name" class="form-control" maxlength="80" required /></div>
+                    <div class="mb-3"><label class="form-label" for="new-tab-order">Display order</label><input id="new-tab-order" name="displayOrder" class="form-control" type="number" min="0" value="0" /></div>
+                    <button class="btn btn-primary" type="submit">Create Tab</button>
+                </form>
+                <div class="list-group list-group-flush border-top">
+                    @foreach (var tab in Model.CustomTabs)
+                    {
+                        <a class="list-group-item list-group-item-action @(Model.SelectedCustomTab?.Id == tab.Id ? "active" : "")" asp-page="/Team/Configuration" asp-route-section="custom-tabs" asp-route-customTabId="@tab.Id">
+                            <strong>@tab.Name</strong><small class="d-block opacity-75">/@tab.Slug</small>
+                        </a>
+                    }
+                </div>
+            </section>
+        </div>
+        <div class="col-12 col-xl-8">
+            @if (Model.SelectedCustomTab is null)
+            {
+                <section class="content-section m-0"><div class="p-4 text-secondary">Create a tab to start defining tables and columns.</div></section>
+            }
+            else
+            {
+                var selectedTab = Model.SelectedCustomTab;
+                <section class="content-section m-0 mb-4">
+                    <div class="section-heading">
+                        <div><span>Tab settings</span><h2>@selectedTab.Name</h2></div>
+                        <a class="btn btn-sm btn-outline-secondary" asp-page="/Team/Custom" asp-route-slug="@selectedTab.Slug">Open Tab</a>
+                    </div>
+                    <div class="section-body">
+                        <form method="post" asp-page-handler="SaveCustomTab" class="row g-2 align-items-end">
+                            <input type="hidden" name="id" value="@selectedTab.Id" />
+                            <div class="col-md-7"><label class="form-label">Tab name</label><input name="name" class="form-control" maxlength="80" value="@selectedTab.Name" required /></div>
+                            <div class="col-md-3"><label class="form-label">Display order</label><input name="displayOrder" class="form-control" type="number" min="0" value="@selectedTab.DisplayOrder" /></div>
+                            <div class="col-md-2"><button class="btn btn-outline-primary w-100" type="submit">Save</button></div>
+                        </form>
+                        <form method="post" asp-page-handler="ArchiveCustomTab" class="mt-3" onsubmit="return confirm('Archive this tab and hide it from users?')">
+                            <input type="hidden" name="id" value="@selectedTab.Id" />
+                            <button class="btn btn-sm btn-outline-danger" type="submit">Archive Tab</button>
+                        </form>
+                        <form method="post" asp-page-handler="DeleteCustomTab" class="mt-2" onsubmit="return confirm('Permanently delete this tab, all its tables, rows, audit history, and access settings? This cannot be undone.')">
+                            <input type="hidden" name="id" value="@selectedTab.Id" />
+                            <button class="btn btn-sm btn-danger" type="submit">Permanently Delete Tab</button>
+                        </form>
+                    </div>
+                </section>
+
+                <section class="content-section m-0 mb-4">
+                    <div class="section-heading"><div><span>Schema</span><h2>Add Table</h2></div></div>
+                    <form method="post" asp-page-handler="SaveCustomTable" class="section-body row g-2 align-items-end">
+                        <input type="hidden" name="tabId" value="@selectedTab.Id" />
+                        <div class="col-md-8"><label class="form-label">Table name</label><input name="name" class="form-control" maxlength="100" required /></div>
+                        <div class="col-md-2"><label class="form-label">Order</label><input name="displayOrder" class="form-control" type="number" min="0" value="@selectedTab.Tables.Count" /></div>
+                        <div class="col-md-2"><button class="btn btn-primary w-100" type="submit">Add</button></div>
+                    </form>
+                </section>
+
+                @foreach (var table in selectedTab.Tables)
+                {
+                    <section class="content-section m-0 mb-4">
+                        <div class="section-heading"><div><span>Configurable table</span><h2>@table.Name</h2></div><strong>@table.Columns.Count columns</strong></div>
+                        <div class="section-body border-bottom">
+                            <form method="post" asp-page-handler="SaveCustomTable" class="row g-2 align-items-end">
+                                <input type="hidden" name="tabId" value="@selectedTab.Id" /><input type="hidden" name="tableId" value="@table.Id" />
+                                <div class="col-md-7"><label class="form-label">Table name</label><input name="name" class="form-control form-control-sm" value="@table.Name" required /></div>
+                                <div class="col-md-2"><label class="form-label">Order</label><input name="displayOrder" class="form-control form-control-sm" type="number" min="0" value="@table.DisplayOrder" /></div>
+                                <div class="col-md-3"><button class="btn btn-sm btn-outline-primary" type="submit">Save table</button></div>
+                            </form>
+                            <form method="post" asp-page-handler="ArchiveCustomTable" class="mt-2" onsubmit="return confirm('Archive this table?')">
+                                <input type="hidden" name="tabId" value="@selectedTab.Id" /><input type="hidden" name="tableId" value="@table.Id" />
+                                <button class="btn btn-sm btn-outline-danger" type="submit">Archive table</button>
+                            </form>
+                        </div>
+                        @if (table.Columns.Count > 0)
+                        {
+                            <div class="table-responsive">
+                                <table class="table styled-table align-middle mb-0">
+                                    <thead><tr><th>Column</th><th>Type</th><th>Required</th><th>Options</th><th></th></tr></thead>
+                                    <tbody>
+                                    @foreach (var column in table.Columns)
+                                    {
+                                        var columnFormId = $"column-{column.Id}";
+                                        <tr>
+                                            <td>
+                                                <form id="@columnFormId" method="post" asp-page-handler="SaveCustomColumn">
+                                                    <input type="hidden" name="tabId" value="@selectedTab.Id" /><input type="hidden" name="tableId" value="@table.Id" /><input type="hidden" name="columnId" value="@column.Id" />
+                                                    <input name="label" class="form-control form-control-sm" maxlength="80" value="@column.Label" required />
+                                                    <input name="displayOrder" type="hidden" value="@column.DisplayOrder" />
+                                                </form>
+                                                <small class="d-block text-secondary mt-1">@column.Key</small>
+                                            </td>
+                                            <td><select name="fieldType" form="@columnFormId" class="form-select form-select-sm">@foreach (var fieldType in Model.CustomFieldTypes) { <option value="@fieldType" selected="@(fieldType == column.FieldType)">@fieldType</option> }</select></td>
+                                            <td><div class="form-check"><input class="form-check-input" type="checkbox" name="isRequired" value="true" form="@columnFormId" id="required-@column.Id" checked="@column.IsRequired" /><label class="form-check-label" for="required-@column.Id">Required</label></div></td>
+                                            <td><textarea name="options" form="@columnFormId" class="form-control form-control-sm" rows="2">@string.Join(", ", column.Options)</textarea></td>
+                                            <td class="text-nowrap">
+                                                <button class="btn btn-sm btn-outline-primary" type="submit" form="@columnFormId">Save</button>
+                                                <form method="post" asp-page-handler="ArchiveCustomColumn" class="d-inline" onsubmit="return confirm('Archive this column?')"><input type="hidden" name="tabId" value="@selectedTab.Id" /><input type="hidden" name="columnId" value="@column.Id" /><button class="btn btn-sm btn-outline-danger" type="submit">Archive</button></form>
+                                            </td>
+                                        </tr>
+                                    }
+                                    </tbody>
+                                </table>
+                            </div>
+                        }
+                        <form method="post" asp-page-handler="SaveCustomColumn" class="section-body bg-light-subtle">
+                            <input type="hidden" name="tabId" value="@selectedTab.Id" /><input type="hidden" name="tableId" value="@table.Id" />
+                            <div class="row g-2">
+                                <div class="col-md-4"><label class="form-label">Column label</label><input name="label" class="form-control form-control-sm" maxlength="80" required /></div>
+                                <div class="col-md-3"><label class="form-label">Type</label><select name="fieldType" class="form-select form-select-sm">@foreach (var fieldType in Model.CustomFieldTypes) { <option value="@fieldType">@fieldType</option> }</select></div>
+                                <div class="col-md-2"><label class="form-label">Order</label><input name="displayOrder" class="form-control form-control-sm" type="number" min="0" value="@table.Columns.Count" /></div>
+                                <div class="col-md-3 d-flex align-items-end"><div class="form-check mb-1"><input class="form-check-input" type="checkbox" name="isRequired" value="true" id="required-@table.Id" /><label class="form-check-label" for="required-@table.Id">Required</label></div></div>
+                                <div class="col-12"><label class="form-label">Choice options <span class="text-secondary">(comma or line separated)</span></label><textarea name="options" class="form-control form-control-sm" rows="2"></textarea></div>
+                            </div>
+                            <button class="btn btn-sm btn-primary mt-3" type="submit">Add Column</button>
+                        </form>
+                    </section>
+                }
+            }
+        </div>
     </div>
 }
 

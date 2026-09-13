@@ -64,15 +64,43 @@
         return `${prefix}-${crypto.randomUUID()}`;
     }
 
-    function connectionPath(startX, startY, endX, endY, sourceVertical, targetVertical) {
+    const validPortSides = new Set(["left", "right", "top", "bottom"]);
+
+    function normalizePortLayout(layout) {
+        const legacyLayouts = {
+            horizontal: "left-right",
+            vertical: "top-bottom",
+            "horizontal-reverse": "right-left",
+            "vertical-reverse": "bottom-top"
+        };
+        const normalized = legacyLayouts[String(layout || "").toLowerCase()] || String(layout || "").toLowerCase();
+        const [inputSide, outputSide, extra] = normalized.split("-");
+        return !extra && validPortSides.has(inputSide) && validPortSides.has(outputSide) && inputSide !== outputSide
+            ? `${inputSide}-${outputSide}`
+            : "left-right";
+    }
+
+    function portSides(data) {
+        const [input, output] = normalizePortLayout(data?.customProperties?.portLayout).split("-");
+        return { input, output };
+    }
+
+    function sideDirection(side) {
+        return {
+            left: { x: -1, y: 0 },
+            right: { x: 1, y: 0 },
+            top: { x: 0, y: -1 },
+            bottom: { x: 0, y: 1 }
+        }[side] || { x: 1, y: 0 };
+    }
+
+    function connectionPath(startX, startY, endX, endY, sourceSide, targetSide) {
         const distance = Math.hypot(endX - startX, endY - startY);
         const controlDistance = Math.max(55, Math.min(180, distance * .38));
-        const sourceControl = sourceVertical
-            ? { x: startX, y: startY + controlDistance }
-            : { x: startX + controlDistance, y: startY };
-        const targetControl = targetVertical
-            ? { x: endX, y: endY - controlDistance }
-            : { x: endX - controlDistance, y: endY };
+        const sourceDirection = sideDirection(sourceSide);
+        const targetDirection = sideDirection(targetSide);
+        const sourceControl = { x: startX + sourceDirection.x * controlDistance, y: startY + sourceDirection.y * controlDistance };
+        const targetControl = { x: endX + targetDirection.x * controlDistance, y: endY + targetDirection.y * controlDistance };
 
         return `M ${startX} ${startY} C ${sourceControl.x} ${sourceControl.y}, ${targetControl.x} ${targetControl.y}, ${endX} ${endY}`;
     }
@@ -80,11 +108,11 @@
     function nodeAppearanceClasses(data) {
         const tone = String(data?.customProperties?.tone || "").toLowerCase();
         const layer = String(data?.customProperties?.layer || "").toLowerCase();
-        const portLayout = String(data?.customProperties?.portLayout || "").toLowerCase();
+        const sides = portSides(data);
         const presentationStyle = String(data?.customProperties?.presentationStyle || "").toLowerCase();
         const toneClass = ["blue", "red", "green", "orange", "purple"].includes(tone) ? ` fd-tone-${tone}` : "";
         const layerClass = ["background", "foreground"].includes(layer) ? ` fd-layer-${layer}` : "";
-        const portClass = portLayout === "vertical" ? " fd-ports-vertical" : "";
+        const portClass = ` fd-input-${sides.input} fd-output-${sides.output}`;
         const styleClass = ["step", "card", "banner", "plain", "band"].includes(presentationStyle) ? ` fd-style-${presentationStyle}` : "";
         const childClass = data?.childFlowId ? " fd-has-child" : "";
         return `${toneClass}${layerClass}${portClass}${styleClass}${childClass}`;
@@ -285,8 +313,9 @@
             const startWidth = nodeElement.offsetWidth;
             const startHeight = nodeElement.offsetHeight;
             const isSection = nodeElement.classList.contains("fd-shape-section");
+            const isConnector = nodeElement.classList.contains("fd-shape-connector");
             const minimumWidth = isSection ? 260 : 180;
-            const minimumHeight = isSection ? 180 : 80;
+            const minimumHeight = isSection ? 180 : isConnector ? 120 : 80;
             nodeElement.classList.add("is-resizing");
 
             const move = moveEvent => {
@@ -419,7 +448,8 @@
             const comments = commentCount ? `<span class="fd-node-comments" title="${commentCount} comment${commentCount === 1 ? "" : "s"}">${commentCount}</span>` : "";
             const description = data.description ? `<span class="fd-node-description">${text(data.description)}</span>` : "";
             const drilldown = data.childFlowId ? '<span class="fd-node-drilldown" title="Open detailed diagram" aria-hidden="true">&#8599;</span>' : "";
-            return `<div class="fd-node-content"><span class="fd-tool-icon fd-type-${data.type.toLowerCase()}">${config.icon}</span><span class="fd-node-copy"><span class="fd-node-type">${text(config.title)}</span><span class="fd-node-title">${text(data.title)}</span>${description}${comments}</span>${drilldown}</div>`;
+            const resize = data.type === "Connector" ? '<button class="fd-resize-handle" type="button" aria-label="Resize connector node" title="Drag to resize"></button>' : "";
+            return `<div class="fd-node-content"><span class="fd-tool-icon fd-type-${data.type.toLowerCase()}">${config.icon}</span><span class="fd-node-copy"><span class="fd-node-type">${text(config.title)}</span><span class="fd-node-title">${text(data.title)}</span>${description}${comments}</span>${drilldown}</div>${resize}`;
         }
 
         getGraph() {
@@ -494,6 +524,7 @@
             window.requestAnimationFrame(() => {
                 this.ensureNodeFitsContent(internalId);
                 this.editor.updateConnectionNodes(`node-${internalId}`);
+                this.refreshConnectionLabels();
             });
             this.refreshGroupAppearance();
             if (emitChange) this.changed();
@@ -597,7 +628,7 @@
         getZoom() { return this.editor.zoom; }
         setGrid(enabled) { this.snapToGrid = enabled; this.element.classList.toggle("no-grid", !enabled); }
         setSpacePanning(enabled) { this.spacePanning = enabled; this.element.classList.toggle("is-space-pan", enabled); }
-        setDefaultPortLayout(layout) { this.defaultPortLayout = layout === "vertical" ? "vertical" : "horizontal"; }
+        setDefaultPortLayout(layout) { this.defaultPortLayout = normalizePortLayout(layout); }
 
         setReadOnly(enabled) {
             this.readOnly = Boolean(enabled);
@@ -717,7 +748,7 @@
             const element = document.getElementById(`node-${internalId}`);
             if (!element) return;
             for (const className of [...element.classList]) {
-                if (className.startsWith("fd-tone-") || className.startsWith("fd-layer-") || className.startsWith("fd-ports-") || className.startsWith("fd-style-") || className === "fd-has-child") element.classList.remove(className);
+                if (className.startsWith("fd-tone-") || className.startsWith("fd-layer-") || className.startsWith("fd-ports-") || className.startsWith("fd-input-") || className.startsWith("fd-output-") || className.startsWith("fd-style-") || className === "fd-has-child") element.classList.remove(className);
             }
             nodeAppearanceClasses(data).trim().split(/\s+/).filter(Boolean).forEach(className => element.classList.add(className));
         }
@@ -796,9 +827,14 @@
                 const dom = internal ? document.getElementById(`node-${internal}`) : null;
                 if (!dom) continue;
                 const resizablePresentationNode = node.type === "Section" || node.type === "Annotation";
+                const hasResizeHandle = Boolean(dom.querySelector(".fd-resize-handle"));
                 const browserResizableNode = getComputedStyle(dom).resize !== "none";
-                if (node.width && (resizablePresentationNode || browserResizableNode)) dom.style.width = `${Math.max(node.type === "Section" ? 260 : 150, node.width)}px`;
-                if (node.height && (resizablePresentationNode || browserResizableNode)) dom.style.height = `${Math.max(node.type === "Section" ? 180 : 76, node.height)}px`;
+                const isResizable = resizablePresentationNode || hasResizeHandle || browserResizableNode;
+                const minimumWidth = node.type === "Section" ? 260 : node.type === "Connector" ? 180 : 150;
+                const minimumHeight = node.type === "Section" ? 180 : node.type === "Connector" ? 120 : 76;
+                const legacyNarrowConnector = node.type === "Connector" && node.width && node.width < minimumWidth;
+                if (node.width && isResizable) dom.style.width = `${Math.max(minimumWidth, node.width)}px`;
+                if (node.height && isResizable && !legacyNarrowConnector) dom.style.height = `${Math.max(minimumHeight, node.height)}px`;
                 this.ensureNodeFitsContent(internal);
             }
         }
@@ -849,9 +885,8 @@
             const paths = [...svg.querySelectorAll(".main-path")];
             if (paths.length !== 1) return;
 
-            const sourceVertical = this.nodeData(parts.source)?.customProperties?.portLayout === "vertical";
-            const targetVertical = this.nodeData(parts.target)?.customProperties?.portLayout === "vertical";
-            if (!sourceVertical && !targetVertical) return;
+            const sourceSide = portSides(this.nodeData(parts.source)).output;
+            const targetSide = portSides(this.nodeData(parts.target)).input;
 
             const path = paths[0];
             const coordinates = (path.getAttribute("d") || "")
@@ -863,7 +898,7 @@
             const startY = coordinates[1];
             const endX = coordinates.at(-2);
             const endY = coordinates.at(-1);
-            path.setAttribute("d", connectionPath(startX, startY, endX, endY, sourceVertical, targetVertical));
+            path.setAttribute("d", connectionPath(startX, startY, endX, endY, sourceSide, targetSide));
         }
 
         portCount(defaultCount, configuredCount) {
@@ -917,5 +952,5 @@
         }
     }
 
-    window.FlowDesignerAdapters = { DrawflowAdapter, nodeTypes, diagramTypes, palettes, connectionPath };
+    window.FlowDesignerAdapters = { DrawflowAdapter, nodeTypes, diagramTypes, palettes, connectionPath, normalizePortLayout, portSides };
 })();

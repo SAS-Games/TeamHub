@@ -1,0 +1,75 @@
+@page "/Team/Custom/{slug}"
+@model TeamHub.Web.Pages.Team.CustomModel
+@using TeamHub.Team
+@{
+    ViewData["Title"] = Model.Tab.Name;
+    ViewData["TeamTab"] = "Custom:" + Model.Tab.Slug;
+}
+
+<div class="page-hero">
+    <div>
+        <div class="eyebrow">Team</div>
+        <h1>@Model.Tab.Name</h1>
+        <p>Shared team information maintained in configurable tables.</p>
+    </div>
+</div>
+<partial name="_TeamNav" />
+
+@if (!string.IsNullOrWhiteSpace(Model.StatusMessage))
+{
+    <div class="alert alert-success mt-3">@Model.StatusMessage</div>
+}
+@if (!string.IsNullOrWhiteSpace(Model.ErrorMessage))
+{
+    <div class="alert alert-danger mt-3">@Model.ErrorMessage</div>
+}
+
+@if (Model.Tab.Tables.Count == 0)
+{
+    <section class="content-section"><div class="p-4 text-secondary">No tables have been configured for this tab.</div></section>
+}
+
+@foreach (var table in Model.Tab.Tables)
+{
+    <section class="content-section custom-team-table">
+        <div class="section-heading">
+            <div><span>Shared data</span><h2>@table.Name</h2></div>
+            <strong>@table.Rows.Count rows</strong>
+        </div>
+        @if (table.Columns.Count == 0)
+        {
+            <div class="p-4 text-secondary">This table does not have any active columns.</div>
+            continue;
+        }
+        <div class="table-responsive">
+            <table class="table styled-table align-middle">
+                <thead><tr>@foreach (var column in table.Columns) { <th>@column.Label@if (column.IsRequired) { <span class="text-danger"> *</span> }</th> }@if (Model.CanEdit) { <th>Actions</th> }</tr></thead>
+                <tbody>
+                @foreach (var row in table.Rows)
+                {
+                    @if (Model.CanEdit)
+                    {
+                        var rowFormId = $"row-{row.Id}";
+                        <tr>
+                            @foreach (var column in table.Columns) { <td><partial name="_CustomTeamCellEditor" model="@(new CustomTeamCellEditorModel(column, Model.Value(row, column), rowFormId))" /></td> }
+                            <td class="text-nowrap"><form id="@rowFormId" method="post" asp-page-handler="SaveRow" asp-route-slug="@Model.Tab.Slug"><input type="hidden" name="tableId" value="@table.Id" /><input type="hidden" name="rowId" value="@row.Id" /><input type="hidden" name="version" value="@row.Version" /><button class="btn btn-sm btn-outline-primary" type="submit">Save</button><button class="btn btn-sm btn-outline-danger ms-1" type="submit" formaction="?handler=RemoveRow&amp;slug=@Model.Tab.Slug&amp;tableId=@table.Id&amp;rowId=@row.Id&amp;version=@row.Version" formnovalidate onclick="return confirm('Remove this row?')">Remove</button></form></td>
+                        </tr>
+                    }
+                    else
+                    {
+                        <tr>@foreach (var column in table.Columns) { <td>@Model.Value(row, column)</td> }</tr>
+                    }
+                }
+                @if (Model.CanEdit)
+                {
+                    var addFormId = $"add-{table.Id}";
+                    <tr class="table-light">
+                        @foreach (var column in table.Columns) { <td><partial name="_CustomTeamCellEditor" model="@(new CustomTeamCellEditorModel(column, string.Empty, addFormId))" /></td> }
+                        <td><form id="@addFormId" method="post" asp-page-handler="SaveRow" asp-route-slug="@Model.Tab.Slug"><input type="hidden" name="tableId" value="@table.Id" /><input type="hidden" name="version" value="0" /><button class="btn btn-sm btn-primary" type="submit">Add row</button></form></td>
+                    </tr>
+                }
+                </tbody>
+            </table>
+        </div>
+    </section>
+}

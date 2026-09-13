@@ -111,12 +111,30 @@ public sealed class AccessControlTests
         (await users.GetAccessLevelAsync("Reports", TeamHubUserTypes.Registered)).Should().Be(AccessLevel.ReadOnly);
     }
 
+    [Fact]
+    public async Task RemoveModules_DeletesDynamicPermissionsButProtectsBuiltInModules()
+    {
+        await using var host = await AccessTestHost.CreateAsync();
+        using var scope = host.Services.CreateScope();
+        var users = scope.ServiceProvider.GetRequiredService<IUserAccessService>();
+        const string module = "Team Tab: temporary";
+
+        await users.EnsureModulesAsync([module]);
+        await users.SetPermissionsAsync([new(module, TeamHubUserTypes.Registered, AccessLevel.Edit)]);
+
+        await users.RemoveModulesAsync([module, TeamHubModules.Team]);
+
+        (await users.GetAccessLevelAsync(module, TeamHubUserTypes.Registered)).Should().Be(AccessLevel.NoAccess);
+        (await users.GetAccessLevelAsync(TeamHubModules.Team, TeamHubUserTypes.Registered)).Should().Be(AccessLevel.ReadOnly);
+        (await users.ListPermissionsAsync()).Should().NotContain(item => item.Module == module);
+    }
     [Theory]
     [InlineData("/Reports/Index", "Reports")]
     [InlineData("/ReleaseNotes", "Release Notes")]
     [InlineData("/Administration/Audit", "Administration")]
     [InlineData("/Studio/JiraTickets", TeamHubModules.StudioSupport)]
     [InlineData("/Studio/WeeklyUpdates", TeamHubModules.StudioSupport)]
+    [InlineData("/Team/Custom/support-metrics", "Team Tab: support-metrics")]
     [InlineData("/Register", null)]
     [InlineData("/Logout", null)]
     public void PageDiscovery_UsesFirstFolderAndPreservesSpecialModules(string pagePath, string? expected)
@@ -151,6 +169,7 @@ public sealed class AccessControlTests
     [InlineData("GET", "/Flows/Review", "", AccessLevel.FullAccess)]
     [InlineData("GET", "/api/flows/publication-requests/id/snapshot", "", AccessLevel.FullAccess)]
     [InlineData("POST", "/api/flows/id/publication-requests", "", AccessLevel.Edit)]
+    [InlineData("POST", "/Team/Custom/support-metrics", "?handler=SaveRow", AccessLevel.Edit)]
     [InlineData("GET", "/api/flows/published/id", "", AccessLevel.ReadOnly)]
     [InlineData("PUT", "/api/flows/published/id", "", AccessLevel.FullAccess)]
     public void RouteAccess_MapsOperationsToRequiredLevels(string method, string path, string query, AccessLevel expected)

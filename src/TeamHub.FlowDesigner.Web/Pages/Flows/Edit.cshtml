@@ -123,8 +123,26 @@
                     <legend>Connector pins</legend>
                     <label class="form-label" for="nodePortLayout">Placement</label>
                     <select class="form-select mb-2" id="nodePortLayout">
-                        <option value="horizontal">Left input / right output</option>
-                        <option value="vertical">Top input / bottom output</option>
+                        <optgroup label="Input on left">
+                            <option value="left-right">Left input / right output</option>
+                            <option value="left-top">Left input / top output</option>
+                            <option value="left-bottom">Left input / bottom output</option>
+                        </optgroup>
+                        <optgroup label="Input on right">
+                            <option value="right-left">Right input / left output</option>
+                            <option value="right-top">Right input / top output</option>
+                            <option value="right-bottom">Right input / bottom output</option>
+                        </optgroup>
+                        <optgroup label="Input on top">
+                            <option value="top-left">Top input / left output</option>
+                            <option value="top-right">Top input / right output</option>
+                            <option value="top-bottom">Top input / bottom output</option>
+                        </optgroup>
+                        <optgroup label="Input on bottom">
+                            <option value="bottom-left">Bottom input / left output</option>
+                            <option value="bottom-right">Bottom input / right output</option>
+                            <option value="bottom-top">Bottom input / top output</option>
+                        </optgroup>
                     </select>
                     <div class="row g-2">
                         <div class="col-6">

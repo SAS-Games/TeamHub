@@ -1,0 +1,29 @@
+@model TeamHub.Team.CustomTeamCellEditorModel
+@using TeamHub.Team
+@{
+    var name = $"values[{Model.Column.Key}]";
+}
+@switch (Model.Column.FieldType)
+{
+    case CustomTeamFieldTypes.LongText:
+        <textarea class="form-control form-control-sm" name="@name" form="@Model.FormId" rows="2" required="@Model.Column.IsRequired">@Model.Value</textarea>
+        break;
+    case CustomTeamFieldTypes.Number:
+        <input class="form-control form-control-sm" name="@name" form="@Model.FormId" type="number" step="any" value="@Model.Value" required="@Model.Column.IsRequired" />
+        break;
+    case CustomTeamFieldTypes.Date:
+        <input class="form-control form-control-sm" name="@name" form="@Model.FormId" type="date" value="@Model.Value" required="@Model.Column.IsRequired" />
+        break;
+    case CustomTeamFieldTypes.Boolean:
+        <select class="form-select form-select-sm" name="@name" form="@Model.FormId" required="@Model.Column.IsRequired"><option value="">Select...</option><option value="true" selected="@(Model.Value == "true")">Yes</option><option value="false" selected="@(Model.Value == "false")">No</option></select>
+        break;
+    case CustomTeamFieldTypes.Choice:
+        <select class="form-select form-select-sm" name="@name" form="@Model.FormId" required="@Model.Column.IsRequired"><option value="">Select...</option>@foreach (var option in Model.Column.Options) { <option value="@option" selected="@(option == Model.Value)">@option</option> }</select>
+        break;
+    case CustomTeamFieldTypes.Url:
+        <input class="form-control form-control-sm" name="@name" form="@Model.FormId" type="url" value="@Model.Value" required="@Model.Column.IsRequired" />
+        break;
+    default:
+        <input class="form-control form-control-sm" name="@name" form="@Model.FormId" type="text" value="@Model.Value" required="@Model.Column.IsRequired" />
+        break;
+}

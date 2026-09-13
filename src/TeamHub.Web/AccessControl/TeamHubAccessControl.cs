@@ -154,6 +154,8 @@ public static class TeamHubAccessRoutes
         if (path.StartsWithSegments("/Flows") || path.StartsWithSegments("/api/flows")) return TeamHubModules.FlowDesigner;
         if (path.StartsWithSegments("/Studio/JiraTickets") || path.StartsWithSegments("/Studio/WeeklyUpdates")) return TeamHubModules.StudioSupport;
         if (path.StartsWithSegments("/Studio")) return TeamHubModules.StudioConfiguration;
+        var customTeamTab = CustomTeamTabAccess.ResolveModule(path);
+        if (customTeamTab is not null) return customTeamTab;
         if (path.StartsWithSegments("/Team")) return TeamHubModules.Team;
         if (path == "/" || path.StartsWithSegments("/Index") || path.StartsWithSegments("/Privacy")) return TeamHubModules.Home;
         return null;

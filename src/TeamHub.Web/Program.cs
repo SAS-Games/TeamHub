@@ -84,6 +84,11 @@ using (var scope = app.Services.CreateScope())
     studioDatabase.InitializeAsync().GetAwaiter().GetResult();
     var teamDatabase = scope.ServiceProvider.GetRequiredService<ITeamDatabaseInitializer>();
     teamDatabase.InitializeAsync().GetAwaiter().GetResult();
+    var customTeamTabs = scope.ServiceProvider.GetRequiredService<ICustomTeamTabService>();
+    var customTeamModules = (await customTeamTabs.ListTabsAsync())
+        .Select(tab => CustomTeamTabAccess.ModuleForSlug(tab.Slug))
+        .ToList();
+    await userAccess.EnsureModulesAsync(customTeamModules);
 }
 await app.Services.InitializeFlowDesignerAsync();
 
