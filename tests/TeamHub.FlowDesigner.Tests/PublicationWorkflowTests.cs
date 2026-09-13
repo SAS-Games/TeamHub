@@ -17,7 +17,13 @@ public sealed class PublicationWorkflowTests
         await database.InitializePublishedStoreAsync();
         var flow = ValidationTests.ConnectedFlow();
         flow.CreatedBy = "alice";
-        flow.Nodes[0].Comments = [new NodeComment { Author = "alice", Body = "Internal review note" }];
+        flow.Nodes[0].Comments =
+        [
+            new NodeComment { Author = "alice", Body = "Visible approved note", IsPublic = true },
+            new NodeComment { Author = "alice", Body = "Internal review note", IsPublic = false }
+        ];
+        flow.Nodes[0].Description = "Published node description";
+        flow.Nodes[0].CustomProperties["notes"] = "Published supporting notes";
         await repository.SaveAsync(flow);
         var alice = CreateService(database, repository, "alice", isAdmin: false);
         var admin = CreateService(database, repository, "admin", isAdmin: true);
@@ -36,7 +42,14 @@ public sealed class PublicationWorkflowTests
         Assert.Equal(1, published.PublicationVersion);
         Assert.NotNull(restored);
         Assert.Equal(flow.Name, restored!.Definition.Name);
-        Assert.All(restored.Definition.Nodes, node => Assert.Empty(node.Comments));
+        var restoredNode = restored.Definition.Nodes[0];
+        var restoredComment = Assert.Single(restoredNode.Comments);
+        Assert.Equal("Visible approved note", restoredComment.Body);
+        Assert.True(restoredComment.IsPublic);
+        Assert.DoesNotContain(restored.Definition.Nodes.SelectMany(node => node.Comments),
+            comment => comment.Body == "Internal review note");
+        Assert.Equal("Published node description", restoredNode.Description);
+        Assert.Equal("Published supporting notes", restoredNode.CustomProperties["notes"]);
         Assert.Null(await repository.GetAsync(flow.Id));
         Assert.Equal(FlowPublicationRequestStatus.Approved, (await admin.GetRequestAsync(request.Id))!.Summary.Status);
     }
@@ -239,6 +252,10 @@ public sealed class PublicationWorkflowTests
         var child = ValidationTests.ConnectedFlow();
         child.CreatedBy = "alice";
         child.Name = "Child";
+        child.Nodes[0].Comments =
+        [
+            new NodeComment { Id = "alice-public", Author = "alice", Body = "Keep this", IsPublic = true }
+        ];
         parent.Nodes[0].ChildFlowId = child.Id;
         await repository.SaveAsync(child);
         await repository.SaveAsync(parent);
@@ -261,6 +278,10 @@ public sealed class PublicationWorkflowTests
         Assert.Equal(2, catalog[0].PublicationVersion);
         await Assert.ThrowsAsync<UnauthorizedAccessException>(
             () => alice.UpdatePublishedAsync(child.Id, currentChild.Definition));
+        var tamperedComment = (await admin.GetPublishedBySourceAsync(child.Id))!.Definition;
+        tamperedComment.Nodes[0].Comments[0].IsPublic = false;
+        await Assert.ThrowsAsync<UnauthorizedAccessException>(
+            () => admin.UpdatePublishedAsync(child.Id, tamperedComment));
         currentChild.Definition.Nodes[0].ChildFlowId = parent.Id;
         await Assert.ThrowsAsync<InvalidOperationException>(
             () => admin.UpdatePublishedAsync(child.Id, currentChild.Definition));

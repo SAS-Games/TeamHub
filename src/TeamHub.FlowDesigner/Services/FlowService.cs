@@ -266,7 +266,8 @@ public sealed class FlowService(
     private static bool CommentsMatch(NodeComment original, NodeComment updated) =>
         string.Equals(original.Body, updated.Body, StringComparison.Ordinal)
         && string.Equals(original.Author, updated.Author, StringComparison.Ordinal)
-        && original.CreatedAt == updated.CreatedAt;
+        && original.CreatedAt == updated.CreatedAt
+        && original.IsPublic == updated.IsPublic;
 
     private async Task<IReadOnlyList<FlowValidationIssue>> ValidateChildLinksAsync(
         FlowDefinition flow,

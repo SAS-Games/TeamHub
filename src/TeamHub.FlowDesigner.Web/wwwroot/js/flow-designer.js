@@ -12,6 +12,7 @@
     const reviewRequestId = root.dataset.reviewRequestId || "";
     const zoomStorageKey = "teamhub.flowDesigner.zoom.v1";
     const canEdit = root.dataset.canEdit === "true";
+    const isPublishedView = root.dataset.publishedView === "true";
     const currentUser = root.dataset.currentUser || "You";
     const nameInput = byId("flowName");
     const saveState = byId("saveState");
@@ -24,6 +25,8 @@
     const connectionForm = byId("connectionProperties");
     const workflowForm = byId("workflowProperties");
     const emptyProperties = byId("emptyProperties");
+    const nodeReadOnlyDetails = byId("nodeReadOnlyDetails");
+    const connectionReadOnlyDetails = byId("connectionReadOnlyDetails");
     const nodeTypes = window.FlowDesignerAdapters.nodeTypes;
     const diagramTypes = window.FlowDesignerAdapters.diagramTypes;
     const palettes = window.FlowDesignerAdapters.palettes;
@@ -65,7 +68,7 @@
         if (!response.ok) throw new Error(`Load failed (${response.status})`);
         flow = await response.json();
         if (canEdit) await loadLinkTargets();
-        isDraft = Number(flow.version) <= 0;
+        isDraft = canEdit && Number(flow.version) <= 0;
         nameInput.value = flow.name;
         root.dataset.diagramType = flow.diagramType;
         root.classList.add(`fd-mode-${flow.diagramType.toLowerCase()}`);
@@ -100,7 +103,7 @@
         });
 
         const canvas = byId("drawflow");
-        canvas.addEventListener("pointerdown", finalizeSelectedNodeTitle, true);
+        if (canEdit) canvas.addEventListener("pointerdown", finalizeSelectedNodeTitle, true);
         canvas.addEventListener("dragover", event => { event.preventDefault(); event.dataTransfer.dropEffect = "copy"; });
         canvas.addEventListener("drop", event => {
             event.preventDefault();
@@ -127,7 +130,16 @@
         canvas.addEventListener("click", event => {
             if (canEdit && !presentationMode) return;
             const linkedNode = adapter.getNodeFromElement(event.target);
-            if (linkedNode?.childFlowId) openChildFlowById(linkedNode.childFlowId);
+            if (!presentationMode) {
+                if (linkedNode) adapter.selectNode(linkedNode.id);
+                return;
+            }
+            if (!linkedNode) {
+                closePresentationDetails();
+                return;
+            }
+            adapter.selectNode(linkedNode.id);
+            showPresentationNodeDetails(linkedNode);
         });
 
         saveButton.addEventListener("click", () => save(true));
@@ -177,6 +189,13 @@
         byId("openChildFlow").addEventListener("click", () => {
             if (selectedNode?.childFlowId) openChildFlowById(selectedNode.childFlowId);
         });
+        byId("openReadOnlyChildFlow").addEventListener("click", () => {
+            if (selectedNode?.childFlowId) openChildFlowById(selectedNode.childFlowId);
+        });
+        byId("closePresentationDetails").addEventListener("click", closePresentationDetails);
+        byId("openPresentationChildFlow").addEventListener("click", () => {
+            if (selectedNode?.childFlowId) openChildFlowById(selectedNode.childFlowId);
+        });
         byId("unlinkChildFlow").addEventListener("click", unlinkSelectedChildFlow);
         byId("createChildFlowModal").addEventListener("show.bs.modal", () => {
             creatingChildForNodeId = selectedNode?.id || null;
@@ -214,7 +233,7 @@
             const link = event.target.closest?.("a[href]");
             if (!link || link.target === "_blank" || link.hasAttribute("download")) return;
             const target = new URL(link.href, window.location.href);
-            if (target.origin !== window.location.origin || target.href === window.location.href || (!dirty && !isDraft)) return;
+            if (!canEdit || target.origin !== window.location.origin || target.href === window.location.href || (!dirty && !isDraft)) return;
             event.preventDefault();
             requestLeave(target.href);
         });
@@ -240,7 +259,7 @@
             if (presentationMode) window.requestAnimationFrame(() => adapter.fitToView());
         });
         window.addEventListener("beforeunload", event => {
-            if (!dirty && !isDraft) return;
+            if (!canEdit || (!dirty && !isDraft)) return;
             event.preventDefault();
             event.returnValue = "";
         });
@@ -328,6 +347,7 @@
     }
 
     function handleCanvasChange() {
+        if (!canEdit || presentationMode) return;
         updateCanvasHint();
         applyValidation(localValidation());
         markDirty();
@@ -337,6 +357,7 @@
     }
 
     function markDirty() {
+        if (!canEdit || presentationMode) return;
         dirty = true;
         setSaveState("unsaved", "Unsaved changes");
     }
@@ -445,6 +466,10 @@
     }
 
     function requestLeave(target) {
+        if (!canEdit) {
+            window.location.assign(target);
+            return;
+        }
         if (!dirty && !isDraft) {
             window.location.assign(target);
             return;
@@ -523,6 +548,25 @@
         emptyProperties.classList.add("d-none");
         workflowForm.classList.add("d-none");
         connectionForm.classList.add("d-none");
+        connectionReadOnlyDetails.classList.add("d-none");
+        if (!canEdit) {
+            nodeForm.classList.add("d-none");
+            nodeReadOnlyDetails.classList.remove("d-none");
+            const config = nodeTypes[node.type] || nodeTypes.Process;
+            byId("nodeReadOnlyType").textContent = config.title || node.type || "Selected symbol";
+            byId("nodeReadOnlyTitle").textContent = node.title || "Untitled symbol";
+            byId("nodeReadOnlyDescription").textContent = node.description?.trim() || "No description provided.";
+            byId("nodeReadOnlyNotes").textContent = node.customProperties?.notes?.trim() || "No notes provided.";
+            byId("openReadOnlyChildFlow").classList.toggle("d-none", !node.childFlowId);
+            renderNodeComments(node.comments || [], {
+                listId: "nodeReadOnlyComments",
+                countId: "nodeReadOnlyCommentCount",
+                allowActions: false
+            });
+            if (window.matchMedia("(max-width: 1040px)").matches) byId("propertiesPanel").classList.add("open");
+            return;
+        }
+        nodeReadOnlyDetails.classList.add("d-none");
         nodeForm.classList.remove("d-none");
         byId("nodeTitle").value = node.title || "";
         byId("nodeDescription").value = node.description || "";
@@ -550,6 +594,7 @@
         byId("taskRequired").checked = String(node.customProperties?.required ?? "true").toLowerCase() !== "false";
         byId("taskEnabled").checked = String(node.customProperties?.enabled ?? "true").toLowerCase() !== "false";
         byId("newNodeComment").value = "";
+        byId("newNodeCommentPublic").checked = isPublishedView;
         renderNodeComments(node.comments || []);
     }
 
@@ -627,13 +672,24 @@
         emptyProperties.classList.add("d-none");
         workflowForm.classList.add("d-none");
         nodeForm.classList.add("d-none");
-        connectionForm.classList.remove("d-none");
-        byId("connectionLabel").value = connection.label || "";
-        byId("connectionTone").value = connection.metadata?.tone || "";
+        nodeReadOnlyDetails.classList.add("d-none");
         const graph = adapter.getGraph();
         const source = graph.nodes.find(node => node.id === connection.sourceNodeId);
         const target = graph.nodes.find(node => node.id === connection.targetNodeId);
-        byId("connectionSummary").textContent = `${source?.title || "Source"} → ${target?.title || "Target"}`;
+        const summary = `${source?.title || "Source"} → ${target?.title || "Target"}`;
+        if (!canEdit) {
+            connectionForm.classList.add("d-none");
+            connectionReadOnlyDetails.classList.remove("d-none");
+            byId("connectionReadOnlyTitle").textContent = connection.label || "Unlabeled connector";
+            byId("connectionReadOnlySummary").textContent = summary;
+            if (window.matchMedia("(max-width: 1040px)").matches) byId("propertiesPanel").classList.add("open");
+            return;
+        }
+        connectionReadOnlyDetails.classList.add("d-none");
+        connectionForm.classList.remove("d-none");
+        byId("connectionLabel").value = connection.label || "";
+        byId("connectionTone").value = connection.metadata?.tone || "";
+        byId("connectionSummary").textContent = summary;
     }
 
     function clearProperties() {
@@ -641,12 +697,13 @@
         selectedConnection = null;
         nodeForm.classList.add("d-none");
         connectionForm.classList.add("d-none");
-        workflowForm.classList.remove("d-none");
-        emptyProperties.classList.add("d-none");
+        nodeReadOnlyDetails.classList.add("d-none");
+        connectionReadOnlyDetails.classList.add("d-none");
+        workflowForm.classList.toggle("d-none", !canEdit);
+        emptyProperties.classList.toggle("d-none", canEdit);
     }
-
     function updateSelectedNode() {
-        if (!selectedNode) return;
+        if (!canEdit || presentationMode || !selectedNode) return;
         const customProperties = {
             ...(selectedNode.customProperties || {}),
             tone: byId("nodeTone").value,
@@ -754,7 +811,7 @@
     }
 
     function finalizeSelectedNodeTitle() {
-        if (!selectedNode) return;
+        if (!canEdit || presentationMode || !selectedNode) return;
         const input = byId("nodeTitle");
         if (input.value.trim()) return;
 
@@ -768,11 +825,18 @@
         const input = byId("newNodeComment");
         const body = input.value.trim();
         if (!body) return;
-        const comment = { id: crypto.randomUUID(), body, author: currentUser, createdAt: new Date().toISOString() };
+        const comment = {
+            id: crypto.randomUUID(),
+            body,
+            author: currentUser,
+            createdAt: new Date().toISOString(),
+            isPublic: byId("newNodeCommentPublic").checked
+        };
         const comments = [...(selectedNode.comments || []), comment];
         updateSelectedNodeComments(comments);
         input.value = "";
-        showToast("Comment added — save to keep it");
+        byId("newNodeCommentPublic").checked = isPublishedView;
+        showToast("Comment added - save to keep it");
     }
 
     function updateSelectedNodeComments(comments) {
@@ -799,6 +863,19 @@
         editor.maxLength = 2000;
         editor.value = comment.body || "";
 
+        const visibility = document.createElement("div");
+        visibility.className = "form-check mt-2";
+        const publicInput = document.createElement("input");
+        publicInput.className = "form-check-input";
+        publicInput.type = "checkbox";
+        publicInput.id = `comment-public-${comment.id}`;
+        publicInput.checked = Boolean(comment.isPublic);
+        const publicLabel = document.createElement("label");
+        publicLabel.className = "form-check-label fd-comment-visibility-label";
+        publicLabel.htmlFor = publicInput.id;
+        publicLabel.textContent = "Show in published diagram";
+        visibility.append(publicInput, publicLabel);
+
         const save = document.createElement("button");
         save.className = "btn btn-sm btn-primary";
         save.type = "button";
@@ -811,9 +888,11 @@
                 return;
             }
             const comments = (selectedNode.comments || []).map(existing =>
-                existing.id === comment.id ? { ...existing, body: nextBody } : existing);
+                existing.id === comment.id
+                    ? { ...existing, body: nextBody, isPublic: publicInput.checked }
+                    : existing);
             updateSelectedNodeComments(comments);
-            showToast("Comment updated — save to keep it");
+            showToast("Comment updated - save to keep it");
         });
 
         const cancel = document.createElement("button");
@@ -823,6 +902,7 @@
         cancel.addEventListener("click", () => renderNodeComments(selectedNode?.comments || []));
 
         body.replaceWith(editor);
+        editor.insertAdjacentElement("afterend", visibility);
         actions.replaceChildren(save, cancel);
         editor.focus();
         editor.setSelectionRange(editor.value.length, editor.value.length);
@@ -832,12 +912,13 @@
         if (!selectedNode || !ownsNodeComment(comment) || !window.confirm("Delete this comment?")) return;
         const comments = (selectedNode.comments || []).filter(existing => existing.id !== comment.id);
         updateSelectedNodeComments(comments);
-        showToast("Comment deleted — save to keep it");
+        showToast("Comment deleted - save to keep it");
     }
 
-    function renderNodeComments(comments) {
-        const list = byId("nodeComments");
-        byId("nodeCommentCount").textContent = comments.length;
+    function renderNodeComments(comments, options = {}) {
+        const list = byId(options.listId || "nodeComments");
+        byId(options.countId || "nodeCommentCount").textContent = comments.length;
+        const allowActions = options.allowActions ?? canEdit;
         list.replaceChildren();
         if (!comments.length) {
             const empty = document.createElement("p");
@@ -852,12 +933,18 @@
             item.dataset.commentId = comment.id;
             const header = document.createElement("div");
             header.className = "fd-comment-meta";
+            const identity = document.createElement("span");
+            identity.className = "fd-comment-identity";
             const author = document.createElement("strong");
             author.textContent = comment.author || "Unknown user";
+            const visibility = document.createElement("span");
+            visibility.className = `fd-comment-visibility ${comment.isPublic ? "is-public" : ""}`;
+            visibility.textContent = comment.isPublic ? "Public" : "Private";
+            identity.append(author, visibility);
             const time = document.createElement("time");
             time.dateTime = comment.createdAt;
             time.textContent = new Date(comment.createdAt).toLocaleString([], { dateStyle: "medium", timeStyle: "short" });
-            header.append(author, time);
+            header.append(identity, time);
             const body = document.createElement("p");
             body.className = "fd-comment-body";
             appendLinkedCommentText(body, comment.body || "");
@@ -875,14 +962,13 @@
             remove.textContent = "Delete";
             remove.setAttribute("aria-label", `Delete comment by ${comment.author || "Unknown user"}`);
             remove.addEventListener("click", () => deleteNodeComment(comment));
-            const ownsComment = ownsNodeComment(comment);
+            const ownsComment = allowActions && ownsNodeComment(comment);
             if (ownsComment) actions.append(edit, remove);
             item.append(header, body);
             if (ownsComment) item.append(actions);
             list.appendChild(item);
         }
     }
-
     function appendLinkedCommentText(container, value) {
         const urlPattern = /https?:\/\/[^\s]+/g;
         let offset = 0;
@@ -897,6 +983,28 @@
             offset = match.index + match[0].length;
         }
         if (offset < value.length) container.append(document.createTextNode(value.slice(offset)));
+    }
+
+    function showPresentationNodeDetails(node) {
+        selectedNode = node;
+        const config = nodeTypes[node.type] || nodeTypes.Process;
+        byId("presentationDetailsType").textContent = config.title || node.type || "Selected symbol";
+        byId("presentationDetailsTitle").textContent = node.title || "Untitled symbol";
+        byId("presentationDetailsDescription").textContent = node.description?.trim() || "No description provided.";
+        byId("presentationDetailsNotes").textContent = node.customProperties?.notes?.trim() || "No notes provided.";
+        byId("openPresentationChildFlow").classList.toggle("d-none", !node.childFlowId);
+        renderNodeComments((node.comments || []).filter(comment => comment.isPublic), {
+            listId: "presentationComments",
+            countId: "presentationCommentCount",
+            allowActions: false
+        });
+        byId("presentationDetails").classList.add("open");
+        byId("presentationDetails").setAttribute("aria-hidden", "false");
+    }
+
+    function closePresentationDetails() {
+        byId("presentationDetails").classList.remove("open");
+        byId("presentationDetails").setAttribute("aria-hidden", "true");
     }
 
     function changeSelectedNodeType() {
@@ -919,6 +1027,11 @@
     function handleKeyboard(event) {
         if (presentationMode) {
             if (event.key === "Escape") {
+                if (byId("presentationDetails").classList.contains("open")) {
+                    event.preventDefault();
+                    closePresentationDetails();
+                    return;
+                }
                 if (document.fullscreenElement === root) return;
                 event.preventDefault();
                 exitPresentation(false);
@@ -962,6 +1075,7 @@
         byId("presentationButton").setAttribute("aria-pressed", "true");
         byId("toolbox").classList.remove("open");
         byId("propertiesPanel").classList.remove("open");
+        closePresentationDetails();
         byId("validationPopover").classList.add("d-none");
         adapter.setReadOnly(true);
         window.requestAnimationFrame(() => {
@@ -994,6 +1108,7 @@
         presentationMode = false;
         setPresentationUrl(false);
         root.classList.remove("is-presenting");
+        closePresentationDetails();
         byId("presentationButton").setAttribute("aria-pressed", "false");
         adapter.setSpacePanning(false);
         adapter.setReadOnly(!canEdit);

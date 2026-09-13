@@ -6,4 +6,5 @@ public sealed class NodeComment
     public string Body { get; set; } = string.Empty;
     public string Author { get; set; } = "Unknown user";
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
+    public bool IsPublic { get; set; }
 }

@@ -98,7 +98,10 @@ public sealed class PublishedFlowRecoveryService(
         var clone = serializer.DeserializeBundle(serializer.SerializeBundle(bundle));
         foreach (var definition in clone.Flows)
         {
-            foreach (var node in definition.Nodes) node.Comments = [];
+            foreach (var node in definition.Nodes)
+            {
+                node.Comments = (node.Comments ?? []).Where(comment => comment.IsPublic).ToList();
+            }
             definition.IsShared = false;
             definition.CreatedBy = null;
         }

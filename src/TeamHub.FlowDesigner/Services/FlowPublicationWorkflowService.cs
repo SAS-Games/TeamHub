@@ -262,6 +262,7 @@ public sealed class FlowPublicationWorkflowService(
         CancellationToken cancellationToken = default)
     {
         RequireReviewer();
+        var admin = RequiredCurrentUser();
         if (sourceFlowId != flow.Id)
         {
             throw new ArgumentException("The route and document IDs do not match.", nameof(flow));
@@ -277,6 +278,7 @@ public sealed class FlowPublicationWorkflowService(
         updated.CreatedBy = null;
         updated.IsShared = false;
         updated.Version = Math.Max(target.Version + 1, 1);
+        NormalizeAndAuthorizeComments(target, updated, admin);
         var index = current.Bundle.Flows.FindIndex(item => item.Id == sourceFlowId);
         current.Bundle.Flows[index] = updated;
 
@@ -295,7 +297,6 @@ public sealed class FlowPublicationWorkflowService(
             if (!hostResult.Success) throw new InvalidOperationException(string.Join(" ", hostResult.Errors));
         }
 
-        var admin = RequiredCurrentUser();
         var snapshotJson = serializer.SerializeBundle(sanitized);
         var request = new FlowPublicationRequestEntity
         {
@@ -567,11 +568,70 @@ public sealed class FlowPublicationWorkflowService(
         var clone = serializer.DeserializeBundle(serializer.SerializeBundle(bundle));
         foreach (var definition in clone.Flows)
         {
-            foreach (var node in definition.Nodes) node.Comments = [];
+            foreach (var node in definition.Nodes)
+            {
+                node.Comments = (node.Comments ?? []).Where(comment => comment.IsPublic).ToList();
+            }
             definition.IsShared = false;
             definition.CreatedBy = null;
         }
         return clone;
+    }
+
+    private static void NormalizeAndAuthorizeComments(
+        FlowDefinition existing,
+        FlowDefinition updated,
+        string currentUserId)
+    {
+        var existingNodes = existing.Nodes.ToDictionary(node => node.Id, StringComparer.Ordinal);
+        foreach (var node in updated.Nodes)
+        {
+            node.Comments ??= [];
+            var originalComments = existingNodes.TryGetValue(node.Id, out var originalNode)
+                ? originalNode.Comments ?? []
+                : [];
+            var originalById = originalComments
+                .Where(comment => !string.IsNullOrWhiteSpace(comment.Id))
+                .GroupBy(comment => comment.Id, StringComparer.Ordinal)
+                .ToDictionary(group => group.Key, group => group.First(), StringComparer.Ordinal);
+            var retainedIds = new HashSet<string>(StringComparer.Ordinal);
+
+            foreach (var comment in node.Comments)
+            {
+                if (string.IsNullOrWhiteSpace(comment.Id) || !retainedIds.Add(comment.Id))
+                {
+                    comment.Id = Guid.NewGuid().ToString("N");
+                    retainedIds.Add(comment.Id);
+                }
+
+                if (!originalById.TryGetValue(comment.Id, out var original))
+                {
+                    comment.Author = currentUserId;
+                    comment.CreatedAt = DateTimeOffset.UtcNow;
+                    continue;
+                }
+
+                var ownsComment = string.Equals(original.Author, currentUserId, StringComparison.OrdinalIgnoreCase);
+                var unchanged = string.Equals(original.Body, comment.Body, StringComparison.Ordinal)
+                    && string.Equals(original.Author, comment.Author, StringComparison.Ordinal)
+                    && original.CreatedAt == comment.CreatedAt
+                    && original.IsPublic == comment.IsPublic;
+                if (!ownsComment && !unchanged)
+                {
+                    throw new UnauthorizedAccessException("You can edit only your own comments.");
+                }
+
+                comment.Author = original.Author;
+                comment.CreatedAt = original.CreatedAt;
+            }
+
+            if (originalComments.Any(comment =>
+                    !retainedIds.Contains(comment.Id)
+                    && !string.Equals(comment.Author, currentUserId, StringComparison.OrdinalIgnoreCase)))
+            {
+                throw new UnauthorizedAccessException("You can delete only your own comments.");
+            }
+        }
     }
 
     private FlowDiagramTemplateBundle ReadPublishedBundle(PublishedFlowEntity entity)

@@ -137,6 +137,7 @@ public sealed class FlowServiceTests
         await repository.SaveAsync(flow);
 
         flow.Nodes[0].Comments[0].Body = "After";
+        flow.Nodes[0].Comments[0].IsPublic = true;
         flow.Nodes[0].Comments.RemoveAt(1);
         var result = await service.SaveAsync(flow);
         var restored = await repository.GetAsync(flow.Id);
@@ -144,6 +145,7 @@ public sealed class FlowServiceTests
         Assert.True(result.IsValid);
         Assert.Single(restored!.Nodes[0].Comments);
         Assert.Equal("After", restored.Nodes[0].Comments[0].Body);
+        Assert.True(restored.Nodes[0].Comments[0].IsPublic);
     }
 
     [Fact]
@@ -159,6 +161,10 @@ public sealed class FlowServiceTests
         var edited = await repository.GetAsync(flow.Id);
         edited!.Nodes[0].Comments[0].Body = "Changed";
         await Assert.ThrowsAsync<UnauthorizedAccessException>(() => service.SaveAsync(edited));
+
+        var visibilityChanged = await repository.GetAsync(flow.Id);
+        visibilityChanged!.Nodes[0].Comments[0].IsPublic = true;
+        await Assert.ThrowsAsync<UnauthorizedAccessException>(() => service.SaveAsync(visibilityChanged));
 
         var deleted = await repository.GetAsync(flow.Id);
         deleted!.Nodes[0].Comments.Clear();

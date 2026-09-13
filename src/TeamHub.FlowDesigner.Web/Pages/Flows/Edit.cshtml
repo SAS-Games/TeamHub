@@ -65,7 +65,7 @@
             {
                 <button class="btn btn-sm btn-light" id="saveAsTemplateButton" type="button" data-bs-toggle="modal" data-bs-target="#saveTemplateModal">Save as template</button>
             }
-            <button class="btn btn-sm btn-light fd-mobile-panel-button fd-edit-only" id="toggleProperties" type="button">Properties</button>
+            <button class="btn btn-sm btn-light fd-mobile-panel-button" id="toggleProperties" type="button">@(Model.CanEdit ? "Properties" : "Details")</button>
         </div>
     </div>
 
@@ -83,12 +83,26 @@
             <div id="drawflow" class="fd-canvas"></div>
             <div class="fd-canvas-hint" id="canvasHint"><strong>Start building</strong><span>Drag a symbol here from the toolbox</span></div>
             <div class="fd-presentation-controls" aria-live="polite">
-                <span><strong>Presentation mode</strong><small>Drag to pan &middot; Scroll to zoom</small></span>
+                <span><strong>Presentation mode</strong><small>Click a node for details &middot; Double-click to open a child</small></span>
                 <div class="d-flex gap-1">
                     <a class="btn btn-sm btn-light" id="presentationBack" href="@Model.BackPath">&larr; Back</a>
                     <button class="btn btn-sm btn-light" id="exitPresentation" type="button">Exit <span aria-hidden="true">Esc</span></button>
                 </div>
             </div>
+            <aside class="fd-presentation-details" id="presentationDetails" aria-labelledby="presentationDetailsTitle" aria-hidden="true">
+                <div class="fd-panel-heading">
+                    <div><div class="fd-eyebrow" id="presentationDetailsType">Selected symbol</div></div>
+                    <button class="btn-close" id="closePresentationDetails" type="button" aria-label="Close node details"></button>
+                </div>
+                <h2 class="fd-details-title" id="presentationDetailsTitle"></h2>
+                <div class="fd-details-section"><h4>Description</h4><p class="fd-details-copy" id="presentationDetailsDescription"></p></div>
+                <div class="fd-details-section"><h4>Notes</h4><p class="fd-details-copy" id="presentationDetailsNotes"></p></div>
+                <button class="btn btn-sm btn-primary w-100 d-none" id="openPresentationChildFlow" type="button">Open detailed diagram</button>
+                <section class="fd-comments" aria-labelledby="presentationCommentsHeading">
+                    <div class="d-flex align-items-center justify-content-between mb-2"><h3 id="presentationCommentsHeading">Public comments</h3><span class="fd-comment-count" id="presentationCommentCount">0</span></div>
+                    <div class="fd-comment-list" id="presentationComments"></div>
+                </section>
+            </aside>
             <div class="fd-canvas-controls" aria-label="Canvas controls">
                 <button class="btn btn-sm btn-light" id="zoomOut" type="button" title="Zoom out">&minus;</button>
                 <button class="btn btn-sm btn-light fd-zoom-value" id="zoomReset" type="button" title="Reset zoom">100%</button>
@@ -98,12 +112,37 @@
             </div>
         </section>
 
-        <aside class="fd-properties fd-edit-only" id="propertiesPanel" aria-label="Properties">
+        <aside class="fd-properties" id="propertiesPanel" aria-label="@(Model.CanEdit ? "Properties" : "Diagram details")">
             <div class="fd-panel-heading">
-                <div><div class="fd-eyebrow">Inspector</div><h2>Properties</h2></div>
+                <div><div class="fd-eyebrow">Inspector</div><h2>@(Model.CanEdit ? "Properties" : "Details")</h2></div>
                 <button class="btn-close fd-panel-close" id="closeProperties" type="button" aria-label="Close properties"></button>
             </div>
-            <div id="emptyProperties" class="fd-properties-empty"><span>&#9671;</span><p>Select a symbol or connector to edit its details.</p></div>
+            <div id="emptyProperties" class="fd-properties-empty"><span>&#9671;</span><p>Select a symbol or connector to @(Model.CanEdit ? "edit" : "view") its details.</p></div>
+            <section id="nodeReadOnlyDetails" class="d-none" aria-labelledby="nodeReadOnlyTitle">
+                <div class="fd-selection-label" id="nodeReadOnlyType">Selected symbol</div>
+                <h3 class="fd-details-title" id="nodeReadOnlyTitle"></h3>
+                <div class="fd-details-section">
+                    <h4>Description</h4>
+                    <p class="fd-details-copy" id="nodeReadOnlyDescription"></p>
+                </div>
+                <div class="fd-details-section">
+                    <h4>Notes</h4>
+                    <p class="fd-details-copy" id="nodeReadOnlyNotes"></p>
+                </div>
+                <button class="btn btn-sm btn-primary w-100 d-none" id="openReadOnlyChildFlow" type="button">Open detailed diagram</button>
+                <section class="fd-comments" aria-labelledby="nodeReadOnlyCommentsHeading">
+                    <div class="d-flex align-items-center justify-content-between mb-2">
+                        <h3 id="nodeReadOnlyCommentsHeading">Public comments</h3>
+                        <span class="fd-comment-count" id="nodeReadOnlyCommentCount">0</span>
+                    </div>
+                    <div class="fd-comment-list" id="nodeReadOnlyComments"></div>
+                </section>
+            </section>
+            <section id="connectionReadOnlyDetails" class="d-none" aria-labelledby="connectionReadOnlyTitle">
+                <div class="fd-selection-label">Selected connector</div>
+                <h3 class="fd-details-title" id="connectionReadOnlyTitle"></h3>
+                <p class="fd-details-copy" id="connectionReadOnlySummary"></p>
+            </section>
             <form id="workflowProperties" class="d-none" autocomplete="off">
                 <div class="fd-selection-label">Diagram settings</div>
                 <div class="mb-3"><label class="form-label" for="workflowDescription">Description</label><textarea class="form-control" id="workflowDescription" rows="3" maxlength="2000"></textarea></div>
@@ -196,7 +235,7 @@
                     <div class="form-check"><input class="form-check-input" id="taskRequired" type="checkbox" checked /><label class="form-check-label" for="taskRequired">Required for workflow completion</label></div>
                     <div class="form-check mb-3"><input class="form-check-input" id="taskEnabled" type="checkbox" checked /><label class="form-check-label" for="taskEnabled">Enabled</label></div>
                 </section>
-                <section class="fd-comments@(Model.IsPublishedView ? " d-none" : "")" aria-labelledby="nodeCommentsHeading">
+                <section class="fd-comments" aria-labelledby="nodeCommentsHeading">
                     <div class="d-flex align-items-center justify-content-between mb-2">
                         <h3 id="nodeCommentsHeading">Comments</h3>
                         <span class="fd-comment-count" id="nodeCommentCount">0</span>
@@ -204,6 +243,11 @@
                     <div class="fd-comment-list" id="nodeComments"></div>
                     <label class="visually-hidden" for="newNodeComment">Add a comment</label>
                     <textarea class="form-control mt-2" id="newNodeComment" rows="2" maxlength="2000" placeholder="Add a comment about this symbol"></textarea>
+                    <div class="form-check mt-2">
+                        <input class="form-check-input" id="newNodeCommentPublic" type="checkbox" />
+                        <label class="form-check-label fd-comment-visibility-label" for="newNodeCommentPublic">Show in published diagram</label>
+                    </div>
+                    <div class="form-text">Private comments remain only in the editable diagram. Public comments are copied into the approved snapshot.</div>
                     <button class="btn btn-sm btn-outline-secondary w-100 mt-2" id="addNodeComment" type="button">Add comment</button>
                 </section>
                 <button class="btn btn-sm btn-outline-danger w-100" id="deleteNode" type="button">Delete symbol</button>
