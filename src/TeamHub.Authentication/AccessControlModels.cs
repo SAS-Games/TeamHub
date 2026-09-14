@@ -24,6 +24,7 @@ public static class TeamHubModules
     public const string FlowDesigner = "Flow Designer";
     public const string StudioConfiguration = "Studio Configuration";
     public const string StudioSupport = "Studio Support";
+    public const string AiReports = "AI Reports";
     public const string AtlassianConnection = "Atlassian Connection";
     public const string Administration = "Administration";
     public const string UserManagement = "User Management";
@@ -39,6 +40,7 @@ public static class TeamHubModules
         FlowDesigner,
         StudioConfiguration,
         StudioSupport,
+        AiReports,
         AtlassianConnection,
         Administration,
         UserManagement,

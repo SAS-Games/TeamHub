@@ -5,9 +5,9 @@
 | Field | Value |
 |---|---|
 | Branch | `feature/ai-generated-reports` |
-| Worktree | `D:\TeamHub-AI` |
+| Workspace | `D:\TeamHub` |
 | Baseline | `main` at `59cfed5` (`confluence page update`) |
-| Status | Scope defined; Ollama installed; implementation not started |
+| Status | Phase 1 module foundation implemented and verified; weekly report development is next |
 | Last updated | 2026-09-14 |
 
 This document is the scope contract, design record, and development checklist for the AI-generated reporting feature. Update it whenever a requirement, decision, milestone, test result, or known issue changes.
@@ -388,7 +388,7 @@ Status: Product confirmation required before monthly generation is implemented.
 ### Phase 0 — Scope and environment
 
 - [x] Create dedicated branch `feature/ai-generated-reports`.
-- [x] Create separate worktree `D:\TeamHub-AI`.
+- [x] Retain AI development on `feature/ai-generated-reports` in the primary `D:\TeamHub` workspace.
 - [x] Record scope, architecture, installation needs, and acceptance criteria.
 - [ ] Confirm monthly boundary rule.
 - [ ] Confirm production operating system and hardware.
@@ -397,14 +397,14 @@ Status: Product confirmation required before monthly generation is implemented.
 
 ### Phase 1 — Module foundation
 
-- [ ] Add `TeamHub.AIReports` project and tests to the solution.
-- [ ] Add configuration and feature flag.
-- [ ] Add provider-neutral `IAiModelProvider` interface and provider registry.
-- [ ] Add generic OpenAI-compatible provider.
-- [ ] Add Ollama provider/client and health check.
-- [ ] Add configuration-only provider and model selection.
-- [ ] Add separate SQLite initializer and repository.
-- [ ] Register AI Reports permissions.
+- [x] Add `TeamHub.AIReports` project and tests to the solution.
+- [x] Add configuration and feature flag.
+- [x] Add provider-neutral `IAiModelProvider` interface and provider registry.
+- [x] Add generic OpenAI-compatible provider.
+- [x] Add Ollama provider/client and health check.
+- [x] Add configuration-only provider and model selection.
+- [x] Add separate SQLite initializer and repository.
+- [x] Register AI Reports permissions.
 
 ### Phase 2 — Weekly AI report
 
@@ -441,16 +441,18 @@ Status: Product confirmation required before monthly generation is implemented.
 
 | Date | Status | Change | Evidence/Notes |
 |---|---|---|---|
-| 2026-09-14 | Complete | Feature branch and worktree created | Based on committed consolidated/grouped report baseline `59cfed5` |
+| 2026-09-14 | Complete | AI feature branch created | Based on committed consolidated/grouped report baseline `59cfed5` |
 | 2026-09-14 | Complete | Initial scope and development plan documented | Implementation has not started |
 | 2026-09-14 | Complete | Ollama runtime verified | Ollama `0.20.0`; `llama3.2:latest` present; Qwen3 8B not downloaded |
 | 2026-09-14 | Complete | Provider portability requirement confirmed | Model/provider selected by configuration; proprietary APIs require a one-time adapter |
+| 2026-09-14 | Complete | Phase 1 module foundation implemented | Provider registry, Ollama/OpenAI-compatible adapters, feature configuration, isolated SQLite store, permissions, and five focused tests |
+| 2026-09-14 | Verified | TeamHub solution regression check | Full solution build: 0 warnings/errors; all 145 tests passed |
 
 ## Branch and synchronization rules
 
-- Normal Team Hub features and bug fixes continue in `D:\TeamHub` on `main`.
-- AI report work occurs only in `D:\TeamHub-AI` on `feature/ai-generated-reports`.
+- Use the single `D:\TeamHub` workspace and verify the active branch before making changes.
+- AI report work occurs only on `feature/ai-generated-reports`; normal feature and bug-fix work occurs on `main`.
 - Keep AI commits small and scoped to the AI module, its host integration, tests, and this document.
-- Bring required main-branch fixes into the AI branch deliberately through merge or rebase after verifying both worktrees are clean.
+- Bring required main-branch fixes into the AI branch deliberately through merge or rebase after verifying the workspace is clean.
 - Do not merge unfinished AI code into main.
 - Update this document in the same commit as any material scope, architecture, installation, or progress change.
