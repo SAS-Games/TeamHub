@@ -1,0 +1,395 @@
+# AI-Generated Studio Reports
+
+## Document control
+
+| Field | Value |
+|---|---|
+| Branch | `feature/ai-generated-reports` |
+| Worktree | `D:\TeamHub-AI` |
+| Baseline | `main` at `59cfed5` (`confluence page update`) |
+| Status | Scope defined; implementation not started |
+| Last updated | 2026-09-14 |
+
+This document is the scope contract, design record, and development checklist for the AI-generated reporting feature. Update it whenever a requirement, decision, milestone, test result, or known issue changes.
+
+## Purpose
+
+Create downloadable weekly and monthly studio-support reports from Team Hub's existing consolidated Confluence data. A locally hosted language model may improve clarity, remove repetition, and organize multiline content, but it must not introduce facts or change the source meaning.
+
+The existing Confluence-backed consolidated report remains the source of truth. AI-generated reports are derived, reviewable artifacts and never replace or edit the source report.
+
+## Confirmed product decisions
+
+- All inference runs locally within the Team Hub environment.
+- The initial model is Qwen3 8B, served by Ollama.
+- The local-model integration is provider-neutral so another approved local model can be substituted later.
+- AI reports use only active studio projects.
+- Reports retain the configured studio grouping, such as IHP and MHP.
+- Each visible report table has exactly four columns:
+  1. Studio
+  2. Studio Work
+  3. HPGDS Support
+  4. WMD Support
+- Action Items and Notes are excluded before model inference.
+- Weekly and monthly reports are generated independently from the original structured weekly source data.
+- A monthly report must never use an AI-generated weekly report as its input.
+- One studio row is processed independently from other studios to prevent content mixing.
+- Generated content never overwrites Team Hub Studio data or Confluence data.
+- Users review a generated report before downloading it.
+- AI report persistence uses a separate database owned by the AI Reports module.
+
+## User experience
+
+### Report builder
+
+The AI Reports page will provide:
+
+- Period type: Weekly or Monthly.
+- Weekly date range or calendar month selection.
+- Scope: All active studios, studio group, or individual studio.
+- Generate AI Report action.
+- Local-model availability indicator.
+- Generation progress and clear failure messages.
+- Source coverage summary, including missing Confluence weeks or studio rows.
+- Read-only preview grouped by week/month and studio group.
+- Download actions for the supported formats.
+
+### Weekly AI report
+
+- Read the selected weekly consolidated source data.
+- Exclude Action Items and Notes before building model requests.
+- Process Studio Work, HPGDS Support, and WMD Support for one studio at a time.
+- Preserve multiline content as readable paragraphs or bullet points.
+- Display separate tables for IHP, MHP, and other configured groups.
+- Show the contributing Confluence page title, ID, and version.
+
+### Monthly AI report
+
+- Select a calendar month.
+- Identify the source weekly pages assigned to that month.
+- Combine each studio's original weekly Studio Work, HPGDS Support, and WMD Support fields.
+- Remove exact repetition and improve organization without losing distinct activities or status changes.
+- Preserve dates, quantities, ticket IDs, product names, technical terms, and outcomes.
+- Process each studio independently.
+- Display one table per studio group.
+- Show source coverage, such as `4 of 4 weekly pages included`.
+- Identify missing or unreadable weekly sources before generation.
+
+### Download
+
+MVP formats:
+
+- Excel (`.xlsx`) as the primary formatted report.
+- CSV (`.csv`) as a portable data export.
+
+Later option:
+
+- PDF after the table layout and pagination rules are approved.
+
+Downloads must contain report title, reporting period, generation timestamp, source coverage, group headings, and the four approved columns.
+
+## Meaning-preservation controls
+
+No generative model can guarantee perfect semantic equivalence. The feature therefore uses several independent controls:
+
+- Temperature set to `0`.
+- Qwen thinking mode disabled for this copy-editing task.
+- A strict system prompt that permits clarity, grammar, formatting, and deduplication changes only.
+- One studio and one period per model request.
+- Immutable studio ID, group, source week IDs, and source hashes retained outside model-editable text.
+- JSON Schema-constrained output with only the three editable content fields.
+- Server-side schema validation before accepting output.
+- Checks for altered or newly introduced numbers, dates, URLs, Jira IDs, and configured identifiers.
+- Rejection of unexpected studios, fields, or empty replacements for non-empty source content.
+- Original-versus-generated comparison available during review.
+- Visible warning when automated validation cannot establish sufficient confidence.
+- Manual user review before download.
+
+The model prompt will explicitly prohibit:
+
+- New facts, recommendations, conclusions, or inferred status.
+- Moving information between studios or support categories.
+- Changing names, dates, numbers, ticket IDs, technical identifiers, or completion status.
+- Converting uncertainty into certainty.
+- Removing unique technical details.
+
+## Structured model contract
+
+The model receives one studio record at a time. Identity and grouping are controlled by Team Hub and are not generated by the model.
+
+Illustrative response shape:
+
+```json
+{
+  "studioWork": "string",
+  "hpgdsSupport": "string",
+  "wmdSupport": "string"
+}
+```
+
+Team Hub then combines the immutable studio identity with the validated response to render:
+
+| Studio | Studio Work | HPGDS Support | WMD Support |
+|---|---|---|---|
+
+## Module architecture
+
+Create a self-contained project named `TeamHub.AIReports` with explicit public contracts and internal implementation details.
+
+Proposed structure:
+
+```text
+src/TeamHub.AIReports/
+├── Contracts/
+│   ├── AiReportRequest.cs
+│   ├── AiReportResult.cs
+│   └── IAIReportService.cs
+├── Domain/
+│   ├── AiReportPeriod.cs
+│   ├── AiReportSource.cs
+│   └── AiReportRow.cs
+├── Application/
+│   ├── WeeklyAiReportGenerator.cs
+│   ├── MonthlyAiReportGenerator.cs
+│   ├── ReportValidationService.cs
+│   └── ReportPromptBuilder.cs
+├── LocalInference/
+│   ├── ILocalLanguageModel.cs
+│   ├── OllamaLanguageModel.cs
+│   └── LocalModelHealthService.cs
+├── Persistence/
+│   ├── AiReportsDbContext.cs
+│   ├── AiReportDatabaseInitializer.cs
+│   └── SqliteAiReportRepository.cs
+├── Export/
+│   ├── AiReportExcelExporter.cs
+│   └── AiReportCsvExporter.cs
+└── DependencyInjection/
+    └── AiReportsServiceCollectionExtensions.cs
+```
+
+Host integration belongs in narrowly scoped Team Hub Web pages and configuration bindings. The AI module must not depend on `TeamHub.Web`.
+
+Dependency direction:
+
+```text
+TeamHub.Web
+    ├── TeamHub.Studio (read structured weekly source)
+    └── TeamHub.AIReports (generate, validate, persist, export)
+
+TeamHub.AIReports
+    └── No dependency on TeamHub.Web or Flow Designer
+```
+
+## Data ownership and persistence
+
+Use a separate SQLite database:
+
+```text
+ConnectionStrings:AiReportsDb = Data Source=data/ai-reports.db
+```
+
+Proposed persisted information:
+
+- Report ID and report type.
+- Requested reporting period and scope.
+- Generation status: Pending, Generating, ReadyForReview, Failed, or Superseded.
+- Immutable studio ID and group at generation time.
+- Source weekly page IDs and versions.
+- Source field hashes and optional protected source snapshot.
+- Generated four-column rows.
+- Model name and model/runtime version.
+- Prompt version.
+- Validation results and warnings.
+- Requesting user and generation timestamps.
+- Download timestamps if audit requirements need them.
+
+The AI Reports database must not store Confluence credentials or local-model secrets. Ollama on loopback requires no API secret for the initial deployment.
+
+## Access management
+
+Register AI Reports as a separate Team Hub module with independently configurable permissions:
+
+- View AI reports.
+- Generate or regenerate AI reports.
+- Download AI reports.
+- Configure the local model and report settings.
+
+Configuration access should remain administrator-only. Generation and download permissions should use the existing Team Hub access-management system.
+
+## Local model and runtime
+
+### Recommended MVP
+
+- Runtime: Ollama.
+- Model: `qwen3:8b`.
+- Endpoint: `http://127.0.0.1:11434`.
+- Model package: approximately 5.2 GB for Ollama's Q4_K_M variant.
+- Model license: Apache 2.0.
+
+Reasons:
+
+- Suitable instruction-following quality for controlled business-text editing.
+- JSON Schema structured outputs through Ollama.
+- Straightforward local HTTP integration from the existing .NET application.
+- Runs on Windows and Linux without introducing a Python service.
+- Model abstraction allows replacement without changing report-generation logic.
+
+Official references:
+
+- <https://ollama.com/library/qwen3:8b>
+- <https://docs.ollama.com/capabilities/structured-outputs>
+- <https://qwenlm.github.io/blog/qwen3/>
+
+### Hardware guidance
+
+- Recommended minimum system memory: 16 GB RAM.
+- CPU inference is acceptable for development but may be slow for many studios.
+- A GPU with roughly 8 GB available VRAM should provide a better interactive experience for the quantized 8B model.
+- Benchmark generation time with realistic Team Hub reports before defining the production timeout and concurrency limit.
+
+### Alternative
+
+Phi-4-mini through Microsoft Foundry Local can be evaluated if the deployment environment favors a Microsoft-native Windows/.NET runtime. It is not the MVP default because Foundry Local platform requirements and preview status may constrain deployment environments.
+
+## Installation and environment preparation
+
+Nothing has been installed as part of scope preparation.
+
+Required before local inference development:
+
+1. Install Ollama on the machine that runs Team Hub.
+2. Download the selected model:
+
+   ```text
+   ollama pull qwen3:8b
+   ```
+
+3. Confirm the local Ollama service is reachable only from the intended host/network boundary.
+4. Run a health test and a structured-output test with representative non-sensitive sample data.
+5. Confirm available RAM, GPU/VRAM, disk space, and acceptable generation time.
+
+Python, CUDA Toolkit, and a separate vector database are not required for the MVP. GPU drivers appropriate to the host hardware may be required for acceleration.
+
+Proposed application configuration:
+
+```text
+AIReports__Enabled=true
+AIReports__Provider=Ollama
+AIReports__Endpoint=http://127.0.0.1:11434
+AIReports__Model=qwen3:8b
+AIReports__Temperature=0
+AIReports__TimeoutSeconds=180
+AIReports__MaximumConcurrentRequests=1
+ConnectionStrings__AiReportsDb=Data Source=data/ai-reports.db
+```
+
+Do not expose the Ollama endpoint publicly. Deployment-specific endpoint and resource settings belong in environment configuration, not source-controlled production secrets.
+
+## Monthly boundary rule requiring confirmation
+
+A weekly page can cross a calendar-month boundary. The implementation needs one deterministic rule so a week is not counted in two monthly reports.
+
+Proposed default: assign a Monday-Friday weekly page to the month containing the Wednesday of that business week. This assigns the week to the month containing the majority of its workdays.
+
+Status: Product confirmation required before monthly generation is implemented.
+
+## MVP acceptance criteria
+
+- AI code is contained in the dedicated module and AI feature branch.
+- Team Hub operates normally when AI Reports is disabled or Ollama is unavailable.
+- The source consolidated report is never modified.
+- Only active studios are included.
+- Studio grouping matches Team Hub configuration.
+- Action Items and Notes never enter the model request.
+- Weekly AI report contains exactly the four approved visible columns.
+- Monthly AI report is generated from original weekly source data.
+- Studios are processed independently with no cross-studio mixing.
+- Structured output and semantic guard validations run before preview.
+- Missing weekly pages and missing studio rows are visible to the user.
+- Users can review original and generated content.
+- Users with permission can download Excel and CSV reports.
+- Report metadata and source lineage are retained in `ai-reports.db`.
+- Unit, integration, security-boundary, and export tests pass.
+- No external AI or internet inference call is made.
+
+## Explicit non-goals for MVP
+
+- Cloud-hosted AI models.
+- Fine-tuning or training a custom model.
+- Embeddings, semantic search, or a vector database.
+- Automatic email distribution.
+- Automatic publication without user review.
+- Replacing the existing consolidated or single-studio report.
+- Editing Confluence pages through AI.
+- Generating decisions, recommendations, risk ratings, or management conclusions.
+- Using AI-generated weekly text as monthly source material.
+- PDF export until its layout requirements are approved.
+
+## Delivery phases and progress
+
+### Phase 0 — Scope and environment
+
+- [x] Create dedicated branch `feature/ai-generated-reports`.
+- [x] Create separate worktree `D:\TeamHub-AI`.
+- [x] Record scope, architecture, installation needs, and acceptance criteria.
+- [ ] Confirm monthly boundary rule.
+- [ ] Confirm production operating system and hardware.
+- [ ] Install Ollama.
+- [ ] Download and benchmark `qwen3:8b`.
+
+### Phase 1 — Module foundation
+
+- [ ] Add `TeamHub.AIReports` project and tests to the solution.
+- [ ] Add configuration and feature flag.
+- [ ] Add provider-neutral local-model interface.
+- [ ] Add Ollama client and health check.
+- [ ] Add separate SQLite initializer and repository.
+- [ ] Register AI Reports permissions.
+
+### Phase 2 — Weekly AI report
+
+- [ ] Add source adapter for existing consolidated weekly data.
+- [ ] Exclude Action Items and Notes before inference.
+- [ ] Add row-isolated prompt and JSON Schema contract.
+- [ ] Add semantic guard validation.
+- [ ] Add preview and original/generated comparison.
+- [ ] Add grouped four-column rendering.
+- [ ] Add Excel and CSV download.
+- [ ] Add unit and integration tests.
+
+### Phase 3 — Monthly AI report
+
+- [ ] Implement confirmed month/week boundary rule.
+- [ ] Add source coverage calculation.
+- [ ] Aggregate original weekly fields by studio.
+- [ ] Add controlled deduplication and chronological organization.
+- [ ] Add grouped monthly preview.
+- [ ] Add Excel and CSV download.
+- [ ] Add missing-week and partial-month tests.
+
+### Phase 4 — Hardening and rollout
+
+- [ ] Benchmark realistic report sizes.
+- [ ] Add cancellation, timeout, retry, and concurrency controls.
+- [ ] Verify loopback/network restrictions.
+- [ ] Verify no sensitive content is written to ordinary logs.
+- [ ] Add audit and retention policy.
+- [ ] Complete user acceptance testing.
+- [ ] Document deployment, backup, recovery, and model upgrade procedures.
+
+## Progress log
+
+| Date | Status | Change | Evidence/Notes |
+|---|---|---|---|
+| 2026-09-14 | Complete | Feature branch and worktree created | Based on committed consolidated/grouped report baseline `59cfed5` |
+| 2026-09-14 | Complete | Initial scope and development plan documented | Implementation has not started; no AI runtime installed |
+
+## Branch and synchronization rules
+
+- Normal Team Hub features and bug fixes continue in `D:\TeamHub` on `main`.
+- AI report work occurs only in `D:\TeamHub-AI` on `feature/ai-generated-reports`.
+- Keep AI commits small and scoped to the AI module, its host integration, tests, and this document.
+- Bring required main-branch fixes into the AI branch deliberately through merge or rebase after verifying both worktrees are clean.
+- Do not merge unfinished AI code into main.
+- Update this document in the same commit as any material scope, architecture, installation, or progress change.
