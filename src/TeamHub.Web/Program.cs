@@ -3,8 +3,8 @@ using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Routing;
 using TeamHub.Authentication;
 using TeamHub.AI;
-using TeamHub.AIReports;
-using TeamHub.AIReports.Persistence;
+using TeamHub.AI.ReportGenerator;
+using TeamHub.AI.ReportGenerator.Persistence;
 using TeamHub.Application.Interfaces;
 using TeamHub.Web.AccessControl;
 using TeamHub.FlowDesigner.Core.Contracts;
@@ -88,7 +88,7 @@ builder.Services.AddMilestoneTracker(builder.Configuration);
 builder.Services.AddTeamDirectory(builder.Configuration);
 builder.Services.AddStudioDirectory(builder.Configuration);
 builder.Services.AddTeamHubAi(builder.Configuration);
-builder.Services.AddAiReports(builder.Configuration);
+builder.Services.AddReportGenerator(builder.Configuration);
 builder.Services.Configure<HomeConfigurationOptions>(builder.Configuration.GetSection(HomeConfigurationOptions.SectionName));
 builder.Services.AddSingleton<IHomeContentService, HomeContentService>();
 
@@ -103,7 +103,7 @@ using (var scope = app.Services.CreateScope())
     studioDatabase.InitializeAsync().GetAwaiter().GetResult();
     var teamDatabase = scope.ServiceProvider.GetRequiredService<ITeamDatabaseInitializer>();
     teamDatabase.InitializeAsync().GetAwaiter().GetResult();
-    await scope.ServiceProvider.GetRequiredService<IAiReportDatabaseInitializer>().InitializeAsync();
+    await scope.ServiceProvider.GetRequiredService<IReportGeneratorDatabaseInitializer>().InitializeAsync();
     var customTeamTabs = scope.ServiceProvider.GetRequiredService<ICustomTeamTabService>();
     var customTeamModules = (await customTeamTabs.ListTabsAsync())
         .Select(tab => CustomTeamTabAccess.ModuleForSlug(tab.Slug))

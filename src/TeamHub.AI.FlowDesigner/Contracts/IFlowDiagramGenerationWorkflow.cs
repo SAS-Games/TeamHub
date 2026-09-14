@@ -1,10 +1,10 @@
 using TeamHub.FlowDesigner.Core.Models;
 
-namespace TeamHub.FlowDesigner.Agent.Contracts;
+namespace TeamHub.AI.FlowDesigner.Contracts;
 
-public interface IFlowDesignerAgent
+public interface IFlowDiagramGenerationWorkflow
 {
-    Task<FlowDesignerAgentDraft> CreateDraftAsync(
+    Task<FlowDiagramGenerationDraft> CreateDraftAsync(
         CreateFlowDiagramDraftRequest request,
         CancellationToken cancellationToken = default);
 }
@@ -20,7 +20,7 @@ public sealed record FlowDesignerSourceDocument(
     string Content,
     string? SourceReference = null);
 
-public sealed record FlowDesignerAgentDraft(
+public sealed record FlowDiagramGenerationDraft(
     FlowDefinition Diagram,
     IReadOnlyList<FlowDesignerEvidenceReference> Evidence,
     IReadOnlyList<string> Warnings);

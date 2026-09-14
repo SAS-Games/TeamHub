@@ -19,7 +19,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\src\TeamHub.AIReports\TeamHub.AIReports.csproj" />
+    <ProjectReference Include="..\..\src\TeamHub.AI.ReportGenerator\TeamHub.AI.ReportGenerator.csproj" />
   </ItemGroup>
 
 </Project>

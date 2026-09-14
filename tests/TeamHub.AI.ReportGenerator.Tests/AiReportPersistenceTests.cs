@@ -2,9 +2,9 @@ using FluentAssertions;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using TeamHub.AI.Contracts;
-using TeamHub.AIReports.Persistence;
+using TeamHub.AI.ReportGenerator.Persistence;
 
-namespace TeamHub.AIReports.Tests;
+namespace TeamHub.AI.ReportGenerator.Tests;
 
 public sealed class AiReportPersistenceTests
 {
@@ -20,19 +20,19 @@ public sealed class AiReportPersistenceTests
             var configuration = new ConfigurationBuilder()
                 .AddInMemoryCollection(new Dictionary<string, string?>
                 {
-                    ["AIReports:Enabled"] = "false",
+                    ["AI:ReportGenerator:Enabled"] = "false",
                     ["ConnectionStrings:AiReportsDb"] = $"Data Source={databasePath};Pooling=False"
                 })
                 .Build();
             var serviceCollection = new ServiceCollection();
             serviceCollection.AddLogging();
-            serviceCollection.AddAiReports(configuration);
+            serviceCollection.AddReportGenerator(configuration);
             await using (var services = serviceCollection.BuildServiceProvider())
             {
 
             await using (var scope = services.CreateAsyncScope())
             {
-                await scope.ServiceProvider.GetRequiredService<IAiReportDatabaseInitializer>().InitializeAsync();
+                await scope.ServiceProvider.GetRequiredService<IReportGeneratorDatabaseInitializer>().InitializeAsync();
             }
 
             var expected = new AiReportRunSnapshot(

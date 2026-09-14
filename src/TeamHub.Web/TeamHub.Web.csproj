@@ -9,7 +9,7 @@
     <ProjectReference Include="..\TeamHub.Team\TeamHub.Team.csproj" />
     <ProjectReference Include="..\TeamHub.FlowDesigner.Web\TeamHub.FlowDesigner.Web.csproj" />
     <ProjectReference Include="..\TeamHub.AI\TeamHub.AI.csproj" />
-    <ProjectReference Include="..\TeamHub.AIReports\TeamHub.AIReports.csproj" />
+    <ProjectReference Include="..\TeamHub.AI.ReportGenerator\TeamHub.AI.ReportGenerator.csproj" />
   </ItemGroup>
 
   <ItemGroup>

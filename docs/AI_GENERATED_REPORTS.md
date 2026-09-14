@@ -7,7 +7,7 @@
 | Branch | `feature/ai-generated-reports` |
 | Workspace | `D:\TeamHub` |
 | Baseline | `main` at `59cfed5` (`confluence page update`) |
-| Status | Shared AI runtime refactored; report module ready for weekly report development |
+| Status | Controlled Report Generator workflow architecture ready; weekly workflow implementation is next |
 | Last updated | 2026-09-14 |
 
 This document is the scope contract, design record, and development checklist for the AI-generated reporting feature. Update it whenever a requirement, decision, milestone, test result, or known issue changes.
@@ -147,7 +147,7 @@ src/TeamHub.AI/
 ├── ModelProviders/        Ollama and generic OpenAI-compatible adapters
 └── DependencyInjection/   shared runtime registration
 
-src/TeamHub.AIReports/
+src/TeamHub.AI.ReportGenerator/
 ├── Contracts/             report requests, results, and feature options
 ├── Domain/                periods, immutable sources, and four-column rows
 ├── Application/           weekly/monthly generation, prompts, and validation
@@ -162,12 +162,12 @@ Dependency direction:
 TeamHub.Web
 ├── TeamHub.Studio       structured weekly source data
 ├── TeamHub.AI           configured model runtime
-└── TeamHub.AIReports    report orchestration, validation, persistence, and export
+└── TeamHub.AI.ReportGenerator    report orchestration, validation, persistence, and export
 
-TeamHub.AIReports ─────> TeamHub.AI
+TeamHub.AI.ReportGenerator ─────> TeamHub.AI
 ```
 
-`TeamHub.AIReports` must not depend on `TeamHub.Web`, Flow Designer, or a provider-specific SDK. Other AI consumers, including the future Flow Designer Agent, reuse `TeamHub.AI` but do not depend on AI Reports.
+`TeamHub.AI.ReportGenerator` must not depend on `TeamHub.Web`, Flow Designer, or a provider-specific SDK. Other AI consumers, including the future AI Flow Designer workflow, reuse `TeamHub.AI` but do not depend on the Report Generator workflow.
 
 ## Data ownership and persistence
 
@@ -299,13 +299,13 @@ Python, CUDA Toolkit, and a separate vector database are not required for the MV
 Proposed application configuration:
 
 ```text
-AIReports__Enabled=true
+AI__ReportGenerator__Enabled=true
 AI__Provider=Ollama
 AI__Endpoint=http://127.0.0.1:11434
 AI__Model=qwen3:8b
 AI__Temperature=0
 AI__TimeoutSeconds=180
-AIReports__MaximumConcurrentRequests=1
+AI__ReportGenerator__MaximumConcurrentRequests=1
 ConnectionStrings__AiReportsDb=Data Source=data/ai-reports.db
 ```
 
@@ -379,7 +379,7 @@ Status: Product confirmation required before monthly generation is implemented.
 
 ### Phase 1 — Module foundation
 
-- [x] Add `TeamHub.AIReports` project and tests to the solution.
+- [x] Add `TeamHub.AI.ReportGenerator` project and tests to the solution.
 - [x] Add configuration and feature flag.
 - [x] Add shared provider-neutral `IAiModelService`, `IAiModelProvider`, and provider registry.
 - [x] Add generic OpenAI-compatible provider.

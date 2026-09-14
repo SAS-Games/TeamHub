@@ -1,26 +1,34 @@
 # Team Hub AI Architecture
 
-## Purpose
+## Decision
 
-Team Hub has one reusable AI runtime and separate feature modules that consume it. Model-provider integration must not be implemented independently inside reporting, Flow Designer, or future AI-assisted features.
+Team Hub will implement controlled AI workflows, not autonomous agents, for report generation and Flow Designer generation.
+
+The distinction is based on control, not on which model API is used:
+
+- Team Hub code selects the data, calls each step, validates the response, applies bounded retry rules, and decides when execution stops.
+- The model generates structured content only; it cannot select tools, search arbitrary systems, save results, publish diagrams, or expand its own permissions.
+- Users review generated drafts before any persistent or consequential action.
+
+Both workflows use the same Ollama or OpenAI-compatible structured-generation API through `TeamHub.AI`. There is no separate workflow API or agent API required.
 
 ## Module boundaries
 
 ```text
 TeamHub.Web
-├── TeamHub.AI                     shared provider/model runtime
-├── TeamHub.AIReports              report-specific generation and persistence
-└── TeamHub.FlowDesigner.Agent     future source-document-to-diagram workflow
-    └── TeamHub.FlowDesigner.Core  canonical diagram models and validation
+|-- TeamHub.AI                    shared provider/model runtime
+|-- TeamHub.AI.ReportGenerator    controlled report-generation workflow
+`-- TeamHub.AI.FlowDesigner       controlled document-to-diagram workflow
+    `-- TeamHub.FlowDesigner.Core canonical diagram models and validation
 
-TeamHub.AIReports ────────────────> TeamHub.AI
-TeamHub.FlowDesigner.Agent ───────> TeamHub.AI
-TeamHub.FlowDesigner.Agent ───────> TeamHub.FlowDesigner.Core
+TeamHub.AI.ReportGenerator --> TeamHub.AI
+TeamHub.AI.FlowDesigner    --> TeamHub.AI
+TeamHub.AI.FlowDesigner    --> TeamHub.FlowDesigner.Core
 ```
 
 ### `TeamHub.AI`
 
-Owns only reusable inference infrastructure:
+Owns reusable inference infrastructure:
 
 - Provider-neutral `IAiModelService` and `IAiModelProvider` contracts.
 - Provider registry and configuration-based provider selection.
@@ -30,32 +38,70 @@ Owns only reusable inference infrastructure:
 
 It does not understand reports, studios, diagrams, nodes, or publishing.
 
-### `TeamHub.AIReports`
+### `TeamHub.AI.ReportGenerator`
 
-Owns report-specific behavior and data:
+Owns the controlled report-generation workflow:
 
 - Weekly and monthly report source models and orchestration.
-- Meaning-preserving report prompts and validation.
-- Four-column report results and export.
+- Meaning-preserving prompts and deterministic validation.
+- Bounded correction/retry behavior controlled by application code.
+- Four-column report drafts and export.
 - Report audit metadata in `ai-reports.db`.
 - Its own feature flag, permissions, and concurrency policy.
 
-### `TeamHub.FlowDesigner.Agent`
+Its public orchestration boundary is `IReportGenerationWorkflow`.
 
-Will own document-to-diagram behavior:
+### `TeamHub.AI.FlowDesigner`
+
+Will own the controlled document-to-diagram workflow:
 
 - User prompt and explicitly selected source-of-truth documents.
 - Document adapters and normalized evidence locations.
-- Diagram-specific prompt/schema design.
+- Diagram-specific prompt and JSON schema.
 - Conversion into canonical Flow Designer models.
 - Evidence, structural, connection, and child-diagram validation.
 - Preview and confirmed creation of an editable draft.
 
-It will never publish automatically. The existing Flow Designer publication workflow and permissions remain authoritative.
+Its public orchestration boundary is `IFlowDiagramGenerationWorkflow`. It will never publish automatically; the existing Flow Designer publication workflow and permissions remain authoritative.
+
+## How to identify the implementation
+
+The implementation is still a workflow when it has several steps or retries. Check who makes the decisions:
+
+| Question | Our design |
+|---|---|
+| Who selects the sources? | User and Team Hub code |
+| Who determines the next step? | Team Hub code |
+| Who chooses which tools may run? | Team Hub code |
+| Who defines retry and stopping rules? | Team Hub code |
+| Can the model save or publish directly? | No |
+| Is the output schema predetermined? | Yes |
+
+If the model were allowed to choose tools, discover its own sources, plan arbitrary next steps, and decide when its objective was complete, that component would be an agent. That is not the current requirement.
+
+## API boundaries
+
+The internal model call is shared by both workflows:
+
+```text
+IAiModelService.GenerateStructuredAsync(...)
+        |
+        +-- Ollama /v1/chat/completions
+        `-- another configured OpenAI-compatible endpoint
+```
+
+Future Team Hub HTTP endpoints describe business operations, not AI autonomy:
+
+```text
+POST /api/ai/reports/generate-draft
+POST /api/ai/flows/generate-draft
+```
+
+Those endpoints invoke fixed application workflows. We do not need an agent framework, agent SDK, tool-calling loop, or a separate agent service for the current scope.
 
 ## Configuration ownership
 
-Shared runtime configuration:
+Shared model runtime:
 
 ```text
 AI__Provider=Ollama
@@ -66,33 +112,34 @@ AI__TimeoutSeconds=180
 AI__CredentialEnvironmentVariable=TEAMHUB_AI_PROVIDER_API_KEY
 ```
 
-Consumer configuration is separate:
+Feature configuration is separate:
 
 ```text
-AIReports__Enabled=false
-AIReports__MaximumConcurrentRequests=1
+AI__ReportGenerator__Enabled=false
+AI__ReportGenerator__MaximumConcurrentRequests=1
 
-# Reserved for the future implementation; not bound or registered yet.
-FlowDesignerAgent__Enabled=false
-FlowDesignerAgent__MaximumSourceDocuments=10
-FlowDesignerAgent__MaximumSourceBytes=10485760
+# Reserved for future Flow Designer implementation; not bound yet.
+AI__FlowDesigner__Enabled=false
+AI__FlowDesigner__MaximumSourceDocuments=10
+AI__FlowDesigner__MaximumSourceBytes=10485760
 ```
 
-Changing between registered providers or models is configuration-only. A provider with an incompatible API requires one new adapter in `TeamHub.AI`; consumer modules must remain unchanged.
+Changing between registered providers or models is configuration-only. A provider with an incompatible API requires one adapter in `TeamHub.AI`; feature workflows remain unchanged.
 
-## Rules for every AI consumer
+## Rules for every AI workflow
 
 - Depend on `IAiModelService`, never a vendor client or Ollama request type.
-- Own a separate feature flag, permissions, prompts, schemas, validation, and persistence.
+- Own separate feature flags, permissions, prompts, schemas, validation, and persistence.
 - Snapshot provider, model, prompt version, source versions, and validation results for auditability.
-- Treat source content as untrusted data, not as executable instructions.
-- Require deterministic schema and domain validation before saving results.
-- Keep human review between generated output and consequential actions such as publishing.
-- Do not place provider credentials, complete source documents, or sensitive generated content in ordinary logs.
+- Treat source content as untrusted data, not executable instructions.
+- Require schema and domain validation before saving results.
+- Keep human review between generated output and consequential actions.
+- Do not place credentials, complete source documents, or sensitive generated content in ordinary logs.
 
 ## Current readiness
 
-- Shared runtime extracted and registered by Team Hub Web.
-- AI Reports consumes the shared project and retains its separate database.
-- Flow Designer Agent project, dependency direction, public draft contract, and folder boundaries exist.
-- Flow Designer Agent implementation and host registration have intentionally not started.
+- Shared runtime is registered by Team Hub Web.
+- Report Generator has a workflow contract and retains its separate report database.
+- AI Flow Designer has a workflow contract and architectural folder boundaries.
+- Neither generation workflow has been implemented yet.
+- AI Flow Designer has no host registration, UI, endpoint, database, save behavior, or publication behavior.

@@ -1,6 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 
-namespace TeamHub.AIReports.Persistence;
+namespace TeamHub.AI.ReportGenerator.Persistence;
 
 public enum AiReportRunStatus
 {
@@ -33,7 +33,7 @@ public interface IAiReportRunRepository
     Task<AiReportRunSnapshot?> GetAsync(Guid id, CancellationToken cancellationToken = default);
 }
 
-public interface IAiReportDatabaseInitializer
+public interface IReportGeneratorDatabaseInitializer
 {
     Task InitializeAsync(CancellationToken cancellationToken = default);
 }
@@ -78,8 +78,8 @@ internal sealed class AiReportDbContext(DbContextOptions<AiReportDbContext> opti
     }
 }
 
-internal sealed class SqliteAiReportDatabaseInitializer(AiReportDbContext dbContext)
-    : IAiReportDatabaseInitializer
+internal sealed class SqliteReportGeneratorDatabaseInitializer(AiReportDbContext dbContext)
+    : IReportGeneratorDatabaseInitializer
 {
     public Task InitializeAsync(CancellationToken cancellationToken = default) =>
         dbContext.Database.EnsureCreatedAsync(cancellationToken);

@@ -1,21 +1,21 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-using TeamHub.AIReports.Contracts;
-using TeamHub.AIReports.Persistence;
+using TeamHub.AI.ReportGenerator.Contracts;
+using TeamHub.AI.ReportGenerator.Persistence;
 
-namespace TeamHub.AIReports;
+namespace TeamHub.AI.ReportGenerator;
 
-public static class AiReportsServiceCollectionExtensions
+public static class ReportGeneratorServiceCollectionExtensions
 {
-    public static IServiceCollection AddAiReports(
+    public static IServiceCollection AddReportGenerator(
         this IServiceCollection services,
         IConfiguration configuration)
     {
-        services.AddOptions<AiReportsOptions>()
-            .Bind(configuration.GetSection(AiReportsOptions.SectionName))
+        services.AddOptions<ReportGeneratorOptions>()
+            .Bind(configuration.GetSection(ReportGeneratorOptions.SectionName))
             .Validate(options => options.MaximumConcurrentRequests is >= 1 and <= 16,
-                "AIReports:MaximumConcurrentRequests must be between 1 and 16.")
+                "AI:ReportGenerator:MaximumConcurrentRequests must be between 1 and 16.")
             .ValidateOnStart();
 
         services.AddDbContext<AiReportDbContext>(options =>
@@ -24,7 +24,7 @@ public static class AiReportsServiceCollectionExtensions
                 ?? "Data Source=data/ai-reports.db";
             options.UseSqlite(connectionString);
         });
-        services.AddScoped<IAiReportDatabaseInitializer, SqliteAiReportDatabaseInitializer>();
+        services.AddScoped<IReportGeneratorDatabaseInitializer, SqliteReportGeneratorDatabaseInitializer>();
         services.AddScoped<IAiReportRunRepository, SqliteAiReportRunRepository>();
 
         return services;
