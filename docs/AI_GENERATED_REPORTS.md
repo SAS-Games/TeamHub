@@ -7,7 +7,7 @@
 | Branch | `feature/ai-generated-reports` |
 | Worktree | `D:\TeamHub-AI` |
 | Baseline | `main` at `59cfed5` (`confluence page update`) |
-| Status | Scope defined; implementation not started |
+| Status | Scope defined; Ollama installed; implementation not started |
 | Last updated | 2026-09-14 |
 
 This document is the scope contract, design record, and development checklist for the AI-generated reporting feature. Update it whenever a requirement, decision, milestone, test result, or known issue changes.
@@ -20,9 +20,13 @@ The existing Confluence-backed consolidated report remains the source of truth. 
 
 ## Confirmed product decisions
 
-- All inference runs locally within the Team Hub environment.
-- The initial model is Qwen3 8B, served by Ollama.
-- The local-model integration is provider-neutral so another approved local model can be substituted later.
+- The MVP starts with local inference using Qwen3 8B served by Ollama.
+- The reporting domain and generation workflow are provider-neutral and must not reference Ollama-specific request types.
+- Administrators select the provider, endpoint, model, and generation settings through configuration.
+- Changing models within the configured provider requires configuration only.
+- Changing to any service that implements the supported OpenAI-compatible contract requires configuration only.
+- A service with a proprietary, incompatible API requires one provider adapter to be implemented and registered; after that, selecting it requires configuration only.
+- External AI services are disabled by default and may be enabled only through an explicit administrator configuration and credential setup.
 - AI reports use only active studio projects.
 - Reports retain the configured studio grouping, such as IHP and MHP.
 - Each visible report table has exactly four columns:
@@ -48,7 +52,7 @@ The AI Reports page will provide:
 - Weekly date range or calendar month selection.
 - Scope: All active studios, studio group, or individual studio.
 - Generate AI Report action.
-- Local-model availability indicator.
+- Selected provider and model availability indicator.
 - Generation progress and clear failure messages.
 - Source coverage summary, including missing Confluence weeks or studio rows.
 - Read-only preview grouped by week/month and studio group.
@@ -134,7 +138,7 @@ Team Hub then combines the immutable studio identity with the validated response
 
 ## Module architecture
 
-Create a self-contained project named `TeamHub.AIReports` with explicit public contracts and internal implementation details.
+Create a self-contained project named `TeamHub.AIReports` with explicit public contracts and internal implementation details. The application and domain layers operate only on the provider-neutral interface.
 
 Proposed structure:
 
@@ -153,10 +157,12 @@ src/TeamHub.AIReports/
 │   ├── MonthlyAiReportGenerator.cs
 │   ├── ReportValidationService.cs
 │   └── ReportPromptBuilder.cs
-├── LocalInference/
-│   ├── ILocalLanguageModel.cs
-│   ├── OllamaLanguageModel.cs
-│   └── LocalModelHealthService.cs
+├── ModelProviders/
+│   ├── IAiModelProvider.cs
+│   ├── AiModelProviderRegistry.cs
+│   ├── OpenAiCompatibleProvider.cs
+│   ├── OllamaProvider.cs
+│   └── AiModelHealthService.cs
 ├── Persistence/
 │   ├── AiReportsDbContext.cs
 │   ├── AiReportDatabaseInitializer.cs
@@ -204,7 +210,7 @@ Proposed persisted information:
 - Requesting user and generation timestamps.
 - Download timestamps if audit requirements need them.
 
-The AI Reports database must not store Confluence credentials or local-model secrets. Ollama on loopback requires no API secret for the initial deployment.
+The AI Reports database must not store Confluence credentials or plaintext provider secrets. Ollama on loopback requires no API secret for the initial deployment. If a future provider requires a credential, use the existing protected-configuration pattern and never return the secret to the browser or write it to logs.
 
 ## Access management
 
@@ -213,11 +219,42 @@ Register AI Reports as a separate Team Hub module with independently configurabl
 - View AI reports.
 - Generate or regenerate AI reports.
 - Download AI reports.
-- Configure the local model and report settings.
+- Configure the AI provider, model, credentials, and report settings.
 
 Configuration access should remain administrator-only. Generation and download permissions should use the existing Team Hub access-management system.
 
-## Local model and runtime
+## Provider portability contract
+
+The report-generation service depends on `IAiModelProvider`, not on Ollama, Qwen, or a vendor SDK. Every provider adapter must expose the same capabilities:
+
+- Provider name and availability.
+- Model discovery or model-name validation when supported.
+- Health check.
+- Structured text generation.
+- JSON Schema response support, or an explicit capability failure.
+- Temperature and maximum-output-token settings.
+- Cancellation and timeout support.
+- Sanitized error reporting.
+
+Configuration selects a provider by a stable key, for example:
+
+```text
+Ollama
+OpenAICompatible
+FoundryLocal
+```
+
+Portability rules:
+
+- Ollama model change, such as `qwen3:8b` to another installed Ollama model: configuration only.
+- Ollama to Foundry Local or another OpenAI-compatible endpoint: configuration only through `OpenAICompatible` when the required structured-output contract is supported.
+- OpenAI-compatible local endpoint to an approved hosted endpoint: configuration and protected credential only.
+- A provider with a proprietary API or different authentication/response format: implement one new `IAiModelProvider` adapter, register it, and then use configuration for future switching.
+- A model that cannot reliably return the required JSON schema cannot be selected for production report generation even if the provider can run it.
+
+The provider configuration must be snapshotted into each report run so an old report remains auditable after the active provider or model changes.
+
+## Model providers and initial runtime
 
 ### Recommended MVP
 
@@ -234,11 +271,13 @@ Reasons:
 - Straightforward local HTTP integration from the existing .NET application.
 - Runs on Windows and Linux without introducing a Python service.
 - Model abstraction allows replacement without changing report-generation logic.
+- Ollama exposes OpenAI-compatible endpoints, allowing the generic provider contract to be exercised from the first implementation.
 
 Official references:
 
 - <https://ollama.com/library/qwen3:8b>
 - <https://docs.ollama.com/capabilities/structured-outputs>
+- <https://docs.ollama.com/api/openai-compatibility>
 - <https://qwenlm.github.io/blog/qwen3/>
 
 ### Hardware guidance
@@ -254,7 +293,11 @@ Phi-4-mini through Microsoft Foundry Local can be evaluated if the deployment en
 
 ## Installation and environment preparation
 
-Nothing has been installed as part of scope preparation.
+Current environment status:
+
+- Ollama `0.20.0` is installed and responding.
+- `llama3.2:latest` is currently installed locally.
+- `qwen3:8b` has not yet been downloaded.
 
 Required before local inference development:
 
@@ -284,6 +327,19 @@ AIReports__MaximumConcurrentRequests=1
 ConnectionStrings__AiReportsDb=Data Source=data/ai-reports.db
 ```
 
+Provider configuration must be validated at startup and again through an administrator-facing Test Connection action. A provider or model change must not require recompiling or redeploying Team Hub.
+
+Example future OpenAI-compatible configuration:
+
+```text
+AIReports__Provider=OpenAICompatible
+AIReports__Endpoint=https://approved-ai-service.example/v1
+AIReports__Model=approved-model-deployment
+AIReports__CredentialReference=protected-provider-credential
+```
+
+`CredentialReference` represents a protected server-side secret lookup, not a plaintext value committed to configuration files.
+
 Do not expose the Ollama endpoint publicly. Deployment-specific endpoint and resource settings belong in environment configuration, not source-controlled production secrets.
 
 ## Monthly boundary rule requiring confirmation
@@ -297,7 +353,7 @@ Status: Product confirmation required before monthly generation is implemented.
 ## MVP acceptance criteria
 
 - AI code is contained in the dedicated module and AI feature branch.
-- Team Hub operates normally when AI Reports is disabled or Ollama is unavailable.
+- Team Hub operates normally when AI Reports is disabled or the configured provider is unavailable.
 - The source consolidated report is never modified.
 - Only active studios are included.
 - Studio grouping matches Team Hub configuration.
@@ -311,11 +367,12 @@ Status: Product confirmation required before monthly generation is implemented.
 - Users with permission can download Excel and CSV reports.
 - Report metadata and source lineage are retained in `ai-reports.db`.
 - Unit, integration, security-boundary, and export tests pass.
-- No external AI or internet inference call is made.
+- With the default Ollama configuration, no external AI or internet inference call is made.
+- External inference occurs only when an administrator deliberately enables and configures a supported external provider.
 
 ## Explicit non-goals for MVP
 
-- Cloud-hosted AI models.
+- Cloud-hosted AI models in the MVP user experience. The architecture remains capable of supporting an approved external provider later through configuration.
 - Fine-tuning or training a custom model.
 - Embeddings, semantic search, or a vector database.
 - Automatic email distribution.
@@ -335,15 +392,17 @@ Status: Product confirmation required before monthly generation is implemented.
 - [x] Record scope, architecture, installation needs, and acceptance criteria.
 - [ ] Confirm monthly boundary rule.
 - [ ] Confirm production operating system and hardware.
-- [ ] Install Ollama.
+- [x] Install Ollama (`0.20.0` verified).
 - [ ] Download and benchmark `qwen3:8b`.
 
 ### Phase 1 — Module foundation
 
 - [ ] Add `TeamHub.AIReports` project and tests to the solution.
 - [ ] Add configuration and feature flag.
-- [ ] Add provider-neutral local-model interface.
-- [ ] Add Ollama client and health check.
+- [ ] Add provider-neutral `IAiModelProvider` interface and provider registry.
+- [ ] Add generic OpenAI-compatible provider.
+- [ ] Add Ollama provider/client and health check.
+- [ ] Add configuration-only provider and model selection.
 - [ ] Add separate SQLite initializer and repository.
 - [ ] Register AI Reports permissions.
 
@@ -383,7 +442,9 @@ Status: Product confirmation required before monthly generation is implemented.
 | Date | Status | Change | Evidence/Notes |
 |---|---|---|---|
 | 2026-09-14 | Complete | Feature branch and worktree created | Based on committed consolidated/grouped report baseline `59cfed5` |
-| 2026-09-14 | Complete | Initial scope and development plan documented | Implementation has not started; no AI runtime installed |
+| 2026-09-14 | Complete | Initial scope and development plan documented | Implementation has not started |
+| 2026-09-14 | Complete | Ollama runtime verified | Ollama `0.20.0`; `llama3.2:latest` present; Qwen3 8B not downloaded |
+| 2026-09-14 | Complete | Provider portability requirement confirmed | Model/provider selected by configuration; proprietary APIs require a one-time adapter |
 
 ## Branch and synchronization rules
 
