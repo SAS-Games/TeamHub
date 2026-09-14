@@ -15,6 +15,15 @@ public sealed class StudioConfluenceUpdateQuery
     public DateOnly? EndDate { get; set; }
 }
 
+public sealed class ConsolidatedStudioConfluenceUpdateQuery
+{
+    public IReadOnlyList<string> StudioIds { get; set; } = [];
+    public string RequestingUserId { get; set; } = string.Empty;
+    public bool AllowPrivilegedDefaultCredential { get; set; }
+    public DateOnly? StartDate { get; set; }
+    public DateOnly? EndDate { get; set; }
+}
+
 public sealed class StudioConfluenceUpdateResult
 {
     public bool IsConfigured { get; set; }
@@ -22,10 +31,12 @@ public sealed class StudioConfluenceUpdateResult
     public bool IsReadOnly { get; set; } = true;
     public bool IsUsingSharedCredential { get; set; }
     public IReadOnlyList<StudioConfluenceWeeklyUpdate> Updates { get; set; } = [];
+    public IReadOnlyList<string> UnconfiguredStudioIds { get; set; } = [];
 }
 
 public sealed class StudioConfluenceWeeklyUpdate
 {
+    public string StudioId { get; set; } = string.Empty;
     public DateOnly WeekStart { get; set; }
     public DateOnly WeekEnd { get; set; }
     public string PageId { get; set; } = string.Empty;
@@ -47,6 +58,7 @@ public sealed class StudioConfluenceWeeklyUpdate
 public interface IStudioConfluenceUpdateService
 {
     Task<StudioConfluenceUpdateResult> GetUpdatesAsync(StudioConfluenceUpdateQuery query, CancellationToken cancellationToken = default);
+    Task<StudioConfluenceUpdateResult> GetConsolidatedUpdatesAsync(ConsolidatedStudioConfluenceUpdateQuery query, CancellationToken cancellationToken = default);
 }
 
 internal sealed class ConfluenceStudioUpdateService(
@@ -148,6 +160,197 @@ internal sealed class ConfluenceStudioUpdateService(
         };
     }
 
+    public async Task<StudioConfluenceUpdateResult> GetConsolidatedUpdatesAsync(
+        ConsolidatedStudioConfluenceUpdateQuery query,
+        CancellationToken cancellationToken = default)
+    {
+        var settings = await configurationService.GetSettingsAsync(cancellationToken);
+        if (!settings.ConfluenceEnabled)
+        {
+            return NotConfigured("Confluence integration is disabled. An administrator can enable it in Configuration > Jira & Confluence.");
+        }
+        if (string.IsNullOrWhiteSpace(settings.ConfluenceBaseUrl)) return NotConfigured("The Confluence base URL is not configured.");
+        if (string.IsNullOrWhiteSpace(settings.ConfluenceSpaceKey)) return NotConfigured("The global Confluence space key is not configured.");
+        if (string.IsNullOrWhiteSpace(settings.ConfluenceParentPageId)) return NotConfigured("The Activities root page ID is not configured.");
+        if (string.IsNullOrWhiteSpace(query.RequestingUserId))
+        {
+            return NotConfigured("Sign in and connect your Confluence account to view weekly updates.");
+        }
+
+        var requestedStudioIds = query.StudioIds
+            .Where(studioId => !string.IsNullOrWhiteSpace(studioId))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        if (requestedStudioIds.Count == 0)
+        {
+            return new StudioConfluenceUpdateResult
+            {
+                IsConfigured = true,
+                Message = "No studios are available for the consolidated report."
+            };
+        }
+
+        var requestedIdSet = requestedStudioIds.ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var allMappings = await configurationService.ListStudioMappingsAsync(cancellationToken);
+        var mappings = allMappings
+            .Where(mapping => requestedIdSet.Contains(mapping.StudioId)
+                && !string.IsNullOrWhiteSpace(mapping.ConfluenceStudioIdentifier))
+            .ToList();
+        var configuredIdSet = mappings.Select(mapping => mapping.StudioId).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var unconfiguredStudioIds = requestedStudioIds.Where(studioId => !configuredIdSet.Contains(studioId)).ToList();
+        if (mappings.Count == 0)
+        {
+            return new StudioConfluenceUpdateResult
+            {
+                IsConfigured = true,
+                Message = "None of the selected studios has a Confluence table identifier. Ask an administrator to configure the studio mappings.",
+                UnconfiguredStudioIds = unconfiguredStudioIds
+            };
+        }
+
+        var today = DateOnly.FromDateTime(DateTime.Today);
+        var currentWeekStart = StudioConfluencePageNaming.StartOfWeek(today);
+        var startDate = query.StartDate ?? currentWeekStart;
+        var endDate = query.EndDate ?? currentWeekStart.AddDays(4);
+        if (startDate > endDate) return InvalidRange("Start date must be on or before end date.");
+        if (endDate.DayNumber - startDate.DayNumber > MaximumRangeDays)
+        {
+            return InvalidRange("Select a date range of one year or less.");
+        }
+
+        AtlassianResolvedCredential? credential;
+        try
+        {
+            credential = await credentialAccessor.ResolveConfluenceCredentialAsync(
+                query.RequestingUserId,
+                query.AllowPrivilegedDefaultCredential,
+                cancellationToken);
+        }
+        catch (InvalidOperationException exception)
+        {
+            return NotConfigured(exception.Message);
+        }
+
+        if (credential is null)
+        {
+            return NotConfigured(query.AllowPrivilegedDefaultCredential
+                ? "No Confluence credential is available. Ask an administrator to grant your privileged account read-only Confluence access, or add a personal token."
+                : "Your Confluence token is not connected. Open My Atlassian Connection and add your Bearer API token.");
+        }
+
+        var updates = new List<StudioConfluenceWeeklyUpdate>();
+        foreach (var weekStart in StudioConfluencePageNaming.EnumerateWeeks(startDate, endDate))
+        {
+            (IReadOnlyList<StudioConfluenceWeeklyUpdate> Updates, string? ErrorMessage) fetched;
+            try
+            {
+                fetched = await FetchConsolidatedWeeklyUpdatesAsync(settings, mappings, credential, weekStart, cancellationToken);
+            }
+            catch (FormatException)
+            {
+                return ConsolidatedReadFailure("A configured Confluence page-title pattern contains an invalid date format.", credential, updates, unconfiguredStudioIds);
+            }
+            catch (RegexMatchTimeoutException)
+            {
+                return ConsolidatedReadFailure("The Confluence table was too complex to parse safely.", credential, updates, unconfiguredStudioIds);
+            }
+
+            if (fetched.ErrorMessage is not null)
+            {
+                return ConsolidatedReadFailure(fetched.ErrorMessage, credential, updates, unconfiguredStudioIds);
+            }
+            updates.AddRange(fetched.Updates);
+        }
+
+        return new StudioConfluenceUpdateResult
+        {
+            IsConfigured = true,
+            IsReadOnly = credential.IsReadOnly,
+            IsUsingSharedCredential = credential.IsShared,
+            Updates = updates,
+            UnconfiguredStudioIds = unconfiguredStudioIds
+        };
+    }
+
+    private async Task<(IReadOnlyList<StudioConfluenceWeeklyUpdate> Updates, string? ErrorMessage)> FetchConsolidatedWeeklyUpdatesAsync(
+        AtlassianIntegrationSettings settings,
+        IReadOnlyList<StudioAtlassianMapping> mappings,
+        AtlassianResolvedCredential credential,
+        DateOnly weekStart,
+        CancellationToken cancellationToken)
+    {
+        var weekEnd = weekStart.AddDays(4);
+        var pageTitle = StudioConfluencePageNaming.Format(settings.ConfluenceWeeklyTitlePattern, weekStart, weekEnd);
+        var requestUri = BuildContentSearchUri(settings, pageTitle);
+        using var request = new HttpRequestMessage(HttpMethod.Get, requestUri);
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", credential.Token);
+        request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+        request.Headers.TryAddWithoutValidation("X-Atlassian-Token", "no-check");
+
+        using var response = await httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+        if (!response.IsSuccessStatusCode)
+        {
+            var message = response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden
+                ? credential.IsShared
+                    ? "Confluence rejected the shared read-only token. Ask an administrator to update the default Confluence credential."
+                    : "Confluence rejected your personal token. Update it from My Atlassian Connection and confirm that your account can access the configured space."
+                : $"Confluence returned {(int)response.StatusCode} {response.ReasonPhrase}. Check the Confluence URL, API path, and space configuration.";
+            return ([], message);
+        }
+
+        try
+        {
+            await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
+            using var document = await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken);
+            var page = FindPage(document.RootElement, settings, weekStart, weekEnd);
+            var updates = new List<StudioConfluenceWeeklyUpdate>(mappings.Count);
+            foreach (var mapping in mappings)
+            {
+                var update = new StudioConfluenceWeeklyUpdate
+                {
+                    StudioId = mapping.StudioId,
+                    StudioIdentifier = mapping.ConfluenceStudioIdentifier,
+                    WeekStart = weekStart,
+                    WeekEnd = weekEnd,
+                    PageTitle = pageTitle
+                };
+
+                if (page is null)
+                {
+                    update.Message = $"Page not found below the configured Activities/year/month path: {pageTitle}.";
+                    updates.Add(update);
+                    continue;
+                }
+
+                update.PageFound = true;
+                update.PageId = page.Id;
+                update.PageVersion = page.Version;
+                update.PageTitle = page.Title;
+                update.PageUrl = BuildPageUrl(settings.ConfluenceBaseUrl, page.Id, page.WebUiPath);
+                if (!StudioConfluenceTableParser.TryParse(page.StorageBody, mapping.ConfluenceStudioIdentifier, out var parsed))
+                {
+                    update.Message = $"No table row matched studio identifier '{mapping.ConfluenceStudioIdentifier}'.";
+                    updates.Add(update);
+                    continue;
+                }
+
+                update.StudioFound = true;
+                update.Overview = parsed.Overview;
+                update.StudioWork = parsed.StudioWork;
+                update.HpgdsSupport = parsed.HpgdsSupport;
+                update.WmdSupport = parsed.WmdSupport;
+                update.ActionItems = parsed.ActionItems;
+                update.Notes = parsed.Notes;
+                updates.Add(update);
+            }
+            return (updates, null);
+        }
+        catch (JsonException)
+        {
+            return ([], "Confluence returned an unreadable response. Confirm that the configured API path returns JSON content data.");
+        }
+    }
+
     private async Task<(StudioConfluenceWeeklyUpdate Update, string? ErrorMessage)> FetchWeeklyUpdateAsync(
         AtlassianIntegrationSettings settings,
         StudioAtlassianMapping mapping,
@@ -159,6 +362,7 @@ internal sealed class ConfluenceStudioUpdateService(
         var pageTitle = StudioConfluencePageNaming.Format(settings.ConfluenceWeeklyTitlePattern, weekStart, weekEnd);
         var update = new StudioConfluenceWeeklyUpdate
         {
+            StudioId = mapping.StudioId,
             WeekStart = weekStart,
             WeekEnd = weekEnd,
             PageTitle = pageTitle,
@@ -305,6 +509,21 @@ internal sealed class ConfluenceStudioUpdateService(
             IsUsingSharedCredential = credential.IsShared,
             Message = message,
             Updates = updates
+        };
+
+    private static StudioConfluenceUpdateResult ConsolidatedReadFailure(
+        string message,
+        AtlassianResolvedCredential credential,
+        IReadOnlyList<StudioConfluenceWeeklyUpdate> updates,
+        IReadOnlyList<string> unconfiguredStudioIds) =>
+        new()
+        {
+            IsConfigured = true,
+            IsReadOnly = credential.IsReadOnly,
+            IsUsingSharedCredential = credential.IsShared,
+            Message = message,
+            Updates = updates,
+            UnconfiguredStudioIds = unconfiguredStudioIds
         };
 
     private sealed record ConfluencePage(string Id, string Title, string StorageBody, string WebUiPath, int Version);

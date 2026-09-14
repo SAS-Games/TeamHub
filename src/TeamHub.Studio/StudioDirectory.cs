@@ -10,6 +10,8 @@ public sealed class StudioDetails
     public string Id { get; set; } = string.Empty;
     public string StudioName { get; set; } = string.Empty;
     public string ProjectName { get; set; } = string.Empty;
+    public string StudioGroup { get; set; } = "Ungrouped";
+    public bool IsActive { get; set; } = true;
     public string Location { get; set; } = string.Empty;
     public string TimeZoneId { get; set; } = TimeZoneInfo.Utc.Id;
     public List<StudioContact> OurContacts { get; set; } = [];
@@ -56,6 +58,8 @@ internal sealed class StudioRecord
     public Guid Id { get; set; } = Guid.NewGuid();
     public string StudioName { get; set; } = string.Empty;
     public string ProjectName { get; set; } = string.Empty;
+    public string StudioGroup { get; set; } = "Ungrouped";
+    public bool IsActive { get; set; } = true;
     public string Location { get; set; } = string.Empty;
     public string TimeZoneId { get; set; } = TimeZoneInfo.Utc.Id;
     public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
@@ -175,6 +179,7 @@ internal sealed class StudioDbContext(DbContextOptions<StudioDbContext> options)
             entity.ToTable("Studios");
             entity.Property(x => x.StudioName).HasMaxLength(256);
             entity.Property(x => x.ProjectName).HasMaxLength(256);
+            entity.Property(x => x.StudioGroup).HasMaxLength(128);
             entity.Property(x => x.Location).HasMaxLength(256);
             entity.Property(x => x.TimeZoneId).HasMaxLength(256);
             entity.HasIndex(x => new { x.StudioName, x.ProjectName }).IsUnique();
@@ -291,6 +296,8 @@ internal sealed class SqliteStudioDatabaseInitializer(
                     Id TEXT NOT NULL CONSTRAINT PK_Studios PRIMARY KEY,
                     StudioName TEXT NOT NULL,
                     ProjectName TEXT NOT NULL,
+                    StudioGroup TEXT NOT NULL DEFAULT 'Ungrouped',
+                    IsActive INTEGER NOT NULL DEFAULT 1,
                     Location TEXT NOT NULL,
                     TimeZoneId TEXT NOT NULL DEFAULT 'UTC',
                     CreatedAtUtc TEXT NOT NULL,
@@ -304,6 +311,20 @@ internal sealed class SqliteStudioDatabaseInitializer(
                 await dbContext.Database.ExecuteSqlRawAsync("""
                     ALTER TABLE Studios
                     ADD COLUMN TimeZoneId TEXT NOT NULL DEFAULT 'UTC';
+                    """, cancellationToken);
+            }
+            if (!await MainColumnExistsAsync(connection, "Studios", "StudioGroup", cancellationToken))
+            {
+                await dbContext.Database.ExecuteSqlRawAsync("""
+                    ALTER TABLE Studios
+                    ADD COLUMN StudioGroup TEXT NOT NULL DEFAULT 'Ungrouped';
+                    """, cancellationToken);
+            }
+            if (!await MainColumnExistsAsync(connection, "Studios", "IsActive", cancellationToken))
+            {
+                await dbContext.Database.ExecuteSqlRawAsync("""
+                    ALTER TABLE Studios
+                    ADD COLUMN IsActive INTEGER NOT NULL DEFAULT 1;
                     """, cancellationToken);
             }
 
@@ -764,7 +785,8 @@ internal sealed class SqliteStudioDirectoryService(StudioDbContext dbContext) : 
             .Include(studio => studio.TeamMembers)
             .Include(studio => studio.DevelopmentTools)
             .Include(studio => studio.ImportantLinks)
-            .OrderBy(studio => studio.StudioName)
+            .OrderBy(studio => studio.StudioGroup)
+            .ThenBy(studio => studio.StudioName)
             .ToListAsync(cancellationToken);
 
         return studios.Select(ToDetails).ToList();
@@ -805,6 +827,8 @@ internal sealed class SqliteStudioDirectoryService(StudioDbContext dbContext) : 
 
         record.StudioName = studio.StudioName.Trim();
         record.ProjectName = studio.ProjectName.Trim();
+        record.StudioGroup = NormalizeStudioGroup(studio.StudioGroup);
+        record.IsActive = studio.IsActive;
         record.Location = studio.Location.Trim();
         record.TimeZoneId = NormalizeTimeZoneId(studio.TimeZoneId);
         record.UpdatedAtUtc = DateTime.UtcNow;
@@ -862,6 +886,8 @@ internal sealed class SqliteStudioDirectoryService(StudioDbContext dbContext) : 
             Id = studio.Id.ToString(),
             StudioName = studio.StudioName,
             ProjectName = studio.ProjectName,
+            StudioGroup = NormalizeStudioGroup(studio.StudioGroup),
+            IsActive = studio.IsActive,
             Location = studio.Location,
             TimeZoneId = NormalizeTimeZoneId(studio.TimeZoneId),
             OurContacts = studio.OurContacts
@@ -977,6 +1003,9 @@ internal sealed class SqliteStudioDirectoryService(StudioDbContext dbContext) : 
     private static bool HasContactValue(StudioContact contact)
         => !string.IsNullOrWhiteSpace(contact.Name)
             || !string.IsNullOrWhiteSpace(contact.Role);
+
+    private static string NormalizeStudioGroup(string? studioGroup) =>
+        string.IsNullOrWhiteSpace(studioGroup) ? "Ungrouped" : studioGroup.Trim();
 
     private static string NormalizeTimeZoneId(string? timeZoneId)
     {

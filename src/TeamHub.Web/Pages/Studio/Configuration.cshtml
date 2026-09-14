@@ -34,13 +34,15 @@
         <div class="section-heading"><div><span>Configured studios</span><h2>Studio Records</h2></div></div>
         <div class="table-responsive">
             <table class="table styled-table">
-                <thead><tr><th>Studio</th><th>Project</th><th>Location</th><th>Time Zone</th><th>Our Contacts</th><th>Team Members</th>@if (showActions) { <th>Actions</th> }</tr></thead>
+                <thead><tr><th>Group</th><th>Studio</th><th>Project</th><th>Status</th><th>Location</th><th>Time Zone</th><th>Our Contacts</th><th>Team Members</th>@if (showActions) { <th>Actions</th> }</tr></thead>
                 <tbody>
                 @foreach (var studio in Model.Studios)
                 {
-                    <tr>
+                    <tr class="@(!studio.IsActive ? "table-light text-secondary" : null)">
+                        <td>@studio.StudioGroup</td>
                         <td>@studio.StudioName</td>
                         <td>@studio.ProjectName</td>
+                        <td><span class="badge @(studio.IsActive ? "text-bg-success" : "text-bg-secondary")">@(studio.IsActive ? "Active" : "Inactive")</span></td>
                         <td>@studio.Location</td>
                         <td>@studio.TimeZoneId</td>
                         <td>@studio.OurContacts.Count</td>
@@ -77,22 +79,28 @@
                 <input type="hidden" asp-for="Input.Id" />
                 <div asp-validation-summary="All" class="text-danger"></div>
                 <div class="row g-3 mb-4">
-                    <div class="col-md-6 col-xl-3">
+                    <div class="col-md-6 col-xl-4">
+                        <label asp-for="Input.StudioGroup" class="form-label">Studio Group</label>
+                        <input asp-for="Input.StudioGroup" class="form-control" placeholder="Example: IHP or MHP" />
+                        <span asp-validation-for="Input.StudioGroup" class="text-danger"></span>
+                        <div class="form-text">Studios with the same group appear together in navigation and reports.</div>
+                    </div>
+                    <div class="col-md-6 col-xl-4">
                         <label asp-for="Input.StudioName" class="form-label">Studio Name</label>
                         <input asp-for="Input.StudioName" class="form-control" />
                         <span asp-validation-for="Input.StudioName" class="text-danger"></span>
                     </div>
-                    <div class="col-md-6 col-xl-3">
+                    <div class="col-md-6 col-xl-4">
                         <label asp-for="Input.ProjectName" class="form-label">Project Name</label>
                         <input asp-for="Input.ProjectName" class="form-control" />
                         <span asp-validation-for="Input.ProjectName" class="text-danger"></span>
                     </div>
-                    <div class="col-md-6 col-xl-3">
+                    <div class="col-md-6 col-xl-4">
                         <label asp-for="Input.Location" class="form-label">Location</label>
                         <input asp-for="Input.Location" class="form-control" />
                         <span asp-validation-for="Input.Location" class="text-danger"></span>
                     </div>
-                    <div class="col-md-6 col-xl-3">
+                    <div class="col-md-6 col-xl-4">
                         <label asp-for="Input.TimeZoneId" class="form-label">Time Zone</label>
                         <select asp-for="Input.TimeZoneId" class="form-select">
                             @foreach (var timeZone in Model.TimeZones)
@@ -101,6 +109,13 @@
                             }
                         </select>
                         <span asp-validation-for="Input.TimeZoneId" class="text-danger"></span>
+                    </div>
+                    <div class="col-md-6 col-xl-4 d-flex align-items-center">
+                        <div class="form-check form-switch mt-4">
+                            <input asp-for="Input.IsActive" class="form-check-input" />
+                            <label asp-for="Input.IsActive" class="form-check-label">Active project</label>
+                            <div class="form-text">Inactive projects remain in configuration but are hidden from navigation and consolidated reports.</div>
+                        </div>
                     </div>
                 </div>
 

@@ -249,6 +249,94 @@ public sealed class StudioDirectoryTests
     }
 
     [Fact]
+    public async Task GetConsolidatedUpdatesAsync_ReadsAllStudioRowsWithOneRequestPerWeek()
+    {
+        var dbPath = Path.Combine(Path.GetTempPath(), $"teamhub-studio-{Guid.NewGuid():N}.db");
+        var requestCount = 0;
+        var storageBody = """
+            <table><tbody>
+              <tr><th>Studio</th><th>Overview (for WR)</th><th>Notes</th></tr>
+              <tr><td>HDC</td><td><strong>Studio Work:</strong><br/>HDC milestone<br/><strong>HPGDS Support:</strong><br/>HDC support</td><td>HDC note</td></tr>
+              <tr><td>BBG</td><td><strong>Studio Work:</strong><br/>BBG milestone<br/><strong>WMD Support:</strong><br/>BBG support</td><td>BBG note</td></tr>
+            </tbody></table>
+            """;
+        var responseBody = JsonSerializer.Serialize(new
+        {
+            results = new[]
+            {
+                new
+                {
+                    id = "weekly-1",
+                    title = "14/09-18/09",
+                    ancestors = new[]
+                    {
+                        new { id = "100", title = "Activities" },
+                        new { id = "101", title = "2026" },
+                        new { id = "102", title = "9/2026" }
+                    },
+                    body = new { storage = new { value = storageBody } },
+                    version = new { number = 8 },
+                    _links = new { webui = "/pages/viewpage.action?pageId=weekly-1" }
+                }
+            }
+        });
+        var handler = new StubHttpMessageHandler(_ =>
+        {
+            requestCount++;
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(responseBody, Encoding.UTF8, "application/json")
+            };
+        });
+
+        try
+        {
+            await using var provider = CreateServices(dbPath, confluenceHandler: handler);
+            await using var scope = provider.CreateAsyncScope();
+            await scope.ServiceProvider.GetRequiredService<IStudioDatabaseInitializer>().InitializeAsync();
+            var directory = scope.ServiceProvider.GetRequiredService<IStudioDirectoryService>();
+            var configuration = scope.ServiceProvider.GetRequiredService<IAtlassianConfigurationService>();
+            var hdc = await directory.SaveStudioAsync(new StudioDetails { StudioName = "HDC Studio", ProjectName = "Game A" });
+            var bbg = await directory.SaveStudioAsync(new StudioDetails { StudioName = "BBG Studio", ProjectName = "Game B" });
+            var unmapped = await directory.SaveStudioAsync(new StudioDetails { StudioName = "New Studio", ProjectName = "Game C" });
+
+            await configuration.SaveSettingsAsync(new AtlassianIntegrationSettings
+            {
+                ConfluenceEnabled = true,
+                ConfluenceBaseUrl = "https://confluence.example.test",
+                ConfluenceSpaceKey = "WR",
+                ConfluenceParentPageId = "100"
+            });
+            await configuration.SaveStudioMappingsAsync([
+                new StudioAtlassianMapping { StudioId = hdc.Id, ConfluenceStudioIdentifier = "HDC" },
+                new StudioAtlassianMapping { StudioId = bbg.Id, ConfluenceStudioIdentifier = "BBG" }
+            ]);
+            await configuration.SaveUserTokensAsync("person@example.com", null, "personal-confluence-token");
+
+            var result = await scope.ServiceProvider.GetRequiredService<IStudioConfluenceUpdateService>().GetConsolidatedUpdatesAsync(
+                new ConsolidatedStudioConfluenceUpdateQuery
+                {
+                    StudioIds = [hdc.Id, bbg.Id, unmapped.Id],
+                    RequestingUserId = "person@example.com",
+                    StartDate = new DateOnly(2026, 9, 16),
+                    EndDate = new DateOnly(2026, 9, 18)
+                });
+
+            requestCount.Should().Be(1);
+            result.Message.Should().BeNull();
+            result.Updates.Should().HaveCount(2);
+            result.Updates.Single(update => update.StudioId == hdc.Id).HpgdsSupport.Should().Be("HDC support");
+            result.Updates.Single(update => update.StudioId == bbg.Id).WmdSupport.Should().Be("BBG support");
+            result.UnconfiguredStudioIds.Should().Equal(unmapped.Id);
+        }
+        finally
+        {
+            SqliteConnection.ClearAllPools();
+            if (File.Exists(dbPath)) File.Delete(dbPath);
+        }
+    }
+
+    [Fact]
     public async Task GetTicketsAsync_ReturnsConfigurationMessage_WhenJiraIntegrationIsDisabled()
     {
         var dbPath = Path.Combine(Path.GetTempPath(), $"teamhub-studio-{Guid.NewGuid():N}.db");
@@ -294,6 +382,8 @@ public sealed class StudioDirectoryTests
             });
 
             saved.StudioName.Should().Be("Solo Studio");
+            saved.StudioGroup.Should().Be("Ungrouped");
+            saved.IsActive.Should().BeTrue();
             saved.TimeZoneId.Should().Be(TimeZoneInfo.Utc.Id);
             saved.OurContacts.Should().BeEmpty();
             saved.TeamMembers.Should().BeEmpty();
@@ -326,6 +416,8 @@ public sealed class StudioDirectoryTests
             {
                 StudioName = "North Studio",
                 ProjectName = "Project Atlas",
+                StudioGroup = "IHP",
+                IsActive = true,
                 Location = "Pune",
                 TimeZoneId = configuredTimeZone,
                 OurContacts =
@@ -350,6 +442,8 @@ public sealed class StudioDirectoryTests
                 Id = saved.Id,
                 StudioName = "North Studio",
                 ProjectName = "Project Atlas",
+                StudioGroup = "MHP",
+                IsActive = false,
                 Location = "Mumbai",
                 TimeZoneId = configuredTimeZone,
                 OurContacts =
@@ -367,6 +461,8 @@ public sealed class StudioDirectoryTests
             });
 
             updated.Location.Should().Be("Mumbai");
+            updated.StudioGroup.Should().Be("MHP");
+            updated.IsActive.Should().BeFalse();
             updated.TimeZoneId.Should().Be(configuredTimeZone);
             updated.OurContacts.Should().ContainSingle()
                 .Which.Role.Should().Be("PIC");
@@ -426,7 +522,7 @@ public sealed class StudioDirectoryTests
     }
 
     [Fact]
-    public async Task InitializeAsync_AddsTimeZoneToExistingStudiosTable()
+    public async Task InitializeAsync_AddsCurrentFieldsToExistingStudiosTable()
     {
         var dbPath = Path.Combine(Path.GetTempPath(), $"teamhub-studio-{Guid.NewGuid():N}.db");
         try
@@ -456,6 +552,8 @@ public sealed class StudioDirectoryTests
 
             var columns = await GetColumnNamesAsync(dbPath, "Studios");
             columns.Should().Contain("TimeZoneId");
+            columns.Should().Contain("StudioGroup");
+            columns.Should().Contain("IsActive");
         }
         finally
         {

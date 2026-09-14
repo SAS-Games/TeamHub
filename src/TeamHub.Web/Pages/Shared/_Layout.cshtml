@@ -31,7 +31,11 @@
     IReadOnlyList<StudioDetails> studioTabs = [];
     try
     {
-        studioTabs = await StudioDirectoryService.GetStudiosAsync();
+        studioTabs = (await StudioDirectoryService.GetStudiosAsync())
+            .Where(studio => studio.IsActive)
+            .OrderBy(studio => studio.StudioGroup)
+            .ThenBy(studio => studio.StudioName)
+            .ToList();
     }
     catch
     {
@@ -66,17 +70,29 @@
                             if (string.Equals(tab.Page, "/Studio/Index", StringComparison.OrdinalIgnoreCase))
                             {
                                 <li class="nav-item dropdown">
-                                    <a class="nav-link dropdown-toggle text-dark" href="#" id="studiosDropdown" role="button" data-bs-toggle="dropdown" aria-expanded="false">@tab.Name</a>
-                                    <ul class="dropdown-menu" aria-labelledby="studiosDropdown">
+                                    <a class="nav-link dropdown-toggle text-dark" href="#" id="studiosDropdown" role="button" data-bs-toggle="dropdown" data-bs-auto-close="outside" aria-expanded="false">@tab.Name</a>
+                                    <ul class="dropdown-menu studio-groups-menu" aria-labelledby="studiosDropdown">
                                         @if (studioTabs.Count == 0)
                                         {
                                             <li><a class="dropdown-item" asp-page="@tab.Page">No studios configured</a></li>
                                         }
                                         else
                                         {
-                                            @foreach (var studio in studioTabs)
+                                            @foreach (var studioGroup in studioTabs.GroupBy(studio => studio.StudioGroup, StringComparer.OrdinalIgnoreCase))
                                             {
-                                                <li><a class="dropdown-item" asp-page="@tab.Page" asp-route-studioId="@studio.Id">@studio.StudioName</a></li>
+                                                <li class="dropend studio-group-submenu">
+                                                    <button type="button" class="dropdown-item dropdown-toggle d-flex align-items-center justify-content-between gap-3">
+                                                        <span>@studioGroup.Key</span>
+                                                    </button>
+                                                    <ul class="dropdown-menu">
+                                                        @foreach (var studio in studioGroup.OrderBy(item => item.StudioName))
+                                                        {
+                                                            <li>
+                                                                <a class="dropdown-item" asp-page="@tab.Page" asp-route-studioId="@studio.Id">@studio.StudioName</a>
+                                                            </li>
+                                                        }
+                                                    </ul>
+                                                </li>
                                             }
                                         }
                                     </ul>

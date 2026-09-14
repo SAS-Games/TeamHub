@@ -20,7 +20,11 @@ public class IndexModel(IStudioDirectoryService studioDirectoryService, IMilesto
     {
         var nowUtc = DateTime.UtcNow;
         TodayUtc = nowUtc.Date;
-        var studios = await studioDirectoryService.GetStudiosAsync(cancellationToken);
+        var studios = (await studioDirectoryService.GetStudiosAsync(cancellationToken))
+            .Where(studio => studio.IsActive)
+            .OrderBy(studio => studio.StudioGroup)
+            .ThenBy(studio => studio.StudioName)
+            .ToList();
         IReadOnlyList<MilestoneDto> milestones = [];
 
         try

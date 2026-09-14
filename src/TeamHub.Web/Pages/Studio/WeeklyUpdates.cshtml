@@ -1,41 +1,66 @@
 @page "/Studio/WeeklyUpdates"
 @model TeamHub.Web.Pages.Studio.WeeklyUpdatesModel
 @{
-    var title = Model.Studio is null ? "Weekly Studio Updates" : $"{Model.Studio.StudioName} Weekly Updates";
+    var title = Model.IsConsolidated ? "Consolidated Weekly Studio Support" : $"{Model.Studio?.StudioName} Weekly Updates";
     ViewData["Title"] = title;
 }
 
 <div class="page-hero">
-    <div><div class="eyebrow">Studio Support</div><h1>@title</h1></div>
-    @if (Model.Studio is not null)
-    {
-        <div class="d-flex flex-wrap gap-2">
+    <div>
+        <div class="eyebrow">Studio Support</div>
+        <h1>@title</h1>
+        @if (Model.IsConsolidated)
+        {
+            <p class="text-secondary mb-0">Weekly work, support activity, actions, and notes for every configured studio in one report.</p>
+        }
+    </div>
+    <div class="d-flex flex-wrap gap-2">
+        @if (Model.Studio is not null)
+        {
             <a class="btn btn-outline-primary" asp-page="/Studio/JiraTickets" asp-route-studioId="@Model.Studio.Id">Jira Tickets</a>
             <a class="btn btn-primary" asp-page="/Studio/WeeklyUpdates" asp-route-studioId="@Model.Studio.Id">Weekly Updates</a>
             <a class="btn btn-outline-secondary" asp-page="/Studio/Index" asp-route-studioId="@Model.Studio.Id">Back to Dashboard</a>
-        </div>
-    }
+        }
+        else
+        {
+            <a class="btn btn-outline-secondary" asp-page="/Studio/Index">Back to Studios</a>
+        }
+    </div>
 </div>
 
 @if (!string.IsNullOrWhiteSpace(Model.ErrorMessage))
 {
     <div class="alert alert-info mt-3">@Model.ErrorMessage</div>
 }
-else if (Model.Studio is not null)
+else
 {
     <section class="content-section">
         <div class="section-heading"><div><span>Filters</span><h2>Confluence Week Range</h2></div></div>
         <div class="section-body">
             <form method="get" class="row g-3 align-items-end">
-                <input type="hidden" asp-for="StudioId" value="@Model.Studio.Id" />
-                <div class="col-md-4"><label asp-for="StartDate" class="form-label">Start Date</label><input asp-for="StartDate" type="date" class="form-control" /></div>
-                <div class="col-md-4"><label asp-for="EndDate" class="form-label">End Date</label><input asp-for="EndDate" type="date" class="form-control" /></div>
-                <div class="col-md-4"><button type="submit" class="btn btn-primary">Load Weekly Updates</button></div>
+                <div class="col-12 col-lg-4">
+                    <label asp-for="StudioId" class="form-label">Report Scope</label>
+                    <select asp-for="StudioId" class="form-select">
+                        <option value="all">All studios (consolidated)</option>
+                        @foreach (var studioGroup in Model.Studios.GroupBy(studio => studio.StudioGroup, StringComparer.OrdinalIgnoreCase))
+                        {
+                            <optgroup label="@studioGroup.Key">
+                                @foreach (var studio in studioGroup.OrderBy(item => item.StudioName))
+                                {
+                                    <option value="@studio.Id">@studio.StudioName</option>
+                                }
+                            </optgroup>
+                        }
+                    </select>
+                </div>
+                <div class="col-12 col-md-5 col-lg-3"><label asp-for="StartDate" class="form-label">Start Date</label><input asp-for="StartDate" type="date" class="form-control" /></div>
+                <div class="col-12 col-md-5 col-lg-3"><label asp-for="EndDate" class="form-label">End Date</label><input asp-for="EndDate" type="date" class="form-control" /></div>
+                <div class="col-12 col-md-2 col-lg-2"><button type="submit" class="btn btn-primary w-100">Load Report</button></div>
             </form>
         </div>
     </section>
 
-    <div class="alert alert-secondary small">Weekly Updates is read only in this release. Page IDs and Confluence versions are retained so controlled editing can be added later.</div>
+    <div class="alert alert-secondary small">Weekly Updates is read only in this release. The report reads the selected weekly Confluence pages without changing them.</div>
 
     @if (!string.IsNullOrWhiteSpace(Model.UpdateResult.Message))
     {
@@ -46,37 +71,116 @@ else if (Model.Studio is not null)
         }
     }
 
+    @if (Model.UpdateResult.UnconfiguredStudioIds.Count > 0)
+    {
+        <div class="alert alert-warning">
+            <strong>Not included:</strong>
+            @(string.Join(", ", Model.UpdateResult.UnconfiguredStudioIds.Select(Model.GetStudioName))).
+            An administrator must add a Confluence table identifier for these studios.
+        </div>
+    }
+
     @if (Model.UpdateResult.IsUsingSharedCredential)
     {
         <div class="alert alert-secondary small">Shared Confluence access is read only. Weekly page changes are not permitted from TeamHub.</div>
     }
 
-    @foreach (var update in Model.UpdateResult.Updates)
+    @if (Model.IsConsolidated)
     {
-        <section class="content-section">
-            <div class="section-heading">
-                <div><span>@update.WeekStart.ToString("dd MMM yyyy") – @update.WeekEnd.ToString("dd MMM yyyy")</span><h2>@update.PageTitle</h2></div>
-                @if (!string.IsNullOrWhiteSpace(update.PageUrl))
-                {
-                    <a class="btn btn-sm btn-outline-secondary" href="@update.PageUrl" target="_blank" rel="noopener">Open in Confluence</a>
-                }
-            </div>
-            @if (!update.PageFound || !update.StudioFound)
-            {
-                <div class="section-body text-secondary">@update.Message</div>
-            }
-            else
-            {
-                <div class="section-body">
-                    <div class="row g-3">
-                        <div class="col-12 col-lg-6"><div class="border rounded-3 p-3 h-100"><h3 class="h6">Studio Work</h3><div class="text-break" style="white-space: pre-wrap;">@(string.IsNullOrWhiteSpace(update.StudioWork) ? "No information provided." : update.StudioWork)</div></div></div>
-                        <div class="col-12 col-lg-6"><div class="border rounded-3 p-3 h-100"><h3 class="h6">HPGDS Support</h3><div class="text-break" style="white-space: pre-wrap;">@(string.IsNullOrWhiteSpace(update.HpgdsSupport) ? "No information provided." : update.HpgdsSupport)</div></div></div>
-                        <div class="col-12 col-lg-6"><div class="border rounded-3 p-3 h-100"><h3 class="h6">WMD Support</h3><div class="text-break" style="white-space: pre-wrap;">@(string.IsNullOrWhiteSpace(update.WmdSupport) ? "No information provided." : update.WmdSupport)</div></div></div>
-                        <div class="col-12 col-lg-6"><div class="border rounded-3 p-3 h-100"><h3 class="h6">Action Items</h3><div class="text-break" style="white-space: pre-wrap;">@(string.IsNullOrWhiteSpace(update.ActionItems) ? "No information provided." : update.ActionItems)</div></div></div>
-                        <div class="col-12"><div class="border rounded-3 p-3"><h3 class="h6">Notes</h3><div class="text-break" style="white-space: pre-wrap;">@(string.IsNullOrWhiteSpace(update.Notes) ? "No notes provided." : update.Notes)</div></div></div>
-                    </div>
+        @foreach (var week in Model.UpdateResult.Updates
+            .GroupBy(update => new { update.WeekStart, update.WeekEnd })
+            .OrderByDescending(group => group.Key.WeekStart))
+        {
+            var weeklyPage = week.First();
+            <section class="content-section">
+                <div class="section-heading">
+                    <div><span>@week.Key.WeekStart.ToString("dd MMM yyyy") &ndash; @week.Key.WeekEnd.ToString("dd MMM yyyy")</span><h2>@weeklyPage.PageTitle</h2></div>
+                    @if (!string.IsNullOrWhiteSpace(weeklyPage.PageUrl))
+                    {
+                        <a class="btn btn-sm btn-outline-secondary" href="@weeklyPage.PageUrl" target="_blank" rel="noopener">Open in Confluence</a>
+                    }
                 </div>
-            }
-        </section>
+                <div class="section-body">
+                    @foreach (var studioGroup in week
+                        .GroupBy(update => Model.GetStudioGroup(update.StudioId), StringComparer.OrdinalIgnoreCase)
+                        .OrderBy(group => group.Key))
+                    {
+                        <div class="border rounded-3 overflow-hidden mb-4">
+                            <div class="d-flex align-items-center justify-content-between gap-3 bg-light border-bottom px-3 py-2">
+                                <h3 class="h5 mb-0">@studioGroup.Key</h3>
+                                <span class="badge text-bg-secondary">@studioGroup.Count() active studio@(studioGroup.Count() == 1 ? string.Empty : "s")</span>
+                            </div>
+                            <div class="table-responsive">
+                                <table class="table table-hover align-top mb-0" style="min-width: 1200px;">
+                                    <thead class="table-light">
+                                        <tr>
+                                            <th scope="col" style="min-width: 170px;">Studio</th>
+                                            <th scope="col" style="min-width: 230px;">Studio Work</th>
+                                            <th scope="col" style="min-width: 230px;">HPGDS Support</th>
+                                            <th scope="col" style="min-width: 230px;">WMD Support</th>
+                                            <th scope="col" style="min-width: 220px;">Action Items</th>
+                                            <th scope="col" style="min-width: 220px;">Notes</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        @foreach (var update in studioGroup.OrderBy(item => Model.GetStudioName(item.StudioId)))
+                                        {
+                                            <tr>
+                                                <th scope="row">
+                                                    @Model.GetStudioName(update.StudioId)
+                                                    <div class="small fw-normal text-secondary">@update.StudioIdentifier</div>
+                                                </th>
+                                                @if (!update.PageFound || !update.StudioFound)
+                                                {
+                                                    <td colspan="5" class="text-secondary">@update.Message</td>
+                                                }
+                                                else
+                                                {
+                                                    <td class="text-break" style="white-space: pre-wrap;">@(string.IsNullOrWhiteSpace(update.StudioWork) ? "No information provided." : update.StudioWork)</td>
+                                                    <td class="text-break" style="white-space: pre-wrap;">@(string.IsNullOrWhiteSpace(update.HpgdsSupport) ? "No information provided." : update.HpgdsSupport)</td>
+                                                    <td class="text-break" style="white-space: pre-wrap;">@(string.IsNullOrWhiteSpace(update.WmdSupport) ? "No information provided." : update.WmdSupport)</td>
+                                                    <td class="text-break" style="white-space: pre-wrap;">@(string.IsNullOrWhiteSpace(update.ActionItems) ? "No information provided." : update.ActionItems)</td>
+                                                    <td class="text-break" style="white-space: pre-wrap;">@(string.IsNullOrWhiteSpace(update.Notes) ? "No notes provided." : update.Notes)</td>
+                                                }
+                                            </tr>
+                                        }
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    }
+                </div>
+            </section>
+        }
+    }    else
+    {
+        @foreach (var update in Model.UpdateResult.Updates)
+        {
+            <section class="content-section">
+                <div class="section-heading">
+                    <div><span>@update.WeekStart.ToString("dd MMM yyyy") &ndash; @update.WeekEnd.ToString("dd MMM yyyy")</span><h2>@update.PageTitle</h2></div>
+                    @if (!string.IsNullOrWhiteSpace(update.PageUrl))
+                    {
+                        <a class="btn btn-sm btn-outline-secondary" href="@update.PageUrl" target="_blank" rel="noopener">Open in Confluence</a>
+                    }
+                </div>
+                @if (!update.PageFound || !update.StudioFound)
+                {
+                    <div class="section-body text-secondary">@update.Message</div>
+                }
+                else
+                {
+                    <div class="section-body">
+                        <div class="row g-3">
+                            <div class="col-12 col-lg-6"><div class="border rounded-3 p-3 h-100"><h3 class="h6">Studio Work</h3><div class="text-break" style="white-space: pre-wrap;">@(string.IsNullOrWhiteSpace(update.StudioWork) ? "No information provided." : update.StudioWork)</div></div></div>
+                            <div class="col-12 col-lg-6"><div class="border rounded-3 p-3 h-100"><h3 class="h6">HPGDS Support</h3><div class="text-break" style="white-space: pre-wrap;">@(string.IsNullOrWhiteSpace(update.HpgdsSupport) ? "No information provided." : update.HpgdsSupport)</div></div></div>
+                            <div class="col-12 col-lg-6"><div class="border rounded-3 p-3 h-100"><h3 class="h6">WMD Support</h3><div class="text-break" style="white-space: pre-wrap;">@(string.IsNullOrWhiteSpace(update.WmdSupport) ? "No information provided." : update.WmdSupport)</div></div></div>
+                            <div class="col-12 col-lg-6"><div class="border rounded-3 p-3 h-100"><h3 class="h6">Action Items</h3><div class="text-break" style="white-space: pre-wrap;">@(string.IsNullOrWhiteSpace(update.ActionItems) ? "No information provided." : update.ActionItems)</div></div></div>
+                            <div class="col-12"><div class="border rounded-3 p-3"><h3 class="h6">Notes</h3><div class="text-break" style="white-space: pre-wrap;">@(string.IsNullOrWhiteSpace(update.Notes) ? "No notes provided." : update.Notes)</div></div></div>
+                        </div>
+                    </div>
+                }
+            </section>
+        }
     }
 }

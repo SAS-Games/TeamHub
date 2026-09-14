@@ -180,6 +180,12 @@ public class ConfigurationModel(
         public string ProjectName { get; set; } = string.Empty;
 
         [Required]
+        [StringLength(128)]
+        public string StudioGroup { get; set; } = "Ungrouped";
+
+        public bool IsActive { get; set; } = true;
+
+        [Required]
         public string Location { get; set; } = string.Empty;
 
         [Required]
@@ -197,6 +203,8 @@ public class ConfigurationModel(
                 Id = studio.Id,
                 StudioName = studio.StudioName,
                 ProjectName = studio.ProjectName,
+                StudioGroup = studio.StudioGroup,
+                IsActive = studio.IsActive,
                 Location = studio.Location,
                 TimeZoneId = studio.TimeZoneId,
                 OurContacts = studio.OurContacts.Select(contact => new StudioContactInput
@@ -231,6 +239,8 @@ public class ConfigurationModel(
                 Id = Id ?? string.Empty,
                 StudioName = StudioName,
                 ProjectName = ProjectName,
+                StudioGroup = StudioGroup,
+                IsActive = IsActive,
                 Location = Location,
                 TimeZoneId = TimeZoneId,
                 OurContacts = OurContacts.Select(contact => new StudioContact

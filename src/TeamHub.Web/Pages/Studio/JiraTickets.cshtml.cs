@@ -25,7 +25,11 @@ public class JiraTicketsModel(IStudioDirectoryService studioDirectoryService, IS
 
     public async Task OnGetAsync(CancellationToken cancellationToken)
     {
-        Studios = await studioDirectoryService.GetStudiosAsync(cancellationToken);
+        Studios = (await studioDirectoryService.GetStudiosAsync(cancellationToken))
+            .Where(studio => studio.IsActive)
+            .OrderBy(studio => studio.StudioGroup)
+            .ThenBy(studio => studio.StudioName)
+            .ToList();
         Studio = SelectStudio();
         if (Studio is null)
         {
