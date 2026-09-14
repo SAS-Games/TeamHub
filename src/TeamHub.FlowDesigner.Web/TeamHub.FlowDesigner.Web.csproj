@@ -8,6 +8,7 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\TeamHub.FlowDesigner\TeamHub.FlowDesigner.csproj" />
+    <ProjectReference Include="..\TeamHub.AI.FlowDesigner\TeamHub.AI.FlowDesigner.csproj" />
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
   </ItemGroup>
 </Project>

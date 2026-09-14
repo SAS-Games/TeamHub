@@ -1,73 +1,88 @@
-# AI Flow Designer — Workflow Architecture Readiness
+# AI Flow Designer - Controlled Workflow
 
 ## Objective
 
-Allow a user to provide an instruction and selected source-of-truth documents, then generate a reviewable Flow Designer draft that accurately represents those sources.
+Allow a user to provide an instruction and selected source-of-truth documents, then generate a reviewable diagram using the existing Team Hub Flow Designer.
 
-This capability will reuse the shared `TeamHub.AI` runtime. It is independent from Report Generator and does not reuse report prompts, schemas, or persistence.
+This capability reuses the shared `TeamHub.AI` runtime. It is independent from Report Generator and does not reuse report prompts, schemas, or persistence.
 
 ## Classification
 
-This is a controlled AI workflow, not an autonomous agent. Team Hub defines every step, permitted source, retry limit, validation rule, stopping condition, and persistence action. The model performs structured document-to-diagram generation only.
+This is a controlled AI workflow, not an autonomous agent. Team Hub defines every step, permitted source, schema, validation rule, stopping condition, and persistence action. The model performs structured source-to-diagram generation only.
+
+## Flow Designer ownership
+
+AI Flow Designer does not introduce a second diagram engine or diagram format. It produces the canonical `FlowDefinition` used by Flow Designer and follows its existing:
+
+- diagram and node types;
+- node description and notes fields;
+- connector pin identifiers and pin limits;
+- connector placement properties;
+- domain validator;
+- draft ownership and access rules;
+- child-diagram behavior;
+- publication request and administrator approval process.
+
+The AI workflow cannot save or publish a diagram. Its current output is an unsaved proposal. A future UI integration will open that proposal in Flow Designer, where the user can review and explicitly create a normal editable draft.
 
 ## User workflow
 
 1. The user starts **Create with AI** from Flow Designer.
 2. The user describes the intended diagram and explicitly supplies or selects source documents.
 3. Team Hub extracts supported content and shows what will be sent to the configured model.
-4. The model proposes structured nodes, connections, descriptions, notes, connector-pin placement, and child-diagram relationships.
-5. Team Hub validates the proposal and shows a preview, evidence references, assumptions, and warnings.
+4. The model proposes structured nodes, connections, descriptions, notes, and connector pins.
+5. Team Hub maps the proposal to `FlowDefinition`, applies deterministic layout, runs the existing Flow Designer validator, and shows a preview with evidence and warnings.
 6. The user confirms creation of a normal editable draft or cancels without saving.
-7. Publishing continues through the existing administrator-controlled publication workflow.
+7. Child diagrams are added or generated through Flow Designer and remain attached to their parent hierarchy.
+8. Publishing continues through the existing administrator-controlled publication workflow.
 
-## Project structure
+## Current implementation
 
-```text
-src/TeamHub.AI.FlowDesigner/
-|-- Contracts/            public workflow request, draft, and evidence contracts
-|-- Application/          future fixed orchestration and prompt/schema coordination
-|-- SourceDocuments/      future file and approved external-source adapters
-|-- Validation/           future AI-output, evidence, and diagram validation
-|-- DependencyInjection/  future host registration
-`-- README.md             dependency and safety boundary
-```
+The first backend slice is available in `src/TeamHub.AI.FlowDesigner`:
 
-The project references:
-
-- `TeamHub.AI` for provider-neutral structured generation.
-- `TeamHub.FlowDesigner.Core` for canonical `FlowDefinition` models and validators.
-
-It does not reference `TeamHub.Web`, `TeamHub.AI.ReportGenerator`, or a model vendor SDK.
+- Provider-neutral structured generation through `IAiModelService`.
+- Versioned `flow-definition-v1` JSON schema.
+- In-memory plain-text and Markdown sources.
+- Maximum 10 sources, 120,000 combined source characters, and 4,000 prompt characters by default.
+- Source content treated as untrusted data with prompt-injection instructions in the system prompt.
+- Strict output parsing and evidence-reference checks.
+- Mapping to existing Flow Designer node types, `customProperties.notes`, `output_N` / `input_N` connector pins, and `top-bottom` port layout.
+- Deterministic draft layout followed by `IFlowValidator` validation.
+- Disabled-by-default production registration under `AI:FlowDesigner`; the local Development profile enables it for testing.
+- A Flow Designer **Create with AI** page for up to 10 pasted sources, generated-node/connection preview, warnings, and evidence.
+- A protected preview payload and explicit confirmation that creates and saves through the existing `IFlowService`.
+- No source retention, AI-owned database writes, child-flow creation, or publishing.
 
 ## Source-of-truth design
 
-Initial supported sources should be introduced one adapter at a time:
+The initial source processor accepts:
 
-- Plain text and Markdown.
-- PDF with page references.
-- Word documents with heading or paragraph references.
-- Approved Confluence pages using the user's existing connection and access.
+- `text/plain`
+- `text/markdown`
+- `text/x-markdown`
 
-Every normalized passage must retain a stable document ID and location. Generated elements should be traceable to those references when practical. Unsupported, encrypted, oversized, empty, or extraction-failed documents must be rejected before inference.
+Unsupported, oversized, duplicate-ID, or empty documents are rejected before inference. Source content remains in memory for the request and is not stored by this module.
+
+Future adapters can add PDF page references, Word heading/paragraph references, and approved Confluence pages through the user's existing access. Each adapter must retain stable document and location references without bypassing source access.
 
 ## Output and safety contract
 
-- Output is always a draft proposal.
-- Existing node, connection, connector-pin, and subgraph rules remain authoritative.
-- Parent and child diagrams must be generated and validated as one draft hierarchy.
+- Output is always an unsaved draft proposal.
+- Existing Flow Designer models and validation remain authoritative.
 - Unsupported process steps must not be introduced silently; uncertainty becomes a warning.
 - Source-document instructions cannot override system rules or the user's explicit request.
-- Invalid structured output is rejected or retried under a bounded application policy; it is never partially saved.
-- Saving requires user confirmation and normal create/edit permission.
+- Invalid structured output is rejected as one unit; it is never partially saved.
+- Saving requires user confirmation and normal Flow Designer create/edit permission.
 - Publishing requires the existing administrative approval flow.
+- Child diagrams are not generated in the first slice. When introduced, parent and children must be validated and confirmed as one hierarchy.
 
 ## Persistence boundary
 
-No new database is introduced during architecture preparation. Future generation-run metadata may receive a dedicated store, but actual drafts remain owned by Flow Designer. Source retention must be decided before implementation; the default should be not to retain complete uploaded content after generation.
+No AI Flow Designer database is introduced. Complete source documents and unsaved proposals are not retained by this module. Confirmed diagrams will be stored by the existing Flow Designer only. Provider/model/request metadata is added to the draft without storing the prompt or source contents.
 
 ## Implementation phases
 
-### Phase A — Architecture readiness
+### Phase A - Architecture readiness
 
 - [x] Extract shared provider runtime into `TeamHub.AI`.
 - [x] Keep Report Generator as an independent workflow consumer.
@@ -75,21 +90,21 @@ No new database is introduced during architecture preparation. Future generation
 - [x] Define `IFlowDiagramGenerationWorkflow` and draft/evidence contracts.
 - [x] Record safety, data, and publication boundaries.
 
-### Phase B — Product and security decisions
+### Phase B - Initial product and security decisions
 
-- [ ] Confirm initial document formats and size limits.
-- [ ] Confirm whether source content can be retained and for how long.
-- [ ] Confirm evidence presentation in the Flow Designer UI.
-- [ ] Define AI Flow Designer access-management levels.
-- [ ] Define prompt-injection and sensitive-data test cases.
+- [x] Start with plain text and Markdown and configurable request limits.
+- [x] Do not retain complete source content.
+- [x] Return evidence by Flow Designer element ID, source ID, location, and explanation.
+- [x] Reuse normal Flow Designer create/edit permissions; do not create a separate publication permission path.
+- [x] Treat selected content as untrusted and test embedded prompt-injection instructions.
 
-### Phase C — First implementation
+### Phase C - First implementation
 
-- [ ] Implement one source adapter.
-- [ ] Define the versioned diagram JSON schema and prompt.
-- [ ] Implement structured generation through `IAiModelService`.
-- [ ] Validate and map output to `FlowDefinition`.
-- [ ] Add preview and explicit draft-creation confirmation.
-- [ ] Add unit, integration, and adversarial-source tests.
-
-Implementation must not begin until the Phase B choices affecting data handling and user expectations are confirmed.
+- [x] Implement the in-memory text/Markdown source processor.
+- [x] Define the versioned diagram JSON schema and prompt.
+- [x] Implement structured generation through `IAiModelService`.
+- [x] Validate and map output to `FlowDefinition` using existing connector and node conventions.
+- [x] Add the Flow Designer **Create with AI** UI, preview, and explicit draft-creation confirmation.
+- [ ] Add file-upload and approved external-source adapters.
+- [ ] Add parent/child hierarchy generation and atomic confirmation.
+- [x] Add unit and adversarial-source tests for the backend slice.

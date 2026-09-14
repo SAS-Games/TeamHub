@@ -28,6 +28,10 @@
             {
                 <a class="btn btn-outline-secondary btn-lg" asp-page="/Flows/Review">Review requests <span class="badge text-bg-danger">@Model.PendingReviewCount</span></a>
             }
+            @if (Model.CanCreateWithAi)
+            {
+                <a class="btn btn-outline-primary btn-lg" asp-page="/Flows/CreateWithAi">Create with AI</a>
+            }
             <a class="btn btn-primary btn-lg" asp-page="/Flows/New"><span aria-hidden="true">＋</span> New diagram</a>
         </div>
     </div>

@@ -1,22 +1,14 @@
 # TeamHub AI Flow Designer
 
-This project is the future controlled document-to-diagram workflow. It currently contains architecture and public contracts only; no model orchestration, document reader, UI, endpoint, persistence, or dependency-injection registration has been implemented.
+This project implements the controlled source-to-diagram workflow for Team Hub Flow Designer.
 
-## Boundary
+## Current boundary
 
-- Depends on `TeamHub.AI` for provider-neutral structured generation.
-- Depends on `TeamHub.FlowDesigner.Core` for canonical diagram models and validation contracts.
-- Does not depend on the Flow Designer web UI, Report Generator, a particular AI provider, or vendor request types.
-- Produces a draft only. Saving, publishing, and replacing diagrams require explicit user actions and existing Flow Designer permissions.
+- Accepts a user instruction plus in-memory plain-text or Markdown source documents.
+- Uses `TeamHub.AI` for provider-neutral structured generation.
+- Maps the response to the canonical `FlowDefinition`, node types, notes, connector pins, and port-layout properties from `TeamHub.FlowDesigner.Core`.
+- Applies deterministic coordinates and validates the proposal with the existing `IFlowValidator`.
+- Returns an unsaved draft with evidence references and warnings.
+- Does not store source content, save a draft, create child diagrams, or publish anything.
 
-## Planned fixed pipeline
-
-1. Accept a user instruction and explicitly selected source documents.
-2. Extract supported content through configured source adapters.
-3. Treat source content as untrusted data and isolate it from system instructions.
-4. Request a versioned structured diagram proposal through `IAiModelService`.
-5. Validate nodes, connections, child diagrams, evidence coverage, and Flow Designer rules.
-6. Show a preview with warnings and source references.
-7. Create a normal editable draft only after user confirmation.
-
-The model cannot choose arbitrary tools or publish diagrams.
+The host registers the normal Flow Designer and `AddAiFlowDesigner`, because Flow Designer supplies the authoritative validator and persistence boundary. The Flow Designer web module provides **Create with AI**, a review screen, and a protected explicit-confirmation handoff. Confirmation calls the existing `IFlowService` to create and save a normal editable draft. Editing, child-diagram management, permissions, publication requests, and publication remain owned by Flow Designer.

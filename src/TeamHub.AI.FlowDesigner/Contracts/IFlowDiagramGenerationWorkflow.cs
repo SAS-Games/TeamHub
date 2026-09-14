@@ -23,9 +23,12 @@ public sealed record FlowDesignerSourceDocument(
 public sealed record FlowDiagramGenerationDraft(
     FlowDefinition Diagram,
     IReadOnlyList<FlowDesignerEvidenceReference> Evidence,
-    IReadOnlyList<string> Warnings);
+    IReadOnlyList<string> Warnings,
+    string Provider,
+    string Model);
 
 public sealed record FlowDesignerEvidenceReference(
+    string ElementId,
     string SourceDocumentId,
     string? Location,
     string Explanation);

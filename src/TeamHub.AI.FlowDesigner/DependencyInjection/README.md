@@ -1,3 +1,3 @@
 # Dependency injection
 
-Host registration will be added only when the first AI Flow Designer workflow implementation begins. The future extension will register feature-specific options and services while reusing the shared `TeamHub.AI` runtime already registered by the host.
+Call `AddTeamHubAi(configuration)` for the provider-neutral runtime, register the normal Flow Designer, and then call `AddAiFlowDesigner(configuration)`. The workflow is disabled by default under `AI:FlowDesigner:Enabled`. Team Hub enables it in `appsettings.Development.json` for local testing while leaving the production default off.

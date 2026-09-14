@@ -1,3 +1,3 @@
 # Application
 
-Future orchestration belongs here: source ingestion, prompt assembly, structured-output parsing, validation coordination, preview creation, and confirmed draft creation. It will depend only on public contracts from `TeamHub.AI` and `TeamHub.FlowDesigner.Core`.
+The fixed application workflow validates input, builds a versioned structured request, calls `IAiModelService`, parses the response, and returns a validated Flow Designer draft. It performs no persistence or publication.

@@ -1,0 +1,235 @@
+@page "/flows/create-with-ai"
+@model TeamHub.FlowDesigner.Web.Pages.Flows.CreateWithAiModel
+@using TeamHub.FlowDesigner.Core.Models
+@{
+    ViewData["Title"] = "Create diagram with AI";
+}
+@section Styles {
+    <link rel="stylesheet" href="~/_content/TeamHub.FlowDesigner.Web/css/flowdesigner.css" asp-append-version="true" />
+}
+
+<div class="fd-page container-xl py-4 py-lg-5">
+    <a class="fd-back-link" asp-page="/Flows/Index">&larr; All diagrams</a>
+    <div class="row g-4 mt-1">
+        <div class="col-12 col-xl-5">
+            <div class="fd-form-card h-100">
+                <div class="fd-eyebrow">Flow Designer</div>
+                <h1 class="h2 mb-2">Create with AI</h1>
+                <p class="text-secondary mb-4">Describe the diagram and paste the source-of-truth material. AI creates a proposal; nothing is saved until you review and confirm it.</p>
+
+                <form method="post" asp-page-handler="Generate">
+                    <div asp-validation-summary="ModelOnly" class="alert alert-warning" role="alert"></div>
+                    <div class="mb-4">
+                        <label class="form-label fw-semibold" asp-for="Prompt"></label>
+                        <textarea class="form-control" asp-for="Prompt" rows="5" maxlength="4000" placeholder="Example: Create a standard flowchart showing how a support request is triaged, assigned, resolved, and closed."></textarea>
+                        <span class="text-danger small" asp-validation-for="Prompt"></span>
+                    </div>
+
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <label class="form-label fw-semibold mb-0">Source documents</label>
+                        <button class="btn btn-sm btn-outline-secondary" id="addSource" type="button">Add source</button>
+                    </div>
+                    <p class="text-secondary small">Plain text and Markdown are supported. Source content is sent to the configured model for this request and is not saved by the AI module.</p>
+                    <div asp-validation-for="Sources" class="text-danger small mb-2"></div>
+                    <div id="sourceList" class="d-grid gap-3">
+                        @for (var index = 0; index < Model.Sources.Count; index++)
+                        {
+                            <section class="border rounded-3 p-3 source-entry" data-source-entry>
+                                <div class="d-flex justify-content-between align-items-center gap-2 mb-3">
+                                    <strong data-source-heading>Source @(index + 1)</strong>
+                                    <button class="btn btn-sm btn-link text-danger p-0" type="button" data-remove-source>Remove</button>
+                                </div>
+                                <div class="mb-3">
+                                    <label class="form-label" for="source-title-@index">Title</label>
+                                    <input class="form-control" id="source-title-@index" name="Sources[@index].Title" value="@Model.Sources[index].Title" maxlength="200" />
+                                </div>
+                                <input type="hidden" name="Sources[@index].MediaType" value="@Model.Sources[index].MediaType" />
+                                <div>
+                                    <label class="form-label" for="source-content-@index">Content</label>
+                                    <textarea class="form-control font-monospace" id="source-content-@index" name="Sources[@index].Content" rows="9" placeholder="Paste source text or Markdown here...">@Model.Sources[index].Content</textarea>
+                                </div>
+                            </section>
+                        }
+                    </div>
+                    <div class="d-flex justify-content-end gap-2 mt-4">
+                        <a class="btn btn-light" asp-page="/Flows/Index">Cancel</a>
+                        <button class="btn btn-primary" type="submit">Generate preview</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <div class="col-12 col-xl-7">
+            @if (Model.Preview is null)
+            {
+                <div class="fd-empty-state h-100 d-flex flex-column justify-content-center">
+                    <div class="fd-empty-icon" aria-hidden="true">AI</div>
+                    <h2 class="h4">Your preview will appear here</h2>
+                    <p class="text-secondary mb-0">The proposal will use Flow Designer nodes, descriptions, notes, connector pins, and validation rules.</p>
+                </div>
+            }
+            else
+            {
+                <div class="fd-form-card">
+                    <div class="d-flex flex-column flex-md-row justify-content-between gap-3">
+                        <div>
+                            <div class="fd-eyebrow">Unsaved AI proposal</div>
+                            <h2 class="h3 mb-1">@Model.Preview.Diagram.Name</h2>
+                            <p class="text-secondary mb-0">@Model.Preview.Diagram.Description</p>
+                        </div>
+                        <div class="text-md-end">
+                            <span class="badge fd-mode-badge">@Model.Preview.Diagram.DiagramType.ToDisplayName()</span>
+                            <div class="small text-secondary mt-2">@Model.Preview.Provider / @Model.Preview.Model</div>
+                        </div>
+                    </div>
+
+                    @if (Model.Preview.Warnings.Count > 0)
+                    {
+                        <div class="alert alert-warning mt-4 mb-0">
+                            <strong>Review these points before creating the draft:</strong>
+                            <ul class="mb-0 mt-2">
+                                @foreach (var warning in Model.Preview.Warnings)
+                                {
+                                    <li>@warning</li>
+                                }
+                            </ul>
+                        </div>
+                    }
+
+                    <h3 class="h5 mt-4">Nodes</h3>
+                    <div class="table-responsive">
+                        <table class="table align-middle">
+                            <thead><tr><th>Type</th><th>Step</th><th>Description and notes</th></tr></thead>
+                            <tbody>
+                            @foreach (var node in Model.Preview.Diagram.Nodes.OrderBy(node => node.Y).ThenBy(node => node.X))
+                            {
+                                <tr>
+                                    <td><span class="badge text-bg-light">@node.Type</span></td>
+                                    <td class="fw-semibold">@node.Title</td>
+                                    <td>
+                                        <div class="text-break">@node.Description</div>
+                                        @if (node.CustomProperties.TryGetValue("notes", out var notes) && !string.IsNullOrWhiteSpace(notes))
+                                        {
+                                            <div class="small text-secondary text-break mt-1"><strong>Notes:</strong> @notes</div>
+                                        }
+                                    </td>
+                                </tr>
+                            }
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <h3 class="h5 mt-4">Connections</h3>
+                    <div class="table-responsive">
+                        <table class="table table-sm align-middle">
+                            <thead><tr><th>From</th><th>Path</th><th>To</th><th>Pins</th></tr></thead>
+                            <tbody>
+                            @foreach (var connection in Model.Preview.Diagram.Connections)
+                            {
+                                var source = Model.Preview.Diagram.Nodes.First(node => node.Id == connection.SourceNodeId);
+                                var target = Model.Preview.Diagram.Nodes.First(node => node.Id == connection.TargetNodeId);
+                                <tr><td>@source.Title</td><td>@(connection.Label ?? "-")</td><td>@target.Title</td><td class="text-secondary small">@connection.SourcePort &rarr; @connection.TargetPort</td></tr>
+                            }
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <h3 class="h5 mt-4">Source evidence</h3>
+                    @if (Model.Preview.Evidence.Count == 0)
+                    {
+                        <p class="text-secondary">No element-level evidence was returned. Review the warning list and regenerate if traceability is required.</p>
+                    }
+                    else
+                    {
+                        <div class="table-responsive">
+                            <table class="table table-sm align-middle">
+                                <thead><tr><th>Element</th><th>Source</th><th>Location</th><th>Why it supports the element</th></tr></thead>
+                                <tbody>
+                                @foreach (var evidence in Model.Preview.Evidence)
+                                {
+                                    <tr><td>@evidence.ElementId</td><td>@evidence.SourceDocumentId</td><td>@(evidence.Location ?? "-")</td><td class="text-break">@evidence.Explanation</td></tr>
+                                }
+                                </tbody>
+                            </table>
+                        </div>
+                    }
+
+                    <div class="border-top pt-4 mt-4 d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3">
+                        <p class="text-secondary small mb-0">Confirming creates a normal editable draft in Flow Designer. It does not publish the diagram.</p>
+                        <form method="post" asp-page-handler="Confirm">
+                            <input asp-for="ProtectedDraft" type="hidden" />
+                            <button class="btn btn-success" type="submit">Create draft and open Flow Designer</button>
+                        </form>
+                    </div>
+                </div>
+            }
+        </div>
+    </div>
+</div>
+
+<template id="sourceTemplate">
+    <section class="border rounded-3 p-3 source-entry" data-source-entry>
+        <div class="d-flex justify-content-between align-items-center gap-2 mb-3">
+            <strong data-source-heading></strong>
+            <button class="btn btn-sm btn-link text-danger p-0" type="button" data-remove-source>Remove</button>
+        </div>
+        <div class="mb-3">
+            <label class="form-label" data-title-label>Title</label>
+            <input class="form-control" data-title-input maxlength="200" />
+        </div>
+        <input type="hidden" data-media-input value="text/markdown" />
+        <div>
+            <label class="form-label" data-content-label>Content</label>
+            <textarea class="form-control font-monospace" data-content-input rows="9" placeholder="Paste source text or Markdown here..."></textarea>
+        </div>
+    </section>
+</template>
+
+@section Scripts {
+<partial name="_ValidationScriptsPartial" />
+<script>
+(() => {
+    const list = document.getElementById("sourceList");
+    const template = document.getElementById("sourceTemplate");
+    const addButton = document.getElementById("addSource");
+    if (!list || !template || !addButton) return;
+
+    const reindex = () => {
+        const entries = [...list.querySelectorAll("[data-source-entry]")];
+        entries.forEach((entry, index) => {
+            entry.querySelector("[data-source-heading]").textContent = `Source ${index + 1}`;
+            const title = entry.querySelector("input:not([type=hidden])");
+            const media = entry.querySelector("input[type=hidden]");
+            const content = entry.querySelector("textarea");
+            const titleId = `source-title-${index}`;
+            const contentId = `source-content-${index}`;
+            title.name = `Sources[${index}].Title`;
+            title.id = titleId;
+            media.name = `Sources[${index}].MediaType`;
+            content.name = `Sources[${index}].Content`;
+            content.id = contentId;
+            entry.querySelector("label[for], [data-title-label]")?.setAttribute("for", titleId);
+            const labels = entry.querySelectorAll("label");
+            if (labels.length > 1) labels[1].setAttribute("for", contentId);
+        });
+        addButton.disabled = entries.length >= 10;
+        entries.forEach(entry => {
+            entry.querySelector("[data-remove-source]").disabled = entries.length === 1;
+        });
+    };
+
+    addButton.addEventListener("click", () => {
+        if (list.querySelectorAll("[data-source-entry]").length >= 10) return;
+        list.appendChild(template.content.cloneNode(true));
+        reindex();
+    });
+    list.addEventListener("click", event => {
+        const button = event.target.closest("[data-remove-source]");
+        if (!button || list.querySelectorAll("[data-source-entry]").length === 1) return;
+        button.closest("[data-source-entry]").remove();
+        reindex();
+    });
+    reindex();
+})();
+</script>
+}
