@@ -2,9 +2,9 @@ using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using TeamHub.AIReports.Contracts;
+using TeamHub.AI.Contracts;
 
-namespace TeamHub.AIReports.ModelProviders;
+namespace TeamHub.AI.ModelProviders;
 
 public class OpenAiCompatibleModelProvider(
     IHttpClientFactory httpClientFactory,
@@ -121,7 +121,7 @@ public class OpenAiCompatibleModelProvider(
 
     private async Task<HttpClient> CreateClientAsync(AiProviderSettings settings, CancellationToken cancellationToken)
     {
-        var client = httpClientFactory.CreateClient(AiReportsServiceCollectionExtensions.HttpClientName);
+        var client = httpClientFactory.CreateClient(AiServiceCollectionExtensions.HttpClientName);
         client.BaseAddress = GetApiBaseAddress(settings.Endpoint);
         var credential = await credentials.GetCredentialAsync(settings, cancellationToken);
         if (!string.IsNullOrWhiteSpace(credential))

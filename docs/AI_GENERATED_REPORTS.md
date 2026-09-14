@@ -7,7 +7,7 @@
 | Branch | `feature/ai-generated-reports` |
 | Workspace | `D:\TeamHub` |
 | Baseline | `main` at `59cfed5` (`confluence page update`) |
-| Status | Phase 1 module foundation implemented and verified; weekly report development is next |
+| Status | Shared AI runtime refactored; report module ready for weekly report development |
 | Last updated | 2026-09-14 |
 
 This document is the scope contract, design record, and development checklist for the AI-generated reporting feature. Update it whenever a requirement, decision, milestone, test result, or known issue changes.
@@ -138,54 +138,36 @@ Team Hub then combines the immutable studio identity with the validated response
 
 ## Module architecture
 
-Create a self-contained project named `TeamHub.AIReports` with explicit public contracts and internal implementation details. The application and domain layers operate only on the provider-neutral interface.
-
-Proposed structure:
+AI capability is split between a reusable runtime and this report-specific consumer. See `docs/AI_ARCHITECTURE.md` for the cross-feature rules.
 
 ```text
-src/TeamHub.AIReports/
-├── Contracts/
-│   ├── AiReportRequest.cs
-│   ├── AiReportResult.cs
-│   └── IAIReportService.cs
-├── Domain/
-│   ├── AiReportPeriod.cs
-│   ├── AiReportSource.cs
-│   └── AiReportRow.cs
-├── Application/
-│   ├── WeeklyAiReportGenerator.cs
-│   ├── MonthlyAiReportGenerator.cs
-│   ├── ReportValidationService.cs
-│   └── ReportPromptBuilder.cs
-├── ModelProviders/
-│   ├── IAiModelProvider.cs
-│   ├── AiModelProviderRegistry.cs
-│   ├── OpenAiCompatibleProvider.cs
-│   ├── OllamaProvider.cs
-│   └── AiModelHealthService.cs
-├── Persistence/
-│   ├── AiReportsDbContext.cs
-│   ├── AiReportDatabaseInitializer.cs
-│   └── SqliteAiReportRepository.cs
-├── Export/
-│   ├── AiReportExcelExporter.cs
-│   └── AiReportCsvExporter.cs
-└── DependencyInjection/
-    └── AiReportsServiceCollectionExtensions.cs
-```
+src/TeamHub.AI/
+├── Contracts/             provider-neutral runtime contracts and configuration
+├── Application/           provider registry and model service
+├── ModelProviders/        Ollama and generic OpenAI-compatible adapters
+└── DependencyInjection/   shared runtime registration
 
-Host integration belongs in narrowly scoped Team Hub Web pages and configuration bindings. The AI module must not depend on `TeamHub.Web`.
+src/TeamHub.AIReports/
+├── Contracts/             report requests, results, and feature options
+├── Domain/                periods, immutable sources, and four-column rows
+├── Application/           weekly/monthly generation, prompts, and validation
+├── Persistence/           separate report database and repositories
+├── Export/                Excel and CSV exporters
+└── DependencyInjection/   report-specific registration
+```
 
 Dependency direction:
 
 ```text
 TeamHub.Web
-    ├── TeamHub.Studio (read structured weekly source)
-    └── TeamHub.AIReports (generate, validate, persist, export)
+├── TeamHub.Studio       structured weekly source data
+├── TeamHub.AI           configured model runtime
+└── TeamHub.AIReports    report orchestration, validation, persistence, and export
 
-TeamHub.AIReports
-    └── No dependency on TeamHub.Web or Flow Designer
+TeamHub.AIReports ─────> TeamHub.AI
 ```
+
+`TeamHub.AIReports` must not depend on `TeamHub.Web`, Flow Designer, or a provider-specific SDK. Other AI consumers, including the future Flow Designer Agent, reuse `TeamHub.AI` but do not depend on AI Reports.
 
 ## Data ownership and persistence
 
@@ -225,7 +207,7 @@ Configuration access should remain administrator-only. Generation and download p
 
 ## Provider portability contract
 
-The report-generation service depends on `IAiModelProvider`, not on Ollama, Qwen, or a vendor SDK. Every provider adapter must expose the same capabilities:
+The report-generation service depends on the shared `IAiModelService`, not on Ollama, Qwen, or a vendor SDK. Shared provider adapters implement `IAiModelProvider`. Every provider adapter must expose the same capabilities:
 
 - Provider name and availability.
 - Model discovery or model-name validation when supported.
@@ -318,11 +300,11 @@ Proposed application configuration:
 
 ```text
 AIReports__Enabled=true
-AIReports__Provider=Ollama
-AIReports__Endpoint=http://127.0.0.1:11434
-AIReports__Model=qwen3:8b
-AIReports__Temperature=0
-AIReports__TimeoutSeconds=180
+AI__Provider=Ollama
+AI__Endpoint=http://127.0.0.1:11434
+AI__Model=qwen3:8b
+AI__Temperature=0
+AI__TimeoutSeconds=180
 AIReports__MaximumConcurrentRequests=1
 ConnectionStrings__AiReportsDb=Data Source=data/ai-reports.db
 ```
@@ -332,13 +314,13 @@ Provider configuration must be validated at startup and again through an adminis
 Example future OpenAI-compatible configuration:
 
 ```text
-AIReports__Provider=OpenAICompatible
-AIReports__Endpoint=https://approved-ai-service.example/v1
-AIReports__Model=approved-model-deployment
-AIReports__CredentialReference=protected-provider-credential
+AI__Provider=OpenAICompatible
+AI__Endpoint=https://approved-ai-service.example/v1
+AI__Model=approved-model-deployment
+AI__CredentialEnvironmentVariable=TEAMHUB_AI_PROVIDER_API_KEY
 ```
 
-`CredentialReference` represents a protected server-side secret lookup, not a plaintext value committed to configuration files.
+`CredentialEnvironmentVariable` names the server-side environment variable containing the credential; the credential itself is never committed to configuration files.
 
 Do not expose the Ollama endpoint publicly. Deployment-specific endpoint and resource settings belong in environment configuration, not source-controlled production secrets.
 
@@ -399,7 +381,7 @@ Status: Product confirmation required before monthly generation is implemented.
 
 - [x] Add `TeamHub.AIReports` project and tests to the solution.
 - [x] Add configuration and feature flag.
-- [x] Add provider-neutral `IAiModelProvider` interface and provider registry.
+- [x] Add shared provider-neutral `IAiModelService`, `IAiModelProvider`, and provider registry.
 - [x] Add generic OpenAI-compatible provider.
 - [x] Add Ollama provider/client and health check.
 - [x] Add configuration-only provider and model selection.

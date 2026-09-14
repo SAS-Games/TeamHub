@@ -1,6 +1,6 @@
-using TeamHub.AIReports.Contracts;
+using TeamHub.AI.Contracts;
 
-namespace TeamHub.AIReports.ModelProviders;
+namespace TeamHub.AI.ModelProviders;
 
 internal sealed class EnvironmentAiProviderCredentialAccessor : IAiProviderCredentialAccessor
 {

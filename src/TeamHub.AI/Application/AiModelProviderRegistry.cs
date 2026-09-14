@@ -1,7 +1,7 @@
 using Microsoft.Extensions.Options;
-using TeamHub.AIReports.Contracts;
+using TeamHub.AI.Contracts;
 
-namespace TeamHub.AIReports.Application;
+namespace TeamHub.AI.Application;
 
 internal sealed class AiModelProviderRegistry : IAiModelProviderRegistry
 {
@@ -28,15 +28,13 @@ internal sealed class AiModelProviderRegistry : IAiModelProviderRegistry
     }
 }
 
-internal sealed class AiReportModelService(
-    IOptionsMonitor<AiReportOptions> options,
-    IAiModelProviderRegistry providers) : IAiReportModelService
+internal sealed class AiModelService(
+    IOptionsMonitor<AiRuntimeOptions> options,
+    IAiModelProviderRegistry providers) : IAiModelService
 {
-    public bool IsEnabled => options.CurrentValue.Enabled;
-
     public Task<AiProviderHealthResult> CheckHealthAsync(CancellationToken cancellationToken = default)
     {
-        var current = GetEnabledOptions();
+        var current = options.CurrentValue;
         return providers.GetRequired(current.Provider)
             .CheckHealthAsync(current.ToProviderSettings(), cancellationToken);
     }
@@ -46,16 +44,8 @@ internal sealed class AiReportModelService(
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
-        var current = GetEnabledOptions();
+        var current = options.CurrentValue;
         return providers.GetRequired(current.Provider)
             .GenerateStructuredAsync(current.ToProviderSettings(), request, cancellationToken);
-    }
-
-    private AiReportOptions GetEnabledOptions()
-    {
-        var current = options.CurrentValue;
-        return current.Enabled
-            ? current
-            : throw new InvalidOperationException("AI Reports is disabled. Enable AIReports:Enabled before using the model runtime.");
     }
 }

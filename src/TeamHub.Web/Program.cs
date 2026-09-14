@@ -2,6 +2,7 @@ using System.IO;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Routing;
 using TeamHub.Authentication;
+using TeamHub.AI;
 using TeamHub.AIReports;
 using TeamHub.AIReports.Persistence;
 using TeamHub.Application.Interfaces;
@@ -86,6 +87,7 @@ builder.Services.AddFlowDesigner(options =>
 builder.Services.AddMilestoneTracker(builder.Configuration);
 builder.Services.AddTeamDirectory(builder.Configuration);
 builder.Services.AddStudioDirectory(builder.Configuration);
+builder.Services.AddTeamHubAi(builder.Configuration);
 builder.Services.AddAiReports(builder.Configuration);
 builder.Services.Configure<HomeConfigurationOptions>(builder.Configuration.GetSection(HomeConfigurationOptions.SectionName));
 builder.Services.AddSingleton<IHomeContentService, HomeContentService>();

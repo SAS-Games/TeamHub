@@ -1,7 +1,7 @@
 using FluentAssertions;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-using TeamHub.AIReports.Contracts;
+using TeamHub.AI.Contracts;
 using TeamHub.AIReports.Persistence;
 
 namespace TeamHub.AIReports.Tests;

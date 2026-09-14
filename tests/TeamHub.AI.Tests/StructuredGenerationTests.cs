@@ -2,10 +2,10 @@ using System.Net;
 using System.Text;
 using System.Text.Json;
 using FluentAssertions;
-using TeamHub.AIReports.Contracts;
-using TeamHub.AIReports.ModelProviders;
+using TeamHub.AI.Contracts;
+using TeamHub.AI.ModelProviders;
 
-namespace TeamHub.AIReports.Tests;
+namespace TeamHub.AI.Tests;
 
 public sealed class StructuredGenerationTests
 {

@@ -1,6 +1,6 @@
 using System.Text.Json;
 
-namespace TeamHub.AIReports.Contracts;
+namespace TeamHub.AI.Contracts;
 
 public interface IAiModelProvider
 {
@@ -22,9 +22,8 @@ public interface IAiModelProviderRegistry
     IReadOnlyList<string> ProviderKeys { get; }
 }
 
-public interface IAiReportModelService
+public interface IAiModelService
 {
-    bool IsEnabled { get; }
     Task<AiProviderHealthResult> CheckHealthAsync(CancellationToken cancellationToken = default);
     Task<AiStructuredGenerationResult> GenerateStructuredAsync(
         AiStructuredGenerationRequest request,
