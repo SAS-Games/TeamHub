@@ -129,6 +129,14 @@
         return `${toneClass}${layerClass}${portClass}${styleClass}${childClass}`;
     }
 
+    const resizeDirections = ["n", "ne", "e", "se", "s", "sw", "w", "nw"];
+
+    function resizeHandles(label) {
+        return resizeDirections
+            .map(direction => `<span class="fd-resize-handle fd-resize-${direction}" data-resize-direction="${direction}" title="${text(label)}" aria-hidden="true"></span>`)
+            .join("");
+    }
+
     class DrawflowAdapter {
         constructor(element, callbacks = {}) {
             if (!window.Drawflow) {
@@ -323,17 +331,38 @@
             const startY = event.clientY;
             const startWidth = nodeElement.offsetWidth;
             const startHeight = nodeElement.offsetHeight;
+            const startLeft = nodeElement.offsetLeft;
+            const startTop = nodeElement.offsetTop;
+            const direction = handle.dataset.resizeDirection || "se";
             const isSection = nodeElement.classList.contains("fd-shape-section");
             const isConnector = nodeElement.classList.contains("fd-shape-connector");
-            const minimumWidth = isSection ? 260 : 180;
+            const isAnnotation = nodeElement.classList.contains("fd-shape-annotation");
+            const minimumWidth = isSection ? 260 : isConnector || isAnnotation ? 180 : Math.min(150, startWidth);
             const minimumHeight = isSection ? 180 : isConnector ? 120 : 80;
             nodeElement.classList.add("is-resizing");
 
             const move = moveEvent => {
                 moveEvent.preventDefault();
                 const zoom = this.editor.zoom || 1;
-                nodeElement.style.width = `${Math.max(minimumWidth, startWidth + (moveEvent.clientX - startX) / zoom)}px`;
-                nodeElement.style.height = `${Math.max(minimumHeight, startHeight + (moveEvent.clientY - startY) / zoom)}px`;
+                const deltaX = (moveEvent.clientX - startX) / zoom;
+                const deltaY = (moveEvent.clientY - startY) / zoom;
+                const resizeWest = direction.includes("w");
+                const resizeNorth = direction.includes("n");
+                const resizeHorizontal = resizeWest || direction.includes("e");
+                const resizeVertical = resizeNorth || direction.includes("s");
+                const width = resizeHorizontal ? Math.max(minimumWidth, startWidth + (resizeWest ? -deltaX : deltaX)) : startWidth;
+                const height = resizeVertical ? Math.max(minimumHeight, startHeight + (resizeNorth ? -deltaY : deltaY)) : startHeight;
+
+                nodeElement.style.width = `${width}px`;
+                nodeElement.style.height = `${height}px`;
+                if (resizeWest) {
+                    nodeElement.style.left = `${startLeft + startWidth - width}px`;
+                    this.editor.drawflow.drawflow.Home.data[internalId].pos_x = startLeft + startWidth - width;
+                }
+                if (resizeNorth) {
+                    nodeElement.style.top = `${startTop + startHeight - height}px`;
+                    this.editor.drawflow.drawflow.Home.data[internalId].pos_y = startTop + startHeight - height;
+                }
                 this.editor.updateConnectionNodes(`node-${internalId}`);
             };
             const finish = () => {
@@ -343,7 +372,10 @@
                 nodeElement.classList.remove("is-resizing");
                 this.ensureNodeFitsContent(internalId);
                 this.captureNodeSize(internalId);
+                const node = this.editor.drawflow.drawflow.Home.data[internalId];
+                this.nodePositions.set(internalId, { x: node.pos_x, y: node.pos_y });
                 if (isSection && this.reconcileSectionMembership(false)) this.changed();
+                else if (!isSection && this.updateNodeSectionMembership(internalId)) this.changed();
                 this.refreshGroupAppearance();
                 this.editor.updateConnectionNodes(`node-${internalId}`);
             };
@@ -450,17 +482,17 @@
             const config = nodeTypes[data.type] || nodeTypes.Process;
             if (config.shape === "section") {
                 const description = data.description ? `<span class="fd-section-description">${text(data.description)}</span>` : "";
-                return `<div class="fd-section-content"><span class="fd-section-title">${text(data.title)}</span>${description}<button class="fd-resize-handle" type="button" aria-label="Resize section frame" title="Drag to resize"></button></div>`;
+                return `<div class="fd-section-content"><span class="fd-section-title">${text(data.title)}</span>${description}${resizeHandles("Drag an edge or corner to resize the section")}</div>`;
             }
             if (config.shape === "annotation") {
                 const description = data.description ? `<span class="fd-annotation-description">${text(data.description)}</span>` : "";
-                return `<div class="fd-annotation-content"><span class="fd-annotation-title">${text(data.title)}</span>${description}<button class="fd-resize-handle" type="button" aria-label="Resize annotation" title="Drag to resize"></button></div>`;
+                return `<div class="fd-annotation-content"><span class="fd-annotation-title">${text(data.title)}</span>${description}${resizeHandles("Drag an edge or corner to resize the annotation")}</div>`;
             }
             const commentCount = data.comments?.length || 0;
             const comments = commentCount ? `<span class="fd-node-comments" title="${commentCount} comment${commentCount === 1 ? "" : "s"}">${commentCount}</span>` : "";
             const description = data.description ? `<span class="fd-node-description">${text(data.description)}</span>` : "";
             const drilldown = data.childFlowId ? '<span class="fd-node-drilldown" title="Open detailed diagram" aria-hidden="true">&#8599;</span>' : "";
-            const resize = data.type === "Connector" ? '<button class="fd-resize-handle" type="button" aria-label="Resize connector node" title="Drag to resize"></button>' : "";
+            const resize = data.type === "Connector" ? resizeHandles("Drag an edge or corner to resize the connector") : "";
             return `<div class="fd-node-content"><span class="fd-tool-icon fd-type-${data.type.toLowerCase()}">${config.icon}</span><span class="fd-node-copy"><span class="fd-node-type">${text(config.title)}</span><span class="fd-node-title">${text(data.title)}</span>${description}${comments}</span>${drilldown}</div>${resize}`;
         }
 

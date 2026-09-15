@@ -145,7 +145,7 @@
     border: 2px solid var(--fd-node-color);
     border-radius: 9px;
     box-shadow: 0 5px 16px rgba(27,55,48,.11);
-    resize: both;
+    resize: none;
     overflow: visible;
     transition: filter .14s ease, box-shadow .14s ease;
 }
@@ -226,9 +226,20 @@
 .drawflow .drawflow-node.fd-shape-annotation.fd-style-plain { border: 0; background: transparent; }
 .drawflow .drawflow-node.fd-shape-annotation.fd-style-plain .fd-annotation-title,
 .drawflow .drawflow-node.fd-shape-annotation.fd-style-plain .fd-annotation-description { text-align: center; }
-.fd-resize-handle { position: absolute; right: 3px; bottom: 3px; z-index: 5; width: 24px; height: 24px; padding: 0; border: 0; border-radius: 5px; color: var(--fd-node-color); background: transparent; cursor: nwse-resize; pointer-events: auto; touch-action: none; }
-.fd-resize-handle::before { content: ""; position: absolute; right: 4px; bottom: 4px; width: 12px; height: 12px; background: repeating-linear-gradient(135deg, transparent 0 3px, currentColor 3px 5px); opacity: .7; }
-.fd-resize-handle:hover, .fd-resize-handle:focus-visible { background: color-mix(in srgb, var(--fd-node-color) 12%, transparent); outline: none; }
+.fd-resize-handle { position: absolute; z-index: 3; display: block; color: var(--fd-node-color); background: transparent; pointer-events: auto; touch-action: none; }
+.fd-resize-n, .fd-resize-s { left: 14px; right: 14px; height: 9px; cursor: ns-resize; }
+.fd-resize-n { top: 0; }
+.fd-resize-s { bottom: 0; }
+.fd-resize-e, .fd-resize-w { top: 14px; bottom: 14px; width: 9px; cursor: ew-resize; }
+.fd-resize-e { right: 0; }
+.fd-resize-w { left: 0; }
+.fd-resize-ne, .fd-resize-nw, .fd-resize-se, .fd-resize-sw { z-index: 5; width: 14px; height: 14px; }
+.fd-resize-ne { top: 0; right: 0; cursor: nesw-resize; }
+.fd-resize-nw { top: 0; left: 0; cursor: nwse-resize; }
+.fd-resize-se { right: 0; bottom: 0; cursor: nwse-resize; }
+.fd-resize-sw { bottom: 0; left: 0; cursor: nesw-resize; }
+.fd-resize-handle::before { content: ""; position: absolute; left: 50%; top: 50%; width: 5px; height: 5px; border-radius: 50%; background: currentColor; opacity: 0; transform: translate(-50%, -50%); transition: opacity .12s ease; }
+.drawflow .drawflow-node.selected .fd-resize-handle::before, .fd-resize-handle:hover::before { opacity: .62; }
 .drawflow .drawflow-node.is-resizing { filter: saturate(1.08); box-shadow: 0 0 0 3px color-mix(in srgb, var(--fd-node-color) 22%, transparent); }
 .drawflow .drawflow-node.fd-shape-terminator { border-radius: 999px; }
 .drawflow .drawflow-node.fd-shape-activity { border-radius: 16px; }
@@ -272,7 +283,7 @@
 .drawflow .drawflow-node.fd-shape-connector .fd-tool-icon { width: 31px; margin: 0 auto 6px; }
 .drawflow .drawflow-node.fd-shape-connector .fd-node-copy { display: block; width: 100%; }
 .drawflow .drawflow-node.fd-shape-connector :is(.fd-node-title,.fd-node-description) { overflow-wrap: break-word; word-break: normal; }
-.drawflow .drawflow-node.fd-shape-connector .fd-resize-handle { right: 10px; bottom: 10px; }
+
 .drawflow .drawflow-node.fd-shape-event { width: 122px; min-height: 122px; border: 4px double var(--fd-node-color); border-radius: 50%; resize: none; }
 .drawflow .drawflow-node.fd-shape-event .drawflow_content_node { min-height: 116px; padding: 28px 18px; }
 .fd-mode-businessworkflow .drawflow-node.fd-shape-terminator { width: 120px; min-height: 120px; border-radius: 50%; resize: none; }
