@@ -20,6 +20,8 @@ TestResults/
 **/data/*.db*
 **/data/protection-keys/
 !src/TeamHub.Web/data/flow-library.db
+**/tests/
+**/Tests/
 
 # Browser QA profiles and captures
 .browser-qa/

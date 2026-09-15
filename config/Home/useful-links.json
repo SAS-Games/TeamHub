@@ -6,17 +6,22 @@
   },
   {
     "label": "Confluence",
-    "url": "https://example.com/confluence",
+    "url": "https://confluence.sie.sony.com/spaces/IHP/pages/2103285049/India+Hero+Project",
     "description": "Project documentation and knowledge base."
   },
   {
     "label": "Project Board",
-    "url": "https://example.com/board",
+    "url": "https://jira.sie.sony.com/secure/RapidBoard.jspa?rapidView=9178&projectKey=SIEHP",
     "description": "Sprint planning and issue tracking."
   },
   {
-    "label": "Source Repository",
-    "url": "https://example.com/repo",
-    "description": "TeamHub source code and pull requests."
+    "label": " Jenkins",
+    "url": "http://10.35.193.40:8081",
+    "description": "CI/CD and build automation."
+  },
+  {
+    "label": " Git Server",
+    "url": "http://10.35.194.115/Bonobo.Git.Server",
+    "description": "Source code repository and version control."
   }
 ]
