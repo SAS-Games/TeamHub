@@ -36,6 +36,8 @@ internal sealed class TemplateCatalogSeeder(
 
     private async Task SeedRayTracingAsync(CancellationToken cancellationToken)
     {
+        if (await templates.IsDeletedAsync(RayTracingKnowledgeMapTemplate.TemplateKey, cancellationToken)) return;
+
         var existing = await templates.GetByKeyAsync(RayTracingKnowledgeMapTemplate.TemplateKey, cancellationToken);
         if (existing is not null
             && (!existing.IsActive || !existing.IsBuiltIn || existing.Version >= RayTracingKnowledgeMapTemplate.Version))
@@ -73,6 +75,7 @@ internal sealed class TemplateCatalogSeeder(
         bool adminOnly,
         CancellationToken cancellationToken)
     {
+        if (await templates.IsDeletedAsync(key, cancellationToken)) return;
         if (await templates.GetByKeyAsync(key, cancellationToken) is not null) return;
 
         var flow = new FlowDefinition { Name = name, Description = description, Version = 0 };

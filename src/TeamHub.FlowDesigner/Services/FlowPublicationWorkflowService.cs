@@ -10,7 +10,7 @@ namespace TeamHub.FlowDesigner.Services;
 
 public sealed class FlowPublicationWorkflowService(
     IDbContextFactory<FlowDesignerDbContext> authoringContextFactory,
-    IDbContextFactory<PublishedFlowDbContext> publishedContextFactory,
+    IDbContextFactory<FlowLibraryDbContext> publishedContextFactory,
     IFlowRepository flows,
     IFlowSerializer serializer,
     IFlowValidator validator,
@@ -641,7 +641,7 @@ public sealed class FlowPublicationWorkflowService(
     }
 
     private async Task<PublishedBundle?> FindPublishedBundleAsync(
-        PublishedFlowDbContext context,
+        FlowLibraryDbContext context,
         Guid sourceFlowId,
         bool tracking,
         CancellationToken cancellationToken)
@@ -657,7 +657,7 @@ public sealed class FlowPublicationWorkflowService(
     }
 
     private async Task<PublishedFlowEntity> PublishBundleAsync(
-        PublishedFlowDbContext context,
+        FlowLibraryDbContext context,
         Guid publicationRequestId,
         FlowDiagramTemplateBundle bundle,
         int sourceVersion,

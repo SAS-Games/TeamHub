@@ -5,7 +5,7 @@ using TeamHub.FlowDesigner.Core.Models;
 namespace TeamHub.FlowDesigner.Persistence;
 
 public sealed class SqliteTemplateCatalogRepository(
-    IDbContextFactory<TemplateCatalogDbContext> contextFactory) : ITemplateCatalogRepository
+    IDbContextFactory<FlowLibraryDbContext> contextFactory) : ITemplateCatalogRepository
 {
     public async Task<IReadOnlyList<TemplateCatalogSummary>> ListAsync(
         string? templateKind = null,
@@ -53,6 +53,14 @@ public sealed class SqliteTemplateCatalogRepository(
         return entity is null ? null : ToDefinition(entity);
     }
 
+    public async Task<bool> IsDeletedAsync(string templateKey, CancellationToken cancellationToken = default)
+    {
+        await using var context = await contextFactory.CreateDbContextAsync(cancellationToken);
+        var normalizedKey = templateKey.Trim().ToUpperInvariant();
+        return await context.DeletedTemplates.AsNoTracking()
+            .AnyAsync(item => item.TemplateKey == normalizedKey, cancellationToken);
+    }
+
     public async Task SaveAsync(TemplateCatalogDefinition template, CancellationToken cancellationToken = default)
     {
         await using var context = await contextFactory.CreateDbContextAsync(cancellationToken);
@@ -77,6 +85,10 @@ public sealed class SqliteTemplateCatalogRepository(
         entity.CreatedBy = template.CreatedBy;
         entity.CreatedAt = template.CreatedAt.UtcDateTime;
         entity.UpdatedAt = template.UpdatedAt.UtcDateTime;
+
+        var deletion = await context.DeletedTemplates
+            .SingleOrDefaultAsync(item => item.TemplateKey == template.TemplateKey, cancellationToken);
+        if (deletion is not null) context.DeletedTemplates.Remove(deletion);
         await context.SaveChangesAsync(cancellationToken);
     }
 
@@ -86,8 +98,15 @@ public sealed class SqliteTemplateCatalogRepository(
         var entity = await context.Templates.SingleOrDefaultAsync(item => item.Id == id, cancellationToken);
         if (entity is null) return;
 
-        entity.IsActive = false;
-        entity.UpdatedAt = DateTime.UtcNow;
+        context.Templates.Remove(entity);
+        if (!await context.DeletedTemplates.AnyAsync(item => item.TemplateKey == entity.TemplateKey, cancellationToken))
+        {
+            context.DeletedTemplates.Add(new DeletedTemplateDefinitionEntity
+            {
+                TemplateKey = entity.TemplateKey,
+                DeletedAt = DateTime.UtcNow
+            });
+        }
         await context.SaveChangesAsync(cancellationToken);
     }
 

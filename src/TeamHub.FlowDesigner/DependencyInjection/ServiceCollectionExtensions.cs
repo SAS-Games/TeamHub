@@ -1,5 +1,4 @@
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using TeamHub.FlowDesigner.Core.Contracts;
@@ -20,10 +19,13 @@ public static class ServiceCollectionExtensions
         var options = new FlowDesignerOptions();
         configure?.Invoke(options);
 
-        var publishedConnectionString = options.PublishedConnectionString ?? DerivePublishedConnectionString(options.ConnectionString);
         services.AddDbContextFactory<FlowDesignerDbContext>(builder => builder.UseSqlite(options.ConnectionString));
-        services.AddDbContextFactory<TemplateCatalogDbContext>(builder => builder.UseSqlite(options.TemplateConnectionString));
-        services.AddDbContextFactory<PublishedFlowDbContext>(builder => builder.UseSqlite(publishedConnectionString));
+        services.AddDbContextFactory<FlowLibraryDbContext>(builder => builder.UseSqlite(options.LibraryConnectionString));
+        services.AddSingleton(new FlowLibraryStorageOptions(
+            options.LibraryConnectionString,
+            options.LegacyTemplateConnectionString,
+            options.LegacyPublishedConnectionString));
+        services.AddScoped<FlowLibraryDatabaseInitializer>();
         services.AddSingleton<IFlowSerializer, SystemTextJsonFlowSerializer>();
         services.AddSingleton<IFlowValidator, FlowValidator>();
         services.AddScoped<IFlowRepository, SqliteFlowRepository>();
@@ -49,27 +51,9 @@ public static class ServiceCollectionExtensions
         await context.Database.EnsureCreatedAsync(cancellationToken);
         await EnsurePublicationRequestTableAsync(context, cancellationToken);
         await EnsurePublicationRequestDeletionColumnsAsync(context, cancellationToken);
-        var publishedFactory = scope.ServiceProvider.GetRequiredService<IDbContextFactory<PublishedFlowDbContext>>();
-        await using var publishedContext = await publishedFactory.CreateDbContextAsync(cancellationToken);
-        await publishedContext.Database.EnsureCreatedAsync(cancellationToken);
+        await scope.ServiceProvider.GetRequiredService<FlowLibraryDatabaseInitializer>().InitializeAsync(cancellationToken);
         await scope.ServiceProvider.GetRequiredService<PublishedFlowRecoveryService>().RecoverIfEmptyAsync(cancellationToken);
-        var templateFactory = scope.ServiceProvider.GetRequiredService<IDbContextFactory<TemplateCatalogDbContext>>();
-        await using var templateContext = await templateFactory.CreateDbContextAsync(cancellationToken);
-        await templateContext.Database.EnsureCreatedAsync(cancellationToken);
         await scope.ServiceProvider.GetRequiredService<TemplateCatalogSeeder>().SeedAsync(cancellationToken);
-    }
-
-    private static string DerivePublishedConnectionString(string authoringConnectionString)
-    {
-        var builder = new SqliteConnectionStringBuilder(authoringConnectionString);
-        if (string.IsNullOrWhiteSpace(builder.DataSource) || builder.DataSource == ":memory:")
-        {
-            return authoringConnectionString;
-        }
-
-        var fullAuthoringPath = Path.GetFullPath(builder.DataSource);
-        builder.DataSource = Path.Combine(Path.GetDirectoryName(fullAuthoringPath)!, "published-diagrams.db");
-        return builder.ToString();
     }
 
     private static Task EnsurePublicationRequestTableAsync(

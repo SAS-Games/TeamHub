@@ -14,7 +14,7 @@ public sealed class PublicationWorkflowTests
     {
         await using var database = new TestDatabase();
         var repository = await database.CreateRepositoryAsync();
-        await database.InitializePublishedStoreAsync();
+        await database.InitializeLibraryStoreAsync();
         var flow = ValidationTests.ConnectedFlow();
         flow.CreatedBy = "alice";
         flow.Nodes[0].Comments =
@@ -31,11 +31,11 @@ public sealed class PublicationWorkflowTests
         var request = await alice.RequestAsync(flow.Id);
         var published = await admin.ApproveAsync(request.Id, "Approved for the company library.");
         await repository.DeleteAsync(flow.Id);
-        await using (var publishedContext = await database.PublishedFactory.CreateDbContextAsync())
+        await using (var publishedContext = await database.LibraryFactory.CreateDbContextAsync())
         {
             await publishedContext.Database.ExecuteSqlRawAsync("DELETE FROM PublishedDiagrams");
         }
-        await new PublishedFlowRecoveryService(database.Factory, database.PublishedFactory, new SystemTextJsonFlowSerializer()).RecoverIfEmptyAsync();
+        await new PublishedFlowRecoveryService(database.Factory, database.LibraryFactory, new SystemTextJsonFlowSerializer()).RecoverIfEmptyAsync();
         var restored = await admin.GetPublishedBySourceAsync(flow.Id);
 
         Assert.Equal(FlowPublicationRequestStatus.Pending, request.Status);
@@ -59,7 +59,7 @@ public sealed class PublicationWorkflowTests
     {
         await using var database = new TestDatabase();
         var repository = await database.CreateRepositoryAsync();
-        await database.InitializePublishedStoreAsync();
+        await database.InitializeLibraryStoreAsync();
         var flow = ValidationTests.ConnectedFlow();
         flow.CreatedBy = "alice";
         await repository.SaveAsync(flow);
@@ -84,7 +84,7 @@ public sealed class PublicationWorkflowTests
     {
         await using var database = new TestDatabase();
         var repository = await database.CreateRepositoryAsync();
-        await database.InitializePublishedStoreAsync();
+        await database.InitializeLibraryStoreAsync();
         var flow = ValidationTests.ConnectedFlow();
         flow.CreatedBy = "alice";
         await repository.SaveAsync(flow);
@@ -108,7 +108,7 @@ public sealed class PublicationWorkflowTests
     {
         await using var database = new TestDatabase();
         var repository = await database.CreateRepositoryAsync();
-        await database.InitializePublishedStoreAsync();
+        await database.InitializeLibraryStoreAsync();
         var flow = ValidationTests.ConnectedFlow();
         flow.CreatedBy = "alice";
         await repository.SaveAsync(flow);
@@ -135,7 +135,7 @@ public sealed class PublicationWorkflowTests
     {
         await using var database = new TestDatabase();
         var repository = await database.CreateRepositoryAsync();
-        await database.InitializePublishedStoreAsync();
+        await database.InitializeLibraryStoreAsync();
         var parent = ValidationTests.ConnectedFlow();
         parent.CreatedBy = "alice";
         parent.Name = "Parent";
@@ -171,12 +171,12 @@ public sealed class PublicationWorkflowTests
         Assert.Equal("Child", publishedChild!.Definition.Name);
         Assert.Equal("Grandchild", publishedGrandchild!.Definition.Name);
 
-        await using (var publishedContext = await database.PublishedFactory.CreateDbContextAsync())
+        await using (var publishedContext = await database.LibraryFactory.CreateDbContextAsync())
         {
             await publishedContext.Database.ExecuteSqlRawAsync("DELETE FROM PublishedDiagrams");
         }
         await new PublishedFlowRecoveryService(
-            database.Factory, database.PublishedFactory, new SystemTextJsonFlowSerializer()).RecoverIfEmptyAsync();
+            database.Factory, database.LibraryFactory, new SystemTextJsonFlowSerializer()).RecoverIfEmptyAsync();
         Assert.Equal("Grandchild", (await alice.GetPublishedBySourceAsync(grandchild.Id))!.Definition.Name);
     }
 
@@ -185,7 +185,7 @@ public sealed class PublicationWorkflowTests
     {
         await using var database = new TestDatabase();
         var repository = await database.CreateRepositoryAsync();
-        await database.InitializePublishedStoreAsync();
+        await database.InitializeLibraryStoreAsync();
         var parent = ValidationTests.ConnectedFlow();
         parent.CreatedBy = "alice";
         parent.Name = "Published Parent";
@@ -214,7 +214,7 @@ public sealed class PublicationWorkflowTests
         Assert.Empty(await admin.ListPublishedAsync());
         Assert.Null(await admin.GetPublishedBySourceAsync(parent.Id));
         Assert.Null(await admin.GetPublishedBySourceAsync(child.Id));
-        await using (var publishedContext = await database.PublishedFactory.CreateDbContextAsync())
+        await using (var publishedContext = await database.LibraryFactory.CreateDbContextAsync())
         {
             var storedVersions = await publishedContext.Database
                 .SqlQueryRaw<int>("SELECT COUNT(*) AS Value FROM PublishedDiagrams")
@@ -235,7 +235,7 @@ public sealed class PublicationWorkflowTests
 
         await new PublishedFlowRecoveryService(
             database.Factory,
-            database.PublishedFactory,
+            database.LibraryFactory,
             new SystemTextJsonFlowSerializer()).RecoverIfEmptyAsync();
         Assert.Null(await admin.GetPublishedBySourceAsync(parent.Id));
         Assert.Null(await admin.GetPublishedBySourceAsync(child.Id));
@@ -245,7 +245,7 @@ public sealed class PublicationWorkflowTests
     {
         await using var database = new TestDatabase();
         var repository = await database.CreateRepositoryAsync();
-        await database.InitializePublishedStoreAsync();
+        await database.InitializeLibraryStoreAsync();
         var parent = ValidationTests.ConnectedFlow();
         parent.CreatedBy = "alice";
         parent.Name = "Parent";
@@ -296,7 +296,7 @@ public sealed class PublicationWorkflowTests
         var serializer = new SystemTextJsonFlowSerializer();
         return new FlowPublicationWorkflowService(
             database.Factory,
-            database.PublishedFactory,
+            database.LibraryFactory,
             repository,
             serializer,
             new FlowValidator(),

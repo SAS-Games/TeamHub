@@ -10,7 +10,7 @@ namespace TeamHub.FlowDesigner.Services;
 
 public sealed class PublishedFlowRecoveryService(
     IDbContextFactory<FlowDesignerDbContext> authoringContextFactory,
-    IDbContextFactory<PublishedFlowDbContext> publishedContextFactory,
+    IDbContextFactory<FlowLibraryDbContext> publishedContextFactory,
     IFlowSerializer serializer)
 {
     public async Task RecoverIfEmptyAsync(CancellationToken cancellationToken = default)

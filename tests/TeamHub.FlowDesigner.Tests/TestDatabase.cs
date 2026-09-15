@@ -8,9 +8,9 @@ namespace TeamHub.FlowDesigner.Tests;
 internal sealed class TestDatabase : IAsyncDisposable
 {
     private readonly string _databasePath = Path.Combine(Path.GetTempPath(), $"flowdesigner-tests-{Guid.NewGuid():N}.db");
-    private readonly string _publishedDatabasePath = Path.Combine(Path.GetTempPath(), $"published-flow-tests-{Guid.NewGuid():N}.db");
+    private readonly string _libraryDatabasePath = Path.Combine(Path.GetTempPath(), $"flow-library-tests-{Guid.NewGuid():N}.db");
     public TestDbContextFactory Factory { get; }
-    public PublishedTestDbContextFactory PublishedFactory { get; }
+    public LibraryTestDbContextFactory LibraryFactory { get; }
 
     public TestDatabase()
     {
@@ -18,10 +18,10 @@ internal sealed class TestDatabase : IAsyncDisposable
             .UseSqlite($"Data Source={_databasePath}")
             .Options;
         Factory = new TestDbContextFactory(authoringOptions);
-        var publishedOptions = new DbContextOptionsBuilder<PublishedFlowDbContext>()
-            .UseSqlite($"Data Source={_publishedDatabasePath}")
+        var libraryOptions = new DbContextOptionsBuilder<FlowLibraryDbContext>()
+            .UseSqlite($"Data Source={_libraryDatabasePath}")
             .Options;
-        PublishedFactory = new PublishedTestDbContextFactory(publishedOptions);
+        LibraryFactory = new LibraryTestDbContextFactory(libraryOptions);
     }
 
     public async Task<SqliteFlowRepository> CreateRepositoryAsync()
@@ -31,9 +31,9 @@ internal sealed class TestDatabase : IAsyncDisposable
         return new SqliteFlowRepository(Factory, new SystemTextJsonFlowSerializer());
     }
 
-    public async Task InitializePublishedStoreAsync()
+    public async Task InitializeLibraryStoreAsync()
     {
-        await using var context = await PublishedFactory.CreateDbContextAsync();
+        await using var context = await LibraryFactory.CreateDbContextAsync();
         await context.Database.EnsureCreatedAsync();
     }
 
@@ -41,7 +41,7 @@ internal sealed class TestDatabase : IAsyncDisposable
     {
         SqliteConnection.ClearAllPools();
         if (File.Exists(_databasePath)) File.Delete(_databasePath);
-        if (File.Exists(_publishedDatabasePath)) File.Delete(_publishedDatabasePath);
+        if (File.Exists(_libraryDatabasePath)) File.Delete(_libraryDatabasePath);
         return ValueTask.CompletedTask;
     }
 }
@@ -54,10 +54,10 @@ internal sealed class TestDbContextFactory(DbContextOptions<FlowDesignerDbContex
         Task.FromResult(CreateDbContext());
 }
 
-internal sealed class PublishedTestDbContextFactory(DbContextOptions<PublishedFlowDbContext> options)
-    : IDbContextFactory<PublishedFlowDbContext>
+internal sealed class LibraryTestDbContextFactory(DbContextOptions<FlowLibraryDbContext> options)
+    : IDbContextFactory<FlowLibraryDbContext>
 {
-    public PublishedFlowDbContext CreateDbContext() => new(options);
-    public Task<PublishedFlowDbContext> CreateDbContextAsync(CancellationToken cancellationToken = default) =>
+    public FlowLibraryDbContext CreateDbContext() => new(options);
+    public Task<FlowLibraryDbContext> CreateDbContextAsync(CancellationToken cancellationToken = default) =>
         Task.FromResult(CreateDbContext());
 }

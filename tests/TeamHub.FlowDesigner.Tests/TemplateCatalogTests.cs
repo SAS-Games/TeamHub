@@ -1,8 +1,10 @@
 using Microsoft.Data.Sqlite;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using TeamHub.FlowDesigner.Core.Contracts;
 using TeamHub.FlowDesigner.Core.Models;
 using TeamHub.FlowDesigner.DependencyInjection;
+using TeamHub.FlowDesigner.Persistence;
 
 namespace TeamHub.FlowDesigner.Tests;
 
@@ -103,7 +105,17 @@ public sealed class TemplateCatalogTests
         await host.Services.InitializeFlowDesignerAsync();
 
         Assert.DoesNotContain(await templates.ListAsync(), item => item.Id == template.Id);
-        await Assert.ThrowsAsync<InvalidOperationException>(() => templates.CreateFlowAsync(template.Id));
+        var libraryFactory = scope.ServiceProvider.GetRequiredService<IDbContextFactory<FlowLibraryDbContext>>();
+        await using var library = await libraryFactory.CreateDbContextAsync();
+        var storedTemplates = await library.Database
+            .SqlQueryRaw<int>("SELECT COUNT(*) AS Value FROM TemplateDefinitions WHERE Id = {0}", template.Id)
+            .SingleAsync();
+        var deletionMarkers = await library.Database
+            .SqlQueryRaw<int>("SELECT COUNT(*) AS Value FROM DeletedTemplateDefinitions WHERE TemplateKey = {0}", template.TemplateKey)
+            .SingleAsync();
+        Assert.Equal(0, storedTemplates);
+        Assert.Equal(1, deletionMarkers);
+        await Assert.ThrowsAsync<KeyNotFoundException>(() => templates.CreateFlowAsync(template.Id));
     }
 
     [Fact]
@@ -194,7 +206,7 @@ public sealed class TemplateCatalogTests
             services.AddFlowDesigner(options =>
             {
                 options.ConnectionString = $"Data Source={Path.Combine(directory, "flows.db")};Pooling=False";
-                options.TemplateConnectionString = $"Data Source={Path.Combine(directory, "templates.db")};Pooling=False";
+                options.LibraryConnectionString = $"Data Source={Path.Combine(directory, "flow-library.db")};Pooling=False";
             });
             var provider = services.BuildServiceProvider();
             await provider.InitializeFlowDesignerAsync();

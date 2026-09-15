@@ -30,8 +30,9 @@ builder.Configuration["ConnectionStrings:TeamDb"] = $"Data Source={Path.Combine(
 builder.Configuration["ConnectionStrings:StudioDb"] = $"Data Source={Path.Combine(dataDir, "studio.db")}";
 var accessDatabasePath = Path.Combine(dataDir, "access.db");
 var flowDesignerDatabasePath = Path.Combine(dataDir, "flowdesigner.db");
-var templateDatabasePath = Path.Combine(dataDir, "templates.db");
-var publishedDiagramDatabasePath = Path.Combine(dataDir, "published-diagrams.db");
+var flowLibraryDatabasePath = Path.Combine(dataDir, "flow-library.db");
+var legacyTemplateDatabasePath = Path.Combine(dataDir, "templates.db");
+var legacyPublishedDiagramDatabasePath = Path.Combine(dataDir, "published-diagrams.db");
 var dataProtectionKeysPath = Path.Combine(dataDir, "protection-keys");
 Directory.CreateDirectory(dataProtectionKeysPath);
 
@@ -64,8 +65,9 @@ builder.Services.AddScoped<IFlowPublicationService, WorkCenterFlowPublicationSer
 builder.Services.AddFlowDesigner(options =>
 {
     options.ConnectionString = $"Data Source={flowDesignerDatabasePath}";
-    options.TemplateConnectionString = $"Data Source={templateDatabasePath}";
-    options.PublishedConnectionString = $"Data Source={publishedDiagramDatabasePath}";
+    options.LibraryConnectionString = $"Data Source={flowLibraryDatabasePath}";
+    options.LegacyTemplateConnectionString = $"Data Source={legacyTemplateDatabasePath}";
+    options.LegacyPublishedConnectionString = $"Data Source={legacyPublishedDiagramDatabasePath}";
 });
 builder.Services.AddMilestoneTracker(builder.Configuration);
 builder.Services.AddTeamDirectory(builder.Configuration);

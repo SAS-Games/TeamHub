@@ -9,7 +9,7 @@
     <div>
         <div class="eyebrow">Configuration</div>
         <h1>Template Catalog</h1>
-        <p>Reusable templates stored in the shared template database.</p>
+        <p>Reusable templates stored in the shared Flow Library database.</p>
     </div>
     <div class="d-flex gap-2">
         <a class="btn btn-outline-secondary" asp-page="/Configuration/Index">All Configuration</a>
@@ -23,7 +23,7 @@
 }
 
 <section class="content-section">
-    <div class="section-heading"><div><span>templates.db</span><h2>Available Templates</h2></div></div>
+    <div class="section-heading"><div><span>flow-library.db / TemplateDefinitions</span><h2>Available Templates</h2></div></div>
     @if (Model.Templates.Count == 0)
     {
         <div class="section-body text-secondary">No templates are stored yet. Open a saved diagram and choose <strong>Save as template</strong>.</div>

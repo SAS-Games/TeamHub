@@ -7,6 +7,7 @@ public interface ITemplateCatalogRepository
     Task<IReadOnlyList<TemplateCatalogSummary>> ListAsync(string? templateKind = null, CancellationToken cancellationToken = default);
     Task<TemplateCatalogDefinition?> GetAsync(Guid id, CancellationToken cancellationToken = default);
     Task<TemplateCatalogDefinition?> GetByKeyAsync(string templateKey, CancellationToken cancellationToken = default);
+    Task<bool> IsDeletedAsync(string templateKey, CancellationToken cancellationToken = default);
     Task SaveAsync(TemplateCatalogDefinition template, CancellationToken cancellationToken = default);
     Task DeleteAsync(Guid id, CancellationToken cancellationToken = default);
 }
