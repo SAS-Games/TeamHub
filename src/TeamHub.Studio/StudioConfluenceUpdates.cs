@@ -327,7 +327,7 @@ internal sealed class ConfluenceStudioUpdateService(
                 update.PageVersion = page.Version;
                 update.PageTitle = page.Title;
                 update.PageUrl = BuildPageUrl(settings.ConfluenceBaseUrl, page.Id, page.WebUiPath);
-                if (!StudioConfluenceTableParser.TryParse(page.StorageBody, mapping.ConfluenceStudioIdentifier, out var parsed))
+                if (!StudioConfluenceTableParser.TryParse(page.StorageBody, mapping.ConfluenceStudioIdentifier, out var parsed, settings.ConfluenceBaseUrl))
                 {
                     update.Message = $"No table row matched studio identifier '{mapping.ConfluenceStudioIdentifier}'.";
                     updates.Add(update);
@@ -402,7 +402,7 @@ internal sealed class ConfluenceStudioUpdateService(
             update.PageVersion = page.Version;
             update.PageTitle = page.Title;
             update.PageUrl = BuildPageUrl(settings.ConfluenceBaseUrl, page.Id, page.WebUiPath);
-            if (!StudioConfluenceTableParser.TryParse(page.StorageBody, mapping.ConfluenceStudioIdentifier, out var parsed))
+            if (!StudioConfluenceTableParser.TryParse(page.StorageBody, mapping.ConfluenceStudioIdentifier, out var parsed, settings.ConfluenceBaseUrl))
             {
                 update.Message = $"The page was found, but no table row matched studio identifier '{mapping.ConfluenceStudioIdentifier}'.";
                 return (update, null);
@@ -444,7 +444,8 @@ internal sealed class ConfluenceStudioUpdateService(
                     settings.ConfluenceParentPageId,
                     path.YearTitle,
                     path.MonthTitle))) continue;
-            var body = GetNestedString(item, "body", "storage", "value");
+            var body = GetNestedString(item, "body", "view", "value");
+            if (string.IsNullOrWhiteSpace(body)) body = GetNestedString(item, "body", "storage", "value");
             var webUi = item.TryGetProperty("_links", out var links) ? GetString(links, "webui") : string.Empty;
             return new ConfluencePage(GetString(item, "id"), GetString(item, "title"), body, webUi, GetNestedInt(item, "version", "number"));
         }
@@ -464,7 +465,7 @@ internal sealed class ConfluenceStudioUpdateService(
 
     private static string BuildContentSearchUri(AtlassianIntegrationSettings settings, string pageTitle)
     {
-        var expand = Uri.EscapeDataString("body.storage,ancestors,version");
+        var expand = Uri.EscapeDataString("body.storage,body.view,ancestors,version");
         return $"{settings.ConfluenceBaseUrl.TrimEnd('/')}{settings.ConfluenceContentApiPath}?spaceKey={Uri.EscapeDataString(settings.ConfluenceSpaceKey)}&title={Uri.EscapeDataString(pageTitle)}&expand={expand}&limit=50";
     }
 
@@ -584,7 +585,11 @@ internal sealed record ParsedStudioConfluenceUpdate(
 
 internal static partial class StudioConfluenceTableParser
 {
-    public static bool TryParse(string storageBody, string studioIdentifier, out ParsedStudioConfluenceUpdate update)
+    public static bool TryParse(
+        string storageBody,
+        string studioIdentifier,
+        out ParsedStudioConfluenceUpdate update,
+        string? confluenceBaseUrl = null)
     {
         update = new ParsedStudioConfluenceUpdate(string.Empty, string.Empty, string.Empty, string.Empty, string.Empty, string.Empty);
         if (string.IsNullOrWhiteSpace(storageBody) || string.IsNullOrWhiteSpace(studioIdentifier)) return false;
@@ -593,7 +598,7 @@ internal static partial class StudioConfluenceTableParser
         {
             foreach (Match row in RowRegex().Matches(table.Groups[1].Value))
             {
-                var cells = CellRegex().Matches(row.Groups[1].Value).Select(match => ToText(match.Groups[1].Value)).ToList();
+                var cells = CellRegex().Matches(row.Groups[1].Value).Select(match => ToText(match.Groups[1].Value, confluenceBaseUrl)).ToList();
                 if (cells.Count < 2 || !string.Equals(cells[0].Trim(), studioIdentifier.Trim(), StringComparison.OrdinalIgnoreCase)) continue;
 
                 var overview = cells[1];
@@ -634,9 +639,10 @@ internal static partial class StudioConfluenceTableParser
         _ => "Action Items"
     };
 
-    private static string ToText(string html)
+    private static string ToText(string html, string? confluenceBaseUrl)
     {
-        var text = BreakRegex().Replace(html, "\n");
+        var text = AnchorRegex().Replace(html, match => ToLinkText(match, confluenceBaseUrl));
+        text = BreakRegex().Replace(text, "\n");
         text = BlockEndRegex().Replace(text, "\n");
         text = TagRegex().Replace(text, string.Empty);
         text = WebUtility.HtmlDecode(text).Replace('\u00a0', ' ');
@@ -644,6 +650,31 @@ internal static partial class StudioConfluenceTableParser
             .Split('\n', StringSplitOptions.TrimEntries)
             .Where(line => !string.IsNullOrWhiteSpace(line));
         return string.Join(Environment.NewLine, lines);
+    }
+
+    private static string ToLinkText(Match match, string? confluenceBaseUrl)
+    {
+        var label = TagRegex().Replace(match.Groups[3].Value, string.Empty);
+        label = WebUtility.HtmlDecode(label).Trim();
+        var href = WebUtility.HtmlDecode(match.Groups[1].Success ? match.Groups[1].Value : match.Groups[2].Value).Trim();
+        if (string.IsNullOrWhiteSpace(label) || !TryGetSafeLink(href, confluenceBaseUrl, out var link)) return label;
+        return $"[{label}]({link})";
+    }
+
+    private static bool TryGetSafeLink(string href, string? confluenceBaseUrl, out string link)
+    {
+        link = string.Empty;
+        if (!Uri.TryCreate(href, UriKind.Absolute, out var uri)
+            && (!Uri.TryCreate(confluenceBaseUrl?.TrimEnd('/') + "/", UriKind.Absolute, out var baseUri)
+                || !Uri.TryCreate(baseUri, href, out uri)))
+        {
+            return false;
+        }
+
+        if (!string.Equals(uri.Scheme, Uri.UriSchemeHttp, StringComparison.OrdinalIgnoreCase)
+            && !string.Equals(uri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase)) return false;
+        link = uri.AbsoluteUri;
+        return true;
     }
 
     [GeneratedRegex(@"<table\b[^>]*>(.*?)</table>", RegexOptions.IgnoreCase | RegexOptions.Singleline, 2000)]
@@ -657,6 +688,9 @@ internal static partial class StudioConfluenceTableParser
 
     [GeneratedRegex(@"<br\s*/?>", RegexOptions.IgnoreCase, 2000)]
     private static partial Regex BreakRegex();
+
+    [GeneratedRegex("<a\\b[^>]*\\bhref\\s*=\\s*(?:\"([^\"]*)\"|'([^']*)')[^>]*>(.*?)</a>", RegexOptions.IgnoreCase | RegexOptions.Singleline, 2000)]
+    private static partial Regex AnchorRegex();
 
     [GeneratedRegex(@"</(?:p|div|li|h[1-6])\s*>", RegexOptions.IgnoreCase, 2000)]
     private static partial Regex BlockEndRegex();

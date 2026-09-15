@@ -136,11 +136,11 @@ else
                                                 }
                                                 else
                                                 {
-                                                    <td class="text-break" style="white-space: pre-wrap;">@(string.IsNullOrWhiteSpace(update.StudioWork) ? "No information provided." : update.StudioWork)</td>
-                                                    <td class="text-break" style="white-space: pre-wrap;">@(string.IsNullOrWhiteSpace(update.HpgdsSupport) ? "No information provided." : update.HpgdsSupport)</td>
-                                                    <td class="text-break" style="white-space: pre-wrap;">@(string.IsNullOrWhiteSpace(update.WmdSupport) ? "No information provided." : update.WmdSupport)</td>
-                                                    <td class="text-break" style="white-space: pre-wrap;">@(string.IsNullOrWhiteSpace(update.ActionItems) ? "No information provided." : update.ActionItems)</td>
-                                                    <td class="text-break" style="white-space: pre-wrap;">@(string.IsNullOrWhiteSpace(update.Notes) ? "No notes provided." : update.Notes)</td>
+                                                    <td class="text-break" style="white-space: pre-wrap;">@ConfluenceUpdateHtml.Render(update.StudioWork, "No information provided.")</td>
+                                                    <td class="text-break" style="white-space: pre-wrap;">@ConfluenceUpdateHtml.Render(update.HpgdsSupport, "No information provided.")</td>
+                                                    <td class="text-break" style="white-space: pre-wrap;">@ConfluenceUpdateHtml.Render(update.WmdSupport, "No information provided.")</td>
+                                                    <td class="text-break" style="white-space: pre-wrap;">@ConfluenceUpdateHtml.Render(update.ActionItems, "No information provided.")</td>
+                                                    <td class="text-break" style="white-space: pre-wrap;">@ConfluenceUpdateHtml.Render(update.Notes, "No notes provided.")</td>
                                                 }
                                             </tr>
                                         }
@@ -172,11 +172,11 @@ else
                 {
                     <div class="section-body">
                         <div class="row g-3">
-                            <div class="col-12 col-lg-6"><div class="border rounded-3 p-3 h-100"><h3 class="h6">Studio Work</h3><div class="text-break" style="white-space: pre-wrap;">@(string.IsNullOrWhiteSpace(update.StudioWork) ? "No information provided." : update.StudioWork)</div></div></div>
-                            <div class="col-12 col-lg-6"><div class="border rounded-3 p-3 h-100"><h3 class="h6">HPGDS Support</h3><div class="text-break" style="white-space: pre-wrap;">@(string.IsNullOrWhiteSpace(update.HpgdsSupport) ? "No information provided." : update.HpgdsSupport)</div></div></div>
-                            <div class="col-12 col-lg-6"><div class="border rounded-3 p-3 h-100"><h3 class="h6">WMD Support</h3><div class="text-break" style="white-space: pre-wrap;">@(string.IsNullOrWhiteSpace(update.WmdSupport) ? "No information provided." : update.WmdSupport)</div></div></div>
-                            <div class="col-12 col-lg-6"><div class="border rounded-3 p-3 h-100"><h3 class="h6">Action Items</h3><div class="text-break" style="white-space: pre-wrap;">@(string.IsNullOrWhiteSpace(update.ActionItems) ? "No information provided." : update.ActionItems)</div></div></div>
-                            <div class="col-12"><div class="border rounded-3 p-3"><h3 class="h6">Notes</h3><div class="text-break" style="white-space: pre-wrap;">@(string.IsNullOrWhiteSpace(update.Notes) ? "No notes provided." : update.Notes)</div></div></div>
+                            <div class="col-12 col-lg-6"><div class="border rounded-3 p-3 h-100"><h3 class="h6">Studio Work</h3><div class="text-break" style="white-space: pre-wrap;">@ConfluenceUpdateHtml.Render(update.StudioWork, "No information provided.")</div></div></div>
+                            <div class="col-12 col-lg-6"><div class="border rounded-3 p-3 h-100"><h3 class="h6">HPGDS Support</h3><div class="text-break" style="white-space: pre-wrap;">@ConfluenceUpdateHtml.Render(update.HpgdsSupport, "No information provided.")</div></div></div>
+                            <div class="col-12 col-lg-6"><div class="border rounded-3 p-3 h-100"><h3 class="h6">WMD Support</h3><div class="text-break" style="white-space: pre-wrap;">@ConfluenceUpdateHtml.Render(update.WmdSupport, "No information provided.")</div></div></div>
+                            <div class="col-12 col-lg-6"><div class="border rounded-3 p-3 h-100"><h3 class="h6">Action Items</h3><div class="text-break" style="white-space: pre-wrap;">@ConfluenceUpdateHtml.Render(update.ActionItems, "No information provided.")</div></div></div>
+                            <div class="col-12"><div class="border rounded-3 p-3"><h3 class="h6">Notes</h3><div class="text-break" style="white-space: pre-wrap;">@ConfluenceUpdateHtml.Render(update.Notes, "No notes provided.")</div></div></div>
                         </div>
                     </div>
                 }

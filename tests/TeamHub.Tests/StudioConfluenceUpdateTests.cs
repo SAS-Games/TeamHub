@@ -1,5 +1,7 @@
+using System.Text.Encodings.Web;
 using FluentAssertions;
 using TeamHub.Studio;
+using TeamHub.Web.Pages.Studio;
 
 namespace TeamHub.Tests;
 
@@ -39,6 +41,25 @@ public sealed class StudioConfluenceUpdateTests
         update.WmdSupport.Should().Be("Reviewed the release checklist");
         update.ActionItems.Should().Be("Follow up with production");
         update.Notes.Should().Be("Release is on track");
+    }
+
+    [Fact]
+    public void TableParser_PreservesSafeConfluenceLinksAndRendererCreatesAnchors()
+    {
+        const string body = """
+            <table><tbody><tr><td>HDC</td><td>
+              <strong>HPGDS Support:</strong><br/>
+              Investigated <a href="https://jira.example.test/browse/SIEHP-1153">SIEHP-1153</a>
+            </td></tr></tbody></table>
+            """;
+
+        StudioConfluenceTableParser.TryParse(body, "HDC", out var update).Should().BeTrue();
+        update.HpgdsSupport.Should().Be("Investigated [SIEHP-1153](https://jira.example.test/browse/SIEHP-1153)");
+
+        using var writer = new StringWriter();
+        ConfluenceUpdateHtml.Render(update.HpgdsSupport, "No information provided.").WriteTo(writer, HtmlEncoder.Default);
+        writer.ToString().Should().Contain("href=\"https://jira.example.test/browse/SIEHP-1153\"");
+        writer.ToString().Should().Contain(">SIEHP-1153</a>");
     }
 
     [Fact]
