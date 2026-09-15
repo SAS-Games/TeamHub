@@ -9,11 +9,8 @@ internal sealed class TemplateCatalogSeeder(
 {
     public async Task SeedAsync(CancellationToken cancellationToken = default)
     {
-        var retiredStudioSupport = await templates.GetByKeyAsync("STUDIO_SUPPORT", cancellationToken);
-        if (retiredStudioSupport is not null && retiredStudioSupport.IsActive)
-        {
-            await templates.DeleteAsync(retiredStudioSupport.Id, cancellationToken);
-        }
+        await RetireTemplateAsync("STUDIO_SUPPORT", cancellationToken);
+        await RetireTemplateAsync("RAY_TRACING_MASTER_OVERVIEW", cancellationToken);
 
         await SeedFlowAsync(
             "INTEGRATION_QA",
@@ -31,39 +28,15 @@ internal sealed class TemplateCatalogSeeder(
             FlowTemplate.Onboarding,
             adminOnly: true,
             cancellationToken);
-        await SeedRayTracingAsync(cancellationToken);
     }
 
-    private async Task SeedRayTracingAsync(CancellationToken cancellationToken)
+    private async Task RetireTemplateAsync(string templateKey, CancellationToken cancellationToken)
     {
-        if (await templates.IsDeletedAsync(RayTracingKnowledgeMapTemplate.TemplateKey, cancellationToken)) return;
-
-        var existing = await templates.GetByKeyAsync(RayTracingKnowledgeMapTemplate.TemplateKey, cancellationToken);
-        if (existing is not null
-            && (!existing.IsActive || !existing.IsBuiltIn || existing.Version >= RayTracingKnowledgeMapTemplate.Version))
+        var template = await templates.GetByKeyAsync(templateKey, cancellationToken);
+        if (template is not null && template.IsActive)
         {
-            return;
+            await templates.DeleteAsync(template.Id, cancellationToken);
         }
-
-        var now = DateTimeOffset.UtcNow;
-        await templates.SaveAsync(new TemplateCatalogDefinition
-        {
-            Id = existing?.Id ?? Guid.Parse("6bb6152e-58bc-4d99-a083-8b2fd18f037d"),
-            TemplateKey = RayTracingKnowledgeMapTemplate.TemplateKey,
-            Name = "Ray Tracing - Master Overview",
-            Description = "A beginner-friendly, drill-down map of a complete ray-tracing renderer.",
-            Category = "Graphics",
-            TemplateKind = TemplateKinds.FlowDiagramBundle,
-            DiagramType = DiagramType.StandardFlowchart,
-            PayloadJson = serializer.SerializeBundle(RayTracingKnowledgeMapTemplate.Create()),
-            Version = RayTracingKnowledgeMapTemplate.Version,
-            IsActive = true,
-            IsBuiltIn = true,
-            AdminOnly = false,
-            CreatedBy = existing?.CreatedBy ?? "system",
-            CreatedAt = existing?.CreatedAt ?? now,
-            UpdatedAt = now
-        }, cancellationToken);
     }
 
     private async Task SeedFlowAsync(

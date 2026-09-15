@@ -76,8 +76,7 @@ After signing in, open the **Flow Designer** tab in the normal TeamHub navigatio
 - `flow-library.db` is tracked as the repository baseline. Runtime database changes are not committed automatically, so production deployments still need scheduled, versioned off-host backups. Avoid merging independently modified SQLite binaries.
 - The host port is `5051` for HTTP (`7288` for the HTTPS launch profile).
 
-Built-in templates have reproducible source definitions, including the six-diagram
-ray-tracing hierarchy in `RayTracingKnowledgeMapTemplate.cs`. Their active or
+Built-in templates have reproducible source definitions. Their active or
 deleted catalog state is stored in `src/TeamHub.Web/data/flow-library.db`, so an
 admin-deleted built-in template is not silently recreated at startup. A hierarchy
 template creates its master diagram and linked detail diagrams with fresh IDs;
