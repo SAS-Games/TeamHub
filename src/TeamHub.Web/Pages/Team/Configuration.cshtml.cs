@@ -245,15 +245,32 @@ public sealed class ConfigurationModel(
     }
 
     public async Task<IActionResult> OnPostSaveCustomTableAsync(
-        string tabId, string? tableId, string name, int displayOrder, CancellationToken cancellationToken)
+        string tabId,
+        string? tableId,
+        string name,
+        int displayOrder,
+        string sourceType,
+        string? sourceUrl,
+        string? sourceWorksheet,
+        int sourceHeaderRow,
+        string? primaryKeySourceHeader,
+        CancellationToken cancellationToken)
     {
         try
         {
-            var saved = await customTabs.SaveTableAsync(
-                new SaveCustomTeamTableRequest(tabId, tableId, name, displayOrder), cancellationToken);
+            var saved = await customTabs.SaveTableAsync(new SaveCustomTeamTableRequest(
+                tabId,
+                tableId,
+                name,
+                displayOrder,
+                sourceType,
+                sourceUrl,
+                sourceWorksheet,
+                sourceHeaderRow,
+                primaryKeySourceHeader), cancellationToken);
             StatusMessage = $"Table saved: {saved.Name}.";
         }
-        catch (Exception exception) when (exception is ArgumentException or KeyNotFoundException)
+        catch (Exception exception) when (exception is ArgumentException or InvalidOperationException or KeyNotFoundException)
         {
             ErrorMessage = exception.Message;
         }
@@ -265,6 +282,26 @@ public sealed class ConfigurationModel(
     {
         await customTabs.ArchiveTableAsync(tableId, cancellationToken);
         StatusMessage = "Table archived. Existing rows remain recoverable in the Team Hub database.";
+        return CustomRedirect(tabId);
+    }
+
+    public async Task<IActionResult> OnPostSyncCustomTableAsync(
+        string tabId,
+        string tableId,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var result = await customTabs.SyncExcelTableAsync(
+                tableId,
+                User.Identity?.Name ?? "Administrator",
+                cancellationToken);
+            StatusMessage = $"Excel synchronized: {result.Added} added, {result.Updated} updated, {result.Restored} restored, {result.Missing} missing from source.";
+        }
+        catch (Exception exception) when (exception is ArgumentException or InvalidOperationException or KeyNotFoundException)
+        {
+            ErrorMessage = exception.Message;
+        }
         return CustomRedirect(tabId);
     }
 

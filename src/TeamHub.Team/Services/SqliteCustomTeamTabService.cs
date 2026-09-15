@@ -5,7 +5,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace TeamHub.Team;
 
-internal sealed partial class SqliteCustomTeamTabService(TeamDbContext dbContext) : ICustomTeamTabService
+internal sealed partial class SqliteCustomTeamTabService(TeamDbContext dbContext, IExcelTableSourceReader excelReader) : ICustomTeamTabService
 {
     public async Task<IReadOnlyList<CustomTeamTabDto>> ListTabsAsync(CancellationToken cancellationToken = default) =>
         await dbContext.CustomTeamTabs.AsNoTracking()
@@ -108,12 +108,34 @@ internal sealed partial class SqliteCustomTeamTabService(TeamDbContext dbContext
             throw new KeyNotFoundException("Custom team tab was not found.");
 
         var name = Required(request.Name, "Table name", 100);
+        var sourceType = CustomTeamTableSourceTypes.Normalize(request.SourceType);
+        var sourceUrl = sourceType == CustomTeamTableSourceTypes.ExcelUrl
+            ? Required(request.SourceUrl, "Excel download link", 2048)
+            : null;
+        if (sourceUrl is not null
+            && (!Uri.TryCreate(sourceUrl, UriKind.Absolute, out var sourceUri) || sourceUri.Scheme is not ("http" or "https")))
+            throw new ArgumentException("Enter a valid HTTP or HTTPS Excel download link.");
+        var worksheet = sourceType == CustomTeamTableSourceTypes.ExcelUrl
+            ? Optional(request.SourceWorksheet, 200, "Worksheet name")
+            : null;
+        var primaryKey = sourceType == CustomTeamTableSourceTypes.ExcelUrl
+            ? Required(request.PrimaryKeySourceHeader, "Primary key column", 200)
+            : null;
+        var headerRow = sourceType == CustomTeamTableSourceTypes.ExcelUrl ? request.SourceHeaderRow : 1;
+        if (headerRow is < 1 or > 1000) throw new ArgumentException("Header row must be between 1 and 1,000.");
+
         CustomTeamTableRecord? table = null;
         if (Guid.TryParse(request.Id, out var tableId))
         {
             table = await dbContext.CustomTeamTables.SingleOrDefaultAsync(
                 item => item.Id == tableId && item.TabId == tabId && !item.IsArchived, cancellationToken)
                 ?? throw new KeyNotFoundException("Custom team table was not found.");
+            var hasRows = await dbContext.CustomTeamRows.AnyAsync(item => item.TableId == table.Id, cancellationToken);
+            if (hasRows && !string.Equals(table.SourceType, sourceType, StringComparison.Ordinal))
+                throw new InvalidOperationException("The table source cannot be changed after rows have been created.");
+            if (table.LastSyncedAtUtc.HasValue
+                && !string.Equals(table.PrimaryKeySourceHeader, primaryKey, StringComparison.OrdinalIgnoreCase))
+                throw new InvalidOperationException("The primary key column cannot be changed after the first successful Excel sync.");
         }
 
         if (table is null)
@@ -123,6 +145,11 @@ internal sealed partial class SqliteCustomTeamTabService(TeamDbContext dbContext
         }
         table.Name = name;
         table.DisplayOrder = Math.Max(0, request.DisplayOrder);
+        table.SourceType = sourceType;
+        table.SourceUrl = sourceUrl;
+        table.SourceWorksheet = worksheet;
+        table.SourceHeaderRow = headerRow;
+        table.PrimaryKeySourceHeader = primaryKey;
         table.UpdatedAtUtc = DateTime.UtcNow;
         await dbContext.SaveChangesAsync(cancellationToken);
         return await BuildTableAsync(table, cancellationToken);
@@ -161,6 +188,9 @@ internal sealed partial class SqliteCustomTeamTabService(TeamDbContext dbContext
                 ?? throw new KeyNotFoundException("Custom team column was not found.");
         }
 
+        if (column?.IsSourceColumn == true)
+            throw new InvalidOperationException("Excel source columns are managed by synchronization and cannot be edited here.");
+
         if (column is null)
         {
             column = new CustomTeamColumnRecord
@@ -185,9 +215,198 @@ internal sealed partial class SqliteCustomTeamTabService(TeamDbContext dbContext
         if (!Guid.TryParse(id, out var columnId)) return;
         var column = await dbContext.CustomTeamColumns.SingleOrDefaultAsync(item => item.Id == columnId, cancellationToken);
         if (column is null) return;
+        if (column.IsSourceColumn)
+            throw new InvalidOperationException("Excel source columns are managed by synchronization and cannot be archived.");
         column.IsArchived = true;
         column.UpdatedAtUtc = DateTime.UtcNow;
         await dbContext.SaveChangesAsync(cancellationToken);
+    }
+
+    public async Task<ExcelTableSyncResult> SyncExcelTableAsync(
+        string tableId,
+        string actor,
+        CancellationToken cancellationToken = default)
+    {
+        if (!Guid.TryParse(tableId, out var parsedTableId)) throw new KeyNotFoundException("Custom team table was not found.");
+        var table = await dbContext.CustomTeamTables.SingleOrDefaultAsync(item =>
+            item.Id == parsedTableId
+            && !item.IsArchived
+            && dbContext.CustomTeamTabs.Any(tab => tab.Id == item.TabId && !tab.IsArchived), cancellationToken)
+            ?? throw new KeyNotFoundException("Custom team table was not found.");
+        if (table.SourceType != CustomTeamTableSourceTypes.ExcelUrl)
+            throw new InvalidOperationException("Only Excel-backed tables can be synchronized.");
+
+        ExcelTableSourceData source;
+        try
+        {
+            source = await excelReader.ReadAsync(
+                Required(table.SourceUrl, "Excel download link", 2048),
+                table.SourceWorksheet,
+                table.SourceHeaderRow,
+                cancellationToken);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception exception)
+        {
+            await RecordSyncFailureAsync(table.Id, exception.Message, cancellationToken);
+            throw new InvalidOperationException($"Excel synchronization failed: {exception.Message}", exception);
+        }
+
+        var normalizedActor = NormalizeActor(actor);
+        var now = DateTime.UtcNow;
+        try
+        {
+            var primaryKeyHeader = Required(table.PrimaryKeySourceHeader, "Primary key column", 200);
+            var actualPrimaryKeyHeader = source.Headers.FirstOrDefault(header =>
+                string.Equals(header, primaryKeyHeader, StringComparison.OrdinalIgnoreCase))
+                ?? throw new InvalidOperationException($"Primary key column '{primaryKeyHeader}' was not found in worksheet '{source.Worksheet}'.");
+            var imported = new Dictionary<string, IReadOnlyDictionary<string, string>>(StringComparer.OrdinalIgnoreCase);
+            var rowNumber = table.SourceHeaderRow;
+            foreach (var sourceRow in source.Rows)
+            {
+                rowNumber++;
+                var sourceKey = sourceRow.GetValueOrDefault(actualPrimaryKeyHeader)?.Trim() ?? string.Empty;
+                if (sourceKey.Length == 0) throw new InvalidOperationException($"Primary key '{actualPrimaryKeyHeader}' is empty at Excel row {rowNumber}.");
+                if (sourceKey.Length > 512) throw new InvalidOperationException($"Primary key at Excel row {rowNumber} exceeds 512 characters.");
+                if (!imported.TryAdd(sourceKey, sourceRow))
+                    throw new InvalidOperationException($"Duplicate primary key '{sourceKey}' was found in the Excel worksheet.");
+            }
+
+            await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
+            var columns = await dbContext.CustomTeamColumns
+                .Where(item => item.TableId == table.Id && !item.IsArchived)
+                .OrderBy(item => item.DisplayOrder).ThenBy(item => item.CreatedAtUtc)
+                .ToListAsync(cancellationToken);
+            var missingHeaders = columns.Where(column => column.IsSourceColumn
+                    && !source.Headers.Contains(column.SourceHeader ?? string.Empty, StringComparer.OrdinalIgnoreCase))
+                .Select(column => column.SourceHeader)
+                .Where(header => !string.IsNullOrWhiteSpace(header))
+                .ToList();
+            if (missingHeaders.Count > 0)
+                throw new InvalidOperationException($"Mapped Excel column(s) are missing: {string.Join(", ", missingHeaders)}.");
+
+            var nextOrder = columns.Count == 0 ? 0 : columns.Max(column => column.DisplayOrder) + 1;
+            foreach (var header in source.Headers)
+            {
+                if (columns.Any(column => column.IsSourceColumn
+                    && string.Equals(column.SourceHeader, header, StringComparison.OrdinalIgnoreCase))) continue;
+                var column = new CustomTeamColumnRecord
+                {
+                    TableId = table.Id,
+                    Key = await UniqueColumnKeyAsync(table.Id, header, cancellationToken),
+                    Label = header,
+                    FieldType = CustomTeamFieldTypes.Text,
+                    IsRequired = string.Equals(header, actualPrimaryKeyHeader, StringComparison.OrdinalIgnoreCase),
+                    DisplayOrder = nextOrder++,
+                    IsSourceColumn = true,
+                    SourceHeader = header,
+                    CreatedAtUtc = now,
+                    UpdatedAtUtc = now
+                };
+                dbContext.CustomTeamColumns.Add(column);
+                columns.Add(column);
+            }
+
+            var rows = await dbContext.CustomTeamRows
+                .Where(item => item.TableId == table.Id && item.SourceKey != null)
+                .ToListAsync(cancellationToken);
+            var rowsByKey = rows
+                .GroupBy(row => row.SourceKey!, StringComparer.OrdinalIgnoreCase)
+                .ToDictionary(group => group.Key, group => group.OrderBy(row => row.IsDeleted).First(), StringComparer.OrdinalIgnoreCase);
+            var added = 0;
+            var updatedCount = 0;
+            var restored = 0;
+
+            foreach (var item in imported)
+            {
+                var isNew = !rowsByKey.TryGetValue(item.Key, out var row);
+                if (isNew)
+                {
+                    row = new CustomTeamRowRecord
+                    {
+                        TableId = table.Id,
+                        SourceKey = item.Key,
+                        SourceStatus = CustomTeamRowSourceStatuses.Active,
+                        LastSeenAtUtc = now,
+                        CreatedBy = normalizedActor,
+                        UpdatedBy = normalizedActor,
+                        CreatedAtUtc = now,
+                        UpdatedAtUtc = now
+                    };
+                    dbContext.CustomTeamRows.Add(row);
+                    rows.Add(row);
+                    rowsByKey[item.Key] = row;
+                    added++;
+                }
+
+                if (row is null) throw new InvalidOperationException("The synchronized row could not be created.");
+                var wasRestored = row.IsDeleted || row.SourceStatus == CustomTeamRowSourceStatuses.Missing;
+                var values = new Dictionary<string, string>(DeserializeValues(row.ValuesJson), StringComparer.OrdinalIgnoreCase);
+                foreach (var sourceColumn in columns.Where(column => column.IsSourceColumn))
+                    values[sourceColumn.Key] = item.Value.GetValueOrDefault(sourceColumn.SourceHeader ?? string.Empty) ?? string.Empty;
+                var serialized = JsonSerializer.Serialize(values);
+                var valuesChanged = !JsonEquivalent(row.ValuesJson, serialized);
+                if (row.CreatedBy.Length == 0) row.CreatedBy = normalizedActor;
+                row.IsDeleted = false;
+                row.DeletedBy = null;
+                row.DeletedAtUtc = null;
+                row.SourceStatus = CustomTeamRowSourceStatuses.Active;
+                row.LastSeenAtUtc = now;
+                if (wasRestored) restored++;
+                if (valuesChanged || wasRestored || isNew)
+                {
+                    if (isNew)
+                    {
+                        row.ValuesJson = serialized;
+                        AddAudit(row, "Created", normalizedActor, now);
+                    }
+                    else
+                    {
+                        row.Version++;
+                        row.ValuesJson = serialized;
+                        row.UpdatedBy = normalizedActor;
+                        row.UpdatedAtUtc = now;
+                        AddAudit(row, wasRestored ? "Restored" : "Synchronized", normalizedActor, now);
+                        if (!wasRestored) updatedCount++;
+                    }
+                }
+            }
+
+            foreach (var row in rows.Where(row => !row.IsDeleted
+                && row.SourceStatus == CustomTeamRowSourceStatuses.Active
+                && !imported.ContainsKey(row.SourceKey ?? string.Empty)))
+            {
+                row.SourceStatus = CustomTeamRowSourceStatuses.Missing;
+                row.Version++;
+                row.UpdatedBy = normalizedActor;
+                row.UpdatedAtUtc = now;
+                AddAudit(row, "Missing", normalizedActor, now);
+            }
+
+            var missing = rows.Count(row => !row.IsDeleted && row.SourceStatus == CustomTeamRowSourceStatuses.Missing);
+            table.SourceWorksheet = source.Worksheet;
+            table.PrimaryKeySourceHeader = actualPrimaryKeyHeader;
+            table.LastSyncedAtUtc = now;
+            table.LastSyncStatus = "Success";
+            table.LastSyncMessage = $"Added {added}, updated {updatedCount}, restored {restored}, missing {missing}.";
+            table.UpdatedAtUtc = now;
+            await SaveRowChangesAsync(cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+            return new ExcelTableSyncResult(added, updatedCount, missing, restored, now);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception exception)
+        {
+            dbContext.ChangeTracker.Clear();
+            await RecordSyncFailureAsync(parsedTableId, exception.Message, cancellationToken);
+            throw new InvalidOperationException($"Excel synchronization failed: {exception.Message}", exception);
+        }
     }
 
     public async Task<CustomTeamRowDto> SaveRowAsync(SaveCustomTeamRowRequest request, CancellationToken cancellationToken = default)
@@ -205,8 +424,7 @@ internal sealed partial class SqliteCustomTeamTabService(TeamDbContext dbContext
             .ToListAsync(cancellationToken);
         if (columns.Count == 0) throw new InvalidOperationException("Add at least one column before adding rows.");
 
-        var values = ValidateValues(columns, request.Values);
-        var actor = string.IsNullOrWhiteSpace(request.Actor) ? "Unknown" : request.Actor.Trim();
+        var actor = NormalizeActor(request.Actor);
         CustomTeamRowRecord? row = null;
         var action = "Created";
         if (Guid.TryParse(request.Id, out var rowId))
@@ -218,11 +436,34 @@ internal sealed partial class SqliteCustomTeamTabService(TeamDbContext dbContext
             row.Version++;
             action = "Updated";
         }
+        else if (table.SourceType == CustomTeamTableSourceTypes.ExcelUrl)
+        {
+            throw new InvalidOperationException("Rows in an Excel-backed table are created by synchronization.");
+        }
+
+        Dictionary<string, string> values;
+        if (table.SourceType == CustomTeamTableSourceTypes.ExcelUrl)
+        {
+            var localColumns = columns.Where(column => !column.IsSourceColumn).ToList();
+            if (localColumns.Count == 0) throw new InvalidOperationException("Add a Team Hub column before editing synchronized rows.");
+            values = new Dictionary<string, string>(DeserializeValues(row!.ValuesJson), StringComparer.OrdinalIgnoreCase);
+            foreach (var item in ValidateValues(localColumns, request.Values)) values[item.Key] = item.Value;
+        }
+        else
+        {
+            values = ValidateValues(columns, request.Values);
+        }
 
         var now = DateTime.UtcNow;
         if (row is null)
         {
-            row = new CustomTeamRowRecord { TableId = tableId, CreatedBy = actor, CreatedAtUtc = now };
+            row = new CustomTeamRowRecord
+            {
+                TableId = tableId,
+                SourceStatus = CustomTeamRowSourceStatuses.Manual,
+                CreatedBy = actor,
+                CreatedAtUtc = now
+            };
             dbContext.CustomTeamRows.Add(row);
         }
         row.ValuesJson = JsonSerializer.Serialize(values);
@@ -236,14 +477,17 @@ internal sealed partial class SqliteCustomTeamTabService(TeamDbContext dbContext
     public async Task RemoveRowAsync(string tableId, string rowId, int version, string actor, CancellationToken cancellationToken = default)
     {
         if (!Guid.TryParse(tableId, out var parsedTableId) || !Guid.TryParse(rowId, out var parsedRowId)) return;
-        var activeTable = await dbContext.CustomTeamTables.AnyAsync(item =>
+        var table = await dbContext.CustomTeamTables.AsNoTracking().SingleOrDefaultAsync(item =>
             item.Id == parsedTableId
             && !item.IsArchived
             && dbContext.CustomTeamTabs.Any(tab => tab.Id == item.TabId && !tab.IsArchived), cancellationToken);
-        if (!activeTable) return;
+        if (table is null) return;
         var row = await dbContext.CustomTeamRows.SingleOrDefaultAsync(
             item => item.Id == parsedRowId && item.TableId == parsedTableId && !item.IsDeleted, cancellationToken);
         if (row is null) return;
+        if (table.SourceType == CustomTeamTableSourceTypes.ExcelUrl
+            && row.SourceStatus != CustomTeamRowSourceStatuses.Missing)
+            throw new InvalidOperationException("Remove the record from Excel first, synchronize, and then remove the missing record from Team Hub.");
         if (row.Version != version) throw new InvalidOperationException("This row was changed by another user. Reload the page and try again.");
         var now = DateTime.UtcNow;
         var normalizedActor = string.IsNullOrWhiteSpace(actor) ? "Unknown" : actor.Trim();
@@ -286,7 +530,15 @@ internal sealed partial class SqliteCustomTeamTabService(TeamDbContext dbContext
             TabId = table.TabId.ToString(),
             Name = table.Name,
             DisplayOrder = table.DisplayOrder,
-            Columns = columns.Select(ToDto).ToList(),
+            SourceType = table.SourceType,
+            SourceUrl = table.SourceUrl,
+            SourceWorksheet = table.SourceWorksheet,
+            SourceHeaderRow = table.SourceHeaderRow,
+            PrimaryKeySourceHeader = table.PrimaryKeySourceHeader,
+            LastSyncedAtUtc = table.LastSyncedAtUtc,
+            LastSyncStatus = table.LastSyncStatus,
+            LastSyncMessage = table.LastSyncMessage,
+            Columns = columns.Select(column => ToDto(column, table.PrimaryKeySourceHeader)).ToList(),
             Rows = rows.Select(ToDto).ToList()
         };
     }
@@ -368,6 +620,34 @@ internal sealed partial class SqliteCustomTeamTabService(TeamDbContext dbContext
         return candidate;
     }
 
+    private async Task RecordSyncFailureAsync(Guid tableId, string message, CancellationToken cancellationToken)
+    {
+        var table = await dbContext.CustomTeamTables.SingleOrDefaultAsync(item => item.Id == tableId, cancellationToken);
+        if (table is null) return;
+        table.LastSyncStatus = "Failed";
+        table.LastSyncMessage = message.Length <= 1000 ? message : message[..1000];
+        table.UpdatedAtUtc = DateTime.UtcNow;
+        await dbContext.SaveChangesAsync(cancellationToken);
+    }
+
+    private static bool JsonEquivalent(string left, string right) =>
+        new Dictionary<string, string>(DeserializeValues(left), StringComparer.OrdinalIgnoreCase)
+            .OrderBy(item => item.Key, StringComparer.OrdinalIgnoreCase)
+            .SequenceEqual(
+                new Dictionary<string, string>(DeserializeValues(right), StringComparer.OrdinalIgnoreCase)
+                    .OrderBy(item => item.Key, StringComparer.OrdinalIgnoreCase));
+
+    private static string NormalizeActor(string? actor) =>
+        string.IsNullOrWhiteSpace(actor) ? "Unknown" : actor.Trim();
+
+    private static string? Optional(string? value, int maxLength, string label)
+    {
+        var trimmed = value?.Trim();
+        if (string.IsNullOrEmpty(trimmed)) return null;
+        if (trimmed.Length > maxLength) throw new ArgumentException($"{label} cannot exceed {maxLength} characters.");
+        return trimmed;
+    }
+
     private static string Required(string? value, string label, int maxLength)
     {
         var trimmed = value?.Trim() ?? string.Empty;
@@ -387,16 +667,19 @@ internal sealed partial class SqliteCustomTeamTabService(TeamDbContext dbContext
         Id = tab.Id.ToString(), Name = tab.Name, Slug = tab.Slug, DisplayOrder = tab.DisplayOrder
     };
 
-    private static CustomTeamColumnDto ToDto(CustomTeamColumnRecord column) => new()
+    private static CustomTeamColumnDto ToDto(CustomTeamColumnRecord column, string? primaryKeySourceHeader = null) => new()
     {
         Id = column.Id.ToString(), TableId = column.TableId.ToString(), Key = column.Key, Label = column.Label,
-        FieldType = column.FieldType, IsRequired = column.IsRequired, Options = DeserializeOptions(column.OptionsJson), DisplayOrder = column.DisplayOrder
+        FieldType = column.FieldType, IsRequired = column.IsRequired, Options = DeserializeOptions(column.OptionsJson), DisplayOrder = column.DisplayOrder,
+        IsSourceColumn = column.IsSourceColumn, SourceHeader = column.SourceHeader,
+        IsPrimaryKey = column.IsSourceColumn && string.Equals(column.SourceHeader, primaryKeySourceHeader, StringComparison.OrdinalIgnoreCase)
     };
 
     private static CustomTeamRowDto ToDto(CustomTeamRowRecord row) => new()
     {
         Id = row.Id.ToString(), TableId = row.TableId.ToString(), Values = DeserializeValues(row.ValuesJson), Version = row.Version,
-        CreatedBy = row.CreatedBy, UpdatedBy = row.UpdatedBy, CreatedAtUtc = row.CreatedAtUtc, UpdatedAtUtc = row.UpdatedAtUtc
+        CreatedBy = row.CreatedBy, UpdatedBy = row.UpdatedBy, CreatedAtUtc = row.CreatedAtUtc, UpdatedAtUtc = row.UpdatedAtUtc,
+        SourceKey = row.SourceKey, SourceStatus = row.SourceStatus, LastSeenAtUtc = row.LastSeenAtUtc
     };
 
     [GeneratedRegex("[^a-z0-9]+")]

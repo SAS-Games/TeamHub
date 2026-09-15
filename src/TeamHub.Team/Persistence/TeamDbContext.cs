@@ -106,6 +106,12 @@ internal sealed class TeamDbContext(DbContextOptions<TeamDbContext> options) : D
         {
             entity.ToTable("CustomTeamTables");
             entity.Property(x => x.Name).HasMaxLength(100);
+            entity.Property(x => x.SourceType).HasMaxLength(32);
+            entity.Property(x => x.SourceUrl).HasMaxLength(2048);
+            entity.Property(x => x.SourceWorksheet).HasMaxLength(200);
+            entity.Property(x => x.PrimaryKeySourceHeader).HasMaxLength(200);
+            entity.Property(x => x.LastSyncStatus).HasMaxLength(32);
+            entity.Property(x => x.LastSyncMessage).HasMaxLength(1000);
             entity.HasIndex(x => new { x.TabId, x.DisplayOrder });
             entity.HasOne<CustomTeamTabRecord>().WithMany().HasForeignKey(x => x.TabId).OnDelete(DeleteBehavior.Cascade);
         });
@@ -116,6 +122,7 @@ internal sealed class TeamDbContext(DbContextOptions<TeamDbContext> options) : D
             entity.Property(x => x.Key).HasMaxLength(80);
             entity.Property(x => x.Label).HasMaxLength(80);
             entity.Property(x => x.FieldType).HasMaxLength(32);
+            entity.Property(x => x.SourceHeader).HasMaxLength(200);
             entity.HasIndex(x => new { x.TableId, x.Key }).IsUnique();
             entity.HasOne<CustomTeamTableRecord>().WithMany().HasForeignKey(x => x.TableId).OnDelete(DeleteBehavior.Cascade);
         });
@@ -127,7 +134,10 @@ internal sealed class TeamDbContext(DbContextOptions<TeamDbContext> options) : D
             entity.Property(x => x.CreatedBy).HasMaxLength(256);
             entity.Property(x => x.UpdatedBy).HasMaxLength(256);
             entity.Property(x => x.DeletedBy).HasMaxLength(256);
+            entity.Property(x => x.SourceKey).HasMaxLength(512);
+            entity.Property(x => x.SourceStatus).HasMaxLength(16);
             entity.HasIndex(x => new { x.TableId, x.IsDeleted, x.CreatedAtUtc });
+            entity.HasIndex(x => new { x.TableId, x.SourceKey }).IsUnique().HasFilter("SourceKey IS NOT NULL AND IsDeleted = 0");
             entity.HasOne<CustomTeamTableRecord>().WithMany().HasForeignKey(x => x.TableId).OnDelete(DeleteBehavior.Cascade);
         });
 

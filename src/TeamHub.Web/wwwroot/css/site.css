@@ -94,6 +94,8 @@ body {
 .styled-table { margin: 0; }
 .styled-table th { color: #65766f; font-size: .75rem; text-transform: uppercase; letter-spacing: .05em; white-space: nowrap; }
 .styled-table td, .styled-table th { padding: 14px 18px; vertical-align: middle; }
+.custom-team-cell-value { white-space: pre-line; overflow-wrap: anywhere; }
+.custom-team-row-missing > td { background: #fff8df; color: #68551a; }
 .stat-tiles { display: flex; flex-wrap: wrap; gap: 16px; padding: 20px 22px; }
 .stat-tile { flex: 1 1 160px; background: #edf2ee; border-radius: 8px; padding: 16px 18px; }
 .stat-tile .stat-label { color: #65766f; font-size: .75rem; text-transform: uppercase; letter-spacing: .05em; }

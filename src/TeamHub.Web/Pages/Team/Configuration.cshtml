@@ -1,5 +1,6 @@
 @page "/Team/Configuration"
 @model TeamHub.Web.Pages.Team.ConfigurationModel
+@using TeamHub.Team
 @{
     ViewData["Title"] = "Team Configuration";
 }
@@ -378,11 +379,19 @@ else
 
                 <section class="content-section m-0 mb-4">
                     <div class="section-heading"><div><span>Schema</span><h2>Add Table</h2></div></div>
-                    <form method="post" asp-page-handler="SaveCustomTable" class="section-body row g-2 align-items-end">
+                    <form method="post" asp-page-handler="SaveCustomTable" class="section-body">
                         <input type="hidden" name="tabId" value="@selectedTab.Id" />
-                        <div class="col-md-8"><label class="form-label">Table name</label><input name="name" class="form-control" maxlength="100" required /></div>
-                        <div class="col-md-2"><label class="form-label">Order</label><input name="displayOrder" class="form-control" type="number" min="0" value="@selectedTab.Tables.Count" /></div>
-                        <div class="col-md-2"><button class="btn btn-primary w-100" type="submit">Add</button></div>
+                        <div class="row g-2 align-items-end">
+                            <div class="col-md-6"><label class="form-label">Table name</label><input name="name" class="form-control" maxlength="100" required /></div>
+                            <div class="col-md-2"><label class="form-label">Order</label><input name="displayOrder" class="form-control" type="number" min="0" value="@selectedTab.Tables.Count" /></div>
+                            <div class="col-md-4"><label class="form-label">Data source</label><select name="sourceType" class="form-select"><option value="Manual">Manual entry</option><option value="ExcelUrl">Excel download link</option></select></div>
+                            <div class="col-12"><div class="form-text">For an Excel table, provide the source settings below. Leave them blank for a manual table.</div></div>
+                            <div class="col-md-6"><label class="form-label">Excel download link</label><input name="sourceUrl" class="form-control" type="url" maxlength="2048" /></div>
+                            <div class="col-md-3"><label class="form-label">Worksheet <span class="text-secondary">(optional)</span></label><input name="sourceWorksheet" class="form-control" maxlength="200" /></div>
+                            <div class="col-md-3"><label class="form-label">Header row</label><input name="sourceHeaderRow" class="form-control" type="number" min="1" max="1000" value="1" /></div>
+                            <div class="col-md-8"><label class="form-label">Primary key column</label><input name="primaryKeySourceHeader" class="form-control" maxlength="200" placeholder="Exact Excel header, for example Employee ID" /></div>
+                            <div class="col-md-4"><button class="btn btn-primary w-100" type="submit">Add table</button></div>
+                        </div>
                     </form>
                 </section>
 
@@ -393,10 +402,38 @@ else
                         <div class="section-body border-bottom">
                             <form method="post" asp-page-handler="SaveCustomTable" class="row g-2 align-items-end">
                                 <input type="hidden" name="tabId" value="@selectedTab.Id" /><input type="hidden" name="tableId" value="@table.Id" />
-                                <div class="col-md-7"><label class="form-label">Table name</label><input name="name" class="form-control form-control-sm" value="@table.Name" required /></div>
+                                <div class="col-md-5"><label class="form-label">Table name</label><input name="name" class="form-control form-control-sm" value="@table.Name" required /></div>
                                 <div class="col-md-2"><label class="form-label">Order</label><input name="displayOrder" class="form-control form-control-sm" type="number" min="0" value="@table.DisplayOrder" /></div>
-                                <div class="col-md-3"><button class="btn btn-sm btn-outline-primary" type="submit">Save table</button></div>
+                                <div class="col-md-3"><label class="form-label">Data source</label><select name="sourceType" class="form-select form-select-sm"><option value="Manual" selected="@(table.SourceType == CustomTeamTableSourceTypes.Manual)">Manual entry</option><option value="ExcelUrl" selected="@table.IsExcelBacked">Excel download link</option></select></div>
+                                <div class="col-md-2"><button class="btn btn-sm btn-outline-primary w-100" type="submit">Save table</button></div>
+                                @if (table.IsExcelBacked)
+                                {
+                                    <div class="col-md-6"><label class="form-label">Excel download link</label><input name="sourceUrl" class="form-control form-control-sm" type="url" maxlength="2048" value="@table.SourceUrl" required /></div>
+                                    <div class="col-md-3"><label class="form-label">Worksheet</label><input name="sourceWorksheet" class="form-control form-control-sm" maxlength="200" value="@table.SourceWorksheet" /></div>
+                                    <div class="col-md-3"><label class="form-label">Header row</label><input name="sourceHeaderRow" class="form-control form-control-sm" type="number" min="1" max="1000" value="@table.SourceHeaderRow" /></div>
+                                    <div class="col-md-6"><label class="form-label">Primary key column</label><input name="primaryKeySourceHeader" class="form-control form-control-sm" maxlength="200" value="@table.PrimaryKeySourceHeader" readonly="@table.LastSyncedAtUtc.HasValue" required /></div>
+                                    <div class="col-md-6"><div class="form-text">Use an anonymous, directly downloadable .xlsx link. The primary key is locked after the first successful sync.</div></div>
+                                }
+                                else
+                                {
+                                    <input type="hidden" name="sourceHeaderRow" value="1" />
+                                }
                             </form>
+                            @if (table.IsExcelBacked)
+                            {
+                                <form method="post" asp-page-handler="SyncCustomTable" class="mt-3">
+                                    <input type="hidden" name="tabId" value="@selectedTab.Id" /><input type="hidden" name="tableId" value="@table.Id" />
+                                    <button class="btn btn-sm btn-success" type="submit">Synchronize Excel</button>
+                                    @if (table.LastSyncedAtUtc.HasValue)
+                                    {
+                                        <span class="small text-secondary ms-2">Last sync @table.LastSyncedAtUtc.Value.ToLocalTime().ToString("MMM d, yyyy h:mm tt") - @table.LastSyncMessage</span>
+                                    }
+                                    else if (!string.IsNullOrWhiteSpace(table.LastSyncMessage))
+                                    {
+                                        <span class="small text-danger ms-2">@table.LastSyncMessage</span>
+                                    }
+                                </form>
+                            }
                             <form method="post" asp-page-handler="ArchiveCustomTable" class="mt-2" onsubmit="return confirm('Archive this table?')">
                                 <input type="hidden" name="tabId" value="@selectedTab.Id" /><input type="hidden" name="tableId" value="@table.Id" />
                                 <button class="btn btn-sm btn-outline-danger" type="submit">Archive table</button>
@@ -406,28 +443,43 @@ else
                         {
                             <div class="table-responsive">
                                 <table class="table styled-table align-middle mb-0">
-                                    <thead><tr><th>Column</th><th>Type</th><th>Required</th><th>Options</th><th></th></tr></thead>
+                                    <thead><tr><th>Column</th><th>Type</th><th>Required</th><th>Origin</th><th>Options</th><th></th></tr></thead>
                                     <tbody>
                                     @foreach (var column in table.Columns)
                                     {
-                                        var columnFormId = $"column-{column.Id}";
-                                        <tr>
-                                            <td>
-                                                <form id="@columnFormId" method="post" asp-page-handler="SaveCustomColumn">
-                                                    <input type="hidden" name="tabId" value="@selectedTab.Id" /><input type="hidden" name="tableId" value="@table.Id" /><input type="hidden" name="columnId" value="@column.Id" />
-                                                    <input name="label" class="form-control form-control-sm" maxlength="80" value="@column.Label" required />
-                                                    <input name="displayOrder" type="hidden" value="@column.DisplayOrder" />
-                                                </form>
-                                                <small class="d-block text-secondary mt-1">@column.Key</small>
-                                            </td>
-                                            <td><select name="fieldType" form="@columnFormId" class="form-select form-select-sm">@foreach (var fieldType in Model.CustomFieldTypes) { <option value="@fieldType" selected="@(fieldType == column.FieldType)">@fieldType</option> }</select></td>
-                                            <td><div class="form-check"><input class="form-check-input" type="checkbox" name="isRequired" value="true" form="@columnFormId" id="required-@column.Id" checked="@column.IsRequired" /><label class="form-check-label" for="required-@column.Id">Required</label></div></td>
-                                            <td><textarea name="options" form="@columnFormId" class="form-control form-control-sm" rows="2">@string.Join(", ", column.Options)</textarea></td>
-                                            <td class="text-nowrap">
-                                                <button class="btn btn-sm btn-outline-primary" type="submit" form="@columnFormId">Save</button>
-                                                <form method="post" asp-page-handler="ArchiveCustomColumn" class="d-inline" onsubmit="return confirm('Archive this column?')"><input type="hidden" name="tabId" value="@selectedTab.Id" /><input type="hidden" name="columnId" value="@column.Id" /><button class="btn btn-sm btn-outline-danger" type="submit">Archive</button></form>
-                                            </td>
-                                        </tr>
+                                        if (column.IsSourceColumn)
+                                        {
+                                            <tr class="table-light">
+                                                <td><strong>@column.Label</strong><small class="d-block text-secondary">@column.Key</small></td>
+                                                <td>@column.FieldType</td>
+                                                <td>@(column.IsRequired ? "Yes" : "No")</td>
+                                                <td><span class="badge text-bg-secondary">Excel</span>@if (column.IsPrimaryKey) { <span class="badge text-bg-primary ms-1">Primary key</span> }</td>
+                                                <td class="text-secondary">-</td>
+                                                <td class="small text-secondary">Managed by synchronization</td>
+                                            </tr>
+                                        }
+                                        else
+                                        {
+                                            var columnFormId = $"column-{column.Id}";
+                                            <tr>
+                                                <td>
+                                                    <form id="@columnFormId" method="post" asp-page-handler="SaveCustomColumn">
+                                                        <input type="hidden" name="tabId" value="@selectedTab.Id" /><input type="hidden" name="tableId" value="@table.Id" /><input type="hidden" name="columnId" value="@column.Id" />
+                                                        <input name="label" class="form-control form-control-sm" maxlength="80" value="@column.Label" required />
+                                                        <input name="displayOrder" type="hidden" value="@column.DisplayOrder" />
+                                                    </form>
+                                                    <small class="d-block text-secondary mt-1">@column.Key</small>
+                                                </td>
+                                                <td><select name="fieldType" form="@columnFormId" class="form-select form-select-sm">@foreach (var fieldType in Model.CustomFieldTypes) { <option value="@fieldType" selected="@(fieldType == column.FieldType)">@fieldType</option> }</select></td>
+                                                <td><div class="form-check"><input class="form-check-input" type="checkbox" name="isRequired" value="true" form="@columnFormId" id="required-@column.Id" checked="@column.IsRequired" /><label class="form-check-label" for="required-@column.Id">Required</label></div></td>
+                                                <td><span class="badge text-bg-success">Team Hub</span></td>
+                                                <td><textarea name="options" form="@columnFormId" class="form-control form-control-sm" rows="2">@string.Join(", ", column.Options)</textarea></td>
+                                                <td class="text-nowrap">
+                                                    <button class="btn btn-sm btn-outline-primary" type="submit" form="@columnFormId">Save</button>
+                                                    <form method="post" asp-page-handler="ArchiveCustomColumn" class="d-inline" onsubmit="return confirm('Archive this column?')"><input type="hidden" name="tabId" value="@selectedTab.Id" /><input type="hidden" name="columnId" value="@column.Id" /><button class="btn btn-sm btn-outline-danger" type="submit">Archive</button></form>
+                                                </td>
+                                            </tr>
+                                        }
                                     }
                                     </tbody>
                                 </table>
@@ -435,6 +487,11 @@ else
                         }
                         <form method="post" asp-page-handler="SaveCustomColumn" class="section-body bg-light-subtle">
                             <input type="hidden" name="tabId" value="@selectedTab.Id" /><input type="hidden" name="tableId" value="@table.Id" />
+                            <h3 class="h6">@(table.IsExcelBacked ? "Add Team Hub column" : "Add column")</h3>
+                            @if (table.IsExcelBacked)
+                            {
+                                <p class="small text-secondary">This column is stored in Team Hub and remains editable after Excel synchronization.</p>
+                            }
                             <div class="row g-2">
                                 <div class="col-md-4"><label class="form-label">Column label</label><input name="label" class="form-control form-control-sm" maxlength="80" required /></div>
                                 <div class="col-md-3"><label class="form-label">Type</label><select name="fieldType" class="form-select form-select-sm">@foreach (var fieldType in Model.CustomFieldTypes) { <option value="@fieldType">@fieldType</option> }</select></div>
@@ -442,7 +499,7 @@ else
                                 <div class="col-md-3 d-flex align-items-end"><div class="form-check mb-1"><input class="form-check-input" type="checkbox" name="isRequired" value="true" id="required-@table.Id" /><label class="form-check-label" for="required-@table.Id">Required</label></div></div>
                                 <div class="col-12"><label class="form-label">Choice options <span class="text-secondary">(comma or line separated)</span></label><textarea name="options" class="form-control form-control-sm" rows="2"></textarea></div>
                             </div>
-                            <button class="btn btn-sm btn-primary mt-3" type="submit">Add Column</button>
+                            <button class="btn btn-sm btn-primary mt-3" type="submit">Add Team Hub Column</button>
                         </form>
                     </section>
                 }

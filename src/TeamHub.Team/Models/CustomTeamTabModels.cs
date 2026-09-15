@@ -18,6 +18,24 @@ public static class CustomTeamFieldTypes
         ?? throw new ArgumentException("Select a supported column type.", nameof(value));
 }
 
+public static class CustomTeamTableSourceTypes
+{
+    public const string Manual = "Manual";
+    public const string ExcelUrl = "ExcelUrl";
+    public static IReadOnlyList<string> All { get; } = [Manual, ExcelUrl];
+
+    public static string Normalize(string? value) => All.FirstOrDefault(
+        item => string.Equals(item, value?.Trim(), StringComparison.OrdinalIgnoreCase))
+        ?? throw new ArgumentException("Select a supported table source.", nameof(value));
+}
+
+public static class CustomTeamRowSourceStatuses
+{
+    public const string Manual = "Manual";
+    public const string Active = "Active";
+    public const string Missing = "Missing";
+}
+
 public sealed class CustomTeamTabDto
 {
     public string Id { get; set; } = string.Empty;
@@ -33,6 +51,15 @@ public sealed class CustomTeamTableDto
     public string TabId { get; set; } = string.Empty;
     public string Name { get; set; } = string.Empty;
     public int DisplayOrder { get; set; }
+    public string SourceType { get; set; } = CustomTeamTableSourceTypes.Manual;
+    public string? SourceUrl { get; set; }
+    public string? SourceWorksheet { get; set; }
+    public int SourceHeaderRow { get; set; } = 1;
+    public string? PrimaryKeySourceHeader { get; set; }
+    public DateTime? LastSyncedAtUtc { get; set; }
+    public string? LastSyncStatus { get; set; }
+    public string? LastSyncMessage { get; set; }
+    public bool IsExcelBacked => SourceType == CustomTeamTableSourceTypes.ExcelUrl;
     public IReadOnlyList<CustomTeamColumnDto> Columns { get; set; } = [];
     public IReadOnlyList<CustomTeamRowDto> Rows { get; set; } = [];
 }
@@ -47,6 +74,9 @@ public sealed class CustomTeamColumnDto
     public bool IsRequired { get; set; }
     public IReadOnlyList<string> Options { get; set; } = [];
     public int DisplayOrder { get; set; }
+    public bool IsSourceColumn { get; set; }
+    public string? SourceHeader { get; set; }
+    public bool IsPrimaryKey { get; set; }
 }
 
 public sealed class CustomTeamRowDto
@@ -59,10 +89,23 @@ public sealed class CustomTeamRowDto
     public string UpdatedBy { get; set; } = string.Empty;
     public DateTime CreatedAtUtc { get; set; }
     public DateTime UpdatedAtUtc { get; set; }
+    public string? SourceKey { get; set; }
+    public string SourceStatus { get; set; } = CustomTeamRowSourceStatuses.Manual;
+    public DateTime? LastSeenAtUtc { get; set; }
+    public bool IsMissingFromSource => SourceStatus == CustomTeamRowSourceStatuses.Missing;
 }
 
 public sealed record SaveCustomTeamTabRequest(string? Id, string Name, int DisplayOrder = 0);
-public sealed record SaveCustomTeamTableRequest(string TabId, string? Id, string Name, int DisplayOrder = 0);
+public sealed record SaveCustomTeamTableRequest(
+    string TabId,
+    string? Id,
+    string Name,
+    int DisplayOrder = 0,
+    string SourceType = CustomTeamTableSourceTypes.Manual,
+    string? SourceUrl = null,
+    string? SourceWorksheet = null,
+    int SourceHeaderRow = 1,
+    string? PrimaryKeySourceHeader = null);
 public sealed record SaveCustomTeamColumnRequest(
     string TableId,
     string? Id,
@@ -77,3 +120,4 @@ public sealed record SaveCustomTeamRowRequest(
     int Version,
     IReadOnlyDictionary<string, string?> Values,
     string Actor);
+public sealed record ExcelTableSyncResult(int Added, int Updated, int Missing, int Restored, DateTime SyncedAtUtc);

@@ -86,6 +86,8 @@ only the master appears in the Flow Designer catalog.
 
 Administrators have a single **Configuration** navigation tab that links to the Team, Studio, and Workflow configuration pages. Team Configuration contains forms for team members, support specializations, achievements, and text appearance. Each person can be assigned to either the Team Members or Management section. The Text Appearance panel controls bold and italic styling per column for Team Directory, Achievements, and Responsibility Matrix.
 
+Custom Team tables can use manual entry or an Excel source. Excel-backed tables currently accept an anonymous, directly downloadable `.xlsx` URL, a worksheet name, a header row, and a stable primary-key header. Synchronization matches records by that key rather than row position, keeps Excel columns read-only, preserves editable Team Hub columns, and marks missing source records for reviewed removal. The source reader is provider-based so authenticated SharePoint or Microsoft Graph support can be added later without changing the table model.
+
 The Admin Portal also contains **Authorized Users** and **Access Management**:
 
 - The Authorized User List is the source of truth for TeamHub access. Admins can add, update, activate/deactivate, or remove Registered, Privileged, and Admin users.

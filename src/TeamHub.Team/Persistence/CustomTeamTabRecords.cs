@@ -18,6 +18,14 @@ internal sealed class CustomTeamTableRecord
     public string Name { get; set; } = string.Empty;
     public int DisplayOrder { get; set; }
     public bool IsArchived { get; set; }
+    public string SourceType { get; set; } = CustomTeamTableSourceTypes.Manual;
+    public string? SourceUrl { get; set; }
+    public string? SourceWorksheet { get; set; }
+    public int SourceHeaderRow { get; set; } = 1;
+    public string? PrimaryKeySourceHeader { get; set; }
+    public DateTime? LastSyncedAtUtc { get; set; }
+    public string? LastSyncStatus { get; set; }
+    public string? LastSyncMessage { get; set; }
     public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
     public DateTime UpdatedAtUtc { get; set; } = DateTime.UtcNow;
 }
@@ -33,6 +41,8 @@ internal sealed class CustomTeamColumnRecord
     public string OptionsJson { get; set; } = "[]";
     public int DisplayOrder { get; set; }
     public bool IsArchived { get; set; }
+    public bool IsSourceColumn { get; set; }
+    public string? SourceHeader { get; set; }
     public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
     public DateTime UpdatedAtUtc { get; set; } = DateTime.UtcNow;
 }
@@ -47,6 +57,9 @@ internal sealed class CustomTeamRowRecord
     public string CreatedBy { get; set; } = string.Empty;
     public string UpdatedBy { get; set; } = string.Empty;
     public string? DeletedBy { get; set; }
+    public string? SourceKey { get; set; }
+    public string SourceStatus { get; set; } = CustomTeamRowSourceStatuses.Manual;
+    public DateTime? LastSeenAtUtc { get; set; }
     public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
     public DateTime UpdatedAtUtc { get; set; } = DateTime.UtcNow;
     public DateTime? DeletedAtUtc { get; set; }

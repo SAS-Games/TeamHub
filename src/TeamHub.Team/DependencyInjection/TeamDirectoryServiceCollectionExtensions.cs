@@ -19,6 +19,7 @@ public static class TeamDirectoryServiceCollectionExtensions
         services.AddScoped<ITeamConfigurationService>(provider => provider.GetRequiredService<SqliteTeamDirectoryService>());
         services.AddScoped<ITeamAchievementService>(provider => provider.GetRequiredService<SqliteTeamDirectoryService>());
         services.AddScoped<IPageTextAppearanceService>(provider => provider.GetRequiredService<SqliteTeamDirectoryService>());
+        services.AddSingleton<IExcelTableSourceReader, DirectDownloadExcelTableSourceReader>();
         services.AddScoped<ICustomTeamTabService, SqliteCustomTeamTabService>();
         return services;
     }

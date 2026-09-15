@@ -158,10 +158,48 @@ internal sealed class SqliteTeamDatabaseInitializer(TeamDbContext dbContext) : I
                 CREATE INDEX IF NOT EXISTS IX_CustomTeamRowAudits_RowId_CreatedAtUtc
                     ON CustomTeamRowAudits (RowId, CreatedAtUtc);
                 """, cancellationToken);
+
+            await AddColumnIfMissingAsync("CustomTeamTables", "SourceType", "TEXT NOT NULL DEFAULT 'Manual'", cancellationToken);
+            await AddColumnIfMissingAsync("CustomTeamTables", "SourceUrl", "TEXT NULL", cancellationToken);
+            await AddColumnIfMissingAsync("CustomTeamTables", "SourceWorksheet", "TEXT NULL", cancellationToken);
+            await AddColumnIfMissingAsync("CustomTeamTables", "SourceHeaderRow", "INTEGER NOT NULL DEFAULT 1", cancellationToken);
+            await AddColumnIfMissingAsync("CustomTeamTables", "PrimaryKeySourceHeader", "TEXT NULL", cancellationToken);
+            await AddColumnIfMissingAsync("CustomTeamTables", "LastSyncedAtUtc", "TEXT NULL", cancellationToken);
+            await AddColumnIfMissingAsync("CustomTeamTables", "LastSyncStatus", "TEXT NULL", cancellationToken);
+            await AddColumnIfMissingAsync("CustomTeamTables", "LastSyncMessage", "TEXT NULL", cancellationToken);
+            await AddColumnIfMissingAsync("CustomTeamColumns", "IsSourceColumn", "INTEGER NOT NULL DEFAULT 0", cancellationToken);
+            await AddColumnIfMissingAsync("CustomTeamColumns", "SourceHeader", "TEXT NULL", cancellationToken);
+            await AddColumnIfMissingAsync("CustomTeamRows", "SourceKey", "TEXT NULL", cancellationToken);
+            await AddColumnIfMissingAsync("CustomTeamRows", "SourceStatus", "TEXT NOT NULL DEFAULT 'Manual'", cancellationToken);
+            await AddColumnIfMissingAsync("CustomTeamRows", "LastSeenAtUtc", "TEXT NULL", cancellationToken);
+
+            await dbContext.Database.ExecuteSqlRawAsync("""
+                CREATE UNIQUE INDEX IF NOT EXISTS IX_CustomTeamRows_TableId_SourceKey
+                    ON CustomTeamRows (TableId, SourceKey)
+                    WHERE SourceKey IS NOT NULL AND IsDeleted = 0;
+                """, cancellationToken);
         }
         finally
         {
             await dbContext.Database.CloseConnectionAsync();
+        }
+    }
+
+    private async Task AddColumnIfMissingAsync(
+        string tableName,
+        string columnName,
+        string definition,
+        CancellationToken cancellationToken)
+    {
+        if (!await ColumnExistsAsync(tableName, columnName, cancellationToken))
+        {
+            #pragma warning disable EF1002 // Schema names and definitions are fixed internal constants.
+
+            await dbContext.Database.ExecuteSqlRawAsync(
+                $"ALTER TABLE {tableName} ADD COLUMN {columnName} {definition};",
+                cancellationToken);
+
+            #pragma warning restore EF1002
         }
     }
 

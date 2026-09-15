@@ -37,6 +37,7 @@ public sealed class CustomModel(ICustomTeamTabService tabs, ICurrentAccessServic
         Dictionary<string, string?> values,
         CancellationToken cancellationToken)
     {
+        if (!await CanEditAsync(slug, cancellationToken)) return Forbid();
         try
         {
             await tabs.SaveRowAsync(new SaveCustomTeamRowRequest(
@@ -57,6 +58,7 @@ public sealed class CustomModel(ICustomTeamTabService tabs, ICurrentAccessServic
         int version,
         CancellationToken cancellationToken)
     {
+        if (!await CanEditAsync(slug, cancellationToken)) return Forbid();
         try
         {
             await tabs.RemoveRowAsync(tableId, rowId, version, CurrentActor(), cancellationToken);
@@ -71,6 +73,13 @@ public sealed class CustomModel(ICustomTeamTabService tabs, ICurrentAccessServic
 
     public string Value(CustomTeamRowDto row, CustomTeamColumnDto column) =>
         row.Values.GetValueOrDefault(column.Key) ?? string.Empty;
+
+    private async Task<bool> CanEditAsync(string slug, CancellationToken cancellationToken)
+    {
+        var tab = await tabs.GetTabAsync(slug, cancellationToken);
+        return tab is not null
+            && await access.CanAsync(CustomTeamTabAccess.ModuleForSlug(tab.Slug), AccessLevel.Edit, cancellationToken);
+    }
 
     private string CurrentActor() => User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.Identity?.Name ?? "Unknown";
 }
