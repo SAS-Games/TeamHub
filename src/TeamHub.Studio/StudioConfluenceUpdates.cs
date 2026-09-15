@@ -430,12 +430,20 @@ internal sealed class ConfluenceStudioUpdateService(
         DateOnly weekEnd)
     {
         if (!root.TryGetProperty("results", out var results) || results.ValueKind != JsonValueKind.Array) return null;
-        var yearTitle = StudioConfluencePageNaming.Format(settings.ConfluenceYearTitlePattern, weekStart, weekEnd);
-        var monthTitle = StudioConfluencePageNaming.Format(settings.ConfluenceMonthTitlePattern, weekStart, weekEnd);
+        var hierarchyPaths = new[] { weekStart, weekEnd }
+            .Select(anchor => (
+                YearTitle: StudioConfluencePageNaming.Format(settings.ConfluenceYearTitlePattern, weekStart, weekEnd, anchor),
+                MonthTitle: StudioConfluencePageNaming.Format(settings.ConfluenceMonthTitlePattern, weekStart, weekEnd, anchor)))
+            .Distinct()
+            .ToList();
 
         foreach (var item in results.EnumerateArray())
         {
-            if (!MatchesAncestorPath(item, settings.ConfluenceParentPageId, yearTitle, monthTitle)) continue;
+            if (!hierarchyPaths.Any(path => MatchesAncestorPath(
+                    item,
+                    settings.ConfluenceParentPageId,
+                    path.YearTitle,
+                    path.MonthTitle))) continue;
             var body = GetNestedString(item, "body", "storage", "value");
             var webUi = item.TryGetProperty("_links", out var links) ? GetString(links, "webui") : string.Empty;
             return new ConfluencePage(GetString(item, "id"), GetString(item, "title"), body, webUi, GetNestedInt(item, "version", "number"));
@@ -542,9 +550,14 @@ internal static partial class StudioConfluencePageNaming
         for (var week = StartOfWeek(startDate); week <= endDate; week = week.AddDays(7)) yield return week;
     }
 
-    public static string Format(string? pattern, DateOnly weekStart, DateOnly weekEnd)
+    public static string Format(
+        string? pattern,
+        DateOnly weekStart,
+        DateOnly weekEnd,
+        DateOnly? hierarchyDate = null)
     {
         var source = string.IsNullOrWhiteSpace(pattern) ? "{WeekStart:dd/MM}-{WeekEnd:dd/MM}" : pattern;
+        var hierarchyAnchor = hierarchyDate ?? weekStart;
         var formatted = DateTokenRegex().Replace(source, match =>
         {
             var date = match.Groups[1].Value == "WeekEnd" ? weekEnd : weekStart;
@@ -552,9 +565,9 @@ internal static partial class StudioConfluencePageNaming
             return date.ToString(format, CultureInfo.InvariantCulture);
         });
         return formatted
-            .Replace("{Year}", weekStart.Year.ToString(CultureInfo.InvariantCulture), StringComparison.Ordinal)
-            .Replace("{Month:00}", weekStart.Month.ToString("00", CultureInfo.InvariantCulture), StringComparison.Ordinal)
-            .Replace("{Month}", weekStart.Month.ToString(CultureInfo.InvariantCulture), StringComparison.Ordinal);
+            .Replace("{Year}", hierarchyAnchor.Year.ToString(CultureInfo.InvariantCulture), StringComparison.Ordinal)
+            .Replace("{Month:00}", hierarchyAnchor.Month.ToString("00", CultureInfo.InvariantCulture), StringComparison.Ordinal)
+            .Replace("{Month}", hierarchyAnchor.Month.ToString(CultureInfo.InvariantCulture), StringComparison.Ordinal);
     }
 
     [GeneratedRegex(@"\{(WeekStart|WeekEnd)(?::([^}]+))?\}", RegexOptions.CultureInvariant)]

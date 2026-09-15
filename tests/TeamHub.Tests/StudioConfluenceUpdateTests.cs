@@ -66,4 +66,16 @@ public sealed class StudioConfluenceUpdateTests
                 new DateOnly(2026, 9, 21),
                 new DateOnly(2026, 9, 28));
     }
+
+    [Fact]
+    public void PageNaming_CanUseEitherBoundaryForCrossMonthHierarchy()
+    {
+        var weekStart = new DateOnly(2026, 8, 31);
+        var weekEnd = new DateOnly(2026, 9, 4);
+
+        StudioConfluencePageNaming.Format("{Month:00}/{Year}", weekStart, weekEnd, weekStart)
+            .Should().Be("08/2026");
+        StudioConfluencePageNaming.Format("{Month:00}/{Year}", weekStart, weekEnd, weekEnd)
+            .Should().Be("09/2026");
+    }
 }
