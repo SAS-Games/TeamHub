@@ -20,6 +20,7 @@ TestResults/
 **/data/*.db*
 **/data/protection-keys/
 !src/TeamHub.Web/data/templates.db
+!src/TeamHub.Web/data/published-diagrams.db
 
 # Browser QA profiles and captures
 .browser-qa/
