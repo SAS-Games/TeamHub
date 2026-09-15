@@ -20,6 +20,9 @@ internal sealed class CustomTeamTableRecord
     public bool IsArchived { get; set; }
     public string SourceType { get; set; } = CustomTeamTableSourceTypes.Manual;
     public string? SourceUrl { get; set; }
+    public string? SourceDriveId { get; set; }
+    public string? SourceItemId { get; set; }
+    public string? SourceDisplayName { get; set; }
     public string? SourceWorksheet { get; set; }
     public int SourceHeaderRow { get; set; } = 1;
     public string? PrimaryKeySourceHeader { get; set; }

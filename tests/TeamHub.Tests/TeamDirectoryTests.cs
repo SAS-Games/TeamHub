@@ -268,7 +268,8 @@ public sealed class TeamDirectoryTests
             await using var verification = new SqliteConnection($"Data Source={dbPath}");
             await verification.OpenAsync();
             (await ColumnNamesAsync(verification, "CustomTeamTables")).Should().Contain([
-                "SourceType", "SourceUrl", "SourceWorksheet", "SourceHeaderRow",
+                "SourceType", "SourceUrl", "SourceDriveId", "SourceItemId", "SourceDisplayName",
+                "SourceWorksheet", "SourceHeaderRow",
                 "PrimaryKeySourceHeader", "LastSyncedAtUtc", "LastSyncStatus", "LastSyncMessage"]);
             (await ColumnNamesAsync(verification, "CustomTeamColumns")).Should().Contain(["IsSourceColumn", "SourceHeader"]);
             (await ColumnNamesAsync(verification, "CustomTeamRows")).Should().Contain(["SourceKey", "SourceStatus", "LastSeenAtUtc"]);
@@ -352,6 +353,96 @@ public sealed class TeamDirectoryTests
         result.Rows.Should().ContainSingle();
         result.Rows[0]["Employee ID"].Should().Be("00125");
         result.Rows[0]["Name"].Should().Be("Asha");
+    }
+
+    [Fact]
+    public async Task UploadedExcelSource_IsStoredPrivatelyAndReadByManagedReference()
+    {
+        var dbPath = CreateDatabasePath();
+        var uploadDirectory = Path.Combine(Path.GetTempPath(), $"teamhub-excel-{Guid.NewGuid():N}");
+        try
+        {
+            await using var provider = CreateServices(dbPath, uploadDirectory: uploadDirectory);
+            var store = provider.GetRequiredService<IExcelSourceFileStore>();
+            var reader = provider.GetRequiredService<IExcelTableSourceReader>();
+            using var workbook = CreateXlsxWorkbook();
+
+            var stored = await store.SaveAsync(workbook, "People.xlsx", workbook.Length);
+            var result = await reader.ReadAsync(new ExcelTableSourceRequest(
+                CustomTeamTableSourceTypes.UploadedExcel,
+                stored.Reference,
+                null,
+                null,
+                "People",
+                2));
+
+            stored.DisplayName.Should().Be("People.xlsx");
+            stored.Reference.Should().EndWith(".xlsx");
+            File.Exists(Path.Combine(uploadDirectory, stored.Reference)).Should().BeTrue();
+            result.Rows.Should().ContainSingle();
+            result.Rows[0]["Employee ID"].Should().Be("00125");
+
+            await using var scope = provider.CreateAsyncScope();
+            await scope.ServiceProvider.GetRequiredService<ITeamDatabaseInitializer>().InitializeAsync();
+            var tabs = scope.ServiceProvider.GetRequiredService<ICustomTeamTabService>();
+            var tab = await tabs.SaveTabAsync(new(null, "Uploaded workbook"));
+            var table = await tabs.SaveTableAsync(new(
+                tab.Id,
+                null,
+                "People",
+                SourceType: CustomTeamTableSourceTypes.UploadedExcel,
+                SourceUrl: stored.Reference,
+                SourceWorksheet: "People",
+                SourceHeaderRow: 2,
+                PrimaryKeySourceHeader: "Employee ID",
+                SourceDisplayName: stored.DisplayName));
+            var sync = await tabs.SyncExcelTableAsync(table.Id, "admin@example.com");
+            sync.Added.Should().Be(1);
+        }
+        finally
+        {
+            DeleteDatabase(dbPath);
+            if (Directory.Exists(uploadDirectory)) Directory.Delete(uploadDirectory, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task MicrosoftGraphExcelTable_UsesStableDriveAndItemIdentifiers()
+    {
+        var dbPath = CreateDatabasePath();
+        try
+        {
+            var reader = new FakeExcelTableSourceReader { Data = ExcelData(("E-001", "Asha")) };
+            await using var provider = CreateServices(dbPath, reader);
+            await using var scope = provider.CreateAsyncScope();
+            await scope.ServiceProvider.GetRequiredService<ITeamDatabaseInitializer>().InitializeAsync();
+            var tabs = scope.ServiceProvider.GetRequiredService<ICustomTeamTabService>();
+            var tab = await tabs.SaveTabAsync(new(null, "Restricted workbook"));
+            var table = await tabs.SaveTableAsync(new(
+                tab.Id,
+                null,
+                "People",
+                SourceType: CustomTeamTableSourceTypes.MicrosoftGraphExcel,
+                SourceHeaderRow: 1,
+                PrimaryKeySourceHeader: "Employee ID",
+                SourceDriveId: "drive-123",
+                SourceItemId: "item-456",
+                SourceDisplayName: "People.xlsx"));
+
+            await tabs.SyncExcelTableAsync(table.Id, "admin@example.com");
+
+            reader.LastRequest.Should().NotBeNull();
+            reader.LastRequest!.SourceType.Should().Be(CustomTeamTableSourceTypes.MicrosoftGraphExcel);
+            reader.LastRequest.SourceDriveId.Should().Be("drive-123");
+            reader.LastRequest.SourceItemId.Should().Be("item-456");
+            var loaded = (await tabs.GetTabAsync(tab.Slug))!.Tables.Single();
+            loaded.SourceDisplayName.Should().Be("People.xlsx");
+            loaded.Rows.Should().ContainSingle();
+        }
+        finally
+        {
+            DeleteDatabase(dbPath);
+        }
     }
 
     [Fact]
@@ -541,12 +632,16 @@ public sealed class TeamDirectoryTests
     private static string CreateDatabasePath() =>
         Path.Combine(Path.GetTempPath(), $"teamhub-team-{Guid.NewGuid():N}.db");
 
-    private static ServiceProvider CreateServices(string dbPath, IExcelTableSourceReader? excelReader = null)
+    private static ServiceProvider CreateServices(
+        string dbPath,
+        IExcelTableSourceReader? excelReader = null,
+        string? uploadDirectory = null)
     {
         var configuration = new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?>
             {
-                ["ConnectionStrings:TeamDb"] = $"Data Source={dbPath}"
+                ["ConnectionStrings:TeamDb"] = $"Data Source={dbPath}",
+                ["TeamExcel:UploadDirectory"] = uploadDirectory
             })
             .Build();
         var services = new ServiceCollection();
@@ -617,12 +712,15 @@ public sealed class TeamDirectoryTests
     private sealed class FakeExcelTableSourceReader : IExcelTableSourceReader
     {
         public ExcelTableSourceData Data { get; set; } = ExcelData();
+        public ExcelTableSourceRequest? LastRequest { get; private set; }
 
         public Task<ExcelTableSourceData> ReadAsync(
-            string sourceUrl,
-            string? worksheet,
-            int headerRow,
-            CancellationToken cancellationToken = default) => Task.FromResult(Data);
+            ExcelTableSourceRequest request,
+            CancellationToken cancellationToken = default)
+        {
+            LastRequest = request;
+            return Task.FromResult(Data);
+        }
     }
 
     private static void DeleteDatabase(string dbPath)

@@ -111,17 +111,29 @@ internal sealed partial class SqliteCustomTeamTabService(TeamDbContext dbContext
         var sourceType = CustomTeamTableSourceTypes.Normalize(request.SourceType);
         var sourceUrl = sourceType == CustomTeamTableSourceTypes.ExcelUrl
             ? Required(request.SourceUrl, "Excel download link", 2048)
+            : sourceType == CustomTeamTableSourceTypes.UploadedExcel
+                ? Required(request.SourceUrl, "Uploaded Excel file", 2048)
             : null;
-        if (sourceUrl is not null
+        if (sourceType == CustomTeamTableSourceTypes.ExcelUrl
+            && sourceUrl is not null
             && (!Uri.TryCreate(sourceUrl, UriKind.Absolute, out var sourceUri) || sourceUri.Scheme is not ("http" or "https")))
             throw new ArgumentException("Enter a valid HTTP or HTTPS Excel download link.");
-        var worksheet = sourceType == CustomTeamTableSourceTypes.ExcelUrl
+        var sourceDriveId = sourceType == CustomTeamTableSourceTypes.MicrosoftGraphExcel
+            ? Required(request.SourceDriveId, "Microsoft Graph drive ID", 512)
+            : null;
+        var sourceItemId = sourceType == CustomTeamTableSourceTypes.MicrosoftGraphExcel
+            ? Required(request.SourceItemId, "Microsoft Graph item ID", 512)
+            : null;
+        var sourceDisplayName = CustomTeamTableSourceTypes.IsExcelBacked(sourceType)
+            ? Optional(request.SourceDisplayName, 260, "Source file name")
+            : null;
+        var worksheet = CustomTeamTableSourceTypes.IsExcelBacked(sourceType)
             ? Optional(request.SourceWorksheet, 200, "Worksheet name")
             : null;
-        var primaryKey = sourceType == CustomTeamTableSourceTypes.ExcelUrl
+        var primaryKey = CustomTeamTableSourceTypes.IsExcelBacked(sourceType)
             ? Required(request.PrimaryKeySourceHeader, "Primary key column", 200)
             : null;
-        var headerRow = sourceType == CustomTeamTableSourceTypes.ExcelUrl ? request.SourceHeaderRow : 1;
+        var headerRow = CustomTeamTableSourceTypes.IsExcelBacked(sourceType) ? request.SourceHeaderRow : 1;
         if (headerRow is < 1 or > 1000) throw new ArgumentException("Header row must be between 1 and 1,000.");
 
         CustomTeamTableRecord? table = null;
@@ -147,6 +159,9 @@ internal sealed partial class SqliteCustomTeamTabService(TeamDbContext dbContext
         table.DisplayOrder = Math.Max(0, request.DisplayOrder);
         table.SourceType = sourceType;
         table.SourceUrl = sourceUrl;
+        table.SourceDriveId = sourceDriveId;
+        table.SourceItemId = sourceItemId;
+        table.SourceDisplayName = sourceDisplayName;
         table.SourceWorksheet = worksheet;
         table.SourceHeaderRow = headerRow;
         table.PrimaryKeySourceHeader = primaryKey;
@@ -233,16 +248,19 @@ internal sealed partial class SqliteCustomTeamTabService(TeamDbContext dbContext
             && !item.IsArchived
             && dbContext.CustomTeamTabs.Any(tab => tab.Id == item.TabId && !tab.IsArchived), cancellationToken)
             ?? throw new KeyNotFoundException("Custom team table was not found.");
-        if (table.SourceType != CustomTeamTableSourceTypes.ExcelUrl)
+        if (!CustomTeamTableSourceTypes.IsExcelBacked(table.SourceType))
             throw new InvalidOperationException("Only Excel-backed tables can be synchronized.");
 
         ExcelTableSourceData source;
         try
         {
-            source = await excelReader.ReadAsync(
-                Required(table.SourceUrl, "Excel download link", 2048),
+            source = await excelReader.ReadAsync(new ExcelTableSourceRequest(
+                table.SourceType,
+                table.SourceUrl,
+                table.SourceDriveId,
+                table.SourceItemId,
                 table.SourceWorksheet,
-                table.SourceHeaderRow,
+                table.SourceHeaderRow),
                 cancellationToken);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -436,13 +454,13 @@ internal sealed partial class SqliteCustomTeamTabService(TeamDbContext dbContext
             row.Version++;
             action = "Updated";
         }
-        else if (table.SourceType == CustomTeamTableSourceTypes.ExcelUrl)
+        else if (CustomTeamTableSourceTypes.IsExcelBacked(table.SourceType))
         {
             throw new InvalidOperationException("Rows in an Excel-backed table are created by synchronization.");
         }
 
         Dictionary<string, string> values;
-        if (table.SourceType == CustomTeamTableSourceTypes.ExcelUrl)
+        if (CustomTeamTableSourceTypes.IsExcelBacked(table.SourceType))
         {
             var localColumns = columns.Where(column => !column.IsSourceColumn).ToList();
             if (localColumns.Count == 0) throw new InvalidOperationException("Add a Team Hub column before editing synchronized rows.");
@@ -485,7 +503,7 @@ internal sealed partial class SqliteCustomTeamTabService(TeamDbContext dbContext
         var row = await dbContext.CustomTeamRows.SingleOrDefaultAsync(
             item => item.Id == parsedRowId && item.TableId == parsedTableId && !item.IsDeleted, cancellationToken);
         if (row is null) return;
-        if (table.SourceType == CustomTeamTableSourceTypes.ExcelUrl
+        if (CustomTeamTableSourceTypes.IsExcelBacked(table.SourceType)
             && row.SourceStatus != CustomTeamRowSourceStatuses.Missing)
             throw new InvalidOperationException("Remove the record from Excel first, synchronize, and then remove the missing record from Team Hub.");
         if (row.Version != version) throw new InvalidOperationException("This row was changed by another user. Reload the page and try again.");
@@ -532,6 +550,9 @@ internal sealed partial class SqliteCustomTeamTabService(TeamDbContext dbContext
             DisplayOrder = table.DisplayOrder,
             SourceType = table.SourceType,
             SourceUrl = table.SourceUrl,
+            SourceDriveId = table.SourceDriveId,
+            SourceItemId = table.SourceItemId,
+            SourceDisplayName = table.SourceDisplayName,
             SourceWorksheet = table.SourceWorksheet,
             SourceHeaderRow = table.SourceHeaderRow,
             PrimaryKeySourceHeader = table.PrimaryKeySourceHeader,

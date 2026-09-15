@@ -1,7 +1,10 @@
 using System.Globalization;
 using System.IO.Compression;
+using System.Net.Http.Headers;
+using System.Text.Json;
 using System.Text.RegularExpressions;
 using System.Xml.Linq;
+using Microsoft.Extensions.Configuration;
 
 namespace TeamHub.Team;
 
@@ -10,54 +13,204 @@ public sealed record ExcelTableSourceData(
     IReadOnlyList<string> Headers,
     IReadOnlyList<IReadOnlyDictionary<string, string>> Rows);
 
+public sealed record ExcelTableSourceRequest(
+    string SourceType,
+    string? SourceUrl,
+    string? SourceDriveId,
+    string? SourceItemId,
+    string? Worksheet,
+    int HeaderRow);
+
 public interface IExcelTableSourceReader
 {
     Task<ExcelTableSourceData> ReadAsync(
-        string sourceUrl,
-        string? worksheet,
-        int headerRow,
+        ExcelTableSourceRequest request,
         CancellationToken cancellationToken = default);
 }
 
-internal sealed partial class DirectDownloadExcelTableSourceReader : IExcelTableSourceReader
+public sealed record StoredExcelSource(string Reference, string DisplayName);
+
+public interface IExcelSourceFileStore
 {
-    private const int MaximumWorkbookBytes = 25 * 1024 * 1024;
+    Task<StoredExcelSource> SaveAsync(
+        Stream source,
+        string fileName,
+        long length,
+        CancellationToken cancellationToken = default);
+}
+
+internal sealed partial class DirectDownloadExcelTableSourceReader(IConfiguration configuration) : IExcelTableSourceReader
+{
+    internal const int MaximumWorkbookBytes = 25 * 1024 * 1024;
     private const int MaximumRows = 50_000;
     private const int MaximumColumns = 200;
     private static readonly HttpClient Client = CreateClient();
+    private readonly SemaphoreSlim tokenLock = new(1, 1);
+    private string? graphAccessToken;
+    private DateTimeOffset graphAccessTokenExpiresAt;
 
-    public async Task<ExcelTableSourceData> ReadAsync(
+    public Task<ExcelTableSourceData> ReadAsync(
+        ExcelTableSourceRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        if (request.HeaderRow is < 1 or > 1000)
+            throw new ArgumentException("Header row must be between 1 and 1,000.", nameof(request));
+
+        return request.SourceType switch
+        {
+            CustomTeamTableSourceTypes.ExcelUrl => ReadDirectAsync(
+                Required(request.SourceUrl, "Excel download link"),
+                request.Worksheet,
+                request.HeaderRow,
+                cancellationToken),
+            CustomTeamTableSourceTypes.UploadedExcel => ReadUploadedAsync(
+                Required(request.SourceUrl, "Uploaded Excel file"),
+                request.Worksheet,
+                request.HeaderRow,
+                cancellationToken),
+            CustomTeamTableSourceTypes.MicrosoftGraphExcel => ReadMicrosoftGraphAsync(
+                Required(request.SourceDriveId, "Microsoft Graph drive ID"),
+                Required(request.SourceItemId, "Microsoft Graph item ID"),
+                request.Worksheet,
+                request.HeaderRow,
+                cancellationToken),
+            _ => throw new InvalidOperationException("The configured Excel source is not supported.")
+        };
+    }
+
+    private async Task<ExcelTableSourceData> ReadDirectAsync(
         string sourceUrl,
         string? worksheet,
         int headerRow,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken)
     {
         if (!Uri.TryCreate(sourceUrl, UriKind.Absolute, out var uri) || uri.Scheme is not ("http" or "https"))
             throw new ArgumentException("Enter a valid HTTP or HTTPS Excel download link.", nameof(sourceUrl));
-        if (headerRow is < 1 or > 1000)
-            throw new ArgumentException("Header row must be between 1 and 1,000.", nameof(headerRow));
 
         using var response = await Client.GetAsync(uri, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
         response.EnsureSuccessStatusCode();
-        if (response.Content.Headers.ContentLength is > MaximumWorkbookBytes)
-            throw new InvalidOperationException("The Excel workbook is larger than the 25 MB limit.");
-
-        await using var source = await response.Content.ReadAsStreamAsync(cancellationToken);
-        await using var buffered = new MemoryStream();
-        var buffer = new byte[81920];
-        var total = 0;
-        while (true)
-        {
-            var read = await source.ReadAsync(buffer, cancellationToken);
-            if (read == 0) break;
-            total += read;
-            if (total > MaximumWorkbookBytes)
-                throw new InvalidOperationException("The Excel workbook is larger than the 25 MB limit.");
-            await buffered.WriteAsync(buffer.AsMemory(0, read), cancellationToken);
-        }
-        buffered.Position = 0;
+        await using var buffered = await BufferWorkbookAsync(response.Content, cancellationToken);
         return ReadWorkbook(buffered, worksheet, headerRow);
     }
+
+    private async Task<ExcelTableSourceData> ReadUploadedAsync(
+        string reference,
+        string? worksheet,
+        int headerRow,
+        CancellationToken cancellationToken)
+    {
+        var fileName = Path.GetFileName(reference);
+        if (!string.Equals(fileName, reference, StringComparison.Ordinal)
+            || !fileName.EndsWith(".xlsx", StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException("The stored Excel file reference is invalid.");
+        var root = ExcelSourceStorage.UploadRoot(configuration);
+        var path = Path.Combine(root, fileName);
+        if (!File.Exists(path)) throw new InvalidOperationException("The uploaded Excel file is no longer available.");
+        var info = new FileInfo(path);
+        if (info.Length > MaximumWorkbookBytes)
+            throw new InvalidOperationException("The Excel workbook is larger than the 25 MB limit.");
+        await using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read, 81920, useAsync: true);
+        return ReadWorkbook(stream, worksheet, headerRow);
+    }
+
+    private async Task<ExcelTableSourceData> ReadMicrosoftGraphAsync(
+        string driveId,
+        string itemId,
+        string? worksheet,
+        int headerRow,
+        CancellationToken cancellationToken)
+    {
+        var token = await GetGraphAccessTokenAsync(cancellationToken);
+        var uri = $"https://graph.microsoft.com/v1.0/drives/{Uri.EscapeDataString(driveId)}/items/{Uri.EscapeDataString(itemId)}/content";
+        using var request = new HttpRequestMessage(HttpMethod.Get, uri);
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        using var response = await Client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+        if (!response.IsSuccessStatusCode)
+            throw new InvalidOperationException($"Microsoft Graph could not download the workbook ({(int)response.StatusCode} {response.ReasonPhrase}). Verify the application permission and workbook IDs.");
+        await using var buffered = await BufferWorkbookAsync(response.Content, cancellationToken);
+        return ReadWorkbook(buffered, worksheet, headerRow);
+    }
+
+    private async Task<string> GetGraphAccessTokenAsync(CancellationToken cancellationToken)
+    {
+        if (!string.IsNullOrWhiteSpace(graphAccessToken)
+            && graphAccessTokenExpiresAt > DateTimeOffset.UtcNow.AddMinutes(5))
+            return graphAccessToken;
+
+        await tokenLock.WaitAsync(cancellationToken);
+        try
+        {
+            if (!string.IsNullOrWhiteSpace(graphAccessToken)
+                && graphAccessTokenExpiresAt > DateTimeOffset.UtcNow.AddMinutes(5))
+                return graphAccessToken;
+
+            var tenantId = Required(configuration["TeamExcel:MicrosoftGraph:TenantId"], "Microsoft Graph tenant ID");
+            var clientId = Required(configuration["TeamExcel:MicrosoftGraph:ClientId"], "Microsoft Graph client ID");
+            var clientSecret = Required(configuration["TeamExcel:MicrosoftGraph:ClientSecret"], "Microsoft Graph client secret");
+            using var content = new FormUrlEncodedContent(new Dictionary<string, string>
+            {
+                ["client_id"] = clientId,
+                ["client_secret"] = clientSecret,
+                ["scope"] = "https://graph.microsoft.com/.default",
+                ["grant_type"] = "client_credentials"
+            });
+            using var response = await Client.PostAsync(
+                $"https://login.microsoftonline.com/{Uri.EscapeDataString(tenantId)}/oauth2/v2.0/token",
+                content,
+                cancellationToken);
+            if (!response.IsSuccessStatusCode)
+                throw new InvalidOperationException($"Microsoft Graph authentication failed ({(int)response.StatusCode} {response.ReasonPhrase}).");
+            await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
+            using var payload = await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken);
+            graphAccessToken = payload.RootElement.GetProperty("access_token").GetString()
+                ?? throw new InvalidOperationException("Microsoft Graph did not return an access token.");
+            var expiresIn = payload.RootElement.TryGetProperty("expires_in", out var expires)
+                ? expires.GetInt32()
+                : 3600;
+            graphAccessTokenExpiresAt = DateTimeOffset.UtcNow.AddSeconds(expiresIn);
+            return graphAccessToken;
+        }
+        finally
+        {
+            tokenLock.Release();
+        }
+    }
+
+    private static async Task<MemoryStream> BufferWorkbookAsync(
+        HttpContent content,
+        CancellationToken cancellationToken)
+    {
+        if (content.Headers.ContentLength is > MaximumWorkbookBytes)
+            throw new InvalidOperationException("The Excel workbook is larger than the 25 MB limit.");
+        await using var source = await content.ReadAsStreamAsync(cancellationToken);
+        var buffered = new MemoryStream();
+        var buffer = new byte[81920];
+        var total = 0;
+        try
+        {
+            while (true)
+            {
+                var read = await source.ReadAsync(buffer, cancellationToken);
+                if (read == 0) break;
+                total += read;
+                if (total > MaximumWorkbookBytes)
+                    throw new InvalidOperationException("The Excel workbook is larger than the 25 MB limit.");
+                await buffered.WriteAsync(buffer.AsMemory(0, read), cancellationToken);
+            }
+            buffered.Position = 0;
+            return buffered;
+        }
+        catch
+        {
+            await buffered.DisposeAsync();
+            throw;
+        }
+    }
+
+    private static string Required(string? value, string label) =>
+        string.IsNullOrWhiteSpace(value)
+            ? throw new InvalidOperationException($"{label} is not configured.")
+            : value.Trim();
 
     internal static ExcelTableSourceData ReadWorkbook(Stream stream, string? requestedWorksheet, int headerRow)
     {

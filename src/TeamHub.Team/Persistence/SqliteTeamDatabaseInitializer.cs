@@ -161,6 +161,9 @@ internal sealed class SqliteTeamDatabaseInitializer(TeamDbContext dbContext) : I
 
             await AddColumnIfMissingAsync("CustomTeamTables", "SourceType", "TEXT NOT NULL DEFAULT 'Manual'", cancellationToken);
             await AddColumnIfMissingAsync("CustomTeamTables", "SourceUrl", "TEXT NULL", cancellationToken);
+            await AddColumnIfMissingAsync("CustomTeamTables", "SourceDriveId", "TEXT NULL", cancellationToken);
+            await AddColumnIfMissingAsync("CustomTeamTables", "SourceItemId", "TEXT NULL", cancellationToken);
+            await AddColumnIfMissingAsync("CustomTeamTables", "SourceDisplayName", "TEXT NULL", cancellationToken);
             await AddColumnIfMissingAsync("CustomTeamTables", "SourceWorksheet", "TEXT NULL", cancellationToken);
             await AddColumnIfMissingAsync("CustomTeamTables", "SourceHeaderRow", "INTEGER NOT NULL DEFAULT 1", cancellationToken);
             await AddColumnIfMissingAsync("CustomTeamTables", "PrimaryKeySourceHeader", "TEXT NULL", cancellationToken);

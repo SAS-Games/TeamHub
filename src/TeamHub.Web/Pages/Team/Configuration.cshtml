@@ -379,14 +379,17 @@ else
 
                 <section class="content-section m-0 mb-4">
                     <div class="section-heading"><div><span>Schema</span><h2>Add Table</h2></div></div>
-                    <form method="post" asp-page-handler="SaveCustomTable" class="section-body">
+                    <form method="post" asp-page-handler="SaveCustomTable" class="section-body" enctype="multipart/form-data">
                         <input type="hidden" name="tabId" value="@selectedTab.Id" />
                         <div class="row g-2 align-items-end">
                             <div class="col-md-6"><label class="form-label">Table name</label><input name="name" class="form-control" maxlength="100" required /></div>
                             <div class="col-md-2"><label class="form-label">Order</label><input name="displayOrder" class="form-control" type="number" min="0" value="@selectedTab.Tables.Count" /></div>
-                            <div class="col-md-4"><label class="form-label">Data source</label><select name="sourceType" class="form-select"><option value="Manual">Manual entry</option><option value="ExcelUrl">Excel download link</option></select></div>
-                            <div class="col-12"><div class="form-text">For an Excel table, provide the source settings below. Leave them blank for a manual table.</div></div>
+                            <div class="col-md-4"><label class="form-label">Data source</label><select name="sourceType" class="form-select"><option value="Manual">Manual entry</option><option value="ExcelUrl">Excel download link</option><option value="MicrosoftGraphExcel">SharePoint / OneDrive</option><option value="UploadedExcel">Upload from this computer</option></select></div>
+                            <div class="col-12"><div class="alert alert-warning py-2 mb-1">Imported workbook data is stored in Team Hub. Use Access Management to assign the users who may view or edit this tab.</div></div>
                             <div class="col-md-6"><label class="form-label">Excel download link</label><input name="sourceUrl" class="form-control" type="url" maxlength="2048" /></div>
+                            <div class="col-md-3"><label class="form-label">Microsoft Graph drive ID</label><input name="sourceDriveId" class="form-control" maxlength="512" /></div>
+                            <div class="col-md-3"><label class="form-label">Microsoft Graph item ID</label><input name="sourceItemId" class="form-control" maxlength="512" /></div>
+                            <div class="col-md-6"><label class="form-label">Excel file from this computer</label><input name="sourceFile" class="form-control" type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" /></div>
                             <div class="col-md-3"><label class="form-label">Worksheet <span class="text-secondary">(optional)</span></label><input name="sourceWorksheet" class="form-control" maxlength="200" /></div>
                             <div class="col-md-3"><label class="form-label">Header row</label><input name="sourceHeaderRow" class="form-control" type="number" min="1" max="1000" value="1" /></div>
                             <div class="col-md-8"><label class="form-label">Primary key column</label><input name="primaryKeySourceHeader" class="form-control" maxlength="200" placeholder="Exact Excel header, for example Employee ID" /></div>
@@ -400,19 +403,33 @@ else
                     <section class="content-section m-0 mb-4">
                         <div class="section-heading"><div><span>Configurable table</span><h2>@table.Name</h2></div><strong>@table.Columns.Count columns</strong></div>
                         <div class="section-body border-bottom">
-                            <form method="post" asp-page-handler="SaveCustomTable" class="row g-2 align-items-end">
+                            <form method="post" asp-page-handler="SaveCustomTable" class="row g-2 align-items-end" enctype="multipart/form-data">
                                 <input type="hidden" name="tabId" value="@selectedTab.Id" /><input type="hidden" name="tableId" value="@table.Id" />
                                 <div class="col-md-5"><label class="form-label">Table name</label><input name="name" class="form-control form-control-sm" value="@table.Name" required /></div>
                                 <div class="col-md-2"><label class="form-label">Order</label><input name="displayOrder" class="form-control form-control-sm" type="number" min="0" value="@table.DisplayOrder" /></div>
-                                <div class="col-md-3"><label class="form-label">Data source</label><select name="sourceType" class="form-select form-select-sm"><option value="Manual" selected="@(table.SourceType == CustomTeamTableSourceTypes.Manual)">Manual entry</option><option value="ExcelUrl" selected="@table.IsExcelBacked">Excel download link</option></select></div>
+                                <div class="col-md-3"><label class="form-label">Data source</label><select name="sourceType" class="form-select form-select-sm"><option value="Manual" selected="@(table.SourceType == CustomTeamTableSourceTypes.Manual)">Manual entry</option><option value="ExcelUrl" selected="@table.IsDirectExcelUrl">Excel download link</option><option value="MicrosoftGraphExcel" selected="@table.IsMicrosoftGraphExcel">SharePoint / OneDrive</option><option value="UploadedExcel" selected="@table.IsUploadedExcel">Upload from this computer</option></select></div>
                                 <div class="col-md-2"><button class="btn btn-sm btn-outline-primary w-100" type="submit">Save table</button></div>
                                 @if (table.IsExcelBacked)
                                 {
-                                    <div class="col-md-6"><label class="form-label">Excel download link</label><input name="sourceUrl" class="form-control form-control-sm" type="url" maxlength="2048" value="@table.SourceUrl" required /></div>
+                                    @if (table.IsDirectExcelUrl)
+                                    {
+                                        <div class="col-md-6"><label class="form-label">Excel download link</label><input name="sourceUrl" class="form-control form-control-sm" type="url" maxlength="2048" value="@table.SourceUrl" required /></div>
+                                    }
+                                    else if (table.IsMicrosoftGraphExcel)
+                                    {
+                                        <div class="col-md-6"><label class="form-label">Microsoft Graph drive ID</label><input name="sourceDriveId" class="form-control form-control-sm" maxlength="512" value="@table.SourceDriveId" required /></div>
+                                        <div class="col-md-6"><label class="form-label">Microsoft Graph item ID</label><input name="sourceItemId" class="form-control form-control-sm" maxlength="512" value="@table.SourceItemId" required /></div>
+                                    }
+                                    else if (table.IsUploadedExcel)
+                                    {
+                                        <input type="hidden" name="sourceUrl" value="@table.SourceUrl" />
+                                        <input type="hidden" name="sourceDisplayName" value="@table.SourceDisplayName" />
+                                        <div class="col-md-6"><label class="form-label">Replace uploaded workbook</label><input name="sourceFile" class="form-control form-control-sm" type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" /><div class="form-text">Current file: @(table.SourceDisplayName ?? "Uploaded workbook")</div></div>
+                                    }
                                     <div class="col-md-3"><label class="form-label">Worksheet</label><input name="sourceWorksheet" class="form-control form-control-sm" maxlength="200" value="@table.SourceWorksheet" /></div>
                                     <div class="col-md-3"><label class="form-label">Header row</label><input name="sourceHeaderRow" class="form-control form-control-sm" type="number" min="1" max="1000" value="@table.SourceHeaderRow" /></div>
                                     <div class="col-md-6"><label class="form-label">Primary key column</label><input name="primaryKeySourceHeader" class="form-control form-control-sm" maxlength="200" value="@table.PrimaryKeySourceHeader" readonly="@table.LastSyncedAtUtc.HasValue" required /></div>
-                                    <div class="col-md-6"><div class="form-text">Use an anonymous, directly downloadable .xlsx link. The primary key is locked after the first successful sync.</div></div>
+                                    <div class="col-md-6"><div class="form-text">The primary key is locked after the first successful sync. SharePoint/OneDrive synchronization uses Team Hub's configured Microsoft Graph application identity.</div></div>
                                 }
                                 else
                                 {

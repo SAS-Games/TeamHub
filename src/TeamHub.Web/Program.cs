@@ -28,6 +28,7 @@ Directory.CreateDirectory(dataDir);
 builder.Configuration["ConnectionStrings:WorkflowDb"] = $"Data Source={Path.Combine(dataDir, "workflow.db")}";
 builder.Configuration["ConnectionStrings:TeamDb"] = $"Data Source={Path.Combine(dataDir, "team.db")}";
 builder.Configuration["ConnectionStrings:StudioDb"] = $"Data Source={Path.Combine(dataDir, "studio.db")}";
+builder.Configuration["TeamExcel:UploadDirectory"] = Path.Combine(dataDir, "team-excel");
 var accessDatabasePath = Path.Combine(dataDir, "access.db");
 var flowDesignerDatabasePath = Path.Combine(dataDir, "flowdesigner.db");
 var flowLibraryDatabasePath = Path.Combine(dataDir, "flow-library.db");

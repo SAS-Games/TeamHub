@@ -24,6 +24,14 @@ internal sealed class ModulePermissionEntity
     public AccessLevel AccessLevel { get; set; }
 }
 
+internal sealed class UserModulePermissionEntity
+{
+    public int Id { get; set; }
+    public Guid AuthorizedUserId { get; set; }
+    public string Module { get; set; } = string.Empty;
+    public AccessLevel AccessLevel { get; set; }
+}
+
 internal sealed class AccessSettingEntity
 {
     public string Key { get; set; } = string.Empty;
@@ -34,6 +42,7 @@ internal sealed class AccessControlDbContext(DbContextOptions<AccessControlDbCon
 {
     public DbSet<AuthorizedUserEntity> AuthorizedUsers => Set<AuthorizedUserEntity>();
     public DbSet<ModulePermissionEntity> ModulePermissions => Set<ModulePermissionEntity>();
+    public DbSet<UserModulePermissionEntity> UserModulePermissions => Set<UserModulePermissionEntity>();
     public DbSet<AccessSettingEntity> Settings => Set<AccessSettingEntity>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -54,6 +63,16 @@ internal sealed class AccessControlDbContext(DbContextOptions<AccessControlDbCon
         permission.Property(item => item.Module).HasMaxLength(100).IsRequired();
         permission.Property(item => item.UserType).HasMaxLength(32).IsRequired();
         permission.HasIndex(item => new { item.Module, item.UserType }).IsUnique();
+
+        var userPermission = modelBuilder.Entity<UserModulePermissionEntity>();
+        userPermission.ToTable("UserModulePermissions");
+        userPermission.HasKey(item => item.Id);
+        userPermission.Property(item => item.Module).HasMaxLength(100).IsRequired();
+        userPermission.HasIndex(item => new { item.AuthorizedUserId, item.Module }).IsUnique();
+        userPermission.HasOne<AuthorizedUserEntity>()
+            .WithMany()
+            .HasForeignKey(item => item.AuthorizedUserId)
+            .OnDelete(DeleteBehavior.Cascade);
 
         var setting = modelBuilder.Entity<AccessSettingEntity>();
         setting.ToTable("AccessSettings");

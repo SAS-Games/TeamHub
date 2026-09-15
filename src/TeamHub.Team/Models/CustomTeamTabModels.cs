@@ -22,7 +22,12 @@ public static class CustomTeamTableSourceTypes
 {
     public const string Manual = "Manual";
     public const string ExcelUrl = "ExcelUrl";
-    public static IReadOnlyList<string> All { get; } = [Manual, ExcelUrl];
+    public const string MicrosoftGraphExcel = "MicrosoftGraphExcel";
+    public const string UploadedExcel = "UploadedExcel";
+    public static IReadOnlyList<string> All { get; } = [Manual, ExcelUrl, MicrosoftGraphExcel, UploadedExcel];
+
+    public static bool IsExcelBacked(string? value) =>
+        !string.Equals(value, Manual, StringComparison.OrdinalIgnoreCase);
 
     public static string Normalize(string? value) => All.FirstOrDefault(
         item => string.Equals(item, value?.Trim(), StringComparison.OrdinalIgnoreCase))
@@ -53,13 +58,19 @@ public sealed class CustomTeamTableDto
     public int DisplayOrder { get; set; }
     public string SourceType { get; set; } = CustomTeamTableSourceTypes.Manual;
     public string? SourceUrl { get; set; }
+    public string? SourceDriveId { get; set; }
+    public string? SourceItemId { get; set; }
+    public string? SourceDisplayName { get; set; }
     public string? SourceWorksheet { get; set; }
     public int SourceHeaderRow { get; set; } = 1;
     public string? PrimaryKeySourceHeader { get; set; }
     public DateTime? LastSyncedAtUtc { get; set; }
     public string? LastSyncStatus { get; set; }
     public string? LastSyncMessage { get; set; }
-    public bool IsExcelBacked => SourceType == CustomTeamTableSourceTypes.ExcelUrl;
+    public bool IsExcelBacked => CustomTeamTableSourceTypes.IsExcelBacked(SourceType);
+    public bool IsDirectExcelUrl => SourceType == CustomTeamTableSourceTypes.ExcelUrl;
+    public bool IsMicrosoftGraphExcel => SourceType == CustomTeamTableSourceTypes.MicrosoftGraphExcel;
+    public bool IsUploadedExcel => SourceType == CustomTeamTableSourceTypes.UploadedExcel;
     public IReadOnlyList<CustomTeamColumnDto> Columns { get; set; } = [];
     public IReadOnlyList<CustomTeamRowDto> Rows { get; set; } = [];
 }
@@ -105,7 +116,10 @@ public sealed record SaveCustomTeamTableRequest(
     string? SourceUrl = null,
     string? SourceWorksheet = null,
     int SourceHeaderRow = 1,
-    string? PrimaryKeySourceHeader = null);
+    string? PrimaryKeySourceHeader = null,
+    string? SourceDriveId = null,
+    string? SourceItemId = null,
+    string? SourceDisplayName = null);
 public sealed record SaveCustomTeamColumnRequest(
     string TableId,
     string? Id,

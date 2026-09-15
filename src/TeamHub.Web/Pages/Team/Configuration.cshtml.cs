@@ -1,5 +1,6 @@
 using System.ComponentModel.DataAnnotations;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
 using TeamHub.Team;
@@ -15,6 +16,7 @@ public sealed class ConfigurationModel(
     ITeamAchievementService achievementService,
     IPageTextAppearanceService appearanceService,
     ICustomTeamTabService customTabs,
+    IExcelSourceFileStore excelSourceFiles,
     IUserAccessService users) : PageModel
 {
     private const string MembersSection = "members";
@@ -251,6 +253,10 @@ public sealed class ConfigurationModel(
         int displayOrder,
         string sourceType,
         string? sourceUrl,
+        string? sourceDriveId,
+        string? sourceItemId,
+        string? sourceDisplayName,
+        IFormFile? sourceFile,
         string? sourceWorksheet,
         int sourceHeaderRow,
         string? primaryKeySourceHeader,
@@ -258,6 +264,17 @@ public sealed class ConfigurationModel(
     {
         try
         {
+            if (sourceType == CustomTeamTableSourceTypes.UploadedExcel && sourceFile is { Length: > 0 })
+            {
+                await using var upload = sourceFile.OpenReadStream();
+                var stored = await excelSourceFiles.SaveAsync(
+                    upload,
+                    sourceFile.FileName,
+                    sourceFile.Length,
+                    cancellationToken);
+                sourceUrl = stored.Reference;
+                sourceDisplayName = stored.DisplayName;
+            }
             var saved = await customTabs.SaveTableAsync(new SaveCustomTeamTableRequest(
                 tabId,
                 tableId,
@@ -267,7 +284,10 @@ public sealed class ConfigurationModel(
                 sourceUrl,
                 sourceWorksheet,
                 sourceHeaderRow,
-                primaryKeySourceHeader), cancellationToken);
+                primaryKeySourceHeader,
+                sourceDriveId,
+                sourceItemId,
+                sourceDisplayName), cancellationToken);
             StatusMessage = $"Table saved: {saved.Name}.";
         }
         catch (Exception exception) when (exception is ArgumentException or InvalidOperationException or KeyNotFoundException)

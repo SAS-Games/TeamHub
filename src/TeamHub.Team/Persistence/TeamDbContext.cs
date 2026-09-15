@@ -108,6 +108,9 @@ internal sealed class TeamDbContext(DbContextOptions<TeamDbContext> options) : D
             entity.Property(x => x.Name).HasMaxLength(100);
             entity.Property(x => x.SourceType).HasMaxLength(32);
             entity.Property(x => x.SourceUrl).HasMaxLength(2048);
+            entity.Property(x => x.SourceDriveId).HasMaxLength(512);
+            entity.Property(x => x.SourceItemId).HasMaxLength(512);
+            entity.Property(x => x.SourceDisplayName).HasMaxLength(260);
             entity.Property(x => x.SourceWorksheet).HasMaxLength(200);
             entity.Property(x => x.PrimaryKeySourceHeader).HasMaxLength(200);
             entity.Property(x => x.LastSyncStatus).HasMaxLength(32);

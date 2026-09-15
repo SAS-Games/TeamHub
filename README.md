@@ -86,7 +86,17 @@ only the master appears in the Flow Designer catalog.
 
 Administrators have a single **Configuration** navigation tab that links to the Team, Studio, and Workflow configuration pages. Team Configuration contains forms for team members, support specializations, achievements, and text appearance. Each person can be assigned to either the Team Members or Management section. The Text Appearance panel controls bold and italic styling per column for Team Directory, Achievements, and Responsibility Matrix.
 
-Custom Team tables can use manual entry or an Excel source. Excel-backed tables currently accept an anonymous, directly downloadable `.xlsx` URL, a worksheet name, a header row, and a stable primary-key header. Synchronization matches records by that key rather than row position, keeps Excel columns read-only, preserves editable Team Hub columns, and marks missing source records for reviewed removal. The source reader is provider-based so authenticated SharePoint or Microsoft Graph support can be added later without changing the table model.
+Custom Team tables can use manual entry, an anonymous directly downloadable `.xlsx` URL, a SharePoint/OneDrive workbook through Microsoft Graph, or a workbook uploaded from the administrator's computer. Synchronization matches records by the configured primary key rather than row position, keeps Excel columns read-only, preserves editable Team Hub columns, and marks missing source records for reviewed removal. Browser uploads are copied to the private `data/team-excel` directory rather than storing an inaccessible client-side file path.
+
+For SharePoint/OneDrive synchronization, configure the Team Hub Microsoft Entra application through environment variables:
+
+- `TeamExcel__MicrosoftGraph__TenantId`
+- `TeamExcel__MicrosoftGraph__ClientId`
+- `TeamExcel__MicrosoftGraph__ClientSecret`
+
+Grant the application read access only to the approved SharePoint site or workbook, then enter the workbook's stable Microsoft Graph drive ID and item ID in Team configuration. Do not commit the client secret. Imported workbook data is stored in the Team Hub database and is governed by the custom tab's existing View/Edit access assignments; new tab access should be assigned explicitly before exposing restricted source data.
+
+Access Management also supports per-user overrides for custom Team tabs. An administrator can assign No Access, Read Only, or Edit to an individual authorized user by email. An explicit user setting takes precedence over that user's category setting; choosing **Use user type setting** removes the override and returns to inheritance. Custom tab categories default to No Access, while administrators always retain Full Access.
 
 The Admin Portal also contains **Authorized Users** and **Access Management**:
 

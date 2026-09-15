@@ -3,17 +3,18 @@
 @using TeamHub.Web.AccessControl
 @inject ICustomTeamTabService CustomTabs
 @inject ICurrentAccessService CurrentAccess
-@inject IUserAccessService UserAccess
 @{
     var current = (string)ViewData["TeamTab"]!;
     var customTabs = await CustomTabs.ListTabsAsync(Context.RequestAborted);
-    var currentSnapshot = await CurrentAccess.GetCurrentAsync(Context.RequestAborted);
-    var visibleModules = currentSnapshot.UserType == TeamHubUserTypes.Admin
-        ? new HashSet<string>(customTabs.Select(tab => CustomTeamTabAccess.ModuleForSlug(tab.Slug)), StringComparer.Ordinal)
-        : (await UserAccess.ListPermissionsAsync(Context.RequestAborted))
-            .Where(permission => permission.UserType == currentSnapshot.UserType && permission.AccessLevel.Allows(AccessLevel.ReadOnly))
-            .Select(permission => permission.Module)
-            .ToHashSet(StringComparer.Ordinal);
+    var visibleModules = new HashSet<string>(StringComparer.Ordinal);
+    foreach (var tab in customTabs)
+    {
+        var module = CustomTeamTabAccess.ModuleForSlug(tab.Slug);
+        if (await CurrentAccess.CanAsync(module, AccessLevel.ReadOnly, Context.RequestAborted))
+        {
+            visibleModules.Add(module);
+        }
+    }
 }
 <nav class="page-switcher" aria-label="Team views">
     <a class="@(current == "Directory" ? "active" : "")" asp-page="/Team/Directory">Team Directory</a>
