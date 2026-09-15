@@ -8,21 +8,19 @@ using Microsoft.Extensions.Options;
 using TeamHub.AI.Contracts;
 using TeamHub.AI.FlowDesigner.Contracts;
 using TeamHub.FlowDesigner.Core.Contracts;
-using TeamHub.FlowDesigner.Core.Models;
 
 namespace TeamHub.FlowDesigner.Web.Pages.Flows;
 
 public sealed class CreateWithAiModel(
     IFlowDiagramGenerationWorkflow generationWorkflow,
-    IFlowService flows,
+    IFlowHierarchyService hierarchies,
     IFlowSerializer serializer,
-    IFlowValidator validator,
     IFlowPermissionService permissions,
     IOptions<AiFlowDesignerOptions> options,
     IDataProtectionProvider dataProtection) : PageModel
 {
     private readonly IDataProtector draftProtector =
-        dataProtection.CreateProtector("TeamHub.AI.FlowDesigner.DraftPreview.v1");
+        dataProtection.CreateProtector("TeamHub.AI.FlowDesigner.DraftPreview.v2");
 
     [BindProperty]
     [Required, StringLength(4_000)]
@@ -56,7 +54,6 @@ public sealed class CreateWithAiModel(
         {
             ModelState.AddModelError(nameof(Sources), "Add at least one source document.");
         }
-
         for (var index = 0; index < selectedSources.Count; index++)
         {
             if (string.IsNullOrWhiteSpace(selectedSources[index].Title))
@@ -68,7 +65,6 @@ public sealed class CreateWithAiModel(
                 ModelState.AddModelError(nameof(Sources), $"Source {index + 1} has no content.");
             }
         }
-
         if (!ModelState.IsValid) return Page();
 
         try
@@ -80,7 +76,7 @@ public sealed class CreateWithAiModel(
                 source.Content)).ToList();
             Preview = await generationWorkflow.CreateDraftAsync(
                 new CreateFlowDiagramDraftRequest(Prompt, documents), cancellationToken);
-            ProtectedDraft = draftProtector.Protect(serializer.Serialize(Preview.Diagram));
+            ProtectedDraft = draftProtector.Protect(serializer.SerializeBundle(Preview.Hierarchy));
             Sources = selectedSources;
         }
         catch (FlowDiagramGenerationException exception)
@@ -91,7 +87,6 @@ public sealed class CreateWithAiModel(
         {
             ModelState.AddModelError(string.Empty, $"The configured AI model could not generate the diagram. {exception.Message}");
         }
-
         return Page();
     }
 
@@ -105,73 +100,28 @@ public sealed class CreateWithAiModel(
             return Page();
         }
 
-        FlowDefinition proposal;
         try
         {
-            proposal = serializer.Deserialize(draftProtector.Unprotect(ProtectedDraft));
+            var proposal = serializer.DeserializeBundle(draftProtector.Unprotect(ProtectedDraft));
+            var created = await hierarchies.CreateDraftAsync(proposal, cancellationToken);
+            TempData["FlowMessage"] = created.Flows.Count == 1
+                ? "AI proposal created as an editable Flow Designer draft."
+                : $"AI proposal created as an editable hierarchy with {created.Flows.Count} diagrams.";
+            return RedirectToPage("/Flows/Edit", new { id = created.RootFlowId });
         }
         catch (Exception exception) when (exception is CryptographicException or JsonException)
         {
             ModelState.AddModelError(string.Empty, "The AI preview is invalid or has expired. Generate it again.");
             return Page();
         }
-
-        if (!permissions.CanUseDiagramType(proposal.DiagramType)) return Forbid();
-        var proposalValidation = validator.Validate(proposal);
-        if (!proposalValidation.IsValid)
+        catch (InvalidOperationException exception)
         {
-            ModelState.AddModelError(string.Empty, "The AI preview no longer passes Flow Designer validation. Generate it again.");
+            ModelState.AddModelError(string.Empty, exception.Message);
             return Page();
-        }
-
-        FlowDefinition? created = null;
-        try
-        {
-            created = await flows.CreateAsync(
-                proposal.Name,
-                proposal.Description,
-                proposal.DiagramType,
-                FlowTemplate.Blank,
-                cancellationToken);
-            created.Nodes = proposal.Nodes;
-            created.Connections = proposal.Connections;
-            created.Metadata = proposal.Metadata;
-            var saveResult = await flows.SaveAsync(created, cancellationToken);
-            if (!saveResult.IsValid)
-            {
-                await flows.DeleteAsync(created.Id, cancellationToken);
-                created = null;
-                ModelState.AddModelError(
-                    string.Empty,
-                    "Flow Designer rejected the generated draft: "
-                    + string.Join(" ", saveResult.Issues.Select(issue => issue.Message)));
-                return Page();
-            }
-
-            TempData["FlowMessage"] = "AI proposal created as an editable Flow Designer draft.";
-            return RedirectToPage("/Flows/Edit", new { id = created.Id });
         }
         catch (UnauthorizedAccessException)
         {
-            if (created is not null) await TryDeleteAsync(created.Id, cancellationToken);
             return Forbid();
-        }
-        catch (Exception) when (created is not null)
-        {
-            await TryDeleteAsync(created.Id, cancellationToken);
-            throw;
-        }
-    }
-
-    private async Task TryDeleteAsync(Guid id, CancellationToken cancellationToken)
-    {
-        try
-        {
-            await flows.DeleteAsync(id, cancellationToken);
-        }
-        catch
-        {
-            // Preserve the original failure. Flow Designer administrators can remove the incomplete draft if cleanup fails.
         }
     }
 }

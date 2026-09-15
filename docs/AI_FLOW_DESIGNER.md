@@ -41,7 +41,7 @@ The AI workflow cannot save or publish a diagram. Its current output is an unsav
 The first backend slice is available in `src/TeamHub.AI.FlowDesigner`:
 
 - Provider-neutral structured generation through `IAiModelService`.
-- Versioned `flow-definition-v1` JSON schema.
+- Versioned `flow-hierarchy-v2` JSON schema for one root and linked child pages.
 - In-memory plain-text and Markdown sources.
 - Maximum 10 sources, 120,000 combined source characters, and 4,000 prompt characters by default.
 - Source content treated as untrusted data with prompt-injection instructions in the system prompt.
@@ -50,8 +50,10 @@ The first backend slice is available in `src/TeamHub.AI.FlowDesigner`:
 - Deterministic draft layout followed by `IFlowValidator` validation.
 - Disabled-by-default production registration under `AI:FlowDesigner`; the local Development profile enables it for testing.
 - A Flow Designer **Create with AI** page for up to 10 pasted sources, generated-node/connection preview, warnings, and evidence.
-- A protected preview payload and explicit confirmation that creates and saves through the existing `IFlowService`.
-- No source retention, AI-owned database writes, child-flow creation, or publishing.
+- A protected full-hierarchy preview and explicit confirmation through the existing `IFlowHierarchyService`.
+- Bounded root/child generation with one-parent ownership, no orphans or cycles, and defaults of 12 diagrams and four hierarchy levels.
+- Transactional Flow Designer persistence: confirmation writes the complete hierarchy or writes nothing; deleting the root removes that draft hierarchy together.
+- No source retention, AI-owned database, or AI-controlled publishing.
 
 ## Source-of-truth design
 
@@ -74,7 +76,8 @@ Future adapters can add PDF page references, Word heading/paragraph references, 
 - Invalid structured output is rejected as one unit; it is never partially saved.
 - Saving requires user confirmation and normal Flow Designer create/edit permission.
 - Publishing requires the existing administrative approval flow.
-- Child diagrams are not generated in the first slice. When introduced, parent and children must be validated and confirmed as one hierarchy.
+- Parent and child diagrams are generated, validated, previewed, and confirmed as one hierarchy.
+- Every child must be linked exactly once from a parent Subprocess; orphan, shared, missing, cyclic, oversized, or over-depth hierarchies are rejected.
 
 ## Persistence boundary
 
@@ -106,5 +109,5 @@ No AI Flow Designer database is introduced. Complete source documents and unsave
 - [x] Validate and map output to `FlowDefinition` using existing connector and node conventions.
 - [x] Add the Flow Designer **Create with AI** UI, preview, and explicit draft-creation confirmation.
 - [ ] Add file-upload and approved external-source adapters.
-- [ ] Add parent/child hierarchy generation and atomic confirmation.
+- [x] Add parent/child hierarchy generation and atomic confirmation.
 - [x] Add unit and adversarial-source tests for the backend slice.

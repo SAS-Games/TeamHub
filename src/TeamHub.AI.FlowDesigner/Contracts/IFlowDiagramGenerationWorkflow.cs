@@ -25,10 +25,20 @@ public sealed record FlowDiagramGenerationDraft(
     IReadOnlyList<FlowDesignerEvidenceReference> Evidence,
     IReadOnlyList<string> Warnings,
     string Provider,
-    string Model);
+    string Model)
+{
+    public IReadOnlyList<FlowDefinition> ChildDiagrams { get; init; } = [];
+
+    public FlowDiagramTemplateBundle Hierarchy => new()
+    {
+        RootFlowId = Diagram.Id,
+        Flows = [Diagram, .. ChildDiagrams]
+    };
+}
 
 public sealed record FlowDesignerEvidenceReference(
     string ElementId,
     string SourceDocumentId,
     string? Location,
-    string Explanation);
+    string Explanation,
+    string DiagramKey = "root");

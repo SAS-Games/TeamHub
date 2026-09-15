@@ -8,9 +8,7 @@ using Microsoft.Extensions.Options;
 using TeamHub.AI.FlowDesigner.Contracts;
 using TeamHub.FlowDesigner.Core.Contracts;
 using TeamHub.FlowDesigner.Core.Models;
-using TeamHub.FlowDesigner.Core.Validation;
 using TeamHub.FlowDesigner.Serialization;
-using TeamHub.FlowDesigner.Validation;
 using TeamHub.FlowDesigner.Web.Pages.Flows;
 
 namespace TeamHub.AI.FlowDesigner.Tests;
@@ -18,18 +16,16 @@ namespace TeamHub.AI.FlowDesigner.Tests;
 public sealed class CreateWithAiPageTests
 {
     [Fact]
-    public async Task Confirmation_creates_and_saves_through_flow_designer()
+    public async Task Confirmation_creates_the_complete_hierarchy_through_flow_designer()
     {
-        var proposal = BuildProposal();
+        var root = BuildFlow("Root", NodeType.Subprocess);
+        var child = BuildFlow("Child", NodeType.Process);
+        root.Nodes.Single(node => node.Id == "work").ChildFlowId = child.Id;
         var generation = new StubGenerationWorkflow(new FlowDiagramGenerationDraft(
-            proposal,
-            [],
-            [],
-            "test",
-            "model"));
-        var flowService = new RecordingFlowService();
-        var model = CreatePageModel(generation, flowService);
-        model.Prompt = "Create the documented process.";
+            root, [], [], "test", "model") { ChildDiagrams = [child] });
+        var hierarchies = new RecordingHierarchyService();
+        var model = CreatePageModel(generation, hierarchies);
+        model.Prompt = "Create the documented process hierarchy.";
         model.Sources = [new AiFlowSourceInput { Title = "Process", Content = "Start, perform work, and finish." }];
 
         var previewResult = await model.OnPostGenerateAsync(CancellationToken.None);
@@ -38,23 +34,20 @@ public sealed class CreateWithAiPageTests
         previewResult.Should().BeOfType<PageResult>();
         model.ProtectedDraft.Should().NotBeNullOrWhiteSpace();
         confirmResult.Should().BeOfType<RedirectToPageResult>();
-        flowService.CreateCalls.Should().Be(1);
-        flowService.SaveCalls.Should().Be(1);
-        flowService.SavedFlow.Should().NotBeNull();
-        flowService.SavedFlow!.Nodes.Select(node => node.Id).Should().Equal("start", "work", "end");
-        flowService.SavedFlow.CreatedBy.Should().Be("current-user");
-        flowService.SavedFlow.IsShared.Should().BeFalse();
+        hierarchies.CreateCalls.Should().Be(1);
+        hierarchies.Proposal!.Flows.Should().HaveCount(2);
+        hierarchies.Proposal.Flows.Single(flow => flow.Id == root.Id)
+            .Nodes.Single(node => node.Id == "work").ChildFlowId.Should().Be(child.Id);
     }
 
     private static CreateWithAiModel CreatePageModel(
         IFlowDiagramGenerationWorkflow generation,
-        IFlowService flows)
+        IFlowHierarchyService hierarchies)
     {
         var page = new CreateWithAiModel(
             generation,
-            flows,
+            hierarchies,
             new SystemTextJsonFlowSerializer(),
-            new FlowValidator(),
             new AllowCreatePermissionService(),
             Options.Create(new AiFlowDesignerOptions { Enabled = true }),
             new EphemeralDataProtectionProvider());
@@ -63,15 +56,16 @@ public sealed class CreateWithAiPageTests
         return page;
     }
 
-    private static FlowDefinition BuildProposal() => new()
+    private static FlowDefinition BuildFlow(string name, NodeType middleType) => new()
     {
-        Name = "Generated process",
+        Id = Guid.NewGuid(),
+        Name = name,
         Description = "Created from selected sources.",
         DiagramType = DiagramType.StandardFlowchart,
         Nodes =
         [
             new FlowNode { Id = "start", Type = NodeType.Start, Title = "Start" },
-            new FlowNode { Id = "work", Type = NodeType.Process, Title = "Perform work" },
+            new FlowNode { Id = "work", Type = middleType, Title = "Perform work" },
             new FlowNode { Id = "end", Type = NodeType.End, Title = "End" }
         ],
         Connections =
@@ -89,45 +83,22 @@ public sealed class CreateWithAiPageTests
             CancellationToken cancellationToken = default) => Task.FromResult(draft);
     }
 
-    private sealed class RecordingFlowService : IFlowService
+    private sealed class RecordingHierarchyService : IFlowHierarchyService
     {
         public int CreateCalls { get; private set; }
-        public int SaveCalls { get; private set; }
-        public FlowDefinition? SavedFlow { get; private set; }
+        public FlowDiagramTemplateBundle? Proposal { get; private set; }
 
-        public Task<FlowDefinition> CreateAsync(
-            string name,
-            string? description = null,
-            DiagramType diagramType = DiagramType.StandardFlowchart,
-            FlowTemplate template = FlowTemplate.Blank,
+        public Task<FlowDiagramTemplateBundle> CreateDraftAsync(
+            FlowDiagramTemplateBundle proposal,
             CancellationToken cancellationToken = default)
         {
             CreateCalls++;
-            return Task.FromResult(new FlowDefinition
-            {
-                Id = Guid.NewGuid(),
-                Name = name,
-                Description = description ?? string.Empty,
-                DiagramType = diagramType,
-                CreatedBy = "current-user",
-                IsShared = false
-            });
+            Proposal = proposal;
+            return Task.FromResult(proposal);
         }
 
-        public Task<FlowValidationResult> SaveAsync(FlowDefinition flow, CancellationToken cancellationToken = default)
-        {
-            SaveCalls++;
-            SavedFlow = flow;
-            return Task.FromResult(new FlowValidationResult());
-        }
-
-        public Task<IReadOnlyList<FlowSummary>> ListAsync(CancellationToken cancellationToken = default) => throw new NotSupportedException();
-        public Task<IReadOnlyList<FlowSummary>> ListLinkTargetsAsync(Guid sourceFlowId, CancellationToken cancellationToken = default) => throw new NotSupportedException();
-        public Task<FlowDefinition?> GetAsync(Guid id, CancellationToken cancellationToken = default) => throw new NotSupportedException();
-        public Task<NodeComment> AddNodeCommentAsync(Guid flowId, string nodeId, string body, CancellationToken cancellationToken = default) => throw new NotSupportedException();
-        public Task RenameAsync(Guid id, string name, CancellationToken cancellationToken = default) => throw new NotSupportedException();
-        public Task<FlowDefinition> DuplicateAsync(Guid id, CancellationToken cancellationToken = default) => throw new NotSupportedException();
-        public Task DeleteAsync(Guid id, CancellationToken cancellationToken = default) => Task.CompletedTask;
+        public Task DeleteDraftAsync(Guid rootFlowId, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
     }
 
     private sealed class AllowCreatePermissionService : IFlowPermissionService

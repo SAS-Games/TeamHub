@@ -23,6 +23,10 @@ public static class AiFlowDesignerServiceCollectionExtensions
                 "AI:FlowDesigner:MaximumPromptCharacters must be between 100 and 20,000.")
             .Validate(options => options.MaximumOutputTokens is >= 1_000 and <= 32_000,
                 "AI:FlowDesigner:MaximumOutputTokens must be between 1,000 and 32,000.")
+            .Validate(options => options.MaximumDiagrams is >= 1 and <= 25,
+                "AI:FlowDesigner:MaximumDiagrams must be between 1 and 25.")
+            .Validate(options => options.MaximumHierarchyDepth is >= 1 and <= 6,
+                "AI:FlowDesigner:MaximumHierarchyDepth must be between 1 and 6.")
             .ValidateOnStart();
 
         services.AddSingleton<FlowDesignerInputProcessor>();

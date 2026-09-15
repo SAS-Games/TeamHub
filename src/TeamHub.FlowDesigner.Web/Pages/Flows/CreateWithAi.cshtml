@@ -96,43 +96,70 @@
                         </div>
                     }
 
-                    <h3 class="h5 mt-4">Nodes</h3>
-                    <div class="table-responsive">
-                        <table class="table align-middle">
-                            <thead><tr><th>Type</th><th>Step</th><th>Description and notes</th></tr></thead>
-                            <tbody>
-                            @foreach (var node in Model.Preview.Diagram.Nodes.OrderBy(node => node.Y).ThenBy(node => node.X))
-                            {
-                                <tr>
-                                    <td><span class="badge text-bg-light">@node.Type</span></td>
-                                    <td class="fw-semibold">@node.Title</td>
-                                    <td>
-                                        <div class="text-break">@node.Description</div>
-                                        @if (node.CustomProperties.TryGetValue("notes", out var notes) && !string.IsNullOrWhiteSpace(notes))
-                                        {
-                                            <div class="small text-secondary text-break mt-1"><strong>Notes:</strong> @notes</div>
-                                        }
-                                    </td>
-                                </tr>
-                            }
-                            </tbody>
-                        </table>
+                    <div class="alert alert-info mt-4 mb-0">
+                        <strong>Hierarchy:</strong> @Model.Preview.Hierarchy.Flows.Count diagram(s), including the root. Child pages will be created and linked together only after confirmation.
                     </div>
 
-                    <h3 class="h5 mt-4">Connections</h3>
-                    <div class="table-responsive">
-                        <table class="table table-sm align-middle">
-                            <thead><tr><th>From</th><th>Path</th><th>To</th><th>Pins</th></tr></thead>
-                            <tbody>
-                            @foreach (var connection in Model.Preview.Diagram.Connections)
-                            {
-                                var source = Model.Preview.Diagram.Nodes.First(node => node.Id == connection.SourceNodeId);
-                                var target = Model.Preview.Diagram.Nodes.First(node => node.Id == connection.TargetNodeId);
-                                <tr><td>@source.Title</td><td>@(connection.Label ?? "-")</td><td>@target.Title</td><td class="text-secondary small">@connection.SourcePort &rarr; @connection.TargetPort</td></tr>
-                            }
-                            </tbody>
-                        </table>
-                    </div>
+                    @foreach (var diagram in Model.Preview.Hierarchy.Flows)
+                    {
+                        var isRoot = diagram.Id == Model.Preview.Hierarchy.RootFlowId;
+                        <details class="border rounded-3 mt-4" open="@(isRoot ? "open" : null)">
+                            <summary class="p-3 d-flex align-items-center gap-2">
+                                <span class="badge @(isRoot ? "text-bg-primary" : "text-bg-secondary")">@(isRoot ? "Root" : "Child")</span>
+                                <strong>@diagram.Name</strong>
+                                <span class="text-secondary small ms-auto">@diagram.Nodes.Count nodes &middot; @diagram.Connections.Count connections</span>
+                            </summary>
+                            <div class="border-top p-3">
+                                <p class="text-secondary">@diagram.Description</p>
+                                <h3 class="h6">Nodes</h3>
+                                <div class="table-responsive">
+                                    <table class="table align-middle">
+                                        <thead><tr><th>Type</th><th>Step</th><th>Description and notes</th></tr></thead>
+                                        <tbody>
+                                        @foreach (var node in diagram.Nodes.OrderBy(node => node.Y).ThenBy(node => node.X))
+                                        {
+                                            var child = node.ChildFlowId.HasValue
+                                                ? Model.Preview.Hierarchy.Flows.Single(flow => flow.Id == node.ChildFlowId.Value)
+                                                : null;
+                                            <tr>
+                                                <td><span class="badge text-bg-light">@node.Type</span></td>
+                                                <td class="fw-semibold">
+                                                    @node.Title
+                                                    @if (child is not null)
+                                                    {
+                                                        <div class="small text-primary mt-1">Opens child: @child.Name</div>
+                                                    }
+                                                </td>
+                                                <td>
+                                                    <div class="text-break">@node.Description</div>
+                                                    @if (node.CustomProperties.TryGetValue("notes", out var notes) && !string.IsNullOrWhiteSpace(notes))
+                                                    {
+                                                        <div class="small text-secondary text-break mt-1"><strong>Notes:</strong> @notes</div>
+                                                    }
+                                                </td>
+                                            </tr>
+                                        }
+                                        </tbody>
+                                    </table>
+                                </div>
+
+                                <h3 class="h6 mt-3">Connections</h3>
+                                <div class="table-responsive">
+                                    <table class="table table-sm align-middle mb-0">
+                                        <thead><tr><th>From</th><th>Path</th><th>To</th><th>Pins</th></tr></thead>
+                                        <tbody>
+                                        @foreach (var connection in diagram.Connections)
+                                        {
+                                            var source = diagram.Nodes.First(node => node.Id == connection.SourceNodeId);
+                                            var target = diagram.Nodes.First(node => node.Id == connection.TargetNodeId);
+                                            <tr><td>@source.Title</td><td>@(connection.Label ?? "-")</td><td>@target.Title</td><td class="text-secondary small">@connection.SourcePort &rarr; @connection.TargetPort</td></tr>
+                                        }
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </details>
+                    }
 
                     <h3 class="h5 mt-4">Source evidence</h3>
                     @if (Model.Preview.Evidence.Count == 0)
@@ -143,11 +170,11 @@
                     {
                         <div class="table-responsive">
                             <table class="table table-sm align-middle">
-                                <thead><tr><th>Element</th><th>Source</th><th>Location</th><th>Why it supports the element</th></tr></thead>
+                                <thead><tr><th>Diagram</th><th>Element</th><th>Source</th><th>Location</th><th>Why it supports the element</th></tr></thead>
                                 <tbody>
                                 @foreach (var evidence in Model.Preview.Evidence)
                                 {
-                                    <tr><td>@evidence.ElementId</td><td>@evidence.SourceDocumentId</td><td>@(evidence.Location ?? "-")</td><td class="text-break">@evidence.Explanation</td></tr>
+                                    <tr><td>@evidence.DiagramKey</td><td>@evidence.ElementId</td><td>@evidence.SourceDocumentId</td><td>@(evidence.Location ?? "-")</td><td class="text-break">@evidence.Explanation</td></tr>
                                 }
                                 </tbody>
                             </table>

@@ -12,10 +12,13 @@ namespace TeamHub.AI.FlowDesigner.Validation;
 
 internal sealed record ParsedFlowDiagram(
     FlowDefinition Diagram,
+    IReadOnlyList<FlowDefinition> ChildDiagrams,
     IReadOnlyList<FlowDesignerEvidenceReference> Evidence,
     IReadOnlyList<string> Warnings);
 
-internal sealed class GeneratedFlowDiagramParser(IFlowValidator validator)
+internal sealed class GeneratedFlowDiagramParser(
+    IFlowValidator validator,
+    IFlowHierarchyValidator hierarchyValidator)
 {
     private static readonly JsonSerializerOptions SerializerOptions = new()
     {
@@ -25,95 +28,223 @@ internal sealed class GeneratedFlowDiagramParser(IFlowValidator validator)
 
     public ParsedFlowDiagram Parse(
         AiStructuredGenerationResult generation,
-        IReadOnlyCollection<string> sourceDocumentIds)
+        IReadOnlyCollection<string> sourceDocumentIds,
+        int maximumDiagrams,
+        int maximumHierarchyDepth)
     {
-        GeneratedDiagramResponse response;
+        GeneratedHierarchyResponse response;
         try
         {
-            response = JsonSerializer.Deserialize<GeneratedDiagramResponse>(generation.Content, SerializerOptions)
+            response = JsonSerializer.Deserialize<GeneratedHierarchyResponse>(generation.Content, SerializerOptions)
                 ?? throw new JsonException("The response was empty.");
         }
         catch (JsonException exception)
         {
             throw new FlowDiagramGenerationException(
-                "The AI model returned a diagram response that does not match the required Flow Designer schema.",
+                "The AI model returned a response that does not match the required Flow Designer hierarchy schema.",
                 exception);
         }
 
-        ValidateText(response.Name, "Diagram name", 200, required: true);
-        ValidateText(response.Description, "Diagram description", 2_000);
-        if (!Enum.TryParse<DiagramType>(response.DiagramType, true, out var diagramType))
+        ValidateIdentifier(response.RootDiagramKey, "Root diagram key");
+        if (response.Diagrams is null || response.Diagrams.Count is < 1 || response.Diagrams.Count > maximumDiagrams)
         {
-            throw new FlowDiagramGenerationException($"Unsupported diagram type '{response.DiagramType}'.");
+            throw new FlowDiagramGenerationException(
+                $"The generated hierarchy must contain between 1 and {maximumDiagrams} diagrams.");
         }
 
-        if (response.Nodes is null || response.Nodes.Count is < 1 or > 100)
+        var diagramKeys = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var diagram in response.Diagrams)
         {
-            throw new FlowDiagramGenerationException("The generated diagram must contain between 1 and 100 nodes.");
+            ValidateIdentifier(diagram.Key, "Diagram key");
+            diagram.Key = diagram.Key.Trim();
+            if (!diagramKeys.Add(diagram.Key))
+            {
+                throw new FlowDiagramGenerationException($"Generated diagram key '{diagram.Key}' is duplicated.");
+            }
+        }
+        var rootKey = response.RootDiagramKey.Trim();
+        if (!diagramKeys.Contains(rootKey))
+        {
+            throw new FlowDiagramGenerationException($"Root diagram key '{rootKey}' is not present in the hierarchy.");
         }
 
-        if (response.Connections is null || response.Connections.Count > 200)
+        var diagramIds = response.Diagrams.ToDictionary(
+            diagram => diagram.Key,
+            _ => Guid.NewGuid(),
+            StringComparer.Ordinal);
+        var now = DateTimeOffset.UtcNow;
+        var flowsByKey = new Dictionary<string, FlowDefinition>(StringComparer.Ordinal);
+        foreach (var diagram in response.Diagrams)
         {
-            throw new FlowDiagramGenerationException("The generated diagram cannot contain more than 200 connections.");
+            flowsByKey.Add(diagram.Key, BuildFlow(diagram, diagramIds, generation, now));
+        }
+
+        var hierarchy = new FlowDiagramTemplateBundle
+        {
+            RootFlowId = diagramIds[rootKey],
+            Flows = response.Diagrams.Select(diagram => flowsByKey[diagram.Key]).ToList()
+        };
+        var hierarchyValidation = hierarchyValidator.Validate(
+            hierarchy,
+            maximumDiagrams,
+            maximumHierarchyDepth);
+        if (!hierarchyValidation.IsValid)
+        {
+            throw new FlowDiagramGenerationException(
+                "The AI proposal is not a valid Flow Designer hierarchy: "
+                + string.Join(" ", hierarchyValidation.Issues.Select(issue => issue.Message)));
+        }
+
+        var warnings = (response.Warnings ?? [])
+            .Where(warning => !string.IsNullOrWhiteSpace(warning))
+            .Select(warning => warning.Trim())
+            .ToList();
+        foreach (var pair in flowsByKey)
+        {
+            var validation = validator.Validate(pair.Value);
+            var errors = validation.Issues.Where(issue => issue.Severity == ValidationSeverity.Error).ToList();
+            if (errors.Count > 0)
+            {
+                throw new FlowDiagramGenerationException(
+                    $"Generated diagram '{pair.Value.Name}' is not a valid Flow Designer diagram: "
+                    + string.Join(" ", errors.Select(error => error.Message)));
+            }
+            warnings.AddRange(validation.Issues
+                .Where(issue => issue.Severity == ValidationSeverity.Warning)
+                .Select(issue => $"{pair.Value.Name}: {issue.Message}"));
+        }
+
+        var evidence = ValidateEvidence(
+            response.Evidence,
+            sourceDocumentIds,
+            response.Diagrams,
+            flowsByKey);
+        var referencedElements = evidence
+            .Select(item => $"{item.DiagramKey}\u001f{item.ElementId}")
+            .ToHashSet(StringComparer.Ordinal);
+        foreach (var diagram in response.Diagrams)
+        {
+            var flow = flowsByKey[diagram.Key];
+            foreach (var node in flow.Nodes.Where(node => node.Type is not NodeType.Start
+                                                          and not NodeType.End
+                                                          and not NodeType.Section
+                                                          and not NodeType.Annotation))
+            {
+                if (!referencedElements.Contains($"{diagram.Key}\u001f{node.Id}"))
+                {
+                    warnings.Add($"{flow.Name}: generated node '{node.Title}' has no source evidence reference.");
+                }
+            }
+        }
+
+        var root = flowsByKey[rootKey];
+        var children = response.Diagrams
+            .Where(diagram => diagram.Key != rootKey)
+            .Select(diagram => flowsByKey[diagram.Key])
+            .ToList();
+        return new ParsedFlowDiagram(
+            root,
+            children,
+            evidence,
+            warnings.Distinct(StringComparer.Ordinal).ToList());
+    }
+
+    private static FlowDefinition BuildFlow(
+        GeneratedDiagram diagram,
+        IReadOnlyDictionary<string, Guid> diagramIds,
+        AiStructuredGenerationResult generation,
+        DateTimeOffset now)
+    {
+        ValidateText(diagram.Name, $"Name for diagram '{diagram.Key}'", 200, required: true);
+        ValidateText(diagram.Description, $"Description for diagram '{diagram.Key}'", 2_000);
+        if (!Enum.TryParse<DiagramType>(diagram.DiagramType, true, out var diagramType))
+        {
+            throw new FlowDiagramGenerationException(
+                $"Unsupported diagram type '{diagram.DiagramType}' in diagram '{diagram.Key}'.");
+        }
+        if (diagram.Nodes is null || diagram.Nodes.Count is < 1 or > 100)
+        {
+            throw new FlowDiagramGenerationException(
+                $"Generated diagram '{diagram.Key}' must contain between 1 and 100 nodes.");
+        }
+        if (diagram.Connections is null || diagram.Connections.Count > 200)
+        {
+            throw new FlowDiagramGenerationException(
+                $"Generated diagram '{diagram.Key}' cannot contain more than 200 connections.");
         }
 
         var nodeIds = new HashSet<string>(StringComparer.Ordinal);
         var nodeTypes = new Dictionary<string, NodeType>(StringComparer.Ordinal);
-        foreach (var node in response.Nodes)
+        foreach (var node in diagram.Nodes)
         {
-            ValidateIdentifier(node.Id, "Node ID");
-            if (!nodeIds.Add(node.Id.Trim()))
+            ValidateIdentifier(node.Id, $"Node ID in diagram '{diagram.Key}'");
+            node.Id = node.Id.Trim();
+            if (!nodeIds.Add(node.Id))
             {
-                throw new FlowDiagramGenerationException($"Generated node ID '{node.Id}' is duplicated.");
+                throw new FlowDiagramGenerationException(
+                    $"Generated node ID '{node.Id}' is duplicated in diagram '{diagram.Key}'.");
             }
-
             if (!Enum.TryParse<NodeType>(node.Type, true, out var nodeType))
             {
                 throw new FlowDiagramGenerationException($"Unsupported node type '{node.Type}'.");
             }
-
-            nodeTypes.Add(node.Id.Trim(), nodeType);
+            nodeTypes.Add(node.Id, nodeType);
             ValidateText(node.Title, $"Title for node '{node.Id}'", 200, required: true);
             ValidateText(node.Description, $"Description for node '{node.Id}'", 2_000);
             ValidateText(node.Notes, $"Notes for node '{node.Id}'", 1_000);
+
+            var childKey = node.ChildDiagramKey?.Trim() ?? string.Empty;
+            if (childKey.Length > 0)
+            {
+                ValidateIdentifier(childKey, $"Child diagram key for node '{node.Id}'");
+                if (nodeType != NodeType.Subprocess)
+                {
+                    throw new FlowDiagramGenerationException(
+                        $"Only a Subprocess node can open child diagram '{childKey}'.");
+                }
+                if (!diagramIds.ContainsKey(childKey))
+                {
+                    throw new FlowDiagramGenerationException(
+                        $"Node '{node.Id}' links to missing child diagram '{childKey}'.");
+                }
+            }
         }
 
         var connectionIds = new HashSet<string>(StringComparer.Ordinal);
-        foreach (var connection in response.Connections)
+        foreach (var connection in diagram.Connections)
         {
-            ValidateIdentifier(connection.Id, "Connection ID");
-            if (!connectionIds.Add(connection.Id.Trim()))
+            ValidateIdentifier(connection.Id, $"Connection ID in diagram '{diagram.Key}'");
+            connection.Id = connection.Id.Trim();
+            if (!connectionIds.Add(connection.Id))
             {
-                throw new FlowDiagramGenerationException($"Generated connection ID '{connection.Id}' is duplicated.");
+                throw new FlowDiagramGenerationException(
+                    $"Generated connection ID '{connection.Id}' is duplicated in diagram '{diagram.Key}'.");
             }
-
             ValidateIdentifier(connection.SourceNodeId, $"Source node ID for connection '{connection.Id}'");
             ValidateIdentifier(connection.TargetNodeId, $"Target node ID for connection '{connection.Id}'");
+            connection.SourceNodeId = connection.SourceNodeId.Trim();
+            connection.TargetNodeId = connection.TargetNodeId.Trim();
             ValidatePin(connection.OutputPin, "output", connection.Id);
             ValidatePin(connection.InputPin, "input", connection.Id);
             ValidateText(connection.Label, $"Label for connection '{connection.Id}'", 200);
 
-            var sourceId = connection.SourceNodeId.Trim();
-            var targetId = connection.TargetNodeId.Trim();
-            if (nodeTypes.TryGetValue(sourceId, out var sourceType) && !CanHaveOutput(sourceType))
+            if (nodeTypes.TryGetValue(connection.SourceNodeId, out var sourceType) && !CanHaveOutput(sourceType))
             {
                 throw new FlowDiagramGenerationException(
-                    $"Connection '{connection.Id}' cannot start at {sourceType} node '{sourceId}'.");
+                    $"Connection '{connection.Id}' cannot start at {sourceType} node '{connection.SourceNodeId}'.");
             }
-
-            if (nodeTypes.TryGetValue(targetId, out var targetType) && !CanHaveInput(targetType))
+            if (nodeTypes.TryGetValue(connection.TargetNodeId, out var targetType) && !CanHaveInput(targetType))
             {
                 throw new FlowDiagramGenerationException(
-                    $"Connection '{connection.Id}' cannot end at {targetType} node '{targetId}'.");
+                    $"Connection '{connection.Id}' cannot end at {targetType} node '{connection.TargetNodeId}'.");
             }
         }
 
-        var now = DateTimeOffset.UtcNow;
         var flow = new FlowDefinition
         {
-            Id = Guid.NewGuid(),
-            Name = response.Name.Trim(),
-            Description = response.Description?.Trim() ?? string.Empty,
+            Id = diagramIds[diagram.Key],
+            Name = diagram.Name.Trim(),
+            Description = diagram.Description?.Trim() ?? string.Empty,
             DiagramType = diagramType,
             CreatedAt = now,
             UpdatedAt = now,
@@ -123,6 +254,7 @@ internal sealed class GeneratedFlowDiagramParser(IFlowValidator validator)
             {
                 ["ai.generated"] = "true",
                 ["ai.schemaVersion"] = FlowDiagramPromptBuilder.SchemaVersion,
+                ["ai.diagramKey"] = diagram.Key,
                 ["ai.provider"] = generation.Provider,
                 ["ai.model"] = generation.Model
             }
@@ -132,126 +264,96 @@ internal sealed class GeneratedFlowDiagramParser(IFlowValidator validator)
             flow.Metadata["ai.requestId"] = generation.RequestId;
         }
 
-        var maxInputPins = response.Connections
-            .GroupBy(connection => connection.TargetNodeId.Trim(), StringComparer.Ordinal)
+        var maxInputPins = diagram.Connections
+            .GroupBy(connection => connection.TargetNodeId, StringComparer.Ordinal)
             .ToDictionary(group => group.Key, group => group.Max(connection => connection.InputPin), StringComparer.Ordinal);
-        var maxOutputPins = response.Connections
-            .GroupBy(connection => connection.SourceNodeId.Trim(), StringComparer.Ordinal)
+        var maxOutputPins = diagram.Connections
+            .GroupBy(connection => connection.SourceNodeId, StringComparer.Ordinal)
             .ToDictionary(group => group.Key, group => group.Max(connection => connection.OutputPin), StringComparer.Ordinal);
-
-        flow.Nodes = response.Nodes.Select(node =>
+        flow.Nodes = diagram.Nodes.Select(node =>
         {
-            var id = node.Id.Trim();
             var customProperties = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
             {
                 ["portLayout"] = "top-bottom"
             };
-            if (!string.IsNullOrWhiteSpace(node.Notes))
-            {
-                customProperties["notes"] = node.Notes.Trim();
-            }
-            if (maxInputPins.TryGetValue(id, out var inputPins))
+            if (!string.IsNullOrWhiteSpace(node.Notes)) customProperties["notes"] = node.Notes.Trim();
+            if (maxInputPins.TryGetValue(node.Id, out var inputPins))
             {
                 customProperties["inputPins"] = inputPins.ToString(CultureInfo.InvariantCulture);
             }
-            if (maxOutputPins.TryGetValue(id, out var outputPins))
+            if (maxOutputPins.TryGetValue(node.Id, out var outputPins))
             {
                 customProperties["outputPins"] = outputPins.ToString(CultureInfo.InvariantCulture);
             }
 
+            var childKey = node.ChildDiagramKey?.Trim() ?? string.Empty;
             return new FlowNode
             {
-                Id = id,
-                Type = nodeTypes[id],
+                Id = node.Id,
+                Type = nodeTypes[node.Id],
                 Title = node.Title.Trim(),
                 Description = node.Description?.Trim() ?? string.Empty,
-                ChildFlowId = null,
+                ChildFlowId = childKey.Length == 0 ? null : diagramIds[childKey],
                 CustomProperties = customProperties
             };
         }).ToList();
-
-        flow.Connections = response.Connections.Select(connection => new FlowConnection
+        flow.Connections = diagram.Connections.Select(connection => new FlowConnection
         {
-            Id = connection.Id.Trim(),
-            SourceNodeId = connection.SourceNodeId.Trim(),
-            TargetNodeId = connection.TargetNodeId.Trim(),
+            Id = connection.Id,
+            SourceNodeId = connection.SourceNodeId,
+            TargetNodeId = connection.TargetNodeId,
             SourcePort = $"output_{connection.OutputPin}",
             TargetPort = $"input_{connection.InputPin}",
             Label = string.IsNullOrWhiteSpace(connection.Label) ? null : connection.Label.Trim()
         }).ToList();
-
         ApplyFlowDesignerLayout(flow);
-
-        var validation = validator.Validate(flow);
-        var errors = validation.Issues.Where(issue => issue.Severity == ValidationSeverity.Error).ToList();
-        if (errors.Count > 0)
-        {
-            throw new FlowDiagramGenerationException(
-                "The AI proposal is not a valid Flow Designer diagram: "
-                + string.Join(" ", errors.Select(error => error.Message)));
-        }
-
-        var evidence = ValidateEvidence(response.Evidence, sourceDocumentIds, nodeIds, connectionIds);
-        var warnings = (response.Warnings ?? [])
-            .Where(warning => !string.IsNullOrWhiteSpace(warning))
-            .Select(warning => warning.Trim())
-            .Concat(validation.Issues
-                .Where(issue => issue.Severity == ValidationSeverity.Warning)
-                .Select(issue => issue.Message))
-            .Distinct(StringComparer.Ordinal)
-            .ToList();
-
-        var referencedElements = evidence.Select(item => item.ElementId).ToHashSet(StringComparer.Ordinal);
-        foreach (var node in flow.Nodes.Where(node => node.Type is not NodeType.Start
-                                                      and not NodeType.End
-                                                      and not NodeType.Section
-                                                      and not NodeType.Annotation))
-        {
-            if (!referencedElements.Contains(node.Id))
-            {
-                warnings.Add($"Generated node '{node.Title}' has no source evidence reference.");
-            }
-        }
-
-        return new ParsedFlowDiagram(flow, evidence, warnings.Distinct(StringComparer.Ordinal).ToList());
+        return flow;
     }
 
     private static IReadOnlyList<FlowDesignerEvidenceReference> ValidateEvidence(
         IReadOnlyList<GeneratedEvidence>? generatedEvidence,
         IReadOnlyCollection<string> sourceDocumentIds,
-        IReadOnlySet<string> nodeIds,
-        IReadOnlySet<string> connectionIds)
+        IReadOnlyList<GeneratedDiagram> diagrams,
+        IReadOnlyDictionary<string, FlowDefinition> flowsByKey)
     {
         var sourceIds = sourceDocumentIds.ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var diagramsByKey = diagrams.ToDictionary(diagram => diagram.Key, StringComparer.Ordinal);
         var evidence = new List<FlowDesignerEvidenceReference>();
         foreach (var item in generatedEvidence ?? [])
         {
+            ValidateIdentifier(item.DiagramKey, "Evidence diagram key");
             ValidateIdentifier(item.ElementId, "Evidence element ID");
             ValidateIdentifier(item.SourceDocumentId, "Evidence source document ID");
             ValidateText(item.Location, "Evidence location", 300);
             ValidateText(item.Explanation, "Evidence explanation", 500, required: true);
 
-            var elementId = item.ElementId.Trim();
-            if (!nodeIds.Contains(elementId) && !connectionIds.Contains(elementId))
+            var diagramKey = item.DiagramKey.Trim();
+            if (!diagramsByKey.ContainsKey(diagramKey))
             {
                 throw new FlowDiagramGenerationException(
-                    $"Evidence references unknown Flow Designer element '{elementId}'.");
+                    $"Evidence references unknown diagram '{diagramKey}'.");
             }
-
+            var elementId = item.ElementId.Trim();
+            var flow = flowsByKey[diagramKey];
+            if (flow.Nodes.All(node => node.Id != elementId)
+                && flow.Connections.All(connection => connection.Id != elementId))
+            {
+                throw new FlowDiagramGenerationException(
+                    $"Evidence references unknown element '{elementId}' in diagram '{diagramKey}'.");
+            }
             var sourceId = item.SourceDocumentId.Trim();
             if (!sourceIds.Contains(sourceId))
             {
                 throw new FlowDiagramGenerationException(
                     $"Evidence references unknown source document '{sourceId}'.");
             }
-
             evidence.Add(new FlowDesignerEvidenceReference(
                 elementId,
                 sourceId,
                 string.IsNullOrWhiteSpace(item.Location) ? null : item.Location.Trim(),
-                item.Explanation.Trim()));
+                item.Explanation.Trim(),
+                diagramKey));
         }
-
         return evidence;
     }
 
@@ -279,13 +381,8 @@ internal sealed class GeneratedFlowDiagramParser(IFlowValidator validator)
                 if (incoming[targetId] == 0) queue.Enqueue(targetId);
             }
         }
-
         var cycleLevel = levels.Values.DefaultIfEmpty(0).Max() + 1;
-        foreach (var node in flow.Nodes.Where(node => !visited.Contains(node.Id)))
-        {
-            levels[node.Id] = cycleLevel;
-        }
-
+        foreach (var node in flow.Nodes.Where(node => !visited.Contains(node.Id))) levels[node.Id] = cycleLevel;
         foreach (var level in flow.Nodes.GroupBy(node => levels[node.Id]).OrderBy(group => group.Key))
         {
             var index = 0;
@@ -328,15 +425,22 @@ internal sealed class GeneratedFlowDiagramParser(IFlowValidator validator)
     private static bool CanHaveInput(NodeType type) => type is not NodeType.Start and not NodeType.Annotation;
     private static bool CanHaveOutput(NodeType type) => type is not NodeType.End and not NodeType.Annotation;
 
-    private sealed class GeneratedDiagramResponse
+    private sealed class GeneratedHierarchyResponse
     {
+        public string RootDiagramKey { get; set; } = string.Empty;
+        public List<GeneratedDiagram> Diagrams { get; set; } = [];
+        public List<GeneratedEvidence> Evidence { get; set; } = [];
+        public List<string> Warnings { get; set; } = [];
+    }
+
+    private sealed class GeneratedDiagram
+    {
+        public string Key { get; set; } = string.Empty;
         public string Name { get; set; } = string.Empty;
         public string Description { get; set; } = string.Empty;
         public string DiagramType { get; set; } = string.Empty;
         public List<GeneratedNode> Nodes { get; set; } = [];
         public List<GeneratedConnection> Connections { get; set; } = [];
-        public List<GeneratedEvidence> Evidence { get; set; } = [];
-        public List<string> Warnings { get; set; } = [];
     }
 
     private sealed class GeneratedNode
@@ -346,6 +450,7 @@ internal sealed class GeneratedFlowDiagramParser(IFlowValidator validator)
         public string Title { get; set; } = string.Empty;
         public string Description { get; set; } = string.Empty;
         public string Notes { get; set; } = string.Empty;
+        public string ChildDiagramKey { get; set; } = string.Empty;
     }
 
     private sealed class GeneratedConnection
@@ -360,6 +465,7 @@ internal sealed class GeneratedFlowDiagramParser(IFlowValidator validator)
 
     private sealed class GeneratedEvidence
     {
+        public string DiagramKey { get; set; } = string.Empty;
         public string ElementId { get; set; } = string.Empty;
         public string SourceDocumentId { get; set; } = string.Empty;
         public string Location { get; set; } = string.Empty;

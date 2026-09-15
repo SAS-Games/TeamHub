@@ -23,15 +23,26 @@ internal sealed class FlowDiagramGenerationWorkflow(
         }
 
         var input = inputProcessor.Prepare(request);
-        var modelRequest = promptBuilder.Build(input, options.Value.MaximumOutputTokens);
+        var modelRequest = promptBuilder.Build(
+            input,
+            options.Value.MaximumOutputTokens,
+            options.Value.MaximumDiagrams,
+            options.Value.MaximumHierarchyDepth);
         var generation = await modelService.GenerateStructuredAsync(modelRequest, cancellationToken);
-        var parsed = parser.Parse(generation, input.SourceDocuments.Select(document => document.Id).ToList());
+        var parsed = parser.Parse(
+            generation,
+            input.SourceDocuments.Select(document => document.Id).ToList(),
+            options.Value.MaximumDiagrams,
+            options.Value.MaximumHierarchyDepth);
 
         return new FlowDiagramGenerationDraft(
             parsed.Diagram,
             parsed.Evidence,
             parsed.Warnings,
             generation.Provider,
-            generation.Model);
+            generation.Model)
+        {
+            ChildDiagrams = parsed.ChildDiagrams
+        };
     }
 }

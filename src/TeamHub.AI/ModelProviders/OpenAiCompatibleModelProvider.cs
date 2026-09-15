@@ -78,13 +78,13 @@ public class OpenAiCompatibleModelProvider(
                 ],
                 settings.Temperature,
                 request.MaximumOutputTokens,
-                new("json_schema", new("teamhub_ai_report", true, request.ResponseSchema)));
+                new("json_schema", new("teamhub_structured_response", true, request.ResponseSchema)));
 
             using var response = await client.PostAsJsonAsync("chat/completions", payload, SerializerOptions, timeout.Token);
             if (!response.IsSuccessStatusCode)
             {
                 throw new AiModelProviderException(
-                    $"AI provider returned HTTP {(int)response.StatusCode} while generating the report.");
+                    $"AI provider returned HTTP {(int)response.StatusCode} while generating structured content.");
             }
 
             var completion = await response.Content.ReadFromJsonAsync<ChatCompletionResponse>(SerializerOptions, timeout.Token)
@@ -99,7 +99,7 @@ public class OpenAiCompatibleModelProvider(
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
-            throw new AiModelProviderException("AI report generation timed out.");
+            throw new AiModelProviderException("AI structured generation timed out.");
         }
         catch (HttpRequestException exception)
         {

@@ -9,7 +9,8 @@ public sealed class FlowService(
     IFlowValidator validator,
     IFlowSerializer serializer,
     ICurrentUserProvider currentUser,
-    IFlowPermissionService permissions) : IFlowService
+    IFlowPermissionService permissions,
+    IFlowHierarchyService? hierarchies = null) : IFlowService
 {
     public async Task<IReadOnlyList<FlowSummary>> ListAsync(CancellationToken cancellationToken = default)
     {
@@ -173,6 +174,12 @@ public sealed class FlowService(
 
     public async Task DeleteAsync(Guid id, CancellationToken cancellationToken = default)
     {
+        if (hierarchies is not null)
+        {
+            await hierarchies.DeleteDraftAsync(id, cancellationToken);
+            return;
+        }
+
         var flow = await repository.GetAsync(id, cancellationToken)
             ?? throw new KeyNotFoundException($"Flow '{id}' was not found.");
         var canDiscardOwnDraft = flow.Version <= 0
