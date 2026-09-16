@@ -34,13 +34,15 @@
         <div class="section-heading"><div><span>Configured studios</span><h2>Studio Records</h2></div></div>
         <div class="table-responsive">
             <table class="table styled-table">
-                <thead><tr><th>Group</th><th>Studio</th><th>Project</th><th>Status</th><th>Location</th><th>Time Zone</th><th>Our Contacts</th><th>Team Members</th>@if (showActions) { <th>Actions</th> }</tr></thead>
+                <thead><tr><th>Group</th><th>Group Order</th><th>Studio</th><th>Studio Order</th><th>Project</th><th>Status</th><th>Location</th><th>Time Zone</th><th>Our Contacts</th><th>Team Members</th>@if (showActions) { <th>Actions</th> }</tr></thead>
                 <tbody>
                 @foreach (var studio in Model.Studios)
                 {
                     <tr class="@(!studio.IsActive ? "table-light text-secondary" : null)">
                         <td>@studio.StudioGroup</td>
+                        <td>@(studio.GroupDisplayOrder?.ToString() ?? "—")</td>
                         <td>@studio.StudioName</td>
+                        <td>@(studio.StudioDisplayOrder?.ToString() ?? "—")</td>
                         <td>@studio.ProjectName</td>
                         <td><span class="badge @(studio.IsActive ? "text-bg-success" : "text-bg-secondary")">@(studio.IsActive ? "Active" : "Inactive")</span></td>
                         <td>@studio.Location</td>
@@ -86,9 +88,21 @@
                         <div class="form-text">Studios with the same group appear together in navigation and reports.</div>
                     </div>
                     <div class="col-md-6 col-xl-4">
+                        <label asp-for="Input.GroupDisplayOrder" class="form-label">Group Order (optional)</label>
+                        <input asp-for="Input.GroupDisplayOrder" class="form-control" type="number" min="1" placeholder="Example: 1" />
+                        <span asp-validation-for="Input.GroupDisplayOrder" class="text-danger"></span>
+                        <div class="form-text">Lower numbers appear first. This order applies to every studio in the group; blank groups use alphabetical order.</div>
+                    </div>
+                    <div class="col-md-6 col-xl-4">
                         <label asp-for="Input.StudioName" class="form-label">Studio Name</label>
                         <input asp-for="Input.StudioName" class="form-control" />
                         <span asp-validation-for="Input.StudioName" class="text-danger"></span>
+                    </div>
+                    <div class="col-md-6 col-xl-4">
+                        <label asp-for="Input.StudioDisplayOrder" class="form-label">Studio Order (optional)</label>
+                        <input asp-for="Input.StudioDisplayOrder" class="form-control" type="number" min="1" placeholder="Example: 1" />
+                        <span asp-validation-for="Input.StudioDisplayOrder" class="text-danger"></span>
+                        <div class="form-text">Controls this studio's position inside its group. Blank studios use alphabetical order.</div>
                     </div>
                     <div class="col-md-6 col-xl-4">
                         <label asp-for="Input.ProjectName" class="form-label">Project Name</label>

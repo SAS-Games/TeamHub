@@ -11,6 +11,8 @@ public sealed class StudioDetails
     public string StudioName { get; set; } = string.Empty;
     public string ProjectName { get; set; } = string.Empty;
     public string StudioGroup { get; set; } = "Ungrouped";
+    public int? GroupDisplayOrder { get; set; }
+    public int? StudioDisplayOrder { get; set; }
     public bool IsActive { get; set; } = true;
     public string Location { get; set; } = string.Empty;
     public string TimeZoneId { get; set; } = TimeZoneInfo.Utc.Id;
@@ -59,6 +61,7 @@ internal sealed class StudioRecord
     public string StudioName { get; set; } = string.Empty;
     public string ProjectName { get; set; } = string.Empty;
     public string StudioGroup { get; set; } = "Ungrouped";
+    public int? StudioDisplayOrder { get; set; }
     public bool IsActive { get; set; } = true;
     public string Location { get; set; } = string.Empty;
     public string TimeZoneId { get; set; } = TimeZoneInfo.Utc.Id;
@@ -68,6 +71,14 @@ internal sealed class StudioRecord
     public ICollection<StudioContactRecord> OurContacts { get; set; } = new List<StudioContactRecord>();
     public ICollection<StudioDevelopmentToolsRecord> DevelopmentTools { get; set; } = new List<StudioDevelopmentToolsRecord>();
     public ICollection<StudioImportantLinkRecord> ImportantLinks { get; set; } = new List<StudioImportantLinkRecord>();
+}
+
+internal sealed class StudioGroupOrderRecord
+{
+    public string NormalizedGroupName { get; set; } = string.Empty;
+    public string GroupName { get; set; } = string.Empty;
+    public int DisplayOrder { get; set; }
+    public DateTime UpdatedAtUtc { get; set; } = DateTime.UtcNow;
 }
 
 internal sealed class StudioTeamMemberRecord
@@ -163,6 +174,7 @@ internal sealed class AtlassianUserCredentialRecord
 internal sealed class StudioDbContext(DbContextOptions<StudioDbContext> options) : DbContext(options)
 {
     public DbSet<StudioRecord> Studios => Set<StudioRecord>();
+    public DbSet<StudioGroupOrderRecord> StudioGroupOrders => Set<StudioGroupOrderRecord>();
     public DbSet<StudioContactRecord> StudioContacts => Set<StudioContactRecord>();
     public DbSet<StudioTeamMemberRecord> StudioTeamMembers => Set<StudioTeamMemberRecord>();
     public DbSet<StudioDevelopmentToolsRecord> StudioDevelopmentTools => Set<StudioDevelopmentToolsRecord>();
@@ -183,6 +195,14 @@ internal sealed class StudioDbContext(DbContextOptions<StudioDbContext> options)
             entity.Property(x => x.Location).HasMaxLength(256);
             entity.Property(x => x.TimeZoneId).HasMaxLength(256);
             entity.HasIndex(x => new { x.StudioName, x.ProjectName }).IsUnique();
+        });
+
+        modelBuilder.Entity<StudioGroupOrderRecord>(entity =>
+        {
+            entity.ToTable("StudioGroupOrders");
+            entity.HasKey(x => x.NormalizedGroupName);
+            entity.Property(x => x.NormalizedGroupName).HasMaxLength(128);
+            entity.Property(x => x.GroupName).HasMaxLength(128);
         });
 
         modelBuilder.Entity<StudioContactRecord>(entity =>
@@ -297,6 +317,7 @@ internal sealed class SqliteStudioDatabaseInitializer(
                     StudioName TEXT NOT NULL,
                     ProjectName TEXT NOT NULL,
                     StudioGroup TEXT NOT NULL DEFAULT 'Ungrouped',
+                    StudioDisplayOrder INTEGER NULL,
                     IsActive INTEGER NOT NULL DEFAULT 1,
                     Location TEXT NOT NULL,
                     TimeZoneId TEXT NOT NULL DEFAULT 'UTC',
@@ -327,6 +348,22 @@ internal sealed class SqliteStudioDatabaseInitializer(
                     ADD COLUMN IsActive INTEGER NOT NULL DEFAULT 1;
                     """, cancellationToken);
             }
+            if (!await MainColumnExistsAsync(connection, "Studios", "StudioDisplayOrder", cancellationToken))
+            {
+                await dbContext.Database.ExecuteSqlRawAsync("""
+                    ALTER TABLE Studios
+                    ADD COLUMN StudioDisplayOrder INTEGER NULL;
+                    """, cancellationToken);
+            }
+
+            await dbContext.Database.ExecuteSqlRawAsync("""
+                CREATE TABLE IF NOT EXISTS StudioGroupOrders (
+                    NormalizedGroupName TEXT NOT NULL CONSTRAINT PK_StudioGroupOrders PRIMARY KEY,
+                    GroupName TEXT NOT NULL,
+                    DisplayOrder INTEGER NOT NULL,
+                    UpdatedAtUtc TEXT NOT NULL
+                );
+                """, cancellationToken);
 
             await dbContext.Database.ExecuteSqlRawAsync("""
                 CREATE UNIQUE INDEX IF NOT EXISTS IX_Studios_StudioName_ProjectName
@@ -656,11 +693,36 @@ internal sealed class SqliteStudioDatabaseInitializer(
                     """, cancellationToken);
             }
 
+            var hasGroupOrders = await TableExistsAsync(
+                connection,
+                "StudioGroupOrders",
+                cancellationToken,
+                transaction);
+            if (hasGroupOrders)
+            {
+                await ExecuteAsync(connection, transaction, """
+                    INSERT OR IGNORE INTO main.StudioGroupOrders
+                        (NormalizedGroupName, GroupName, DisplayOrder, UpdatedAtUtc)
+                    SELECT NormalizedGroupName, GroupName, DisplayOrder, UpdatedAtUtc
+                    FROM legacy.StudioGroupOrders;
+                    """, cancellationToken);
+            }
+
             var migrationComplete = await AllRowsMovedAsync(connection, transaction, "Studios", cancellationToken);
             foreach (var table in existingChildTables)
             {
                 migrationComplete = migrationComplete
                     && await AllRowsMovedAsync(connection, transaction, table.Name, cancellationToken);
+            }
+            if (hasGroupOrders)
+            {
+                migrationComplete = migrationComplete
+                    && await AllRowsMovedAsync(
+                        connection,
+                        transaction,
+                        "StudioGroupOrders",
+                        cancellationToken,
+                        "NormalizedGroupName");
             }
 
             if (migrationComplete)
@@ -668,6 +730,10 @@ internal sealed class SqliteStudioDatabaseInitializer(
                 foreach (var table in existingChildTables)
                 {
                     await ExecuteAsync(connection, transaction, $"DROP TABLE legacy.{table.Name};", cancellationToken);
+                }
+                if (hasGroupOrders)
+                {
+                    await ExecuteAsync(connection, transaction, "DROP TABLE legacy.StudioGroupOrders;", cancellationToken);
                 }
                 await ExecuteAsync(connection, transaction, "DROP TABLE legacy.Studios;", cancellationToken);
             }
@@ -730,7 +796,8 @@ internal sealed class SqliteStudioDatabaseInitializer(
         SqliteConnection connection,
         SqliteTransaction transaction,
         string tableName,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        string keyColumn = "Id")
     {
         await using var command = connection.CreateCommand();
         command.Transaction = transaction;
@@ -738,7 +805,8 @@ internal sealed class SqliteStudioDatabaseInitializer(
             SELECT COUNT(*)
             FROM legacy.{tableName} AS source
             WHERE NOT EXISTS (
-                SELECT 1 FROM main.{tableName} AS target WHERE target.Id = source.Id
+                SELECT 1 FROM main.{tableName} AS target
+                WHERE target.{keyColumn} = source.{keyColumn}
             );
             """;
         return Convert.ToInt64(await command.ExecuteScalarAsync(cancellationToken)) == 0;
@@ -785,11 +853,25 @@ internal sealed class SqliteStudioDirectoryService(StudioDbContext dbContext) : 
             .Include(studio => studio.TeamMembers)
             .Include(studio => studio.DevelopmentTools)
             .Include(studio => studio.ImportantLinks)
-            .OrderBy(studio => studio.StudioGroup)
-            .ThenBy(studio => studio.StudioName)
             .ToListAsync(cancellationToken);
+        var groupOrders = await dbContext.StudioGroupOrders
+            .AsNoTracking()
+            .ToDictionaryAsync(item => item.NormalizedGroupName, item => item.DisplayOrder, cancellationToken);
 
-        return studios.Select(ToDetails).ToList();
+        return studios
+            .Select(studio =>
+            {
+                var hasGroupOrder = groupOrders.TryGetValue(
+                    NormalizeStudioGroupKey(studio.StudioGroup),
+                    out var groupOrder);
+                return ToDetails(studio, hasGroupOrder ? groupOrder : null);
+            })
+            .OrderBy(studio => studio.GroupDisplayOrder ?? int.MaxValue)
+            .ThenBy(studio => studio.StudioGroup, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(studio => studio.StudioDisplayOrder ?? int.MaxValue)
+            .ThenBy(studio => studio.StudioName, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(studio => studio.ProjectName, StringComparer.OrdinalIgnoreCase)
+            .ToList();
     }
 
     public async Task<StudioDetails?> GetStudioAsync(string id, CancellationToken cancellationToken = default)
@@ -807,17 +889,31 @@ internal sealed class SqliteStudioDirectoryService(StudioDbContext dbContext) : 
             .Include(item => item.ImportantLinks)
             .FirstOrDefaultAsync(item => item.Id == studioId, cancellationToken);
 
-        return studio is null ? null : ToDetails(studio);
+        if (studio is null)
+        {
+            return null;
+        }
+
+        var groupOrder = await dbContext.StudioGroupOrders
+            .AsNoTracking()
+            .Where(item => item.NormalizedGroupName == NormalizeStudioGroupKey(studio.StudioGroup))
+            .Select(item => (int?)item.DisplayOrder)
+            .FirstOrDefaultAsync(cancellationToken);
+        return ToDetails(studio, groupOrder);
     }
 
     public async Task<StudioDetails> SaveStudioAsync(StudioDetails studio, CancellationToken cancellationToken = default)
     {
         StudioRecord record;
+        var existingStudio = false;
+        var originalGroup = string.Empty;
         if (Guid.TryParse(studio.Id, out var studioId))
         {
             record = await dbContext.Studios
                 .FirstOrDefaultAsync(item => item.Id == studioId, cancellationToken)
                 ?? new StudioRecord { Id = studioId, CreatedAtUtc = DateTime.UtcNow };
+            existingStudio = dbContext.Entry(record).State != EntityState.Detached;
+            originalGroup = record.StudioGroup;
         }
         else
         {
@@ -828,6 +924,7 @@ internal sealed class SqliteStudioDirectoryService(StudioDbContext dbContext) : 
         record.StudioName = studio.StudioName.Trim();
         record.ProjectName = studio.ProjectName.Trim();
         record.StudioGroup = NormalizeStudioGroup(studio.StudioGroup);
+        record.StudioDisplayOrder = NormalizeDisplayOrder(studio.StudioDisplayOrder);
         record.IsActive = studio.IsActive;
         record.Location = studio.Location.Trim();
         record.TimeZoneId = NormalizeTimeZoneId(studio.TimeZoneId);
@@ -838,6 +935,16 @@ internal sealed class SqliteStudioDirectoryService(StudioDbContext dbContext) : 
             dbContext.Studios.Add(record);
         }
 
+        await dbContext.SaveChangesAsync(cancellationToken);
+        await SaveGroupOrderAsync(
+            record.StudioGroup,
+            NormalizeDisplayOrder(studio.GroupDisplayOrder),
+            existingStudio && string.Equals(
+                NormalizeStudioGroupKey(originalGroup),
+                NormalizeStudioGroupKey(record.StudioGroup),
+                StringComparison.Ordinal),
+            cancellationToken);
+        await RemoveUnusedGroupOrderAsync(originalGroup, record.StudioGroup, cancellationToken);
         await dbContext.SaveChangesAsync(cancellationToken);
 
         await dbContext.StudioContacts
@@ -859,7 +966,7 @@ internal sealed class SqliteStudioDirectoryService(StudioDbContext dbContext) : 
         dbContext.StudioImportantLinks.AddRange(CreateImportantLinkRecords(record.Id, studio.ImportantLinks));
         await dbContext.SaveChangesAsync(cancellationToken);
 
-        return await GetStudioAsync(record.Id.ToString(), cancellationToken) ?? ToDetails(record);
+        return await GetStudioAsync(record.Id.ToString(), cancellationToken) ?? ToDetails(record, studio.GroupDisplayOrder);
     }
 
     public async Task DeleteStudioAsync(string id, CancellationToken cancellationToken = default)
@@ -875,11 +982,14 @@ internal sealed class SqliteStudioDirectoryService(StudioDbContext dbContext) : 
             return;
         }
 
+        var groupName = studio.StudioGroup;
         dbContext.Studios.Remove(studio);
+        await dbContext.SaveChangesAsync(cancellationToken);
+        await RemoveGroupOrderIfUnusedAsync(groupName, cancellationToken);
         await dbContext.SaveChangesAsync(cancellationToken);
     }
 
-    private static StudioDetails ToDetails(StudioRecord studio)
+    private static StudioDetails ToDetails(StudioRecord studio, int? groupDisplayOrder)
     {
         return new StudioDetails
         {
@@ -887,6 +997,8 @@ internal sealed class SqliteStudioDirectoryService(StudioDbContext dbContext) : 
             StudioName = studio.StudioName,
             ProjectName = studio.ProjectName,
             StudioGroup = NormalizeStudioGroup(studio.StudioGroup),
+            GroupDisplayOrder = groupDisplayOrder,
+            StudioDisplayOrder = studio.StudioDisplayOrder,
             IsActive = studio.IsActive,
             Location = studio.Location,
             TimeZoneId = NormalizeTimeZoneId(studio.TimeZoneId),
@@ -925,6 +1037,72 @@ internal sealed class SqliteStudioDirectoryService(StudioDbContext dbContext) : 
                 })
                 .ToList()
         };
+    }
+
+    private async Task SaveGroupOrderAsync(
+        string groupName,
+        int? displayOrder,
+        bool clearWhenMissing,
+        CancellationToken cancellationToken)
+    {
+        var normalizedGroupName = NormalizeStudioGroupKey(groupName);
+        var existing = await dbContext.StudioGroupOrders
+            .FirstOrDefaultAsync(item => item.NormalizedGroupName == normalizedGroupName, cancellationToken);
+
+        if (!displayOrder.HasValue)
+        {
+            if (clearWhenMissing && existing is not null)
+            {
+                dbContext.StudioGroupOrders.Remove(existing);
+            }
+            return;
+        }
+
+        if (existing is null)
+        {
+            existing = new StudioGroupOrderRecord { NormalizedGroupName = normalizedGroupName };
+            dbContext.StudioGroupOrders.Add(existing);
+        }
+        existing.GroupName = NormalizeStudioGroup(groupName);
+        existing.DisplayOrder = displayOrder.Value;
+        existing.UpdatedAtUtc = DateTime.UtcNow;
+    }
+
+    private async Task RemoveUnusedGroupOrderAsync(
+        string originalGroup,
+        string currentGroup,
+        CancellationToken cancellationToken)
+    {
+        var originalKey = NormalizeStudioGroupKey(originalGroup);
+        if (string.IsNullOrWhiteSpace(originalGroup)
+            || string.Equals(originalKey, NormalizeStudioGroupKey(currentGroup), StringComparison.Ordinal)
+            || await dbContext.Studios.AsNoTracking().AnyAsync(
+                studio => studio.StudioGroup.ToUpper() == originalKey,
+                cancellationToken))
+        {
+            return;
+        }
+
+        await RemoveGroupOrderIfUnusedAsync(originalGroup, cancellationToken);
+    }
+
+    private async Task RemoveGroupOrderIfUnusedAsync(
+        string groupName,
+        CancellationToken cancellationToken)
+    {
+        var groupKey = NormalizeStudioGroupKey(groupName);
+        if (await dbContext.Studios.AsNoTracking().AnyAsync(
+                studio => studio.StudioGroup.ToUpper() == groupKey,
+                cancellationToken))
+        {
+            return;
+        }
+
+        var unused = await dbContext.StudioGroupOrders.FindAsync([groupKey], cancellationToken);
+        if (unused is not null)
+        {
+            dbContext.StudioGroupOrders.Remove(unused);
+        }
     }
 
     private static IEnumerable<StudioContactRecord> CreateContactRecords(
@@ -1006,6 +1184,12 @@ internal sealed class SqliteStudioDirectoryService(StudioDbContext dbContext) : 
 
     private static string NormalizeStudioGroup(string? studioGroup) =>
         string.IsNullOrWhiteSpace(studioGroup) ? "Ungrouped" : studioGroup.Trim();
+
+    private static string NormalizeStudioGroupKey(string? studioGroup) =>
+        NormalizeStudioGroup(studioGroup).ToUpperInvariant();
+
+    private static int? NormalizeDisplayOrder(int? displayOrder) =>
+        displayOrder is > 0 ? displayOrder : null;
 
     private static string NormalizeTimeZoneId(string? timeZoneId)
     {

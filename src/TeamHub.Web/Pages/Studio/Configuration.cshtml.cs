@@ -183,6 +183,12 @@ public class ConfigurationModel(
         [StringLength(128)]
         public string StudioGroup { get; set; } = "Ungrouped";
 
+        [Range(1, 100000)]
+        public int? GroupDisplayOrder { get; set; }
+
+        [Range(1, 100000)]
+        public int? StudioDisplayOrder { get; set; }
+
         public bool IsActive { get; set; } = true;
 
         [Required]
@@ -204,6 +210,8 @@ public class ConfigurationModel(
                 StudioName = studio.StudioName,
                 ProjectName = studio.ProjectName,
                 StudioGroup = studio.StudioGroup,
+                GroupDisplayOrder = studio.GroupDisplayOrder,
+                StudioDisplayOrder = studio.StudioDisplayOrder,
                 IsActive = studio.IsActive,
                 Location = studio.Location,
                 TimeZoneId = studio.TimeZoneId,
@@ -240,6 +248,8 @@ public class ConfigurationModel(
                 StudioName = StudioName,
                 ProjectName = ProjectName,
                 StudioGroup = StudioGroup,
+                GroupDisplayOrder = GroupDisplayOrder,
+                StudioDisplayOrder = StudioDisplayOrder,
                 IsActive = IsActive,
                 Location = Location,
                 TimeZoneId = TimeZoneId,
