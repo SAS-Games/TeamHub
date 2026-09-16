@@ -2,7 +2,6 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using TeamHub.Application.Interfaces;
-using TeamHub.Infrastructure.Excel;
 using TeamHub.Infrastructure.Options;
 using TeamHub.Infrastructure.Persistence;
 using TeamHub.Infrastructure.Scheduling;
@@ -22,7 +21,6 @@ public static class ServiceCollectionExtensions
             opts.UseSqlite(conn);
         });
 
-        services.AddScoped<IWorkflowDefinitionProvider, ExcelWorkflowDefinitionProvider>();
         services.AddScoped<IWorkflowConfigurationService, WorkflowConfigurationService>();
         services.AddScoped<IWorkflowEngine, WorkflowEngineService>();
         services.AddScoped<IWorkflowReadService, WorkflowReadService>();

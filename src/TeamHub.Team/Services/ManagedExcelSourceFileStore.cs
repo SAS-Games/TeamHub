@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Configuration;
+using TeamHub.Excel;
 
 namespace TeamHub.Team;
 
@@ -18,7 +19,7 @@ internal sealed class ManagedExcelSourceFileStore(IConfiguration configuration) 
         if (length is <= 0 or > DirectDownloadExcelTableSourceReader.MaximumWorkbookBytes)
             throw new ArgumentException("The Excel workbook must be between 1 byte and 25 MB.", nameof(length));
 
-        var root = ExcelSourceStorage.UploadRoot(configuration);
+        var root = ExcelWorkbookSourceStorage.UploadRoot(configuration);
         Directory.CreateDirectory(root);
         var reference = $"{Guid.NewGuid():N}.xlsx";
         var path = Path.Combine(root, reference);
@@ -42,17 +43,5 @@ internal sealed class ManagedExcelSourceFileStore(IConfiguration configuration) 
         }
         if (total == 0) throw new ArgumentException("The selected Excel workbook is empty.", nameof(source));
         return new StoredExcelSource(reference, displayName);
-    }
-}
-
-internal static class ExcelSourceStorage
-{
-    public static string UploadRoot(IConfiguration configuration)
-    {
-        var configured = configuration["TeamExcel:UploadDirectory"];
-        var path = string.IsNullOrWhiteSpace(configured)
-            ? Path.Combine(AppContext.BaseDirectory, "data", "team-excel")
-            : configured.Trim();
-        return Path.GetFullPath(path);
     }
 }

@@ -7,14 +7,14 @@ This solution is a local Windows-first POC for a generic workflow automation pla
 - .NET 10 LTS (SDK 10.0.400 or a later 10.0.4xx patch)
 - ASP.NET Core Razor Pages
 - EF Core + SQLite
-- ClosedXML for Excel-based workflow configuration import
+- ClosedXML for Milestone Tracker workbooks
 - BackgroundService scheduler for reminders
 
 ## Project Layout
 
 - src/TeamHub.Domain: Entities and enums
 - src/TeamHub.Application: Service interfaces and DTOs
-- src/TeamHub.Infrastructure: EF Core, Excel provider, engine, configuration sync, reminders, notifications
+- src/TeamHub.Infrastructure: EF Core, workflow engine, draft publishing, reminders, and notifications
 - src/TeamHub.Team: Database-backed team directory and support specialization configuration
 - src/TeamHub.Web: Local web app UI
 - src/TeamHub.FlowDesigner.Core: Flow diagram contracts and domain models
@@ -29,22 +29,20 @@ Install the [.NET 10 SDK](https://dotnet.microsoft.com/en-us/download/dotnet/10.
 
 When upgrading an existing local checkout from .NET 8, stop the app and back up `src/TeamHub.Web/bin/Debug/net8.0/data` before the first .NET 10 run. Copy its database files into `src/TeamHub.Web/bin/Debug/net10.0/data` without overwriting existing data (use `Release` instead of `Debug` for a release build). For a published deployment, back up and preserve the existing deployment's `data` folder when replacing application files.
 
-1. Place the workflow import workbook at `config/Workflows.xlsx` (not included), or update its path in `src/TeamHub.Web/appsettings.json`.
-2. Ensure Workflows.xlsx contains structured tables named Workflows and WorkflowSteps
-3. Run:
+1. Run:
 
 ```powershell
 dotnet run --project src/TeamHub.Web/TeamHub.Web.csproj
 ```
 
-4. Open: http://localhost:5051
-5. Go to Configuration -> Sync Configuration
-6. Start workflow instances from Start Workflow
-7. Complete tasks from My Tasks
+2. Open: http://localhost:5051
+3. Create and publish workflows from **Configuration > Workflows**.
+4. Start workflow instances from Work Center.
+5. Complete tasks from My Tasks.
 
 ## Configuration file paths
 
-All file paths in `src/TeamHub.Web/appsettings.json` use portable `config/...` paths. Paths resolve to the nearest `config` directory at or above the application's content root, so local runs use the repository-level `config` directory directly. Absolute overrides are still supported. This resolution is shared by Home, workflow imports, and milestones.
+File paths configured for Home content and the initial Milestone workbook use portable `config/...` paths. Paths resolve to the nearest `config` directory at or above the application's content root, so local runs use the repository-level `config` directory directly. Absolute overrides are still supported.
 
 Repository configuration files are not copied into `bin`; changes are read from the repository-level `config` directory. Database files continue to live in the application's `data` directory.
 
@@ -96,6 +94,8 @@ For SharePoint/OneDrive synchronization, configure the Team Hub Microsoft Entra 
 
 Grant the application read access only to the approved SharePoint site or workbook, then enter the workbook's stable Microsoft Graph drive ID and item ID in Team configuration. Do not commit the client secret. Imported workbook data is stored in the Team Hub database and is governed by the custom tab's existing View/Edit access assignments; new tab access should be assigned explicitly before exposing restricted source data.
 
+Milestone Tracker and custom Team tables use the same workbook acquisition service. Administrators select the Milestone workbook under **Configuration > Milestone Tracker**, using a local server file, a directly downloadable URL, or SharePoint/OneDrive drive and item IDs. These settings are stored in `team.db`; the shared `TeamExcel__MicrosoftGraph__*` credentials above remain secure deployment settings used by both features.
+
 Access Management also supports per-user overrides for custom Team tabs. An administrator can assign No Access, Read Only, or Edit to an individual authorized user by email. An explicit user setting takes precedence over that user's category setting; choosing **Use user type setting** removes the override and returns to inheritance. Custom tab categories default to No Access, while administrators always retain Full Access.
 
 The Admin Portal also contains **Authorized Users** and **Access Management**:
@@ -116,36 +116,9 @@ Jira and Confluence are configured from **Configuration → Jira & Confluence**.
 
 Access Management uses cumulative levels: No Access, Read Only, Create, Edit, Delete, and Full Access. Studio Configuration uses explicit Create, Edit, and Delete handlers, hides actions the current user cannot perform, and enforces the same checks in middleware. Jira Tickets and Weekly Updates share the **Studio Support** permission. Existing **Studio Jira Tickets** permission records are migrated automatically without changing their configured levels.
 
-## Excel Contract
-
-Workflows table columns:
-
-- WorkflowKey
-- WorkflowName
-- Description
-- Enabled
-
-WorkflowSteps table columns:
-
-- WorkflowKey
-- StepKey
-- StepName
-- Description
-- OwnerType
-- Owner
-- ExpectedDurationHours
-- DependsOn
-- ReminderAfterHours
-- ReminderRepeatHours
-- EscalationAfterHours
-- EscalationOwner
-- Required
-- Enabled
-- SortOrder
-
 ## Current POC Behavior
 
-- Imports and validates workflow definitions from Excel
+- Creates, validates, and publishes workflow definitions through Work Center Configuration
 - Versions definitions using deterministic configuration hash
 - Starts workflow instances using the latest version
 - Snapshots all enabled steps into runtime instances
@@ -155,7 +128,7 @@ WorkflowSteps table columns:
 - Calculates due date from expected duration
 - Logs notifications and audit events in SQLite
 - Runs periodic reminder cycle via background service
-- Keeps active instances on original version when new config versions are imported
+- Keeps active instances on their original version when new workflow versions are published
 
 ## Notes
 

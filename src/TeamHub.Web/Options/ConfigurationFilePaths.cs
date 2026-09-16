@@ -6,7 +6,6 @@ public static class ConfigurationFilePaths
     {
         string[] keys =
         [
-            "WorkflowConfiguration:ExcelPath",
             "MilestoneConfiguration:ExcelPath",
             "HomeConfiguration:ProjectInfoPath",
             "HomeConfiguration:UsefulLinksPath"

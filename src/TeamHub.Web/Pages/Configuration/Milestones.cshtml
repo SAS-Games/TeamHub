@@ -1,0 +1,82 @@
+@page "/Configuration/Milestones"
+@model TeamHub.Web.Pages.Configuration.MilestonesModel
+@using TeamHub.Excel
+@{
+    ViewData["Title"] = "Milestone Tracker Configuration";
+}
+
+<div class="page-hero">
+    <div>
+        <div class="eyebrow">Configuration</div>
+        <h1>Milestone Tracker</h1>
+        <p>Select the Excel workbook source used by Milestone Tracker and Studio roadmap views.</p>
+    </div>
+    <a class="btn btn-outline-secondary" asp-page="/Configuration/Index">All Configuration</a>
+</div>
+
+@if (!string.IsNullOrWhiteSpace(Model.StatusMessage))
+{
+    <div class="alert alert-info mt-3">@Model.StatusMessage</div>
+}
+
+<form method="post" asp-page-handler="Save">
+    <div asp-validation-summary="All" class="alert alert-danger"></div>
+    <section class="content-section">
+        <div class="section-heading"><div><span>Data source</span><h2>Milestone workbook</h2></div></div>
+        <div class="section-body row g-3">
+            <div class="col-12 col-lg-6">
+                <label asp-for="Settings.SourceType" class="form-label">Workbook source</label>
+                <select asp-for="Settings.SourceType" class="form-select" id="milestone-source-type">
+                    <option value="@ExcelWorkbookSourceTypes.LocalFile">Local file on the TeamHub server</option>
+                    <option value="@ExcelWorkbookSourceTypes.ExcelUrl">Excel download link</option>
+                    <option value="@ExcelWorkbookSourceTypes.MicrosoftGraphExcel">SharePoint / OneDrive</option>
+                </select>
+            </div>
+
+            <div class="col-12 milestone-source-fields" data-source="@ExcelWorkbookSourceTypes.LocalFile">
+                <label asp-for="Settings.ExcelPath" class="form-label">Excel file path</label>
+                <input asp-for="Settings.ExcelPath" class="form-control" maxlength="2048" />
+                <div class="form-text">Enter the path as seen by the TeamHub server, for example <code>config/MilestoneTracker.xlsx</code> or an absolute server path.</div>
+            </div>
+
+            <div class="col-12 milestone-source-fields" data-source="@ExcelWorkbookSourceTypes.ExcelUrl">
+                <label asp-for="Settings.SourceUrl" class="form-label">Excel download link</label>
+                <input asp-for="Settings.SourceUrl" class="form-control" type="url" maxlength="2048" placeholder="https://.../MilestoneTracker.xlsx" />
+                <div class="form-text">The URL must return the workbook directly and must not require an interactive browser login.</div>
+            </div>
+
+            <div class="col-12 milestone-source-fields" data-source="@ExcelWorkbookSourceTypes.MicrosoftGraphExcel">
+                <div class="row g-3">
+                    <div class="col-lg-6">
+                        <label asp-for="Settings.SourceDriveId" class="form-label">Microsoft Graph drive ID</label>
+                        <input asp-for="Settings.SourceDriveId" class="form-control" maxlength="512" />
+                    </div>
+                    <div class="col-lg-6">
+                        <label asp-for="Settings.SourceItemId" class="form-label">Microsoft Graph item ID</label>
+                        <input asp-for="Settings.SourceItemId" class="form-control" maxlength="512" />
+                    </div>
+                    <div class="col-12">
+                        <div class="alert alert-secondary mb-0">This uses the same Microsoft Graph application credentials as Excel-backed custom Team tabs. Client secrets remain in secure deployment configuration and are not stored here.</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <button class="btn btn-primary" type="submit">Save Milestone Configuration</button>
+</form>
+
+@section Scripts {
+    <partial name="_ValidationScriptsPartial" />
+    <script>
+        (() => {
+            const source = document.getElementById('milestone-source-type');
+            const fields = document.querySelectorAll('.milestone-source-fields');
+            const refresh = () => fields.forEach(field => {
+                field.hidden = field.dataset.source !== source.value;
+            });
+            source.addEventListener('change', refresh);
+            refresh();
+        })();
+    </script>
+}

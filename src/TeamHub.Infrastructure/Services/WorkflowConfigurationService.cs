@@ -11,7 +11,6 @@ namespace TeamHub.Infrastructure.Services;
 
 public sealed class WorkflowConfigurationService(
     WorkflowDbContext dbContext,
-    IWorkflowDefinitionProvider definitionProvider,
     IClock clock) : IWorkflowConfigurationService
 {
     public async Task<IReadOnlyList<WorkflowDraftSummaryDto>> GetDraftsAsync(CancellationToken cancellationToken = default)
@@ -109,11 +108,11 @@ public sealed class WorkflowConfigurationService(
         await dbContext.SaveChangesAsync(cancellationToken);
     }
 
-    public async Task<ConfigurationSyncResult> PublishDraftAsync(Guid id, string actor, CancellationToken cancellationToken = default)
+    public async Task<WorkflowPublicationResult> PublishDraftAsync(Guid id, string actor, CancellationToken cancellationToken = default)
     {
         await EnsureDraftTablesAsync(cancellationToken);
 
-        var result = new ConfigurationSyncResult { SyncedAtUtc = clock.UtcNow };
+        var result = new WorkflowPublicationResult { PublishedAtUtc = clock.UtcNow };
         var draft = await dbContext.WorkflowDraftDefinitions
             .Include(x => x.Steps)
             .FirstOrDefaultAsync(x => x.Id == id && x.PublishedAtUtc == null, cancellationToken);
@@ -203,11 +202,11 @@ public sealed class WorkflowConfigurationService(
                 }
             }
 
-            result.ImportedWorkflowSummaries.Add($"{definition.WorkflowKey}: v{publishedDefinition.Version}");
+            result.PublishedWorkflowSummaries.Add($"{definition.WorkflowKey}: v{publishedDefinition.Version}");
         }
         else
         {
-            result.ImportedWorkflowSummaries.Add($"{definition.WorkflowKey}: unchanged");
+            result.PublishedWorkflowSummaries.Add($"{definition.WorkflowKey}: unchanged");
         }
 
         draft.PublishedAtUtc = clock.UtcNow;
@@ -223,120 +222,6 @@ public sealed class WorkflowConfigurationService(
         });
 
         await dbContext.SaveChangesAsync(cancellationToken);
-        result.Success = true;
-        return result;
-    }
-
-    public async Task<ConfigurationSyncResult> SyncAsync(string actor, CancellationToken cancellationToken = default)
-    {
-        var result = new ConfigurationSyncResult { SyncedAtUtc = clock.UtcNow };
-        IReadOnlyList<WorkflowDefinitionDto> definitions;
-
-        try
-        {
-            definitions = await definitionProvider.LoadDefinitionsAsync(cancellationToken);
-        }
-        catch (Exception ex)
-        {
-            result.Success = false;
-            result.Errors.Add(ex.Message);
-            return result;
-        }
-
-        var validationErrors = ValidateDefinitions(definitions);
-        if (validationErrors.Count > 0)
-        {
-            result.Success = false;
-            result.Errors.AddRange(validationErrors);
-            return result;
-        }
-
-        foreach (var definition in definitions)
-        {
-            var hash = ComputeHash(definition);
-
-            var existingHash = await dbContext.WorkflowDefinitions
-                .AsNoTracking()
-                .Where(x => x.WorkflowKey == definition.WorkflowKey && x.ConfigHash == hash)
-                .Select(x => x.Id)
-                .FirstOrDefaultAsync(cancellationToken);
-
-            if (existingHash != Guid.Empty)
-            {
-                result.ImportedWorkflowSummaries.Add($"{definition.WorkflowKey}: unchanged");
-                continue;
-            }
-
-            var currentVersion = await dbContext.WorkflowDefinitions
-                .Where(x => x.WorkflowKey == definition.WorkflowKey)
-                .MaxAsync(x => (int?)x.Version, cancellationToken) ?? 0;
-
-            var newDefinition = new WorkflowDefinition
-            {
-                WorkflowKey = definition.WorkflowKey,
-                Name = definition.WorkflowName,
-                Description = definition.Description,
-                Version = currentVersion + 1,
-                ConfigHash = hash,
-                IsActive = true,
-                Enabled = definition.Enabled,
-                ImportedAtUtc = clock.UtcNow
-            };
-
-            foreach (var step in definition.Steps)
-            {
-                var stepEntity = new WorkflowStepDefinition
-                {
-                    WorkflowDefinition = newDefinition,
-                    StepKey = step.StepKey,
-                    Name = step.StepName,
-                    Description = step.Description,
-                    OwnerType = step.OwnerType,
-                    Owner = step.Owner,
-                    ExpectedDurationHours = step.ExpectedDurationHours,
-                    ReminderAfterHours = step.ReminderAfterHours,
-                    ReminderRepeatHours = step.ReminderRepeatHours,
-                    EscalationAfterHours = step.EscalationAfterHours,
-                    EscalationOwner = step.EscalationOwner,
-                    Required = step.Required,
-                    Enabled = step.Enabled,
-                    SortOrder = step.SortOrder
-                };
-
-                newDefinition.Steps.Add(stepEntity);
-            }
-
-            dbContext.WorkflowDefinitions.Add(newDefinition);
-            await dbContext.SaveChangesAsync(cancellationToken);
-
-            var stepByKey = newDefinition.Steps.ToDictionary(x => x.StepKey, StringComparer.OrdinalIgnoreCase);
-            foreach (var step in definition.Steps)
-            {
-                var targetStep = stepByKey[step.StepKey];
-                foreach (var dependsOn in step.DependsOn)
-                {
-                    dbContext.WorkflowStepDependencies.Add(new WorkflowStepDependency
-                    {
-                        WorkflowStepDefinitionId = targetStep.Id,
-                        DependsOnStepDefinitionId = stepByKey[dependsOn].Id
-                    });
-                }
-            }
-
-            dbContext.AuditLogs.Add(new AuditLog
-            {
-                WorkflowInstanceId = Guid.Empty,
-                WorkflowStepInstanceId = null,
-                EventType = "ConfigurationImported",
-                Actor = actor,
-                TimestampUtc = clock.UtcNow,
-                DetailsJson = JsonSerializer.Serialize(new { definition.WorkflowKey, Version = newDefinition.Version, hash })
-            });
-
-            result.ImportedWorkflowSummaries.Add($"{definition.WorkflowKey}: v{newDefinition.Version}");
-            await dbContext.SaveChangesAsync(cancellationToken);
-        }
-
         result.Success = true;
         return result;
     }

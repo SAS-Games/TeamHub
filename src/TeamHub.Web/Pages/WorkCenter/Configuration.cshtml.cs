@@ -88,7 +88,7 @@ public class ConfigurationModel(
             return Page();
         }
 
-        StatusMessage = $"Workflow published: {string.Join("; ", result.ImportedWorkflowSummaries)}";
+        StatusMessage = $"Workflow published: {string.Join("; ", result.PublishedWorkflowSummaries)}";
         return RedirectToPage();
     }
 

@@ -2,6 +2,7 @@ using ClosedXML.Excel;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
+using TeamHub.Excel;
 
 namespace TeamHub.Milestones;
 
@@ -26,25 +27,25 @@ public interface IMilestoneTrackerService
 public sealed class MilestoneConfigurationOptions
 {
     public const string SectionName = "MilestoneConfiguration";
+    public string SourceType { get; set; } = ExcelWorkbookSourceTypes.LocalFile;
     public string ExcelPath { get; set; } = string.Empty;
+    public string SourceUrl { get; set; } = string.Empty;
+    public string SourceDriveId { get; set; } = string.Empty;
+    public string SourceItemId { get; set; } = string.Empty;
+    public string ManagedReference { get; set; } = string.Empty;
 }
 
-internal sealed class ExcelMilestoneTrackerService(IOptions<MilestoneConfigurationOptions> options) : IMilestoneTrackerService
+internal sealed class ExcelMilestoneTrackerService(
+    IMilestoneConfigurationService configurationService,
+    IExcelWorkbookSource workbookSource) : IMilestoneTrackerService
 {
-    public Task<IReadOnlyList<MilestoneDto>> GetMilestonesAsync(CancellationToken cancellationToken = default)
+    public async Task<IReadOnlyList<MilestoneDto>> GetMilestonesAsync(CancellationToken cancellationToken = default)
     {
-        var filePath = options.Value.ExcelPath;
-        if (string.IsNullOrWhiteSpace(filePath))
-        {
-            throw new InvalidOperationException("MilestoneConfiguration:ExcelPath is not configured.");
-        }
-
-        if (!File.Exists(filePath))
-        {
-            throw new FileNotFoundException($"Milestone tracker Excel file not found: {filePath}");
-        }
-
-        using var workbook = new XLWorkbook(filePath);
+        var settings = await configurationService.GetSettingsAsync(cancellationToken);
+        await using var workbookStream = await workbookSource.OpenAsync(
+            CreateSourceRequest(settings),
+            cancellationToken);
+        using var workbook = new XLWorkbook(workbookStream);
         var milestones = new List<MilestoneDto>();
         if (workbook.Worksheets.Count == 0)
         {
@@ -97,7 +98,24 @@ internal sealed class ExcelMilestoneTrackerService(IOptions<MilestoneConfigurati
             }
         }
 
-        return Task.FromResult<IReadOnlyList<MilestoneDto>>(milestones);
+        return milestones;
+    }
+
+    private static ExcelWorkbookSourceRequest CreateSourceRequest(MilestoneSourceSettings settings)
+    {
+        var sourceType = string.IsNullOrWhiteSpace(settings.SourceType)
+            ? ExcelWorkbookSourceTypes.LocalFile
+            : settings.SourceType.Trim();
+        return sourceType switch
+        {
+            ExcelWorkbookSourceTypes.LocalFile => new(sourceType, LocalPath: settings.ExcelPath),
+            ExcelWorkbookSourceTypes.ExcelUrl => new(sourceType, SourceUrl: settings.SourceUrl),
+            ExcelWorkbookSourceTypes.MicrosoftGraphExcel => new(
+                sourceType,
+                DriveId: settings.SourceDriveId,
+                ItemId: settings.SourceItemId),
+            _ => throw new InvalidOperationException($"MilestoneConfiguration:SourceType '{sourceType}' is not supported.")
+        };
     }
 
     private static DateTime? ParseDate(IXLCell cell, int rowNumber, string field)
@@ -146,7 +164,9 @@ public static class MilestoneTrackerServiceCollectionExtensions
 {
     public static IServiceCollection AddMilestoneTracker(this IServiceCollection services, IConfiguration configuration)
     {
+        services.AddExcelWorkbookSources(configuration);
         services.Configure<MilestoneConfigurationOptions>(configuration.GetSection(MilestoneConfigurationOptions.SectionName));
+        services.AddScoped<IMilestoneConfigurationService, SqliteMilestoneConfigurationService>();
         services.AddScoped<IMilestoneTrackerService, ExcelMilestoneTrackerService>();
         return services;
     }
