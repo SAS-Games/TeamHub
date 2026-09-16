@@ -571,6 +571,7 @@ public sealed class FlowPublicationWorkflowService(
             foreach (var node in definition.Nodes)
             {
                 node.Comments = (node.Comments ?? []).Where(comment => comment.IsPublic).ToList();
+                NormalizeCommentThreads(node.Comments);
             }
             definition.IsShared = false;
             definition.CreatedBy = null;
@@ -615,7 +616,8 @@ public sealed class FlowPublicationWorkflowService(
                 var unchanged = string.Equals(original.Body, comment.Body, StringComparison.Ordinal)
                     && string.Equals(original.Author, comment.Author, StringComparison.Ordinal)
                     && original.CreatedAt == comment.CreatedAt
-                    && original.IsPublic == comment.IsPublic;
+                    && original.IsPublic == comment.IsPublic
+                    && string.Equals(original.ParentCommentId, comment.ParentCommentId, StringComparison.Ordinal);
                 if (!ownsComment && !unchanged)
                 {
                     throw new UnauthorizedAccessException("You can edit only your own comments.");
@@ -623,7 +625,10 @@ public sealed class FlowPublicationWorkflowService(
 
                 comment.Author = original.Author;
                 comment.CreatedAt = original.CreatedAt;
+                comment.ParentCommentId = original.ParentCommentId;
             }
+
+            NormalizeCommentThreads(node.Comments);
 
             if (originalComments.Any(comment =>
                     !retainedIds.Contains(comment.Id)
@@ -631,6 +636,23 @@ public sealed class FlowPublicationWorkflowService(
             {
                 throw new UnauthorizedAccessException("You can delete only your own comments.");
             }
+        }
+    }
+
+    private static void NormalizeCommentThreads(List<NodeComment> comments)
+    {
+        var byId = comments.ToDictionary(comment => comment.Id, StringComparer.Ordinal);
+        foreach (var comment in comments)
+        {
+            if (string.IsNullOrWhiteSpace(comment.ParentCommentId)
+                || string.Equals(comment.Id, comment.ParentCommentId, StringComparison.Ordinal)
+                || !byId.TryGetValue(comment.ParentCommentId, out var parent))
+            {
+                comment.ParentCommentId = null;
+                continue;
+            }
+
+            comment.ParentCommentId = parent.ParentCommentId ?? parent.Id;
         }
     }
 

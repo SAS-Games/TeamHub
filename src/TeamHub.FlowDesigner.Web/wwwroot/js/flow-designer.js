@@ -48,6 +48,10 @@
     let presentationMode = false;
     let linkTargets = [];
     let creatingChildForNodeId = null;
+    let commentOverviewEntries = [];
+    let commentsIndexLoading = false;
+    let commentsIndexRefreshPending = false;
+    let replyingToCommentId = null;
 
     const adapter = new window.FlowDesignerAdapters.DrawflowAdapter(byId("drawflow"), {
         onChange: handleCanvasChange,
@@ -89,6 +93,8 @@
         bindUi();
         clearProperties();
         if (root.dataset.startPresentation === "true") await enterPresentation(false);
+        refreshCommentsOverview();
+        window.requestAnimationFrame(focusCommentFromUrl);
     }
 
     function bindUi() {
@@ -161,6 +167,11 @@
         byId("undoButton").addEventListener("click", undo);
         byId("redoButton").addEventListener("click", redo);
         byId("presentationButton").addEventListener("click", () => enterPresentation());
+        byId("commentsButton").addEventListener("click", () => toggleCommentsPanel());
+        byId("presentationCommentsButton").addEventListener("click", () => toggleCommentsPanel());
+        byId("closeCommentsPanel").addEventListener("click", () => closeCommentsPanel());
+        byId("commentsScope").addEventListener("change", renderCommentsOverview);
+        byId("commentsSearch").addEventListener("input", renderCommentsOverview);
         byId("exitPresentation").addEventListener("click", () => exitPresentation());
         byId("presentationBack").addEventListener("click", event => {
             event.preventDefault();
@@ -205,6 +216,7 @@
         ["taskStepKey", "taskOwner", "taskExpectedHours", "taskReminderAfterHours", "taskReminderRepeatHours", "taskEscalationAfterHours", "taskEscalationOwner"].forEach(id => byId(id).addEventListener("input", updateSelectedNode));
         ["taskOwnerType", "taskRequired", "taskEnabled"].forEach(id => byId(id).addEventListener("change", updateSelectedNode));
         byId("addNodeComment").addEventListener("click", addNodeComment);
+        byId("cancelNodeCommentReply").addEventListener("click", cancelNodeCommentReply);
         byId("deleteNode").addEventListener("click", () => adapter.deleteSelected());
         byId("connectionLabel").addEventListener("input", () => {
             if (!selectedConnection) return;
@@ -543,6 +555,7 @@
 
     function showNodeProperties(node) {
         if (!node) return;
+        if (selectedNode?.id !== node.id) cancelNodeCommentReply();
         selectedNode = node;
         selectedConnection = null;
         emptyProperties.classList.add("d-none");
@@ -693,6 +706,7 @@
     }
 
     function clearProperties() {
+        cancelNodeCommentReply();
         selectedNode = null;
         selectedConnection = null;
         nodeForm.classList.add("d-none");
@@ -825,16 +839,19 @@
         const input = byId("newNodeComment");
         const body = input.value.trim();
         if (!body) return;
+        const parent = (selectedNode.comments || []).find(comment => comment.id === replyingToCommentId);
         const comment = {
             id: crypto.randomUUID(),
+            parentCommentId: parent?.parentCommentId || parent?.id || null,
             body,
             author: currentUser,
             createdAt: new Date().toISOString(),
-            isPublic: byId("newNodeCommentPublic").checked
+            isPublic: parent ? Boolean(parent.isPublic) : byId("newNodeCommentPublic").checked
         };
         const comments = [...(selectedNode.comments || []), comment];
         updateSelectedNodeComments(comments);
         input.value = "";
+        cancelNodeCommentReply();
         byId("newNodeCommentPublic").checked = isPublishedView;
         showToast("Comment added - save to keep it");
     }
@@ -844,6 +861,26 @@
         selectedNode = { ...selectedNode, comments };
         adapter.updateNode(selectedNode.id, { comments });
         renderNodeComments(comments);
+        refreshCommentsOverview();
+    }
+
+    function beginNodeCommentReply(comment) {
+        if (!canEdit || presentationMode || !selectedNode) return;
+        const rootComment = (selectedNode.comments || []).find(item => item.id === (comment.parentCommentId || comment.id)) || comment;
+        replyingToCommentId = rootComment.id;
+        byId("nodeCommentReplyText").textContent = `Replying to ${rootComment.author || "Unknown user"}`;
+        byId("nodeCommentReplyContext").classList.remove("d-none");
+        byId("newNodeCommentPublic").checked = Boolean(rootComment.isPublic);
+        const input = byId("newNodeComment");
+        input.placeholder = "Write a reply";
+        input.focus();
+    }
+
+    function cancelNodeCommentReply() {
+        replyingToCommentId = null;
+        byId("nodeCommentReplyContext")?.classList.add("d-none");
+        const input = byId("newNodeComment");
+        if (input) input.placeholder = "Add a comment about this symbol";
     }
 
     function ownsNodeComment(comment) {
@@ -927,9 +964,10 @@
             list.appendChild(empty);
             return;
         }
-        for (const comment of [...comments].sort((left, right) => new Date(left.createdAt) - new Date(right.createdAt))) {
+        const commentIds = new Set(comments.map(comment => comment.id));
+        for (const comment of threadedComments(comments)) {
             const item = document.createElement("article");
-            item.className = "fd-comment";
+            item.className = `fd-comment${comment.parentCommentId && commentIds.has(comment.parentCommentId) ? " is-reply" : ""}`;
             item.dataset.commentId = comment.id;
             const header = document.createElement("div");
             header.className = "fd-comment-meta";
@@ -950,6 +988,12 @@
             appendLinkedCommentText(body, comment.body || "");
             const actions = document.createElement("div");
             actions.className = "fd-comment-actions";
+            const reply = document.createElement("button");
+            reply.className = "btn btn-sm btn-link";
+            reply.type = "button";
+            reply.textContent = "Reply";
+            reply.setAttribute("aria-label", `Reply to ${comment.author || "Unknown user"}`);
+            reply.addEventListener("click", () => beginNodeCommentReply(comment));
             const edit = document.createElement("button");
             edit.className = "btn btn-sm btn-link";
             edit.type = "button";
@@ -963,11 +1007,26 @@
             remove.setAttribute("aria-label", `Delete comment by ${comment.author || "Unknown user"}`);
             remove.addEventListener("click", () => deleteNodeComment(comment));
             const ownsComment = allowActions && ownsNodeComment(comment);
+            if (allowActions) actions.append(reply);
             if (ownsComment) actions.append(edit, remove);
             item.append(header, body);
-            if (ownsComment) item.append(actions);
+            if (actions.childElementCount) item.append(actions);
             list.appendChild(item);
         }
+    }
+
+    function threadedComments(comments) {
+        const sorted = [...comments].sort((left, right) => new Date(left.createdAt) - new Date(right.createdAt));
+        const ids = new Set(sorted.map(comment => comment.id));
+        const roots = sorted.filter(comment => !comment.parentCommentId || !ids.has(comment.parentCommentId));
+        const replies = new Map();
+        for (const comment of sorted) {
+            if (!comment.parentCommentId || !ids.has(comment.parentCommentId)) continue;
+            const items = replies.get(comment.parentCommentId) || [];
+            items.push(comment);
+            replies.set(comment.parentCommentId, items);
+        }
+        return roots.flatMap(comment => [comment, ...(replies.get(comment.id) || [])]);
     }
     function appendLinkedCommentText(container, value) {
         const urlPattern = /https?:\/\/[^\s]+/g;
@@ -983,6 +1042,260 @@
             offset = match.index + match[0].length;
         }
         if (offset < value.length) container.append(document.createTextNode(value.slice(offset)));
+    }
+
+    async function toggleCommentsPanel(forceOpen) {
+        const panel = byId("commentsPanel");
+        const open = forceOpen ?? !panel.classList.contains("open");
+        if (!open) {
+            closeCommentsPanel();
+            return;
+        }
+
+        closePresentationDetails();
+        panel.classList.add("open");
+        panel.setAttribute("aria-hidden", "false");
+        byId("commentsButton").setAttribute("aria-expanded", "true");
+        byId("presentationCommentsButton").setAttribute("aria-expanded", "true");
+        await refreshCommentsOverview();
+        byId("commentsSearch").focus({ preventScroll: true });
+    }
+
+    function closeCommentsPanel() {
+        const panel = byId("commentsPanel");
+        panel.classList.remove("open");
+        panel.setAttribute("aria-hidden", "true");
+        byId("commentsButton").setAttribute("aria-expanded", "false");
+        byId("presentationCommentsButton").setAttribute("aria-expanded", "false");
+    }
+
+    async function refreshCommentsOverview() {
+        if (!flow) return;
+        if (commentsIndexLoading) {
+            commentsIndexRefreshPending = true;
+            return;
+        }
+        commentsIndexLoading = true;
+        const status = byId("commentsOverviewStatus");
+        status.textContent = "Loading comments...";
+        let incomplete = false;
+        const entries = [];
+        const visited = new Set();
+        const ancestors = (root.dataset.trail || "").split(",").filter(Boolean);
+        const hierarchyRootId = ancestors[0] || flowId;
+
+        async function visit(id, ancestorIds) {
+            const key = String(id).toLowerCase();
+            if (visited.has(key)) return;
+            visited.add(key);
+
+            let definition;
+            try {
+                definition = await loadCommentFlow(id);
+            } catch (error) {
+                console.error(error);
+                incomplete = true;
+                return;
+            }
+
+            for (const node of definition.nodes || []) {
+                for (const comment of node.comments || []) {
+                    if ((presentationMode || isPublishedView) && !comment.isPublic) continue;
+                    entries.push({
+                        flowId: String(definition.id),
+                        flowName: definition.name || "Untitled diagram",
+                        nodeId: node.id,
+                        nodeTitle: node.title || "Untitled symbol",
+                        comment,
+                        ancestorIds: [...ancestorIds]
+                    });
+                }
+            }
+
+            const childIds = [...new Set((definition.nodes || [])
+                .map(node => node.childFlowId)
+                .filter(Boolean)
+                .map(String))];
+            for (const childId of childIds) {
+                await visit(childId, [...ancestorIds, String(definition.id)]);
+            }
+        }
+
+        try {
+            await visit(hierarchyRootId, []);
+            if (!visited.has(String(flowId).toLowerCase())) await visit(flowId, ancestors);
+            commentOverviewEntries = entries.sort((left, right) =>
+                new Date(right.comment.createdAt) - new Date(left.comment.createdAt));
+            updateCommentBadges();
+            renderCommentsOverview();
+            status.textContent = incomplete
+                ? `${commentOverviewEntries.length} visible comments. Some linked diagrams could not be loaded.`
+                : `${commentOverviewEntries.length} visible comment${commentOverviewEntries.length === 1 ? "" : "s"} across the diagram.`;
+        } finally {
+            commentsIndexLoading = false;
+            if (commentsIndexRefreshPending) {
+                commentsIndexRefreshPending = false;
+                refreshCommentsOverview();
+            }
+        }
+    }
+
+    async function loadCommentFlow(id) {
+        if (String(id).toLowerCase() === String(flowId).toLowerCase()) {
+            const graph = adapter.getGraph();
+            return { ...flow, id: flowId, name: nameInput.value.trim() || flow.name, nodes: graph.nodes, connections: graph.connections };
+        }
+
+        let url;
+        if (isPublishedView) url = `/api/flows/published/${id}`;
+        else if (reviewRequestId) url = `/api/flows/publication-requests/${reviewRequestId}/snapshot?flowId=${encodeURIComponent(id)}`;
+        else url = `/api/flows/${id}`;
+        const response = await fetch(url);
+        if (!response.ok) throw new Error(`Comment diagram load failed (${response.status})`);
+        return response.json();
+    }
+
+    function updateCommentBadges() {
+        for (const id of ["commentsOverviewCount", "presentationCommentsOverviewCount"]) {
+            const badge = byId(id);
+            badge.textContent = commentOverviewEntries.length;
+            badge.classList.toggle("d-none", commentOverviewEntries.length === 0);
+        }
+    }
+
+    function renderCommentsOverview() {
+        const container = byId("commentsOverview");
+        const scope = byId("commentsScope").value;
+        const search = byId("commentsSearch").value.trim().toLocaleLowerCase();
+        const visible = commentOverviewEntries.filter(entry => {
+            if (scope === "page" && String(entry.flowId).toLowerCase() !== String(flowId).toLowerCase()) return false;
+            if (scope === "mine" && !ownsNodeComment(entry.comment)) return false;
+            if (!search) return true;
+            return [entry.flowName, entry.nodeTitle, entry.comment.author, entry.comment.body]
+                .some(value => String(value || "").toLocaleLowerCase().includes(search));
+        });
+
+        container.replaceChildren();
+        if (!visible.length) {
+            const empty = document.createElement("div");
+            empty.className = "fd-comments-overview-empty";
+            empty.textContent = commentOverviewEntries.length
+                ? "No comments match the selected filter."
+                : "No comments are available in this diagram.";
+            container.appendChild(empty);
+            return;
+        }
+
+        for (const entry of visible) {
+            const item = document.createElement("article");
+            item.className = "fd-comments-overview-item";
+            const target = document.createElement("button");
+            target.className = "fd-comments-overview-target";
+            target.type = "button";
+            target.addEventListener("click", () => openCommentTarget(entry, false));
+
+            const location = document.createElement("div");
+            location.className = "fd-comments-overview-location";
+            const page = document.createElement("span");
+            page.textContent = entry.flowName;
+            const separator = document.createElement("span");
+            separator.textContent = "/";
+            separator.setAttribute("aria-hidden", "true");
+            const node = document.createElement("span");
+            node.textContent = entry.nodeTitle;
+            location.append(page, separator, node);
+
+            const meta = document.createElement("div");
+            meta.className = "fd-comments-overview-meta";
+            const author = document.createElement("span");
+            author.textContent = entry.comment.author || "Unknown user";
+            const time = document.createElement("time");
+            time.dateTime = entry.comment.createdAt;
+            time.textContent = new Date(entry.comment.createdAt).toLocaleString([], { dateStyle: "medium", timeStyle: "short" });
+            meta.append(author, time);
+
+            const body = document.createElement("p");
+            body.className = "fd-comments-overview-body";
+            body.textContent = entry.comment.body || "";
+            target.append(location, meta, body);
+            item.appendChild(target);
+
+            if (canEdit && !presentationMode) {
+                const actions = document.createElement("div");
+                actions.className = "fd-comments-overview-actions";
+                const reply = document.createElement("button");
+                reply.className = "btn btn-sm btn-link";
+                reply.type = "button";
+                reply.textContent = "Open and reply";
+                reply.addEventListener("click", () => openCommentTarget(entry, true));
+                actions.appendChild(reply);
+                item.appendChild(actions);
+            }
+            container.appendChild(item);
+        }
+    }
+
+    async function openCommentTarget(entry, reply) {
+        if (String(entry.flowId).toLowerCase() === String(flowId).toLowerCase()) {
+            focusNodeComment(entry.nodeId, entry.comment.id, reply ? entry.comment.id : null);
+            return;
+        }
+        if (canEdit && !(await save(false))) return;
+
+        const parameters = new URLSearchParams();
+        if (entry.ancestorIds.length) parameters.set("trail", entry.ancestorIds.slice(-20).join(","));
+        if (isPublishedView) parameters.set("published", "true");
+        else if (reviewRequestId) parameters.set("requestId", reviewRequestId);
+        if (presentationMode) parameters.set("present", "true");
+        parameters.set("focusNode", entry.nodeId);
+        parameters.set("focusComment", entry.comment.id);
+        if (reply) parameters.set("replyTo", entry.comment.id);
+        window.location.assign(`/flows/${entry.flowId}/edit?${parameters}`);
+    }
+
+    function focusCommentFromUrl() {
+        const url = new URL(window.location.href);
+        const nodeId = url.searchParams.get("focusNode");
+        if (!nodeId) return;
+        focusNodeComment(
+            nodeId,
+            url.searchParams.get("focusComment"),
+            url.searchParams.get("replyTo"));
+        url.searchParams.delete("focusNode");
+        url.searchParams.delete("focusComment");
+        url.searchParams.delete("replyTo");
+        window.history.replaceState(window.history.state, "", url);
+    }
+
+    function focusNodeComment(nodeId, commentId, replyTo) {
+        const node = adapter.getNode(nodeId);
+        if (!node) {
+            showToast("The node linked to this comment is no longer available.");
+            return;
+        }
+
+        closeCommentsPanel();
+        adapter.centerOnNode(nodeId);
+        adapter.selectNode(nodeId);
+        if (presentationMode) showPresentationNodeDetails(node);
+
+        window.requestAnimationFrame(() => {
+            const listId = presentationMode
+                ? "presentationComments"
+                : canEdit ? "nodeComments" : "nodeReadOnlyComments";
+            const comment = commentId
+                ? byId(listId)?.querySelector(`[data-comment-id="${CSS.escape(commentId)}"]`)
+                : null;
+            if (comment) {
+                comment.classList.add("is-focused");
+                comment.scrollIntoView({ block: "center", behavior: "smooth" });
+                window.setTimeout(() => comment.classList.remove("is-focused"), 1900);
+            }
+            if (replyTo && canEdit && !presentationMode) {
+                const replyComment = (selectedNode?.comments || []).find(item => item.id === replyTo);
+                if (replyComment) beginNodeCommentReply(replyComment);
+            }
+        });
     }
 
     function showPresentationNodeDetails(node) {
@@ -1025,6 +1338,11 @@
     }
 
     function handleKeyboard(event) {
+        if (event.key === "Escape" && byId("commentsPanel").classList.contains("open")) {
+            event.preventDefault();
+            closeCommentsPanel();
+            return;
+        }
         if (presentationMode) {
             if (event.key === "Escape") {
                 if (byId("presentationDetails").classList.contains("open")) {
@@ -1072,12 +1390,14 @@
         presentationMode = true;
         setPresentationUrl(true);
         root.classList.add("is-presenting");
+        closeCommentsPanel();
         byId("presentationButton").setAttribute("aria-pressed", "true");
         byId("toolbox").classList.remove("open");
         byId("propertiesPanel").classList.remove("open");
         closePresentationDetails();
         byId("validationPopover").classList.add("d-none");
         adapter.setReadOnly(true);
+        refreshCommentsOverview();
         window.requestAnimationFrame(() => {
             adapter.fitToView();
             byId("exitPresentation").focus({ preventScroll: true });
@@ -1109,9 +1429,11 @@
         setPresentationUrl(false);
         root.classList.remove("is-presenting");
         closePresentationDetails();
+        closeCommentsPanel();
         byId("presentationButton").setAttribute("aria-pressed", "false");
         adapter.setSpacePanning(false);
         adapter.setReadOnly(!canEdit);
+        refreshCommentsOverview();
         window.requestAnimationFrame(() => {
             adapter.fitToView();
             byId("presentationButton").focus({ preventScroll: true });

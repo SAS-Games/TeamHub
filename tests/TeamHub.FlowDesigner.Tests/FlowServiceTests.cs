@@ -192,6 +192,35 @@ public sealed class FlowServiceTests
     }
 
     [Fact]
+    public async Task Save_PreservesReplyRelationshipToExistingComment()
+    {
+        await using var database = new TestDatabase();
+        var repository = await database.CreateRepositoryAsync();
+        var service = new FlowService(repository, new FlowValidator(), new SystemTextJsonFlowSerializer(), new TestUserProvider(), new AllowAllPermissionService());
+        var flow = ValidationTests.ConnectedFlow();
+        flow.Nodes[0].Comments =
+        [
+            new NodeComment { Id = "root-comment", Author = "alice", Body = "Can we clarify this?" }
+        ];
+        await repository.SaveAsync(flow);
+        flow.Nodes[0].Comments.Add(new NodeComment
+        {
+            Id = "reply-comment",
+            ParentCommentId = "root-comment",
+            Author = "ignored",
+            Body = "Yes, I will update it."
+        });
+
+        var result = await service.SaveAsync(flow);
+        var restored = await repository.GetAsync(flow.Id);
+        var reply = restored!.Nodes[0].Comments.Single(comment => comment.Id == "reply-comment");
+
+        Assert.True(result.IsValid);
+        Assert.Equal("root-comment", reply.ParentCommentId);
+        Assert.Equal("test", reply.Author);
+    }
+
+    [Fact]
     public async Task Duplicate_CreatesIndependentFlowWithSameGraph()
     {
         await using var database = new TestDatabase();

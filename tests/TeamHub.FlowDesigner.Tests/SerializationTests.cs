@@ -15,7 +15,19 @@ public sealed class SerializationTests
             DiagramType = DiagramType.CodeFlow,
             Nodes =
             [
-                new FlowNode { Id = "start", Type = NodeType.Start, X = 123.5, ChildFlowId = childFlowId, CustomProperties = { ["notes"] = "Entry point" }, Comments = [new NodeComment { Author = "Sam", Body = "Looks good" }] },
+                new FlowNode
+                {
+                    Id = "start",
+                    Type = NodeType.Start,
+                    X = 123.5,
+                    ChildFlowId = childFlowId,
+                    CustomProperties = { ["notes"] = "Entry point" },
+                    Comments =
+                    [
+                        new NodeComment { Id = "root-comment", Author = "Sam", Body = "Looks good" },
+                        new NodeComment { Id = "reply-comment", ParentCommentId = "root-comment", Author = "Alex", Body = "Agreed" }
+                    ]
+                },
                 new FlowNode { Id = "router", Type = NodeType.Process, CustomProperties = { ["inputPins"] = "3", ["outputPins"] = "4", ["portLayout"] = "left-bottom" } }
             ],
             Connections = []
@@ -35,7 +47,8 @@ public sealed class SerializationTests
         Assert.Equal("3", restoredRouter.CustomProperties["inputPins"]);
         Assert.Equal("4", restoredRouter.CustomProperties["outputPins"]);
         Assert.Equal("left-bottom", restoredRouter.CustomProperties["portLayout"]);
-        Assert.Equal("Looks good", restoredStart.Comments.Single().Body);
+        Assert.Equal("Looks good", restoredStart.Comments[0].Body);
+        Assert.Equal("root-comment", restoredStart.Comments[1].ParentCommentId);
     }
 
     [Fact]
