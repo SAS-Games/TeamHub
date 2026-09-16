@@ -49,6 +49,9 @@
             <button class="btn btn-sm btn-light fd-edit-only" id="undoButton" type="button" title="Undo (Ctrl+Z)" disabled>&#8630; <span class="d-none d-lg-inline">Undo</span></button>
             <button class="btn btn-sm btn-light fd-edit-only" id="redoButton" type="button" title="Redo (Ctrl+Y)" disabled>&#8631; <span class="d-none d-lg-inline">Redo</span></button>
             <button class="btn btn-sm btn-light" id="presentationButton" type="button" aria-pressed="false" title="Open a read-only presentation">Present</button>
+            <button class="btn btn-sm btn-light fd-comments-button" id="commentsButton" type="button" aria-controls="commentsPanel" aria-expanded="false">
+                Comments <span class="fd-toolbar-count d-none" id="commentsOverviewCount">0</span>
+            </button>
             @if (Model.CanRequestPublication)
             {
                 <button class="btn btn-sm btn-outline-success fd-edit-only" id="requestPublicationButton" type="button" disabled="@(Model.HasPendingPublicationRequest ? "disabled" : null)"><span id="requestPublicationButtonText">@(Model.HasPendingPublicationRequest ? "Pending admin review" : "Request publication")</span></button>
@@ -85,6 +88,9 @@
             <div class="fd-presentation-controls" aria-live="polite">
                 <span><strong>Presentation mode</strong><small>Click a node for details &middot; Double-click to open a child</small></span>
                 <div class="d-flex gap-1">
+                    <button class="btn btn-sm btn-light fd-comments-button" id="presentationCommentsButton" type="button" aria-controls="commentsPanel" aria-expanded="false">
+                        Comments <span class="fd-toolbar-count d-none" id="presentationCommentsOverviewCount">0</span>
+                    </button>
                     <a class="btn btn-sm btn-light" id="presentationBack" href="@Model.BackPath">&larr; Back</a>
                     <button class="btn btn-sm btn-light" id="exitPresentation" type="button">Exit <span aria-hidden="true">Esc</span></button>
                 </div>
@@ -241,6 +247,10 @@
                         <span class="fd-comment-count" id="nodeCommentCount">0</span>
                     </div>
                     <div class="fd-comment-list" id="nodeComments"></div>
+                    <div class="fd-comment-reply-context d-none" id="nodeCommentReplyContext">
+                        <span id="nodeCommentReplyText"></span>
+                        <button class="btn btn-sm btn-link" id="cancelNodeCommentReply" type="button">Cancel</button>
+                    </div>
                     <label class="visually-hidden" for="newNodeComment">Add a comment</label>
                     <textarea class="form-control mt-2" id="newNodeComment" rows="2" maxlength="2000" placeholder="Add a comment about this symbol"></textarea>
                     <div class="form-check mt-2">
@@ -261,6 +271,33 @@
             </form>
         </aside>
     </div>
+
+    <aside class="fd-comments-panel" id="commentsPanel" aria-labelledby="commentsPanelTitle" aria-hidden="true">
+        <div class="fd-panel-heading">
+            <div>
+                <div class="fd-eyebrow">Diagram discussion</div>
+                <h2 id="commentsPanelTitle">Comments</h2>
+            </div>
+            <button class="btn-close" id="closeCommentsPanel" type="button" aria-label="Close comments"></button>
+        </div>
+        <p class="fd-panel-help">Select a comment to open its diagram and focus the related node.</p>
+        <div class="row g-2 mb-3">
+            <div class="col-5">
+                <label class="form-label" for="commentsScope">Show</label>
+                <select class="form-select form-select-sm" id="commentsScope">
+                    <option value="hierarchy">Entire diagram</option>
+                    <option value="page">Current page</option>
+                    <option value="mine">My comments</option>
+                </select>
+            </div>
+            <div class="col-7">
+                <label class="form-label" for="commentsSearch">Search</label>
+                <input class="form-control form-control-sm" id="commentsSearch" type="search" placeholder="Node, author, or comment" />
+            </div>
+        </div>
+        <div class="fd-comments-overview-status" id="commentsOverviewStatus" role="status">Loading comments...</div>
+        <div class="fd-comments-overview" id="commentsOverview"></div>
+    </aside>
 
     <div class="fd-statusbar">
         <button class="fd-validation-button" id="validationButton" type="button"><span id="validationIcon">&#10003;</span><span id="validationSummary">Ready</span></button>

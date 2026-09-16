@@ -52,7 +52,7 @@ else
                     var isCompleted = milestone.DeliveryDate.HasValue && milestone.DeliveryDate.Value.Date < Model.TodayUtc;
                     var isNext = nextMilestone == milestone;
                     var state = isCompleted ? "completed" : isNext ? "next" : milestone.DeliveryDate.HasValue ? "upcoming" : "planned";
-                    <article class="roadmap-step @state">
+                    <article class="roadmap-step @state" data-roadmap-focus="@isNext.ToString().ToLowerInvariant()" aria-current="@(isNext ? "step" : null)">
                         <div class="roadmap-date">@(milestone.DeliveryDate?.ToString("dd MMM yyyy") ?? "Date to be confirmed")</div>
                         <div class="roadmap-marker"></div>
                         <div class="roadmap-step-content">

@@ -235,11 +235,13 @@ public sealed class FlowService(
                         comment.Body = original.Body;
                         comment.Author = original.Author;
                         comment.CreatedAt = original.CreatedAt;
+                        comment.ParentCommentId = original.ParentCommentId;
                         continue;
                     }
 
                     comment.Author = original.Author;
                     comment.CreatedAt = original.CreatedAt;
+                    comment.ParentCommentId = original.ParentCommentId;
                 }
                 else
                 {
@@ -249,6 +251,8 @@ public sealed class FlowService(
 
                 comment.Body = normalizedBody.Length <= 2000 ? normalizedBody : normalizedBody[..2000];
             }
+
+            NormalizeCommentThreads(node.Comments);
 
             foreach (var removed in originalComments.Where(comment => !retainedIds.Contains(comment.Id)))
             {
@@ -267,7 +271,25 @@ public sealed class FlowService(
         string.Equals(original.Body, updated.Body, StringComparison.Ordinal)
         && string.Equals(original.Author, updated.Author, StringComparison.Ordinal)
         && original.CreatedAt == updated.CreatedAt
-        && original.IsPublic == updated.IsPublic;
+        && original.IsPublic == updated.IsPublic
+        && string.Equals(original.ParentCommentId, updated.ParentCommentId, StringComparison.Ordinal);
+
+    private static void NormalizeCommentThreads(List<NodeComment> comments)
+    {
+        var byId = comments.ToDictionary(comment => comment.Id, StringComparer.Ordinal);
+        foreach (var comment in comments)
+        {
+            if (string.IsNullOrWhiteSpace(comment.ParentCommentId)
+                || string.Equals(comment.Id, comment.ParentCommentId, StringComparison.Ordinal)
+                || !byId.TryGetValue(comment.ParentCommentId, out var parent))
+            {
+                comment.ParentCommentId = null;
+                continue;
+            }
+
+            comment.ParentCommentId = parent.ParentCommentId ?? parent.Id;
+        }
+    }
 
     private async Task<IReadOnlyList<FlowValidationIssue>> ValidateChildLinksAsync(
         FlowDefinition flow,

@@ -614,6 +614,21 @@
             return true;
         }
 
+        centerOnNode(externalId) {
+            const internalId = this.externalToInternal.get(externalId);
+            const node = internalId ? this.editor.drawflow.drawflow.Home.data[internalId] : null;
+            const element = internalId ? document.getElementById(`node-${internalId}`) : null;
+            if (!node || !element) return false;
+
+            const canvasRect = this.element.getBoundingClientRect();
+            const zoom = this.editor.zoom || 1;
+            this.editor.canvas_x = canvasRect.width / 2 - (node.pos_x + element.offsetWidth / 2) * zoom;
+            this.editor.canvas_y = canvasRect.height / 2 - (node.pos_y + element.offsetHeight / 2) * zoom;
+            this.editor.precanvas.style.transform = `translate(${this.editor.canvas_x}px, ${this.editor.canvas_y}px) scale(${zoom})`;
+            this.editor.precanvas.style.transformOrigin = "0 0";
+            return true;
+        }
+
         deleteSelected() {
             if (this.readOnly || !this.selected) return false;
             if (this.selected.kind === "node") {
