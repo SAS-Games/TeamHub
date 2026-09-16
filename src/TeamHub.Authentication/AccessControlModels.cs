@@ -79,6 +79,7 @@ public sealed record RegisterAuthorizedUserRequest(string UserId, string Passwor
 public sealed record RegistrationResult(bool Success, string Message);
 
 public sealed record ModulePermissionRecord(string Module, string UserType, AccessLevel AccessLevel);
+public sealed record UserModulePermissionRecord(Guid AuthorizedUserId, string Module, AccessLevel? AccessLevel);
 
 public interface IUserAccessService
 {
@@ -95,7 +96,10 @@ public interface IUserAccessService
     Task DeleteUserAsync(Guid id, string? actorUserId, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<ModulePermissionRecord>> ListPermissionsAsync(CancellationToken cancellationToken = default);
     Task SetPermissionsAsync(IReadOnlyCollection<ModulePermissionRecord> permissions, CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<UserModulePermissionRecord>> ListUserPermissionsAsync(CancellationToken cancellationToken = default);
+    Task SetUserPermissionsAsync(IReadOnlyCollection<UserModulePermissionRecord> permissions, CancellationToken cancellationToken = default);
     Task<AccessLevel> GetAccessLevelAsync(string module, string userType, CancellationToken cancellationToken = default);
+    Task<AccessLevel> GetAccessLevelAsync(string module, string userType, Guid? authorizedUserId, CancellationToken cancellationToken = default);
 }
 
 public static class AccessLevelExtensions

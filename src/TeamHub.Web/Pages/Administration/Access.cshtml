@@ -10,7 +10,7 @@
     <div>
         <div class="eyebrow">Admin Portal</div>
         <h1>Access Management</h1>
-        <p>Configure the access level applied to each page or module for every TeamHub user type.</p>
+        <p>Configure default access by user type and individual access for restricted custom Team tabs.</p>
     </div>
     <div class="d-flex gap-2">
         <a class="btn btn-outline-secondary" asp-page="/Configuration/Index">Admin Portal</a>
@@ -77,3 +77,64 @@
         <div class="section-body pt-3"><button class="btn btn-primary" type="submit">Save Access Matrix</button></div>
     </form>
 </section>
+
+@if (Model.CustomTabModules.Count > 0)
+{
+    var userInputIndex = 0;
+    <section class="content-section">
+        <div class="section-heading"><div><span>Individual overrides</span><h2>Custom Tab Access by User</h2></div></div>
+        <div class="section-body pb-3">
+            <p class="text-secondary mb-1">Use this matrix when a tab contains restricted information. An individual setting overrides the user's category setting for that tab. Administrators always retain Full Access.</p>
+            <p class="text-secondary mb-0">For an allow-list, keep the Registered and Privileged settings at No Access above, then grant Read Only or Edit only to the required email addresses here.</p>
+        </div>
+        @if (Model.AuthorizedUsers.Count == 0)
+        {
+            <div class="section-body border-top text-secondary">Add active users under Authorized Users before assigning individual tab access.</div>
+        }
+        else
+        {
+            <form method="post" asp-page-handler="UserOverrides">
+                <div class="table-responsive">
+                    <table class="table styled-table align-middle">
+                        <thead>
+                        <tr>
+                            <th>User</th>
+                            <th>User type</th>
+                            @foreach (var module in Model.CustomTabModules)
+                            {
+                                <th>@module.Label</th>
+                            }
+                        </tr>
+                        </thead>
+                        <tbody>
+                        @foreach (var user in Model.AuthorizedUsers)
+                        {
+                            <tr>
+                                <td><strong>@user.DisplayName</strong><small class="d-block text-secondary">@user.UserId</small></td>
+                                <td>@user.UserType</td>
+                                @foreach (var module in Model.CustomTabModules)
+                                {
+                                    var selected = Model.GetUserLevel(module.Key, user.Id);
+                                    var inherited = Model.GetLevel(module.Key, user.UserType);
+                                    <td>
+                                        <input type="hidden" name="UserInput[@userInputIndex].AuthorizedUserId" value="@user.Id" />
+                                        <input type="hidden" name="UserInput[@userInputIndex].Module" value="@module.Key" />
+                                        <select class="form-select form-select-sm" name="UserInput[@userInputIndex].AccessLevel" aria-label="@module.Label access for @user.UserId">
+                                            <option value="" selected="@(!selected.HasValue)">Use user type setting (@inherited.ToDisplayName())</option>
+                                            <option value="@AccessLevel.NoAccess" selected="@(selected == AccessLevel.NoAccess)">No Access</option>
+                                            <option value="@AccessLevel.ReadOnly" selected="@(selected == AccessLevel.ReadOnly)">Read Only</option>
+                                            <option value="@AccessLevel.Edit" selected="@(selected == AccessLevel.Edit)">Edit</option>
+                                        </select>
+                                    </td>
+                                    userInputIndex++;
+                                }
+                            </tr>
+                        }
+                        </tbody>
+                    </table>
+                </div>
+                <div class="section-body pt-3"><button class="btn btn-primary" type="submit">Save User Overrides</button></div>
+            </form>
+        }
+    </section>
+}

@@ -31,36 +31,75 @@
 
 @foreach (var table in Model.Tab.Tables)
 {
+    var localColumns = table.Columns.Where(column => !column.IsSourceColumn).ToList();
     <section class="content-section custom-team-table">
         <div class="section-heading">
-            <div><span>Shared data</span><h2>@table.Name</h2></div>
+            <div>
+                <span>@(table.IsExcelBacked ? "Excel-backed data" : "Shared data")</span>
+                <h2>@table.Name</h2>
+                @if (table.IsExcelBacked)
+                {
+                    <small class="text-secondary">Primary key: @table.PrimaryKeySourceHeader@if (table.LastSyncedAtUtc.HasValue) { <text> · Synced @table.LastSyncedAtUtc.Value.ToLocalTime().ToString("MMM d, yyyy h:mm tt")</text> }</small>
+                }
+            </div>
             <strong>@table.Rows.Count rows</strong>
         </div>
         @if (table.Columns.Count == 0)
         {
-            <div class="p-4 text-secondary">This table does not have any active columns.</div>
+            <div class="p-4 text-secondary">@(table.IsExcelBacked ? "Synchronize this table to import its Excel columns and rows." : "This table does not have any active columns.")</div>
             continue;
         }
         <div class="table-responsive">
             <table class="table styled-table align-middle">
-                <thead><tr>@foreach (var column in table.Columns) { <th>@column.Label@if (column.IsRequired) { <span class="text-danger"> *</span> }</th> }@if (Model.CanEdit) { <th>Actions</th> }</tr></thead>
+                <thead>
+                    <tr>
+                        @if (table.IsExcelBacked) { <th>Source status</th> }
+                        @foreach (var column in table.Columns)
+                        {
+                            <th>@column.Label@if (column.IsRequired) { <span class="text-danger"> *</span> }@if (column.IsSourceColumn) { <span class="badge text-bg-light ms-1">Excel</span> }</th>
+                        }
+                        @if (Model.CanEdit) { <th>Actions</th> }
+                    </tr>
+                </thead>
                 <tbody>
                 @foreach (var row in table.Rows)
                 {
-                    @if (Model.CanEdit)
-                    {
-                        var rowFormId = $"row-{row.Id}";
-                        <tr>
-                            @foreach (var column in table.Columns) { <td><partial name="_CustomTeamCellEditor" model="@(new CustomTeamCellEditorModel(column, Model.Value(row, column), rowFormId))" /></td> }
-                            <td class="text-nowrap"><form id="@rowFormId" method="post" asp-page-handler="SaveRow" asp-route-slug="@Model.Tab.Slug"><input type="hidden" name="tableId" value="@table.Id" /><input type="hidden" name="rowId" value="@row.Id" /><input type="hidden" name="version" value="@row.Version" /><button class="btn btn-sm btn-outline-primary" type="submit">Save</button><button class="btn btn-sm btn-outline-danger ms-1" type="submit" formaction="?handler=RemoveRow&amp;slug=@Model.Tab.Slug&amp;tableId=@table.Id&amp;rowId=@row.Id&amp;version=@row.Version" formnovalidate onclick="return confirm('Remove this row?')">Remove</button></form></td>
-                        </tr>
-                    }
-                    else
-                    {
-                        <tr>@foreach (var column in table.Columns) { <td>@Model.Value(row, column)</td> }</tr>
-                    }
+                    var rowFormId = $"row-{row.Id}";
+                    <tr class="@(row.IsMissingFromSource ? "custom-team-row-missing" : null)">
+                        @if (table.IsExcelBacked)
+                        {
+                            <td>@if (row.IsMissingFromSource) { <span class="badge text-bg-warning">Missing from Excel</span> } else { <span class="badge text-bg-success">Current</span> }</td>
+                        }
+                        @foreach (var column in table.Columns)
+                        {
+                            var value = Model.Value(row, column);
+                            <td>
+                                @if (Model.CanEdit && !column.IsSourceColumn)
+                                {
+                                    <partial name="_CustomTeamCellEditor" model="@(new CustomTeamCellEditorModel(column, value, rowFormId))" />
+                                }
+                                else
+                                {
+                                    <span class="custom-team-cell-value">@value</span>
+                                }
+                            </td>
+                        }
+                        @if (Model.CanEdit)
+                        {
+                            <td class="text-nowrap">
+                                <form id="@rowFormId" method="post" asp-page-handler="SaveRow" asp-route-slug="@Model.Tab.Slug">
+                                    <input type="hidden" name="tableId" value="@table.Id" /><input type="hidden" name="rowId" value="@row.Id" /><input type="hidden" name="version" value="@row.Version" />
+                                    @if (localColumns.Count > 0 || !table.IsExcelBacked) { <button class="btn btn-sm btn-outline-primary" type="submit">Save</button> }
+                                    @if (!table.IsExcelBacked || row.IsMissingFromSource)
+                                    {
+                                        <button class="btn btn-sm btn-outline-danger ms-1" type="submit" formaction="?handler=RemoveRow&amp;slug=@Model.Tab.Slug&amp;tableId=@table.Id&amp;rowId=@row.Id&amp;version=@row.Version" formnovalidate onclick="return confirm('Remove this row from Team Hub?')">Remove</button>
+                                    }
+                                </form>
+                            </td>
+                        }
+                    </tr>
                 }
-                @if (Model.CanEdit)
+                @if (Model.CanEdit && !table.IsExcelBacked)
                 {
                     var addFormId = $"add-{table.Id}";
                     <tr class="table-light">

@@ -114,6 +114,60 @@ public sealed class AccessControlTests
     }
 
     [Fact]
+    public async Task CustomTab_PerUserOverrideSupersedesUserTypeAccessAndCanReturnToInheritance()
+    {
+        await using var host = await AccessTestHost.CreateAsync();
+        using var scope = host.Services.CreateScope();
+        var users = scope.ServiceProvider.GetRequiredService<IUserAccessService>();
+        const string module = "Team Tab: restricted-workbook";
+        await users.EnsureModulesAsync([module]);
+        var allowed = await users.SaveUserAsync(new SaveAuthorizedUserRequest(
+            null, "allowed@example.com", "Allowed User", TeamHubUserTypes.Registered, true, "password123"), "admin@example.com");
+        var blocked = await users.SaveUserAsync(new SaveAuthorizedUserRequest(
+            null, "blocked@example.com", "Blocked User", TeamHubUserTypes.Registered, true, "password123"), "admin@example.com");
+
+        await users.SetUserPermissionsAsync([
+            new(allowed.Id, module, AccessLevel.ReadOnly),
+            new(blocked.Id, module, AccessLevel.NoAccess)
+        ]);
+
+        (await users.GetAccessLevelAsync(module, TeamHubUserTypes.Registered, allowed.Id)).Should().Be(AccessLevel.ReadOnly);
+        (await users.GetAccessLevelAsync(module, TeamHubUserTypes.Registered, blocked.Id)).Should().Be(AccessLevel.NoAccess);
+        (await users.GetAccessLevelAsync(module, TeamHubUserTypes.Registered)).Should().Be(AccessLevel.NoAccess);
+
+        await users.SetPermissionsAsync([new(module, TeamHubUserTypes.Registered, AccessLevel.Edit)]);
+        (await users.GetAccessLevelAsync(module, TeamHubUserTypes.Registered, allowed.Id)).Should().Be(AccessLevel.ReadOnly);
+        (await users.GetAccessLevelAsync(module, TeamHubUserTypes.Registered, blocked.Id)).Should().Be(AccessLevel.NoAccess);
+
+        await users.SetUserPermissionsAsync([new(allowed.Id, module, null)]);
+        (await users.GetAccessLevelAsync(module, TeamHubUserTypes.Registered, allowed.Id)).Should().Be(AccessLevel.Edit);
+        (await users.ListUserPermissionsAsync()).Should().ContainSingle(item =>
+            item.AuthorizedUserId == blocked.Id && item.Module == module);
+    }
+
+    [Fact]
+    public async Task InitializeAsync_AddsPerUserPermissionSchemaToAnExistingAccessDatabase()
+    {
+        await using var host = await AccessTestHost.CreateAsync();
+        await using (var connection = new SqliteConnection($"Data Source={host.DatabasePath};Pooling=False"))
+        {
+            await connection.OpenAsync();
+            await using var drop = connection.CreateCommand();
+            drop.CommandText = "DROP TABLE UserModulePermissions;";
+            await drop.ExecuteNonQueryAsync();
+        }
+
+        using var scope = host.Services.CreateScope();
+        await scope.ServiceProvider.GetRequiredService<IUserAccessService>().InitializeAsync();
+
+        await using var verification = new SqliteConnection($"Data Source={host.DatabasePath};Pooling=False");
+        await verification.OpenAsync();
+        await using var command = verification.CreateCommand();
+        command.CommandText = "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'UserModulePermissions';";
+        Convert.ToInt32(await command.ExecuteScalarAsync()).Should().Be(1);
+    }
+
+    [Fact]
     public async Task RemoveModules_DeletesDynamicPermissionsButProtectsBuiltInModules()
     {
         await using var host = await AccessTestHost.CreateAsync();
@@ -123,12 +177,16 @@ public sealed class AccessControlTests
 
         await users.EnsureModulesAsync([module]);
         await users.SetPermissionsAsync([new(module, TeamHubUserTypes.Registered, AccessLevel.Edit)]);
+        var user = await users.SaveUserAsync(new SaveAuthorizedUserRequest(
+            null, "temporary@example.com", "Temporary User", TeamHubUserTypes.Registered, true, "password123"), "admin@example.com");
+        await users.SetUserPermissionsAsync([new(user.Id, module, AccessLevel.ReadOnly)]);
 
         await users.RemoveModulesAsync([module, TeamHubModules.Team]);
 
         (await users.GetAccessLevelAsync(module, TeamHubUserTypes.Registered)).Should().Be(AccessLevel.NoAccess);
         (await users.GetAccessLevelAsync(TeamHubModules.Team, TeamHubUserTypes.Registered)).Should().Be(AccessLevel.ReadOnly);
         (await users.ListPermissionsAsync()).Should().NotContain(item => item.Module == module);
+        (await users.ListUserPermissionsAsync()).Should().NotContain(item => item.Module == module);
     }
     [Theory]
     [InlineData("/Reports/Index", "Reports")]

@@ -10,12 +10,14 @@ internal sealed class UserAccessService(
 {
     private const string BootstrapCompleteKey = "BootstrapUsersImported";
     private const string LegacyStudioSupportModule = "Studio Jira Tickets";
+    private const string CustomTeamTabModulePrefix = "Team Tab: ";
     private readonly PasswordHasher<AuthorizedUserEntity> passwordHasher = new();
 
     public async Task InitializeAsync(CancellationToken cancellationToken = default)
     {
         await using var context = await contextFactory.CreateDbContextAsync(cancellationToken);
         await context.Database.EnsureCreatedAsync(cancellationToken);
+        await EnsureUserPermissionSchemaAsync(context, cancellationToken);
         await MigrateStudioSupportPermissionsAsync(context, cancellationToken);
         await SeedPermissionsAsync(context, TeamHubModules.All, cancellationToken);
 
@@ -76,6 +78,9 @@ internal sealed class UserAccessService(
         if (removable.Count == 0) return;
 
         await using var context = await contextFactory.CreateDbContextAsync(cancellationToken);
+        await context.UserModulePermissions
+            .Where(item => removable.Contains(item.Module))
+            .ExecuteDeleteAsync(cancellationToken);
         await context.ModulePermissions
             .Where(item => removable.Contains(item.Module))
             .ExecuteDeleteAsync(cancellationToken);
@@ -247,14 +252,108 @@ internal sealed class UserAccessService(
         await context.SaveChangesAsync(cancellationToken);
     }
 
+    public async Task<IReadOnlyList<UserModulePermissionRecord>> ListUserPermissionsAsync(
+        CancellationToken cancellationToken = default)
+    {
+        await using var context = await contextFactory.CreateDbContextAsync(cancellationToken);
+        return await context.UserModulePermissions.AsNoTracking()
+            .OrderBy(item => item.Module)
+            .ThenBy(item => item.AuthorizedUserId)
+            .Select(item => new UserModulePermissionRecord(
+                item.AuthorizedUserId,
+                item.Module,
+                item.AccessLevel))
+            .ToListAsync(cancellationToken);
+    }
+
+    public async Task SetUserPermissionsAsync(
+        IReadOnlyCollection<UserModulePermissionRecord> permissions,
+        CancellationToken cancellationToken = default)
+    {
+        await using var context = await contextFactory.CreateDbContextAsync(cancellationToken);
+        var validUsers = await context.AuthorizedUsers.AsNoTracking()
+            .Where(item => item.IsActive && item.UserType != TeamHubUserTypes.Admin)
+            .Select(item => item.Id)
+            .ToHashSetAsync(cancellationToken);
+        var validModules = await context.ModulePermissions.AsNoTracking()
+            .Where(item => item.Module.StartsWith(CustomTeamTabModulePrefix))
+            .Select(item => item.Module)
+            .Distinct()
+            .ToHashSetAsync(cancellationToken);
+        var stored = await context.UserModulePermissions.ToListAsync(cancellationToken);
+        var byKey = stored.ToDictionary(
+            item => item.AuthorizedUserId + "|" + item.Module,
+            StringComparer.Ordinal);
+
+        foreach (var input in permissions)
+        {
+            if (!validUsers.Contains(input.AuthorizedUserId)
+                || !validModules.Contains(input.Module))
+                continue;
+            var key = input.AuthorizedUserId + "|" + input.Module;
+            if (!input.AccessLevel.HasValue)
+            {
+                if (byKey.Remove(key, out var inherited)) context.UserModulePermissions.Remove(inherited);
+                continue;
+            }
+
+            var level = NormalizeUserOverride(input.AccessLevel.Value);
+            if (!byKey.TryGetValue(key, out var entity))
+            {
+                entity = new UserModulePermissionEntity
+                {
+                    AuthorizedUserId = input.AuthorizedUserId,
+                    Module = input.Module
+                };
+                context.UserModulePermissions.Add(entity);
+                byKey[key] = entity;
+            }
+            entity.AccessLevel = level;
+        }
+        await context.SaveChangesAsync(cancellationToken);
+    }
+
     public async Task<AccessLevel> GetAccessLevelAsync(string module, string userType, CancellationToken cancellationToken = default)
+        => await GetAccessLevelAsync(module, userType, null, cancellationToken);
+
+    public async Task<AccessLevel> GetAccessLevelAsync(
+        string module,
+        string userType,
+        Guid? authorizedUserId,
+        CancellationToken cancellationToken = default)
     {
         if (userType == TeamHubUserTypes.Admin) return AccessLevel.FullAccess;
         await using var context = await contextFactory.CreateDbContextAsync(cancellationToken);
+        if (authorizedUserId.HasValue)
+        {
+            var userOverride = await context.UserModulePermissions.AsNoTracking()
+                .Where(item => item.AuthorizedUserId == authorizedUserId.Value && item.Module == module)
+                .Select(item => (AccessLevel?)item.AccessLevel)
+                .SingleOrDefaultAsync(cancellationToken);
+            if (userOverride.HasValue) return userOverride.Value;
+        }
         return await context.ModulePermissions.AsNoTracking()
             .Where(item => item.Module == module && item.UserType == userType)
             .Select(item => (AccessLevel?)item.AccessLevel)
             .SingleOrDefaultAsync(cancellationToken) ?? AccessLevel.NoAccess;
+    }
+
+    private static async Task EnsureUserPermissionSchemaAsync(
+        AccessControlDbContext context,
+        CancellationToken cancellationToken)
+    {
+        await context.Database.ExecuteSqlRawAsync("""
+            CREATE TABLE IF NOT EXISTS UserModulePermissions (
+                Id INTEGER NOT NULL CONSTRAINT PK_UserModulePermissions PRIMARY KEY AUTOINCREMENT,
+                AuthorizedUserId TEXT NOT NULL,
+                Module TEXT NOT NULL,
+                AccessLevel INTEGER NOT NULL,
+                CONSTRAINT FK_UserModulePermissions_AuthorizedUsers_AuthorizedUserId
+                    FOREIGN KEY (AuthorizedUserId) REFERENCES AuthorizedUsers (Id) ON DELETE CASCADE
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS IX_UserModulePermissions_AuthorizedUserId_Module
+                ON UserModulePermissions (AuthorizedUserId, Module);
+            """, cancellationToken);
     }
 
     private static async Task SeedPermissionsAsync(
@@ -351,6 +450,12 @@ internal sealed class UserAccessService(
             return AccessLevel.NoAccess;
         return Enum.IsDefined(requested) ? requested : AccessLevel.NoAccess;
     }
+
+    private static AccessLevel NormalizeUserOverride(AccessLevel requested) => requested switch
+    {
+        AccessLevel.NoAccess or AccessLevel.ReadOnly or AccessLevel.Edit => requested,
+        _ => throw new ArgumentException("Per-user custom tab access must be No Access, Read Only, or Edit.")
+    };
 
     private static async Task EnsureAnotherActiveAdminAsync(AccessControlDbContext context, Guid excludedId, CancellationToken cancellationToken)
     {

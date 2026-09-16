@@ -46,7 +46,7 @@ public sealed class CurrentAccessService(IHttpContextAccessor httpContextAccesso
     public async Task<AccessLevel> GetAccessLevelAsync(string module, CancellationToken cancellationToken = default)
     {
         var current = await GetCurrentAsync(cancellationToken);
-        return await users.GetAccessLevelAsync(module, current.UserType, cancellationToken);
+        return await users.GetAccessLevelAsync(module, current.UserType, current.User?.Id, cancellationToken);
     }
 
     public async Task<bool> CanAsync(string module, AccessLevel required = AccessLevel.ReadOnly, CancellationToken cancellationToken = default) =>
