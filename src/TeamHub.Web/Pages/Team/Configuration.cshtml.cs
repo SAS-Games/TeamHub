@@ -16,6 +16,7 @@ public sealed class ConfigurationModel(
     ITeamAchievementService achievementService,
     IPageTextAppearanceService appearanceService,
     ICustomTeamTabService customTabs,
+    IExcelTableSourceReader excelReader,
     IExcelSourceFileStore excelSourceFiles,
     IUserAccessService users) : PageModel
 {
@@ -253,8 +254,6 @@ public sealed class ConfigurationModel(
         int displayOrder,
         string sourceType,
         string? sourceUrl,
-        string? sourceDriveId,
-        string? sourceItemId,
         string? sourceDisplayName,
         IFormFile? sourceFile,
         string? sourceWorksheet,
@@ -285,8 +284,8 @@ public sealed class ConfigurationModel(
                 sourceWorksheet,
                 sourceHeaderRow,
                 primaryKeySourceHeader,
-                sourceDriveId,
-                sourceItemId,
+                null,
+                null,
                 sourceDisplayName), cancellationToken);
             StatusMessage = $"Table saved: {saved.Name}.";
         }
@@ -295,6 +294,48 @@ public sealed class ConfigurationModel(
             ErrorMessage = exception.Message;
         }
         return CustomRedirect(tabId);
+    }
+
+    public async Task<IActionResult> OnPostTestCustomTableSourceAsync(
+        string sourceType,
+        string? sourceUrl,
+        string? sourceWorksheet,
+        int sourceHeaderRow,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            if (sourceType is not (CustomTeamTableSourceTypes.ExcelUrl or CustomTeamTableSourceTypes.MicrosoftGraphExcel))
+                throw new ArgumentException("Select Excel download link or SharePoint / OneDrive before testing.");
+
+            var result = await excelReader.ReadAsync(new ExcelTableSourceRequest(
+                sourceType,
+                sourceUrl,
+                null,
+                null,
+                sourceWorksheet,
+                sourceHeaderRow), cancellationToken);
+            return new JsonResult(new
+            {
+                success = true,
+                message = $"Workbook test successful. Worksheet '{result.Worksheet}' contains {result.Headers.Count:N0} column(s) and {result.Rows.Count:N0} data row(s)."
+            });
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception exception) when (exception is ArgumentException
+            or InvalidOperationException
+            or InvalidDataException
+            or HttpRequestException)
+        {
+            return new JsonResult(new
+            {
+                success = false,
+                message = $"Workbook test failed: {exception.Message}"
+            });
+        }
     }
 
     public async Task<IActionResult> OnPostArchiveCustomTableAsync(

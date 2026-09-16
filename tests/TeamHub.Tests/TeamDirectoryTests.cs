@@ -446,6 +446,43 @@ public sealed class TeamDirectoryTests
     }
 
     [Fact]
+    public async Task MicrosoftGraphExcelTable_UsesSharingLinkWithoutWorkbookIds()
+    {
+        var dbPath = CreateDatabasePath();
+        const string sharingUrl = "https://company-my.sharepoint.com/:x:/r/personal/user/Documents/People.xlsx?web=1";
+        try
+        {
+            var reader = new FakeExcelTableSourceReader { Data = ExcelData(("E-001", "Asha")) };
+            await using var provider = CreateServices(dbPath, reader);
+            await using var scope = provider.CreateAsyncScope();
+            await scope.ServiceProvider.GetRequiredService<ITeamDatabaseInitializer>().InitializeAsync();
+            var tabs = scope.ServiceProvider.GetRequiredService<ICustomTeamTabService>();
+            var tab = await tabs.SaveTabAsync(new(null, "Shared workbook"));
+            var table = await tabs.SaveTableAsync(new(
+                tab.Id,
+                null,
+                "People",
+                SourceType: CustomTeamTableSourceTypes.MicrosoftGraphExcel,
+                SourceUrl: sharingUrl,
+                PrimaryKeySourceHeader: "Employee ID"));
+
+            await tabs.SyncExcelTableAsync(table.Id, "admin@example.com");
+
+            reader.LastRequest.Should().NotBeNull();
+            reader.LastRequest!.SourceUrl.Should().Be(sharingUrl);
+            reader.LastRequest.SourceDriveId.Should().BeNull();
+            reader.LastRequest.SourceItemId.Should().BeNull();
+            var loaded = (await tabs.GetTabAsync(tab.Slug))!.Tables.Single();
+            loaded.SourceUrl.Should().Be(sharingUrl);
+            loaded.Rows.Should().ContainSingle();
+        }
+        finally
+        {
+            DeleteDatabase(dbPath);
+        }
+    }
+
+    [Fact]
     public async Task ExcelBackedTable_UsesPrimaryKeyAndPreservesLocalValuesAcrossReorderingAndRemoval()
     {
         var dbPath = CreateDatabasePath();

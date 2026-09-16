@@ -85,6 +85,51 @@ public sealed class MilestoneWorkbookTests
     }
 
     [Fact]
+    public async Task ReadsMilestonesThroughMicrosoftGraphSharingLinkWithoutWorkbookIds()
+    {
+        const string sharingUrl = "https://company-my.sharepoint.com/:x:/r/personal/user/Documents/Milestones.xlsx?web=1";
+        var source = new FakeExcelWorkbookSource(CreateWorkbook(new DateTime(2026, 12, 4)));
+        var configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["MilestoneConfiguration:SourceType"] = ExcelWorkbookSourceTypes.MicrosoftGraphExcel,
+            ["MilestoneConfiguration:SourceUrl"] = sharingUrl
+        }).Build();
+        var services = new ServiceCollection();
+        services.AddMilestoneTracker(configuration);
+        services.AddSingleton<IExcelWorkbookSource>(source);
+        using var provider = services.BuildServiceProvider();
+
+        var milestones = await provider.GetRequiredService<IMilestoneTrackerService>().GetMilestonesAsync();
+
+        milestones.Should().ContainSingle();
+        source.LastRequest.Should().Be(new ExcelWorkbookSourceRequest(
+            ExcelWorkbookSourceTypes.MicrosoftGraphExcel,
+            SharingUrl: sharingUrl));
+    }
+
+    [Fact]
+    public async Task ReadsMilestonesThroughUploadedWorkbookReference()
+    {
+        var source = new FakeExcelWorkbookSource(CreateWorkbook(new DateTime(2027, 1, 8)));
+        var configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["MilestoneConfiguration:SourceType"] = ExcelWorkbookSourceTypes.UploadedExcel,
+            ["MilestoneConfiguration:SourceUrl"] = "uploaded-milestones.xlsx"
+        }).Build();
+        var services = new ServiceCollection();
+        services.AddMilestoneTracker(configuration);
+        services.AddSingleton<IExcelWorkbookSource>(source);
+        using var provider = services.BuildServiceProvider();
+
+        var milestones = await provider.GetRequiredService<IMilestoneTrackerService>().GetMilestonesAsync();
+
+        milestones.Should().ContainSingle();
+        source.LastRequest.Should().Be(new ExcelWorkbookSourceRequest(
+            ExcelWorkbookSourceTypes.UploadedExcel,
+            ManagedReference: "uploaded-milestones.xlsx"));
+    }
+
+    [Fact]
     public async Task MilestoneConfiguration_PersistsInTeamDatabaseAndOverridesDefaults()
     {
         var databasePath = Path.Combine(Path.GetTempPath(), $"teamhub-milestones-{Guid.NewGuid():N}.db");
@@ -115,6 +160,86 @@ public sealed class MilestoneWorkbookTests
             loaded.ExcelPath.Should().Be("keep-for-later.xlsx");
             loaded.SourceDriveId.Should().Be("drive-from-page");
             loaded.SourceItemId.Should().Be("item-from-page");
+        }
+        finally
+        {
+            SqliteConnection.ClearAllPools();
+            if (File.Exists(databasePath)) File.Delete(databasePath);
+        }
+    }
+
+    [Fact]
+    public async Task MilestoneConfiguration_AcceptsMicrosoftGraphSharingLinkWithoutWorkbookIds()
+    {
+        var databasePath = Path.Combine(Path.GetTempPath(), $"teamhub-milestones-{Guid.NewGuid():N}.db");
+        const string sharingUrl = "https://company.sharepoint.com/:x:/r/sites/Team/Documents/Milestones.xlsx?web=1";
+        try
+        {
+            var configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["ConnectionStrings:TeamDb"] = $"Data Source={databasePath}"
+            }).Build();
+            using var provider = new ServiceCollection().AddMilestoneTracker(configuration).BuildServiceProvider();
+            using var scope = provider.CreateScope();
+            var settings = scope.ServiceProvider.GetRequiredService<IMilestoneConfigurationService>();
+
+            await settings.SaveSettingsAsync(new MilestoneSourceSettings
+            {
+                SourceType = ExcelWorkbookSourceTypes.MicrosoftGraphExcel,
+                SourceUrl = sharingUrl
+            });
+
+            var loaded = await settings.GetSettingsAsync();
+            loaded.SourceUrl.Should().Be(sharingUrl);
+            loaded.SourceDriveId.Should().BeEmpty();
+            loaded.SourceItemId.Should().BeEmpty();
+        }
+        finally
+        {
+            SqliteConnection.ClearAllPools();
+            if (File.Exists(databasePath)) File.Delete(databasePath);
+        }
+    }
+
+    [Fact]
+    public async Task MilestoneConfiguration_UpgradesExistingSettingsForUploadedWorkbookDisplayName()
+    {
+        var databasePath = Path.Combine(Path.GetTempPath(), $"teamhub-milestones-{Guid.NewGuid():N}.db");
+        try
+        {
+            await using (var connection = new SqliteConnection($"Data Source={databasePath}"))
+            {
+                await connection.OpenAsync();
+                await using var command = connection.CreateCommand();
+                command.CommandText = """
+                    CREATE TABLE MilestoneSourceSettings (
+                        Id INTEGER NOT NULL PRIMARY KEY,
+                        SourceType TEXT NOT NULL,
+                        ExcelPath TEXT NOT NULL,
+                        SourceUrl TEXT NOT NULL,
+                        SourceDriveId TEXT NOT NULL,
+                        SourceItemId TEXT NOT NULL,
+                        UpdatedAtUtc TEXT NOT NULL
+                    );
+                    INSERT INTO MilestoneSourceSettings
+                        (Id, SourceType, ExcelPath, SourceUrl, SourceDriveId, SourceItemId, UpdatedAtUtc)
+                    VALUES
+                        (1, 'LocalFile', 'config/MilestoneTracker.xlsx', '', '', '', '2026-01-01T00:00:00Z');
+                    """;
+                await command.ExecuteNonQueryAsync();
+            }
+
+            var configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["ConnectionStrings:TeamDb"] = $"Data Source={databasePath}"
+            }).Build();
+            using var provider = new ServiceCollection().AddMilestoneTracker(configuration).BuildServiceProvider();
+            using var scope = provider.CreateScope();
+
+            var loaded = await scope.ServiceProvider.GetRequiredService<IMilestoneConfigurationService>().GetSettingsAsync();
+
+            loaded.ExcelPath.Should().Be("config/MilestoneTracker.xlsx");
+            loaded.SourceDisplayName.Should().BeEmpty();
         }
         finally
         {

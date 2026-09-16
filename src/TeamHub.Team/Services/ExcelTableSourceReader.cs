@@ -61,7 +61,8 @@ internal sealed partial class DirectDownloadExcelTableSourceReader(IExcelWorkboo
             CustomTeamTableSourceTypes.MicrosoftGraphExcel => new ExcelWorkbookSourceRequest(
                 ExcelWorkbookSourceTypes.MicrosoftGraphExcel,
                 DriveId: request.SourceDriveId,
-                ItemId: request.SourceItemId),
+                ItemId: request.SourceItemId,
+                SharingUrl: request.SourceUrl),
             _ => throw new InvalidOperationException("The configured Excel source is not supported.")
         };
 

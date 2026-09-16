@@ -109,21 +109,29 @@ internal sealed partial class SqliteCustomTeamTabService(TeamDbContext dbContext
 
         var name = Required(request.Name, "Table name", 100);
         var sourceType = CustomTeamTableSourceTypes.Normalize(request.SourceType);
-        var sourceUrl = sourceType == CustomTeamTableSourceTypes.ExcelUrl
-            ? Required(request.SourceUrl, "Excel download link", 2048)
-            : sourceType == CustomTeamTableSourceTypes.UploadedExcel
-                ? Required(request.SourceUrl, "Uploaded Excel file", 2048)
-            : null;
+        var sourceUrl = sourceType switch
+        {
+            CustomTeamTableSourceTypes.ExcelUrl => Required(request.SourceUrl, "Excel download link", 2048),
+            CustomTeamTableSourceTypes.UploadedExcel => Required(request.SourceUrl, "Uploaded Excel file", 2048),
+            CustomTeamTableSourceTypes.MicrosoftGraphExcel => Optional(request.SourceUrl, 2048, "SharePoint or OneDrive workbook link"),
+            _ => null
+        };
         if (sourceType == CustomTeamTableSourceTypes.ExcelUrl
             && sourceUrl is not null
             && (!Uri.TryCreate(sourceUrl, UriKind.Absolute, out var sourceUri) || sourceUri.Scheme is not ("http" or "https")))
             throw new ArgumentException("Enter a valid HTTP or HTTPS Excel download link.");
+        if (sourceType == CustomTeamTableSourceTypes.MicrosoftGraphExcel && sourceUrl is not null)
+            sourceUrl = TeamHub.Excel.ExcelWorkbookSourceValidation.ValidateMicrosoftSharingUrl(sourceUrl);
         var sourceDriveId = sourceType == CustomTeamTableSourceTypes.MicrosoftGraphExcel
-            ? Required(request.SourceDriveId, "Microsoft Graph drive ID", 512)
+            ? Optional(request.SourceDriveId, 512, "Microsoft Graph drive ID")
             : null;
         var sourceItemId = sourceType == CustomTeamTableSourceTypes.MicrosoftGraphExcel
-            ? Required(request.SourceItemId, "Microsoft Graph item ID", 512)
+            ? Optional(request.SourceItemId, 512, "Microsoft Graph item ID")
             : null;
+        if (sourceType == CustomTeamTableSourceTypes.MicrosoftGraphExcel
+            && sourceUrl is null
+            && (sourceDriveId is null || sourceItemId is null))
+            throw new ArgumentException("Enter a SharePoint or OneDrive workbook link.");
         var sourceDisplayName = CustomTeamTableSourceTypes.IsExcelBacked(sourceType)
             ? Optional(request.SourceDisplayName, 260, "Source file name")
             : null;
