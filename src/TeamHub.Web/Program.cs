@@ -20,6 +20,14 @@ using TeamHub.Web.WorkCenter;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.WebHost.UseStaticWebAssets();
+if (string.IsNullOrWhiteSpace(builder.Configuration["MilestoneConfiguration:SourceType"]))
+{
+    builder.Configuration["MilestoneConfiguration:SourceType"] = "LocalFile";
+}
+if (string.IsNullOrWhiteSpace(builder.Configuration["MilestoneConfiguration:ExcelPath"]))
+{
+    builder.Configuration["MilestoneConfiguration:ExcelPath"] = "config/MilestoneTracker.xlsx";
+}
 ConfigurationFilePaths.ResolveConfiguredPaths(builder.Configuration, builder.Environment.ContentRootPath);
 
 var dataDir = Path.Combine(builder.Environment.ContentRootPath, "data");

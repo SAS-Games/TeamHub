@@ -42,8 +42,6 @@ public sealed class ConfigurationFilePathsTests : IDisposable
 
         var expectedPaths = new Dictionary<string, string>
         {
-            ["WorkflowConfiguration:ExcelPath"] = Path.Combine(_root, "config", "Workflows.xlsx"),
-            ["MilestoneConfiguration:ExcelPath"] = Path.Combine(_root, "config", "MilestoneTracker.xlsx"),
             ["HomeConfiguration:ProjectInfoPath"] = Path.Combine(_root, "config", "Home", "project-info.json"),
             ["HomeConfiguration:UsefulLinksPath"] = Path.Combine(_root, "config", "Home", "useful-links.json")
         };
@@ -52,6 +50,8 @@ public sealed class ConfigurationFilePathsTests : IDisposable
         {
             Assert.Equal(expectedPath, configuration[key]);
         }
+        Assert.Null(configuration["WorkflowConfiguration:ExcelPath"]);
+        Assert.Null(configuration["MilestoneConfiguration:ExcelPath"]);
     }
 
     public void Dispose() => Directory.Delete(_root, recursive: true);

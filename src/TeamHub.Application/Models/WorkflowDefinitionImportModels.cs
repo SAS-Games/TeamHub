@@ -27,12 +27,12 @@ public sealed class WorkflowStepDefinitionDto
     public int SortOrder { get; set; }
 }
 
-public sealed class ConfigurationSyncResult
+public sealed class WorkflowPublicationResult
 {
     public bool Success { get; set; }
-    public DateTime SyncedAtUtc { get; set; }
+    public DateTime PublishedAtUtc { get; set; }
     public List<string> Errors { get; set; } = new();
-    public List<string> ImportedWorkflowSummaries { get; set; } = new();
+    public List<string> PublishedWorkflowSummaries { get; set; } = new();
 }
 
 public sealed class WorkflowDraftSummaryDto

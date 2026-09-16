@@ -383,6 +383,8 @@ public sealed class StudioDirectoryTests
 
             saved.StudioName.Should().Be("Solo Studio");
             saved.StudioGroup.Should().Be("Ungrouped");
+            saved.GroupDisplayOrder.Should().BeNull();
+            saved.StudioDisplayOrder.Should().BeNull();
             saved.IsActive.Should().BeTrue();
             saved.TimeZoneId.Should().Be(TimeZoneInfo.Utc.Id);
             saved.OurContacts.Should().BeEmpty();
@@ -417,6 +419,8 @@ public sealed class StudioDirectoryTests
                 StudioName = "North Studio",
                 ProjectName = "Project Atlas",
                 StudioGroup = "IHP",
+                GroupDisplayOrder = 2,
+                StudioDisplayOrder = 3,
                 IsActive = true,
                 Location = "Pune",
                 TimeZoneId = configuredTimeZone,
@@ -443,6 +447,8 @@ public sealed class StudioDirectoryTests
                 StudioName = "North Studio",
                 ProjectName = "Project Atlas",
                 StudioGroup = "MHP",
+                GroupDisplayOrder = 1,
+                StudioDisplayOrder = 4,
                 IsActive = false,
                 Location = "Mumbai",
                 TimeZoneId = configuredTimeZone,
@@ -462,6 +468,8 @@ public sealed class StudioDirectoryTests
 
             updated.Location.Should().Be("Mumbai");
             updated.StudioGroup.Should().Be("MHP");
+            updated.GroupDisplayOrder.Should().Be(1);
+            updated.StudioDisplayOrder.Should().Be(4);
             updated.IsActive.Should().BeFalse();
             updated.TimeZoneId.Should().Be(configuredTimeZone);
             updated.OurContacts.Should().ContainSingle()
@@ -470,6 +478,65 @@ public sealed class StudioDirectoryTests
                 .Which.RolesAndResponsibilities.Should().Be("Production owner");
             updated.ImportantLinks.Should().ContainSingle()
                 .Which.Url.Should().Be("https://example.com/plan-v2");
+        }
+        finally
+        {
+            SqliteConnection.ClearAllPools();
+            if (File.Exists(dbPath))
+            {
+                File.Delete(dbPath);
+            }
+        }
+    }
+
+    [Fact]
+    public async Task GetStudiosAsync_UsesOptionalGroupAndStudioOrderBeforeAlphabeticalFallback()
+    {
+        var dbPath = Path.Combine(Path.GetTempPath(), $"teamhub-studio-{Guid.NewGuid():N}.db");
+        try
+        {
+            await using var provider = CreateServices(dbPath);
+            await using var scope = provider.CreateAsyncScope();
+            await scope.ServiceProvider.GetRequiredService<IStudioDatabaseInitializer>().InitializeAsync();
+            var service = scope.ServiceProvider.GetRequiredService<IStudioDirectoryService>();
+
+            await service.SaveStudioAsync(new StudioDetails
+            {
+                StudioName = "Zulu Studio",
+                ProjectName = "Project Z",
+                StudioGroup = "IHP",
+                GroupDisplayOrder = 1,
+                StudioDisplayOrder = 2
+            });
+            var firstIhpStudio = await service.SaveStudioAsync(new StudioDetails
+            {
+                StudioName = "Alpha Studio",
+                ProjectName = "Project A",
+                StudioGroup = "IHP",
+                StudioDisplayOrder = 1
+            });
+            await service.SaveStudioAsync(new StudioDetails
+            {
+                StudioName = "MHP Studio",
+                ProjectName = "Project M",
+                StudioGroup = "MHP",
+                GroupDisplayOrder = 2
+            });
+            await service.SaveStudioAsync(new StudioDetails
+            {
+                StudioName = "Alphabetical Studio",
+                ProjectName = "Project U",
+                StudioGroup = "Ungrouped"
+            });
+
+            var studios = await service.GetStudiosAsync();
+
+            studios.Select(studio => studio.StudioName).Should().ContainInOrder(
+                "Alpha Studio",
+                "Zulu Studio",
+                "MHP Studio",
+                "Alphabetical Studio");
+            firstIhpStudio.GroupDisplayOrder.Should().Be(1);
         }
         finally
         {
@@ -502,7 +569,7 @@ public sealed class StudioDirectoryTests
             await scope.ServiceProvider.GetRequiredService<IStudioDatabaseInitializer>().InitializeAsync();
 
             var studioTables = await GetTableNamesAsync(studioDbPath);
-            studioTables.Should().Contain(["Studios", "StudioContacts", "StudioTeamMembers", "StudioDevelopmentTools", "StudioImportantLinks"]);
+            studioTables.Should().Contain(["Studios", "StudioGroupOrders", "StudioContacts", "StudioTeamMembers", "StudioDevelopmentTools", "StudioImportantLinks"]);
 
             var workflowTables = await GetTableNamesAsync(workflowDbPath);
             workflowTables.Should().ContainSingle().Which.Should().Be("WorkflowOnly");
@@ -554,6 +621,7 @@ public sealed class StudioDirectoryTests
             columns.Should().Contain("TimeZoneId");
             columns.Should().Contain("StudioGroup");
             columns.Should().Contain("IsActive");
+            columns.Should().Contain("StudioDisplayOrder");
         }
         finally
         {

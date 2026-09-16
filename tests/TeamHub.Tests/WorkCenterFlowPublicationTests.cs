@@ -158,17 +158,16 @@ public sealed class WorkCenterFlowPublicationTests
             return Task.FromResult(Guid.NewGuid());
         }
 
-        public Task<ConfigurationSyncResult> PublishDraftAsync(Guid id, string actor, CancellationToken cancellationToken = default)
+        public Task<WorkflowPublicationResult> PublishDraftAsync(Guid id, string actor, CancellationToken cancellationToken = default)
         {
             PublishedBy = actor;
-            return Task.FromResult(new ConfigurationSyncResult
+            return Task.FromResult(new WorkflowPublicationResult
             {
                 Success = true,
-                ImportedWorkflowSummaries = ["ONBOARDING: v1"]
+                PublishedWorkflowSummaries = ["ONBOARDING: v1"]
             });
         }
 
-        public Task<ConfigurationSyncResult> SyncAsync(string actor, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task<IReadOnlyList<WorkflowDraftSummaryDto>> GetDraftsAsync(CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task<WorkflowDraftDto?> GetDraftAsync(Guid id, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task DeleteDraftAsync(Guid id, CancellationToken cancellationToken = default) => throw new NotSupportedException();

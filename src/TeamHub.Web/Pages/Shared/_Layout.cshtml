@@ -33,8 +33,11 @@
     {
         studioTabs = (await StudioDirectoryService.GetStudiosAsync())
             .Where(studio => studio.IsActive)
-            .OrderBy(studio => studio.StudioGroup)
-            .ThenBy(studio => studio.StudioName)
+            .OrderBy(studio => studio.GroupDisplayOrder ?? int.MaxValue)
+            .ThenBy(studio => studio.StudioGroup, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(studio => studio.StudioDisplayOrder ?? int.MaxValue)
+            .ThenBy(studio => studio.StudioName, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(studio => studio.ProjectName, StringComparer.OrdinalIgnoreCase)
             .ToList();
     }
     catch
@@ -85,7 +88,10 @@
                                                         <span>@studioGroup.Key</span>
                                                     </button>
                                                     <ul class="dropdown-menu">
-                                                        @foreach (var studio in studioGroup.OrderBy(item => item.StudioName))
+                                                        @foreach (var studio in studioGroup
+                                                            .OrderBy(item => item.StudioDisplayOrder ?? int.MaxValue)
+                                                            .ThenBy(item => item.StudioName, StringComparer.OrdinalIgnoreCase)
+                                                            .ThenBy(item => item.ProjectName, StringComparer.OrdinalIgnoreCase))
                                                         {
                                                             <li>
                                                                 <a class="dropdown-item" asp-page="@tab.Page" asp-route-studioId="@studio.Id">@studio.StudioName</a>

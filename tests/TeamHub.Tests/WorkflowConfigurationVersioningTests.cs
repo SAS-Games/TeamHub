@@ -12,7 +12,7 @@ public class WorkflowConfigurationVersioningTests
     public async Task PublishDraft_CreatesActiveWorkflowDefinition_AndRemovesDraftFromSavedList()
     {
         await using var context = CreateDbContext();
-        var service = new WorkflowConfigurationService(context, new TestProvider([]), new TestClock(DateTime.UtcNow));
+        var service = new WorkflowConfigurationService(context, new TestClock(DateTime.UtcNow));
 
         var draftId = await service.SaveDraftAsync(new WorkflowDraftDto
         {
@@ -48,14 +48,17 @@ public class WorkflowConfigurationVersioningTests
     public async Task CreatesVersionOnlyWhenConfigurationChanges()
     {
         await using var context = CreateDbContext();
-        var provider = new TestProvider(BuildDefinition("Workflow A"));
-        var service = new WorkflowConfigurationService(context, provider, new TestClock(DateTime.UtcNow));
+        var service = new WorkflowConfigurationService(context, new TestClock(DateTime.UtcNow));
 
-        var first = await service.SyncAsync("admin");
-        var second = await service.SyncAsync("admin");
-
-        provider.Definitions = BuildDefinition("Workflow A Updated");
-        var third = await service.SyncAsync("admin");
+        var first = await service.PublishDraftAsync(
+            await service.SaveDraftAsync(BuildDraft("Workflow A")),
+            "admin");
+        var second = await service.PublishDraftAsync(
+            await service.SaveDraftAsync(BuildDraft("Workflow A")),
+            "admin");
+        var third = await service.PublishDraftAsync(
+            await service.SaveDraftAsync(BuildDraft("Workflow A Updated")),
+            "admin");
 
         Assert.True(first.Success);
         Assert.True(second.Success);
@@ -70,30 +73,27 @@ public class WorkflowConfigurationVersioningTests
         Assert.Equal([1, 2], versions);
     }
 
-    private static List<WorkflowDefinitionDto> BuildDefinition(string name)
+    private static WorkflowDraftDto BuildDraft(string name)
     {
-        return
-        [
-            new WorkflowDefinitionDto
+        return new WorkflowDraftDto
+        {
+            WorkflowKey = "WF_A",
+            WorkflowName = name,
+            Enabled = true,
+            Steps =
             {
-                WorkflowKey = "WF_A",
-                WorkflowName = name,
-                Enabled = true,
-                Steps =
+                new WorkflowDraftStepDto
                 {
-                    new WorkflowStepDefinitionDto
-                    {
-                        StepKey = "S1",
-                        StepName = "Step 1",
-                        Owner = "owner@x.com",
-                        ExpectedDurationHours = 1,
-                        Required = true,
-                        Enabled = true,
-                        SortOrder = 1
-                    }
+                    StepKey = "S1",
+                    StepName = "Step 1",
+                    Owner = "owner@x.com",
+                    ExpectedDurationHours = 1,
+                    Required = true,
+                    Enabled = true,
+                    SortOrder = 1
                 }
             }
-        ];
+        };
     }
 
     private static WorkflowDbContext CreateDbContext()
@@ -102,14 +102,6 @@ public class WorkflowConfigurationVersioningTests
             .UseInMemoryDatabase(Guid.NewGuid().ToString())
             .Options;
         return new WorkflowDbContext(options);
-    }
-
-    private sealed class TestProvider(List<WorkflowDefinitionDto> definitions) : IWorkflowDefinitionProvider
-    {
-        public List<WorkflowDefinitionDto> Definitions { get; set; } = definitions;
-
-        public Task<IReadOnlyList<WorkflowDefinitionDto>> LoadDefinitionsAsync(CancellationToken cancellationToken = default)
-            => Task.FromResult<IReadOnlyList<WorkflowDefinitionDto>>(Definitions);
     }
 
     private sealed class TestClock(DateTime utcNow) : IClock

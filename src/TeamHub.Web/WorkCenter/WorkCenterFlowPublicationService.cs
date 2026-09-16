@@ -49,7 +49,7 @@ public sealed class WorkCenterFlowPublicationService(
         var result = await workflowConfiguration.PublishDraftAsync(draftId, actor, cancellationToken);
 
         return result.Success
-            ? FlowPublicationResult.Published($"Published {flow.Name}: {string.Join("; ", result.ImportedWorkflowSummaries)}")
+            ? FlowPublicationResult.Published($"Published {flow.Name}: {string.Join("; ", result.PublishedWorkflowSummaries)}")
             : FlowPublicationResult.Invalid(result.Errors);
     }
 

@@ -29,5 +29,9 @@ public class MilestonesModel(IMilestoneTrackerService milestoneTrackerService) :
         {
             ErrorMessage = ex.Message;
         }
+        catch (InvalidOperationException ex)
+        {
+            ErrorMessage = ex.Message;
+        }
     }
 }

@@ -39,6 +39,10 @@ public class IndexModel(IStudioDirectoryService studioDirectoryService, IMilesto
         {
             ErrorMessage = ex.Message;
         }
+        catch (InvalidOperationException ex)
+        {
+            ErrorMessage = ex.Message;
+        }
 
         Studios = studios
             .Select(studio =>
