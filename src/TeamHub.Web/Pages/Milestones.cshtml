@@ -56,6 +56,10 @@ else
                         <div class="roadmap-date">@(milestone.DeliveryDate?.ToString("dd MMM yyyy") ?? "Date to be confirmed")</div>
                         <div class="roadmap-marker"></div>
                         <div class="roadmap-step-content">
+                            @if (isNext)
+                            {
+                                <span class="roadmap-current-badge">Next milestone</span>
+                            }
                             <div class="roadmap-step-top"><strong>@milestone.Description</strong></div>
                         </div>
                     </article>
