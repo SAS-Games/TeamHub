@@ -14,15 +14,18 @@
             ?? track.querySelector('.roadmap-step.planned, .roadmap-step.upcoming, .roadmap-step');
         if (!focus) return;
 
-        const desiredLeft = focus.offsetLeft - ((track.clientWidth - focus.offsetWidth) / 2);
+        const trackBounds = track.getBoundingClientRect();
+        const focusBounds = focus.getBoundingClientRect();
+        const focusLeft = track.scrollLeft + focusBounds.left - trackBounds.left;
+        const desiredLeft = focusLeft - ((track.clientWidth - focusBounds.width) / 2);
         const maximumLeft = track.scrollWidth - track.clientWidth;
         track.scrollLeft = Math.max(0, Math.min(desiredLeft, maximumLeft));
     };
 
     const positionRoadmaps = () => {
-        window.requestAnimationFrame(() => {
-            document.querySelectorAll('.roadmap-track').forEach(centerRoadmapFocus);
-        });
+        window.requestAnimationFrame(() =>
+            window.requestAnimationFrame(() =>
+                document.querySelectorAll('.roadmap-track').forEach(centerRoadmapFocus)));
     };
 
     if (document.readyState === 'loading') {
@@ -30,4 +33,5 @@
     } else {
         positionRoadmaps();
     }
+    window.addEventListener('pageshow', positionRoadmaps);
 })();

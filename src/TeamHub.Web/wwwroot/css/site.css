@@ -109,7 +109,7 @@ body {
 .studio-clock-time { color: #18322d; font-family: Georgia, serif; font-size: clamp(2rem, 4vw, 3rem); line-height: 1; }
 .studio-clock-date { margin-top: 10px; color: #65766f; font-weight: 600; }
 .roadmap-count { color: #65766f; font-size: .85rem; }
-.roadmap-track { display: flex; overflow-x: auto; padding: 34px 28px 22px; }
+.roadmap-track { position: relative; display: flex; overflow-x: auto; padding: 34px 28px 22px; }
 .roadmap-step { position: relative; flex: 0 0 220px; border-top: 2px solid #d9e1dc; padding: 24px 14px 0; color: #65766f; }
 .roadmap-marker { position: absolute; left: 14px; top: -9px; width: 16px; height: 16px; border-radius: 50%; background: #b8c4bd; border: 3px solid #fff; box-shadow: 0 0 0 1px #b8c4bd; }
 .roadmap-date { position: absolute; left: 14px; top: -34px; color: #65766f; font-size: .78rem; white-space: nowrap; }
@@ -117,10 +117,12 @@ body {
 .roadmap-step-top { display: flex; justify-content: space-between; gap: 12px; color: #18322d; margin-bottom: 5px; }
 .roadmap-step.completed { border-top-color: #4d9b72; color: #547263; }
 .roadmap-step.completed .roadmap-marker { background: #4d9b72; box-shadow: 0 0 0 1px #4d9b72; }
-.roadmap-step.next { border-top-color: #e4a23a; }
-.roadmap-step.next .roadmap-marker { background: #e4a23a; box-shadow: 0 0 0 3px #f9e5ba; }
-.ropage-hero { align-items: start; flex-direction: column; }
-  .page-hero-metaoming .roadmap-marker { background: #3d7ea6; box-shadow: 0 0 0 1px #3d7ea6; }
+.roadmap-step.next { border-top: 4px solid #d78412; padding-top: 22px; color: #74480d; background: linear-gradient(180deg, #fff5db 0, #fffaf0 100%); border-radius: 0 0 10px 10px; box-shadow: inset 0 0 0 1px #f2d28f, 0 5px 14px rgba(151, 92, 13, .12); }
+.roadmap-step.next .roadmap-marker { left: 12px; top: -12px; width: 20px; height: 20px; background: #d78412; box-shadow: 0 0 0 4px #ffe9b5, 0 0 0 5px #d78412; }
+.roadmap-step.next .roadmap-date, .roadmap-step.next .roadmap-step-top { color: #78470b; }
+.roadmap-step.next .roadmap-date { font-weight: 800; }
+.roadmap-current-badge { display: inline-block; margin-bottom: 8px; padding: 3px 7px; color: #754407; background: #ffe4a3; border-radius: 999px; font-size: .64rem; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; }
+.roadmap-step.upcoming .roadmap-marker { background: #3d7ea6; box-shadow: 0 0 0 1px #3d7ea6; }
 .roadmap-step.planned .roadmap-marker { background: #fff; box-shadow: 0 0 0 1px #b8c4bd; }
 
 @media (max-width: 991.98px) {
