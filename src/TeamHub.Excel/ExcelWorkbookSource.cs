@@ -87,7 +87,7 @@ internal sealed class ExcelWorkbookSource(IConfiguration configuration) : IExcel
         {
             var fileName = Path.GetFileName(pathOrReference);
             if (!string.Equals(fileName, pathOrReference, StringComparison.Ordinal)
-                || !fileName.EndsWith(".xlsx", StringComparison.OrdinalIgnoreCase))
+                || !IsSupportedWorkbookName(fileName))
                 throw new InvalidOperationException("The stored Excel file reference is invalid.");
             path = Path.Combine(ExcelWorkbookSourceStorage.UploadRoot(configuration), fileName);
         }
@@ -258,6 +258,10 @@ internal sealed class ExcelWorkbookSource(IConfiguration configuration) : IExcel
         string.IsNullOrWhiteSpace(value)
             ? throw new InvalidOperationException($"{label} is not configured.")
             : value.Trim();
+
+    private static bool IsSupportedWorkbookName(string fileName) =>
+        fileName.EndsWith(".xlsx", StringComparison.OrdinalIgnoreCase)
+        || fileName.EndsWith(".xls", StringComparison.OrdinalIgnoreCase);
 
     private static HttpClient CreateClient()
     {

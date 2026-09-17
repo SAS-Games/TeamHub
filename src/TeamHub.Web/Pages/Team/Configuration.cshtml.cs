@@ -296,39 +296,155 @@ public sealed class ConfigurationModel(
         string? primaryKeySourceHeader,
         CancellationToken cancellationToken)
     {
+        var isNewTable = string.IsNullOrWhiteSpace(tableId);
         try
         {
-            if (sourceType == CustomTeamTableSourceTypes.UploadedExcel && sourceFile is { Length: > 0 })
-            {
-                await using var upload = sourceFile.OpenReadStream();
-                var stored = await excelSourceFiles.SaveAsync(
-                    upload,
-                    sourceFile.FileName,
-                    sourceFile.Length,
-                    cancellationToken);
-                sourceUrl = stored.Reference;
-                sourceDisplayName = stored.DisplayName;
-            }
-            var saved = await customTabs.SaveTableAsync(new SaveCustomTeamTableRequest(
+            var saved = await SaveCustomTableConfigurationAsync(
                 tabId,
                 tableId,
                 name,
                 displayOrder,
                 sourceType,
                 sourceUrl,
+                sourceDisplayName,
+                sourceFile,
                 sourceWorksheet,
                 sourceHeaderRow,
                 primaryKeySourceHeader,
-                null,
-                null,
-                sourceDisplayName), cancellationToken);
-            StatusMessage = $"Table saved: {saved.Name}.";
+                cancellationToken);
+            StatusMessage = isNewTable
+                ? $"Table created: {saved.Name}. Configure its data source below."
+                : $"Table saved: {saved.Name}.";
         }
         catch (Exception exception) when (exception is ArgumentException or InvalidOperationException or KeyNotFoundException)
         {
             ErrorMessage = exception.Message;
         }
         return CustomRedirect(tabId);
+    }
+
+    public async Task<IActionResult> OnPostSaveAndSyncCustomTableAsync(
+        string tabId,
+        string tableId,
+        string name,
+        int displayOrder,
+        string sourceType,
+        string? sourceUrl,
+        string? sourceDisplayName,
+        IFormFile? sourceFile,
+        string? sourceWorksheet,
+        int sourceHeaderRow,
+        string? primaryKeySourceHeader,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var saved = await SaveCustomTableConfigurationAsync(
+                tabId,
+                tableId,
+                name,
+                displayOrder,
+                sourceType,
+                sourceUrl,
+                sourceDisplayName,
+                sourceFile,
+                sourceWorksheet,
+                sourceHeaderRow,
+                primaryKeySourceHeader,
+                cancellationToken);
+            var result = await customTabs.SyncExcelTableAsync(
+                saved.Id,
+                User.Identity?.Name ?? "Administrator",
+                cancellationToken);
+            StatusMessage = $"Table configuration saved and Excel synchronized: {result.Added} added, {result.Updated} updated, {result.Restored} restored, {result.Missing} missing from source.";
+        }
+        catch (Exception exception) when (exception is ArgumentException or InvalidOperationException or KeyNotFoundException)
+        {
+            ErrorMessage = exception.Message;
+        }
+        return CustomRedirect(tabId);
+    }
+
+    public async Task<IActionResult> OnPostSaveAndImportCustomTableSchemaAsync(
+        string tabId,
+        string tableId,
+        string name,
+        int displayOrder,
+        string sourceType,
+        string? sourceUrl,
+        string? sourceDisplayName,
+        IFormFile? sourceFile,
+        string? sourceWorksheet,
+        int sourceHeaderRow,
+        string? primaryKeySourceHeader,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var saved = await SaveCustomTableConfigurationAsync(
+                tabId,
+                tableId,
+                name,
+                displayOrder,
+                sourceType,
+                sourceUrl,
+                sourceDisplayName,
+                sourceFile,
+                sourceWorksheet,
+                sourceHeaderRow,
+                primaryKeySourceHeader,
+                cancellationToken);
+            var result = await customTabs.ImportExcelSchemaAsync(saved.Id, cancellationToken);
+            StatusMessage = result.MissingFromWorkbook == 0
+                ? $"Table configuration saved. Excel schema imported from '{result.Worksheet}': {result.Added} column(s) added, {result.Existing} already present."
+                : $"Table configuration saved. Excel schema imported from '{result.Worksheet}': {result.Added} added, {result.Existing} already present, {result.MissingFromWorkbook} mapped column(s) no longer found in the workbook.";
+        }
+        catch (Exception exception) when (exception is ArgumentException or InvalidOperationException or KeyNotFoundException)
+        {
+            ErrorMessage = exception.Message;
+        }
+        return CustomRedirect(tabId);
+    }
+
+    private async Task<CustomTeamTableDto> SaveCustomTableConfigurationAsync(
+        string tabId,
+        string? tableId,
+        string name,
+        int displayOrder,
+        string sourceType,
+        string? sourceUrl,
+        string? sourceDisplayName,
+        IFormFile? sourceFile,
+        string? sourceWorksheet,
+        int sourceHeaderRow,
+        string? primaryKeySourceHeader,
+        CancellationToken cancellationToken)
+    {
+        if (sourceType == CustomTeamTableSourceTypes.UploadedExcel && sourceFile is { Length: > 0 })
+        {
+            await using var upload = sourceFile.OpenReadStream();
+            var stored = await excelSourceFiles.SaveAsync(
+                upload,
+                sourceFile.FileName,
+                sourceFile.Length,
+                cancellationToken);
+            sourceUrl = stored.Reference;
+            sourceDisplayName = stored.DisplayName;
+        }
+
+        return await customTabs.SaveTableAsync(new SaveCustomTeamTableRequest(
+            tabId,
+            tableId,
+            name,
+            displayOrder,
+            sourceType,
+            sourceUrl,
+            sourceWorksheet,
+            sourceHeaderRow,
+            primaryKeySourceHeader,
+            null,
+            null,
+            sourceDisplayName), cancellationToken);
     }
 
     public async Task<IActionResult> OnPostTestCustomTableSourceAsync(
@@ -378,6 +494,14 @@ public sealed class ConfigurationModel(
     {
         await customTabs.ArchiveTableAsync(tableId, cancellationToken);
         StatusMessage = "Table archived. Existing rows remain recoverable in the Team Hub database.";
+        return CustomRedirect(tabId);
+    }
+
+    public async Task<IActionResult> OnPostDeleteCustomTableAsync(
+        string tabId, string tableId, string tableName, CancellationToken cancellationToken)
+    {
+        await customTabs.DeleteTableAsync(tableId, cancellationToken);
+        StatusMessage = $"Table permanently deleted: {tableName}.";
         return CustomRedirect(tabId);
     }
 

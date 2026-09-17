@@ -788,6 +788,54 @@ public sealed class TeamDirectoryTests
             DeleteDatabase(dbPath);
         }
     }
+
+    [Fact]
+    public async Task DeleteCustomTable_PermanentlyRemovesOnlyItsSchemaRowsAndAuditHistory()
+    {
+        var dbPath = CreateDatabasePath();
+        try
+        {
+            await using var provider = CreateServices(dbPath);
+            await using var scope = provider.CreateAsyncScope();
+            await scope.ServiceProvider.GetRequiredService<ITeamDatabaseInitializer>().InitializeAsync();
+            var tabs = scope.ServiceProvider.GetRequiredService<ICustomTeamTabService>();
+
+            var tab = await tabs.SaveTabAsync(new(null, "Planning"));
+            var deletedTable = await tabs.SaveTableAsync(new(tab.Id, null, "Delete me"));
+            var retainedTable = await tabs.SaveTableAsync(new(tab.Id, null, "Keep me"));
+            var column = await tabs.SaveColumnAsync(new(
+                deletedTable.Id, null, "Owner", CustomTeamFieldTypes.Text, true, []));
+            await tabs.SaveRowAsync(new(
+                deletedTable.Id,
+                null,
+                0,
+                new Dictionary<string, string?> { [column.Key] = "Asha" },
+                "admin@example.com"));
+
+            await tabs.DeleteTableAsync(deletedTable.Id);
+
+            var loaded = await tabs.GetTabAsync(tab.Slug);
+            loaded.Should().NotBeNull();
+            loaded!.Tables.Should().ContainSingle(table => table.Id == retainedTable.Id);
+            await using var connection = new SqliteConnection($"Data Source={dbPath}");
+            await connection.OpenAsync();
+            await using var command = connection.CreateCommand();
+            command.CommandText = """
+                SELECT
+                    (SELECT COUNT(*) FROM CustomTeamTables WHERE Id = $tableId)
+                  + (SELECT COUNT(*) FROM CustomTeamColumns WHERE TableId = $tableId)
+                  + (SELECT COUNT(*) FROM CustomTeamRows WHERE TableId = $tableId)
+                  + (SELECT COUNT(*) FROM CustomTeamRowAudits WHERE TableId = $tableId);
+                """;
+            command.Parameters.AddWithValue("$tableId", deletedTable.Id);
+            Convert.ToInt32(await command.ExecuteScalarAsync()).Should().Be(0);
+        }
+        finally
+        {
+            DeleteDatabase(dbPath);
+        }
+    }
+
     [Fact]
     public async Task CustomTabs_ValidateRequiredAndTypedColumnValues()
     {

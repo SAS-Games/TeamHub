@@ -405,23 +405,16 @@ else
                 </section>
 
                 <section class="content-section m-0 mb-4">
-                    <div class="section-heading"><div><span>Schema</span><h2>Add Table</h2></div></div>
-                    <form method="post" asp-page-handler="SaveCustomTable" class="section-body" enctype="multipart/form-data" data-excel-source-form>
+                    <div class="section-heading"><div><span>Schema</span><h2>Add another table</h2></div></div>
+                    <form method="post" asp-page-handler="SaveCustomTable" class="section-body">
                         <input type="hidden" name="tabId" value="@selectedTab.Id" />
+                        <input type="hidden" name="sourceType" value="Manual" />
+                        <input type="hidden" name="sourceHeaderRow" value="1" />
+                        <p class="text-secondary">Create the table first. Its workbook source, schema import, primary key, and synchronization are configured once in the saved table below.</p>
                         <div class="row g-2 align-items-end">
-                            <div class="col-md-6"><label class="form-label">Table name</label><input name="name" class="form-control" maxlength="100" required /></div>
+                            <div class="col-md-7"><label class="form-label">Table name</label><input name="name" class="form-control" maxlength="100" required /></div>
                             <div class="col-md-2"><label class="form-label">Order</label><input name="displayOrder" class="form-control" type="number" min="0" value="@selectedTab.Tables.Count" /></div>
-                            <div class="col-md-4"><label class="form-label">Data source</label><select name="sourceType" class="form-select" data-excel-source-select><option value="Manual">Manual entry</option><option value="ExcelUrl">Excel download link</option><option value="MicrosoftGraphExcel">SharePoint / OneDrive</option><option value="UploadedExcel">Upload from this computer</option></select></div>
-                            <div class="col-12" data-excel-backed><div class="alert alert-warning py-2 mb-1">Imported workbook data is stored in Team Hub. Use Access Management to assign the users who may view or edit this tab.</div></div>
-                            <div class="col-12" data-source-types="ExcelUrl MicrosoftGraphExcel"><label class="form-label">Workbook link</label><input name="sourceUrl" class="form-control" type="url" maxlength="2048" placeholder="https://..." required /><div class="form-text">For SharePoint or OneDrive, paste the complete browser or Copy link. For an Excel download source, enter a direct workbook URL.</div></div>
-                            <div class="col-12" data-source-types="MicrosoftGraphExcel"><div class="alert alert-secondary mb-0">TeamHub resolves this link through Microsoft Graph using the configured application identity. No Drive ID or Item ID is required.</div></div>
-                            <div class="col-12" data-source-types="UploadedExcel"><label class="form-label">Excel file from this computer</label><input name="sourceFile" class="form-control" type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" required /></div>
-                            <div class="col-md-3" data-excel-backed><label class="form-label">Worksheet <span class="text-secondary">(optional)</span></label><input name="sourceWorksheet" class="form-control" maxlength="200" /></div>
-                            <div class="col-md-3" data-excel-backed><label class="form-label">Header row</label><input name="sourceHeaderRow" class="form-control" type="number" min="1" max="1000" value="1" /></div>
-                            <div class="col-md-6" data-excel-backed><label class="form-label">Primary key column <span class="text-secondary">(select after schema import)</span></label><input name="primaryKeySourceHeader" class="form-control" maxlength="200" placeholder="Optional until the Excel schema is imported" /><div class="form-text">Save the table, import its Excel schema, and then select the primary-key header before synchronizing rows.</div></div>
-                            <div class="col-md-4" data-source-types="ExcelUrl MicrosoftGraphExcel"><button class="btn btn-outline-primary w-100" type="submit" asp-page-handler="TestCustomTableSource" data-test-excel-source>Test workbook</button></div>
-                            <div class="col-md-4 ms-auto"><button class="btn btn-primary w-100" type="submit">Add table</button></div>
-                            <div class="col-12 alert mb-0" data-excel-source-test-result hidden></div>
+                            <div class="col-md-3"><button class="btn btn-primary w-100" type="submit">Create table</button></div>
                         </div>
                     </form>
                 </section>
@@ -429,24 +422,26 @@ else
                 @foreach (var table in selectedTab.Tables)
                 {
                     var sourceColumns = table.Columns.Where(column => column.IsSourceColumn && !string.IsNullOrWhiteSpace(column.SourceHeader)).ToList();
+                    var tableConfigurationFormId = $"table-configuration-{table.Id}";
                     <section class="content-section m-0 mb-4">
                         <div class="section-heading"><div><span>Configurable table</span><h2>@table.Name</h2></div><strong>@table.Columns.Count columns</strong></div>
                         <div class="section-body border-bottom">
-                            <form method="post" asp-page-handler="SaveCustomTable" class="row g-2 align-items-end" enctype="multipart/form-data" data-excel-source-form>
+                            <form id="@tableConfigurationFormId" method="post" asp-page-handler="SaveCustomTable" class="row g-2 align-items-end" enctype="multipart/form-data" data-excel-source-form>
                                 <input type="hidden" name="tabId" value="@selectedTab.Id" /><input type="hidden" name="tableId" value="@table.Id" />
                                 <div class="col-md-5"><label class="form-label">Table name</label><input name="name" class="form-control form-control-sm" value="@table.Name" required /></div>
                                 <div class="col-md-2"><label class="form-label">Order</label><input name="displayOrder" class="form-control form-control-sm" type="number" min="0" value="@table.DisplayOrder" /></div>
                                 <div class="col-md-3"><label class="form-label">Data source</label><select name="sourceType" class="form-select form-select-sm" data-excel-source-select><option value="Manual" selected="@(table.SourceType == CustomTeamTableSourceTypes.Manual)">Manual entry</option><option value="ExcelUrl" selected="@table.IsDirectExcelUrl">Excel download link</option><option value="MicrosoftGraphExcel" selected="@table.IsMicrosoftGraphExcel">SharePoint / OneDrive</option><option value="UploadedExcel" selected="@table.IsUploadedExcel">Upload from this computer</option></select></div>
                                 <div class="col-md-2"><button class="btn btn-sm btn-outline-primary w-100" type="submit">Save table</button></div>
-                                <div class="col-12" data-excel-backed><div class="alert alert-warning py-2 mb-1">Imported workbook data is stored in Team Hub. Use Access Management to assign the users who may view or edit this tab.</div></div>
+                                <div class="col-12" data-excel-backed><hr class="my-2" /><h3 class="h6 mb-0">Workbook configuration</h3></div>
+                                <div class="col-12" data-excel-backed><div class="alert alert-warning py-2 mb-1">Save this workbook configuration first. You can then import its schema, select the primary key, and synchronize its rows. Imported data is stored in Team Hub.</div></div>
                                 <div class="col-12" data-source-types="ExcelUrl MicrosoftGraphExcel"><label class="form-label">Workbook link</label><input name="sourceUrl" class="form-control form-control-sm" type="url" maxlength="2048" value="@((table.IsDirectExcelUrl || table.IsMicrosoftGraphExcel) ? table.SourceUrl : null)" placeholder="https://..." required /><div class="form-text">For SharePoint or OneDrive, paste the complete browser or Copy link. For an Excel download source, enter a direct workbook URL.</div></div>
                                 <div class="col-12" data-source-types="MicrosoftGraphExcel"><div class="alert alert-secondary mb-0">TeamHub resolves this link through Microsoft Graph using the configured application identity. No Drive ID or Item ID is required.</div></div>
                                 <div class="col-md-6" data-source-types="UploadedExcel">
                                     <input type="hidden" name="sourceUrl" value="@(table.IsUploadedExcel ? table.SourceUrl : null)" />
                                     <input type="hidden" name="sourceDisplayName" value="@(table.IsUploadedExcel ? table.SourceDisplayName : null)" />
-                                    <label class="form-label">Replace uploaded workbook</label><input name="sourceFile" class="form-control form-control-sm" type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" /><div class="form-text">Current file: @(table.IsUploadedExcel ? table.SourceDisplayName ?? "Uploaded workbook" : "No workbook uploaded")</div>
+                                    <label class="form-label">Upload or replace workbook</label><input name="sourceFile" class="form-control form-control-sm" type="file" accept=".xls,.xlsx,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" /><div class="form-text">Supports .xls and .xlsx files up to 25 MB. Current file: @(table.IsUploadedExcel ? table.SourceDisplayName ?? "Uploaded workbook" : "No workbook uploaded")</div>
                                 </div>
-                                <div class="col-md-3" data-excel-backed><label class="form-label">Worksheet <span class="text-secondary">(optional)</span></label><input name="sourceWorksheet" class="form-control form-control-sm" maxlength="200" value="@table.SourceWorksheet" /></div>
+                                <div class="col-md-3" data-excel-backed><label class="form-label">Worksheet <span class="text-secondary">(optional)</span></label><input name="sourceWorksheet" class="form-control form-control-sm" maxlength="200" value="@table.SourceWorksheet" /><div class="form-text">Enter the exact sheet name, or leave blank to use the first sheet.</div></div>
                                 <div class="col-md-3" data-excel-backed><label class="form-label">Header row</label><input name="sourceHeaderRow" class="form-control form-control-sm" type="number" min="1" max="1000" value="@table.SourceHeaderRow" /></div>
                                 <div class="col-md-6" data-excel-backed>
                                     <label class="form-label">Primary key column</label>
@@ -469,14 +464,19 @@ else
                             @if (table.IsExcelBacked)
                             {
                                 <div class="d-flex flex-wrap align-items-center gap-2 mt-3">
-                                    <form method="post" asp-page-handler="ImportCustomTableSchema">
-                                        <input type="hidden" name="tabId" value="@selectedTab.Id" /><input type="hidden" name="tableId" value="@table.Id" />
-                                        <button class="btn btn-sm btn-outline-primary" type="submit">Import schema from Excel</button>
-                                    </form>
-                                    <form method="post" asp-page-handler="SyncCustomTable">
-                                        <input type="hidden" name="tabId" value="@selectedTab.Id" /><input type="hidden" name="tableId" value="@table.Id" />
-                                        <button class="btn btn-sm btn-success" type="submit" disabled="@(sourceColumns.Count == 0 || string.IsNullOrWhiteSpace(table.PrimaryKeySourceHeader))">Synchronize Excel rows</button>
-                                    </form>
+                                    <button class="btn btn-sm btn-outline-primary"
+                                            type="submit"
+                                            form="@tableConfigurationFormId"
+                                            formmethod="post"
+                                            asp-page="/Team/Configuration"
+                                            asp-page-handler="SaveAndImportCustomTableSchema">Save &amp; import schema from Excel</button>
+                                    <button class="btn btn-sm btn-success"
+                                            type="submit"
+                                            form="@tableConfigurationFormId"
+                                            formmethod="post"
+                                            asp-page="/Team/Configuration"
+                                            asp-page-handler="SaveAndSyncCustomTable"
+                                            disabled="@(sourceColumns.Count == 0)">Save &amp; synchronize Excel rows</button>
                                     @if (table.LastSyncedAtUtc.HasValue)
                                     {
                                         <span class="small text-secondary">Last sync @table.LastSyncedAtUtc.Value.ToLocalTime().ToString("MMM d, yyyy h:mm tt") - @table.LastSyncMessage</span>
@@ -487,10 +487,16 @@ else
                                     }
                                 </div>
                             }
-                            <form method="post" asp-page-handler="ArchiveCustomTable" class="mt-2" onsubmit="return confirm('Archive this table?')">
-                                <input type="hidden" name="tabId" value="@selectedTab.Id" /><input type="hidden" name="tableId" value="@table.Id" />
-                                <button class="btn btn-sm btn-outline-danger" type="submit">Archive table</button>
-                            </form>
+                            <div class="d-flex flex-wrap gap-2 mt-2">
+                                <form method="post" asp-page-handler="ArchiveCustomTable" onsubmit="return confirm('Archive this table? Its data will remain recoverable in the Team Hub database.')">
+                                    <input type="hidden" name="tabId" value="@selectedTab.Id" /><input type="hidden" name="tableId" value="@table.Id" />
+                                    <button class="btn btn-sm btn-outline-danger" type="submit">Archive table</button>
+                                </form>
+                                <form method="post" asp-page-handler="DeleteCustomTable" onsubmit="return confirm('Permanently delete this table, all its columns, rows, and audit history? This cannot be undone.')">
+                                    <input type="hidden" name="tabId" value="@selectedTab.Id" /><input type="hidden" name="tableId" value="@table.Id" /><input type="hidden" name="tableName" value="@table.Name" />
+                                    <button class="btn btn-sm btn-danger" type="submit">Permanently delete table</button>
+                                </form>
+                            </div>
                         </div>
                         @if (table.Columns.Count > 0)
                         {

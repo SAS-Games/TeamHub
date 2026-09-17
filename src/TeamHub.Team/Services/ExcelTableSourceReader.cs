@@ -2,6 +2,7 @@ using System.Globalization;
 using System.IO.Compression;
 using System.Text.RegularExpressions;
 using System.Xml.Linq;
+using ExcelDataReader;
 using TeamHub.Excel;
 
 namespace TeamHub.Team;
@@ -72,6 +73,11 @@ internal sealed partial class DirectDownloadExcelTableSourceReader(IExcelWorkboo
 
     internal static ExcelTableSourceData ReadWorkbook(Stream stream, string? requestedWorksheet, int headerRow)
     {
+        if (LegacyExcelWorkbook.IsLegacyBinary(stream))
+        {
+            return ReadLegacyWorkbook(stream, requestedWorksheet, headerRow);
+        }
+
         try
         {
             using var archive = new ZipArchive(stream, ZipArchiveMode.Read, leaveOpen: true);
@@ -131,6 +137,73 @@ internal sealed partial class DirectDownloadExcelTableSourceReader(IExcelWorkboo
         {
             throw new InvalidOperationException("The downloaded file is not a valid .xlsx workbook.", exception);
         }
+    }
+
+    private static ExcelTableSourceData ReadLegacyWorkbook(Stream stream, string? requestedWorksheet, int headerRow)
+    {
+        try
+        {
+            using var reader = LegacyExcelWorkbook.Open(stream);
+            do
+            {
+                if (string.IsNullOrWhiteSpace(requestedWorksheet)
+                    || string.Equals(reader.Name, requestedWorksheet.Trim(), StringComparison.OrdinalIgnoreCase))
+                {
+                    return ReadLegacyWorksheet(reader, headerRow);
+                }
+            } while (reader.NextResult());
+
+            throw new InvalidOperationException($"Worksheet '{requestedWorksheet!.Trim()}' was not found.");
+        }
+        catch (InvalidDataException exception)
+        {
+            throw new InvalidOperationException("The downloaded file is not a valid .xls workbook.", exception);
+        }
+    }
+
+    private static ExcelTableSourceData ReadLegacyWorksheet(IExcelDataReader reader, int headerRow)
+    {
+        Dictionary<int, string>? headersByIndex = null;
+        var importedRows = new List<IReadOnlyDictionary<string, string>>();
+        while (reader.Read())
+        {
+            var rowNumber = reader.Depth + 1;
+            if (rowNumber < headerRow) continue;
+            if (rowNumber == headerRow)
+            {
+                headersByIndex = Enumerable.Range(0, reader.FieldCount)
+                    .Select(index => (Index: index, Value: LegacyExcelWorkbook.GetCellText(reader, index).Trim()))
+                    .Where(item => item.Value.Length > 0)
+                    .ToDictionary(item => item.Index, item => item.Value);
+                if (headersByIndex.Count == 0)
+                    throw new InvalidOperationException($"The configured header row is empty in worksheet '{reader.Name}'.");
+                if (headersByIndex.Count > MaximumColumns)
+                    throw new InvalidOperationException($"Excel tables are limited to {MaximumColumns} columns.");
+                var duplicateHeader = headersByIndex.Values
+                    .GroupBy(item => item, StringComparer.OrdinalIgnoreCase)
+                    .FirstOrDefault(group => group.Count() > 1);
+                if (duplicateHeader is not null)
+                    throw new InvalidOperationException($"The Excel header '{duplicateHeader.Key}' appears more than once.");
+                continue;
+            }
+            if (headersByIndex is null) continue;
+
+            var values = headersByIndex.ToDictionary(
+                item => item.Value,
+                item => LegacyExcelWorkbook.GetCellText(reader, item.Key),
+                StringComparer.OrdinalIgnoreCase);
+            if (values.Values.All(string.IsNullOrWhiteSpace)) continue;
+            importedRows.Add(values);
+            if (importedRows.Count > MaximumRows)
+                throw new InvalidOperationException($"Excel tables are limited to {MaximumRows:N0} data rows.");
+        }
+
+        if (headersByIndex is null)
+            throw new InvalidOperationException($"Header row {headerRow} was not found in worksheet '{reader.Name}'.");
+        return new ExcelTableSourceData(
+            reader.Name,
+            headersByIndex.OrderBy(item => item.Key).Select(item => item.Value).ToList(),
+            importedRows);
     }
 
     private static Dictionary<int, string> ReadCells(

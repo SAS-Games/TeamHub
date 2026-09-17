@@ -188,6 +188,27 @@ internal sealed partial class SqliteCustomTeamTabService(TeamDbContext dbContext
         await dbContext.SaveChangesAsync(cancellationToken);
     }
 
+    public async Task DeleteTableAsync(string id, CancellationToken cancellationToken = default)
+    {
+        if (!Guid.TryParse(id, out var tableId)) return;
+        if (!await dbContext.CustomTeamTables.AnyAsync(item => item.Id == tableId, cancellationToken)) return;
+
+        await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
+        await dbContext.CustomTeamRowAudits
+            .Where(item => item.TableId == tableId)
+            .ExecuteDeleteAsync(cancellationToken);
+        await dbContext.CustomTeamRows
+            .Where(item => item.TableId == tableId)
+            .ExecuteDeleteAsync(cancellationToken);
+        await dbContext.CustomTeamColumns
+            .Where(item => item.TableId == tableId)
+            .ExecuteDeleteAsync(cancellationToken);
+        await dbContext.CustomTeamTables
+            .Where(item => item.Id == tableId)
+            .ExecuteDeleteAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+    }
+
     public async Task<CustomTeamColumnDto> SaveColumnAsync(SaveCustomTeamColumnRequest request, CancellationToken cancellationToken = default)
     {
         if (!Guid.TryParse(request.TableId, out var tableId)
