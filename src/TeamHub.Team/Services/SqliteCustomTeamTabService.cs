@@ -109,21 +109,29 @@ internal sealed partial class SqliteCustomTeamTabService(TeamDbContext dbContext
 
         var name = Required(request.Name, "Table name", 100);
         var sourceType = CustomTeamTableSourceTypes.Normalize(request.SourceType);
-        var sourceUrl = sourceType == CustomTeamTableSourceTypes.ExcelUrl
-            ? Required(request.SourceUrl, "Excel download link", 2048)
-            : sourceType == CustomTeamTableSourceTypes.UploadedExcel
-                ? Required(request.SourceUrl, "Uploaded Excel file", 2048)
-            : null;
+        var sourceUrl = sourceType switch
+        {
+            CustomTeamTableSourceTypes.ExcelUrl => Required(request.SourceUrl, "Excel download link", 2048),
+            CustomTeamTableSourceTypes.UploadedExcel => Required(request.SourceUrl, "Uploaded Excel file", 2048),
+            CustomTeamTableSourceTypes.MicrosoftGraphExcel => Optional(request.SourceUrl, 2048, "SharePoint or OneDrive workbook link"),
+            _ => null
+        };
         if (sourceType == CustomTeamTableSourceTypes.ExcelUrl
             && sourceUrl is not null
             && (!Uri.TryCreate(sourceUrl, UriKind.Absolute, out var sourceUri) || sourceUri.Scheme is not ("http" or "https")))
             throw new ArgumentException("Enter a valid HTTP or HTTPS Excel download link.");
+        if (sourceType == CustomTeamTableSourceTypes.MicrosoftGraphExcel && sourceUrl is not null)
+            sourceUrl = TeamHub.Excel.ExcelWorkbookSourceValidation.ValidateMicrosoftSharingUrl(sourceUrl);
         var sourceDriveId = sourceType == CustomTeamTableSourceTypes.MicrosoftGraphExcel
-            ? Required(request.SourceDriveId, "Microsoft Graph drive ID", 512)
+            ? Optional(request.SourceDriveId, 512, "Microsoft Graph drive ID")
             : null;
         var sourceItemId = sourceType == CustomTeamTableSourceTypes.MicrosoftGraphExcel
-            ? Required(request.SourceItemId, "Microsoft Graph item ID", 512)
+            ? Optional(request.SourceItemId, 512, "Microsoft Graph item ID")
             : null;
+        if (sourceType == CustomTeamTableSourceTypes.MicrosoftGraphExcel
+            && sourceUrl is null
+            && (sourceDriveId is null || sourceItemId is null))
+            throw new ArgumentException("Enter a SharePoint or OneDrive workbook link.");
         var sourceDisplayName = CustomTeamTableSourceTypes.IsExcelBacked(sourceType)
             ? Optional(request.SourceDisplayName, 260, "Source file name")
             : null;
@@ -131,7 +139,7 @@ internal sealed partial class SqliteCustomTeamTabService(TeamDbContext dbContext
             ? Optional(request.SourceWorksheet, 200, "Worksheet name")
             : null;
         var primaryKey = CustomTeamTableSourceTypes.IsExcelBacked(sourceType)
-            ? Required(request.PrimaryKeySourceHeader, "Primary key column", 200)
+            ? Optional(request.PrimaryKeySourceHeader, 200, "Primary key column")
             : null;
         var headerRow = CustomTeamTableSourceTypes.IsExcelBacked(sourceType) ? request.SourceHeaderRow : 1;
         if (headerRow is < 1 or > 1000) throw new ArgumentException("Header row must be between 1 and 1,000.");
@@ -203,9 +211,6 @@ internal sealed partial class SqliteCustomTeamTabService(TeamDbContext dbContext
                 ?? throw new KeyNotFoundException("Custom team column was not found.");
         }
 
-        if (column?.IsSourceColumn == true)
-            throw new InvalidOperationException("Excel source columns are managed by synchronization and cannot be edited here.");
-
         if (column is null)
         {
             column = new CustomTeamColumnRecord
@@ -223,6 +228,84 @@ internal sealed partial class SqliteCustomTeamTabService(TeamDbContext dbContext
         column.UpdatedAtUtc = DateTime.UtcNow;
         await dbContext.SaveChangesAsync(cancellationToken);
         return ToDto(column);
+    }
+
+    public async Task<ExcelSchemaImportResult> ImportExcelSchemaAsync(
+        string tableId,
+        CancellationToken cancellationToken = default)
+    {
+        if (!Guid.TryParse(tableId, out var parsedTableId))
+            throw new KeyNotFoundException("Custom team table was not found.");
+        var table = await dbContext.CustomTeamTables.SingleOrDefaultAsync(item =>
+            item.Id == parsedTableId
+            && !item.IsArchived
+            && dbContext.CustomTeamTabs.Any(tab => tab.Id == item.TabId && !tab.IsArchived), cancellationToken)
+            ?? throw new KeyNotFoundException("Custom team table was not found.");
+        if (!CustomTeamTableSourceTypes.IsExcelBacked(table.SourceType))
+            throw new InvalidOperationException("Only Excel-backed tables can import a workbook schema.");
+
+        ExcelTableSourceData source;
+        try
+        {
+            source = await excelReader.ReadAsync(new ExcelTableSourceRequest(
+                table.SourceType,
+                table.SourceUrl,
+                table.SourceDriveId,
+                table.SourceItemId,
+                table.SourceWorksheet,
+                table.SourceHeaderRow), cancellationToken);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception exception)
+        {
+            throw new InvalidOperationException($"Excel schema import failed: {exception.Message}", exception);
+        }
+
+        var columns = await dbContext.CustomTeamColumns
+            .Where(item => item.TableId == table.Id && !item.IsArchived)
+            .OrderBy(item => item.DisplayOrder).ThenBy(item => item.CreatedAtUtc)
+            .ToListAsync(cancellationToken);
+        var existingSourceColumns = columns.Where(column => column.IsSourceColumn).ToList();
+        var nextOrder = columns.Count == 0 ? 0 : columns.Max(column => column.DisplayOrder) + 1;
+        var now = DateTime.UtcNow;
+        var added = 0;
+        foreach (var header in source.Headers)
+        {
+            if (existingSourceColumns.Any(column =>
+                string.Equals(column.SourceHeader, header, StringComparison.OrdinalIgnoreCase)))
+                continue;
+            var column = new CustomTeamColumnRecord
+            {
+                TableId = table.Id,
+                Key = await UniqueColumnKeyAsync(table.Id, header, cancellationToken),
+                Label = header,
+                FieldType = CustomTeamFieldTypes.Text,
+                IsRequired = string.Equals(header, table.PrimaryKeySourceHeader, StringComparison.OrdinalIgnoreCase),
+                DisplayOrder = nextOrder++,
+                IsSourceColumn = true,
+                SourceHeader = header,
+                CreatedAtUtc = now,
+                UpdatedAtUtc = now
+            };
+            dbContext.CustomTeamColumns.Add(column);
+            existingSourceColumns.Add(column);
+            added++;
+        }
+
+        var missing = existingSourceColumns.Count(column =>
+            !source.Headers.Contains(column.SourceHeader ?? string.Empty, StringComparer.OrdinalIgnoreCase));
+        table.SourceWorksheet = source.Worksheet;
+        table.UpdatedAtUtc = now;
+        await dbContext.SaveChangesAsync(cancellationToken);
+        return new ExcelSchemaImportResult(
+            added,
+            source.Headers.Count - added,
+            missing,
+            source.Worksheet,
+            source.Headers.Count);
     }
 
     public async Task ArchiveColumnAsync(string id, CancellationToken cancellationToken = default)

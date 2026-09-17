@@ -1,4 +1,5 @@
 using System.Net.Http.Headers;
+using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -19,13 +20,25 @@ public static class ExcelWorkbookLimits
     public const int MaximumWorkbookBytes = 25 * 1024 * 1024;
 }
 
+public static class ExcelWorkbookSourceValidation
+{
+    public static string ValidateMicrosoftSharingUrl(string? sharingUrl)
+    {
+        var normalized = sharingUrl?.Trim() ?? string.Empty;
+        if (!Uri.TryCreate(normalized, UriKind.Absolute, out var uri) || uri.Scheme != Uri.UriSchemeHttps)
+            throw new ArgumentException("Enter a valid HTTPS SharePoint or OneDrive workbook link.", nameof(sharingUrl));
+        return normalized;
+    }
+}
+
 public sealed record ExcelWorkbookSourceRequest(
     string SourceType,
     string? LocalPath = null,
     string? SourceUrl = null,
     string? ManagedReference = null,
     string? DriveId = null,
-    string? ItemId = null);
+    string? ItemId = null,
+    string? SharingUrl = null);
 
 public interface IExcelWorkbookSource
 {
@@ -57,8 +70,9 @@ internal sealed class ExcelWorkbookSource(IConfiguration configuration) : IExcel
                 managedReference: true,
                 cancellationToken),
             ExcelWorkbookSourceTypes.MicrosoftGraphExcel => OpenMicrosoftGraphAsync(
-                Required(request.DriveId, "Microsoft Graph drive ID"),
-                Required(request.ItemId, "Microsoft Graph item ID"),
+                request.SharingUrl,
+                request.DriveId,
+                request.ItemId,
                 cancellationToken),
             _ => throw new InvalidOperationException("The configured Excel source is not supported.")
         };
@@ -115,19 +129,49 @@ internal sealed class ExcelWorkbookSource(IConfiguration configuration) : IExcel
     }
 
     private async Task<MemoryStream> OpenMicrosoftGraphAsync(
-        string driveId,
-        string itemId,
+        string? sharingUrl,
+        string? driveId,
+        string? itemId,
         CancellationToken cancellationToken)
     {
         var token = await GetGraphAccessTokenAsync(cancellationToken);
-        var uri = $"https://graph.microsoft.com/v1.0/drives/{Uri.EscapeDataString(driveId)}/items/{Uri.EscapeDataString(itemId)}/content";
+        var uri = string.IsNullOrWhiteSpace(sharingUrl)
+            ? BuildGraphItemContentUri(
+                Required(driveId, "Microsoft Graph drive ID"),
+                Required(itemId, "Microsoft Graph item ID"))
+            : BuildGraphSharingContentUri(sharingUrl);
         using var request = new HttpRequestMessage(HttpMethod.Get, uri);
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
         using var response = await Client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
         if (!response.IsSuccessStatusCode)
-            throw new InvalidOperationException($"Microsoft Graph could not download the workbook ({(int)response.StatusCode} {response.ReasonPhrase}). Verify the application permission and workbook IDs.");
+            throw CreateGraphDownloadException(response);
         await using var source = await response.Content.ReadAsStreamAsync(cancellationToken);
         return await BufferWorkbookAsync(source, response.Content.Headers.ContentLength, cancellationToken);
+    }
+
+    internal static string BuildGraphSharingContentUri(string sharingUrl)
+    {
+        var normalized = ExcelWorkbookSourceValidation.ValidateMicrosoftSharingUrl(sharingUrl);
+        var encoded = Convert.ToBase64String(Encoding.UTF8.GetBytes(normalized))
+            .TrimEnd('=')
+            .Replace('/', '_')
+            .Replace('+', '-');
+        return $"https://graph.microsoft.com/v1.0/shares/u!{encoded}/driveItem/content";
+    }
+
+    private static string BuildGraphItemContentUri(string driveId, string itemId) =>
+        $"https://graph.microsoft.com/v1.0/drives/{Uri.EscapeDataString(driveId)}/items/{Uri.EscapeDataString(itemId)}/content";
+
+    private static InvalidOperationException CreateGraphDownloadException(HttpResponseMessage response)
+    {
+        var reason = response.StatusCode switch
+        {
+            System.Net.HttpStatusCode.Unauthorized => "Microsoft Graph authentication failed. Verify the TeamHub application credentials.",
+            System.Net.HttpStatusCode.Forbidden => "The TeamHub application does not have permission to read this workbook.",
+            System.Net.HttpStatusCode.NotFound => "The SharePoint or OneDrive workbook link was not found or is not accessible to TeamHub.",
+            _ => $"Microsoft Graph could not download the workbook ({(int)response.StatusCode} {response.ReasonPhrase})."
+        };
+        return new InvalidOperationException(reason);
     }
 
     private async Task<string> GetGraphAccessTokenAsync(CancellationToken cancellationToken)

@@ -19,7 +19,7 @@
     <div class="alert alert-info mt-3">@Model.StatusMessage</div>
 }
 
-<form method="post" asp-page-handler="Save">
+<form method="post" asp-page-handler="Save" enctype="multipart/form-data">
     <div asp-validation-summary="All" class="alert alert-danger"></div>
     <section class="content-section">
         <div class="section-heading"><div><span>Data source</span><h2>Milestone workbook</h2></div></div>
@@ -30,6 +30,7 @@
                     <option value="@ExcelWorkbookSourceTypes.LocalFile">Local file on the TeamHub server</option>
                     <option value="@ExcelWorkbookSourceTypes.ExcelUrl">Excel download link</option>
                     <option value="@ExcelWorkbookSourceTypes.MicrosoftGraphExcel">SharePoint / OneDrive</option>
+                    <option value="@ExcelWorkbookSourceTypes.UploadedExcel">Upload from this computer</option>
                 </select>
             </div>
 
@@ -39,31 +40,30 @@
                 <div class="form-text">Enter the path as seen by the TeamHub server, for example <code>config/MilestoneTracker.xlsx</code> or an absolute server path.</div>
             </div>
 
-            <div class="col-12 milestone-source-fields" data-source="@ExcelWorkbookSourceTypes.ExcelUrl">
-                <label asp-for="Settings.SourceUrl" class="form-label">Excel download link</label>
+            <div class="col-12 milestone-source-fields" data-sources="@ExcelWorkbookSourceTypes.ExcelUrl @ExcelWorkbookSourceTypes.MicrosoftGraphExcel">
+                <label asp-for="Settings.SourceUrl" class="form-label">Workbook link</label>
                 <input asp-for="Settings.SourceUrl" class="form-control" type="url" maxlength="2048" placeholder="https://.../MilestoneTracker.xlsx" />
-                <div class="form-text">The URL must return the workbook directly and must not require an interactive browser login.</div>
+                <div class="form-text">For SharePoint or OneDrive, paste the complete workbook link from the browser or Copy link. For an Excel download link, the URL must return the workbook directly.</div>
             </div>
 
             <div class="col-12 milestone-source-fields" data-source="@ExcelWorkbookSourceTypes.MicrosoftGraphExcel">
-                <div class="row g-3">
-                    <div class="col-lg-6">
-                        <label asp-for="Settings.SourceDriveId" class="form-label">Microsoft Graph drive ID</label>
-                        <input asp-for="Settings.SourceDriveId" class="form-control" maxlength="512" />
-                    </div>
-                    <div class="col-lg-6">
-                        <label asp-for="Settings.SourceItemId" class="form-label">Microsoft Graph item ID</label>
-                        <input asp-for="Settings.SourceItemId" class="form-control" maxlength="512" />
-                    </div>
-                    <div class="col-12">
-                        <div class="alert alert-secondary mb-0">This uses the same Microsoft Graph application credentials as Excel-backed custom Team tabs. Client secrets remain in secure deployment configuration and are not stored here.</div>
-                    </div>
-                </div>
+                <div class="alert alert-secondary mb-0">TeamHub resolves this link through Microsoft Graph using the same application credentials as Excel-backed custom Team tabs. Client secrets remain in secure deployment configuration.</div>
+            </div>
+
+            <div class="col-12 milestone-source-fields" data-source="@ExcelWorkbookSourceTypes.UploadedExcel">
+                <input type="hidden" name="Settings.SourceUrl" value="@Model.Settings.SourceUrl" />
+                <input type="hidden" name="Settings.SourceDisplayName" value="@Model.Settings.SourceDisplayName" />
+                <label asp-for="WorkbookFile" class="form-label">Milestone workbook</label>
+                <input asp-for="WorkbookFile" class="form-control" type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" />
+                <div class="form-text">Browse for an .xlsx file up to 25 MB. Current file: @(string.IsNullOrWhiteSpace(Model.Settings.SourceDisplayName) ? "No workbook uploaded" : Model.Settings.SourceDisplayName)</div>
             </div>
         </div>
     </section>
 
-    <button class="btn btn-primary" type="submit">Save Milestone Configuration</button>
+    <div class="d-flex gap-2">
+        <button class="btn btn-outline-primary" type="submit" asp-page-handler="Test">Test workbook</button>
+        <button class="btn btn-primary" type="submit" asp-page-handler="Save">Save Milestone Configuration</button>
+    </div>
 </form>
 
 @section Scripts {
@@ -73,7 +73,10 @@
             const source = document.getElementById('milestone-source-type');
             const fields = document.querySelectorAll('.milestone-source-fields');
             const refresh = () => fields.forEach(field => {
-                field.hidden = field.dataset.source !== source.value;
+                const sources = (field.dataset.sources || field.dataset.source || '').split(' ');
+                const visible = sources.includes(source.value);
+                field.hidden = !visible;
+                field.querySelectorAll('input, select, textarea, button').forEach(control => control.disabled = !visible);
             });
             source.addEventListener('change', refresh);
             refresh();

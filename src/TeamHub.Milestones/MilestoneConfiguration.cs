@@ -12,6 +12,7 @@ public sealed class MilestoneSourceSettings
     public string SourceUrl { get; set; } = string.Empty;
     public string SourceDriveId { get; set; } = string.Empty;
     public string SourceItemId { get; set; } = string.Empty;
+    public string SourceDisplayName { get; set; } = string.Empty;
 }
 
 public interface IMilestoneConfigurationService
@@ -37,7 +38,7 @@ internal sealed class SqliteMilestoneConfigurationService(
         await EnsureTableAsync(connection, cancellationToken);
         await using var command = connection.CreateCommand();
         command.CommandText = """
-            SELECT SourceType, ExcelPath, SourceUrl, SourceDriveId, SourceItemId
+            SELECT SourceType, ExcelPath, SourceUrl, SourceDriveId, SourceItemId, SourceDisplayName
             FROM MilestoneSourceSettings
             WHERE Id = 1;
             """;
@@ -53,7 +54,8 @@ internal sealed class SqliteMilestoneConfigurationService(
             ExcelPath = reader.GetString(1),
             SourceUrl = reader.GetString(2),
             SourceDriveId = reader.GetString(3),
-            SourceItemId = reader.GetString(4)
+            SourceItemId = reader.GetString(4),
+            SourceDisplayName = reader.GetString(5)
         };
     }
 
@@ -72,15 +74,16 @@ internal sealed class SqliteMilestoneConfigurationService(
         await using var command = connection.CreateCommand();
         command.CommandText = """
             INSERT INTO MilestoneSourceSettings
-                (Id, SourceType, ExcelPath, SourceUrl, SourceDriveId, SourceItemId, UpdatedAtUtc)
+                (Id, SourceType, ExcelPath, SourceUrl, SourceDriveId, SourceItemId, SourceDisplayName, UpdatedAtUtc)
             VALUES
-                (1, $sourceType, $excelPath, $sourceUrl, $sourceDriveId, $sourceItemId, $updatedAtUtc)
+                (1, $sourceType, $excelPath, $sourceUrl, $sourceDriveId, $sourceItemId, $sourceDisplayName, $updatedAtUtc)
             ON CONFLICT(Id) DO UPDATE SET
                 SourceType = excluded.SourceType,
                 ExcelPath = excluded.ExcelPath,
                 SourceUrl = excluded.SourceUrl,
                 SourceDriveId = excluded.SourceDriveId,
                 SourceItemId = excluded.SourceItemId,
+                SourceDisplayName = excluded.SourceDisplayName,
                 UpdatedAtUtc = excluded.UpdatedAtUtc;
             """;
         command.Parameters.AddWithValue("$sourceType", normalized.SourceType);
@@ -88,6 +91,7 @@ internal sealed class SqliteMilestoneConfigurationService(
         command.Parameters.AddWithValue("$sourceUrl", normalized.SourceUrl);
         command.Parameters.AddWithValue("$sourceDriveId", normalized.SourceDriveId);
         command.Parameters.AddWithValue("$sourceItemId", normalized.SourceItemId);
+        command.Parameters.AddWithValue("$sourceDisplayName", normalized.SourceDisplayName);
         command.Parameters.AddWithValue("$updatedAtUtc", DateTime.UtcNow.ToString("O"));
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
@@ -99,6 +103,7 @@ internal sealed class SqliteMilestoneConfigurationService(
         if (sourceType is not (
             ExcelWorkbookSourceTypes.LocalFile
             or ExcelWorkbookSourceTypes.ExcelUrl
+            or ExcelWorkbookSourceTypes.UploadedExcel
             or ExcelWorkbookSourceTypes.MicrosoftGraphExcel))
             throw new ArgumentException("Select a supported Milestone workbook source.");
 
@@ -106,15 +111,25 @@ internal sealed class SqliteMilestoneConfigurationService(
         var sourceUrl = settings.SourceUrl?.Trim() ?? string.Empty;
         var driveId = settings.SourceDriveId?.Trim() ?? string.Empty;
         var itemId = settings.SourceItemId?.Trim() ?? string.Empty;
+        var sourceDisplayName = settings.SourceDisplayName?.Trim() ?? string.Empty;
 
         if (sourceType == ExcelWorkbookSourceTypes.LocalFile && excelPath.Length == 0)
             throw new ArgumentException("Enter the Excel workbook path on the TeamHub server.");
         if (sourceType == ExcelWorkbookSourceTypes.ExcelUrl
             && (!Uri.TryCreate(sourceUrl, UriKind.Absolute, out var uri) || uri.Scheme is not ("http" or "https")))
             throw new ArgumentException("Enter a valid HTTP or HTTPS Excel download link.");
-        if (sourceType == ExcelWorkbookSourceTypes.MicrosoftGraphExcel
-            && (driveId.Length == 0 || itemId.Length == 0))
-            throw new ArgumentException("Enter both the Microsoft Graph drive ID and item ID.");
+        if (sourceType == ExcelWorkbookSourceTypes.MicrosoftGraphExcel)
+        {
+            if (sourceUrl.Length > 0)
+                sourceUrl = ExcelWorkbookSourceValidation.ValidateMicrosoftSharingUrl(sourceUrl);
+            else if (driveId.Length == 0 || itemId.Length == 0)
+                throw new ArgumentException("Enter a SharePoint or OneDrive workbook link.");
+        }
+        if (sourceType == ExcelWorkbookSourceTypes.UploadedExcel
+            && (sourceUrl.Length == 0
+                || !string.Equals(Path.GetFileName(sourceUrl), sourceUrl, StringComparison.Ordinal)
+                || !sourceUrl.EndsWith(".xlsx", StringComparison.OrdinalIgnoreCase)))
+            throw new ArgumentException("Browse for an .xlsx milestone workbook.");
 
         return new MilestoneSourceSettings
         {
@@ -122,7 +137,8 @@ internal sealed class SqliteMilestoneConfigurationService(
             ExcelPath = excelPath,
             SourceUrl = sourceUrl,
             SourceDriveId = driveId,
-            SourceItemId = itemId
+            SourceItemId = itemId,
+            SourceDisplayName = sourceDisplayName
         };
     }
 
@@ -134,7 +150,8 @@ internal sealed class SqliteMilestoneConfigurationService(
         ExcelPath = options.ExcelPath?.Trim() ?? string.Empty,
         SourceUrl = options.SourceUrl?.Trim() ?? string.Empty,
         SourceDriveId = options.SourceDriveId?.Trim() ?? string.Empty,
-        SourceItemId = options.SourceItemId?.Trim() ?? string.Empty
+        SourceItemId = options.SourceItemId?.Trim() ?? string.Empty,
+        SourceDisplayName = string.Empty
     };
 
     private static async Task EnsureTableAsync(
@@ -150,9 +167,32 @@ internal sealed class SqliteMilestoneConfigurationService(
                 SourceUrl TEXT NOT NULL,
                 SourceDriveId TEXT NOT NULL,
                 SourceItemId TEXT NOT NULL,
+                SourceDisplayName TEXT NOT NULL,
                 UpdatedAtUtc TEXT NOT NULL
             );
             """;
         await command.ExecuteNonQueryAsync(cancellationToken);
+        await AddColumnIfMissingAsync(connection, "SourceDisplayName", "TEXT NOT NULL DEFAULT ''", cancellationToken);
+    }
+
+    private static async Task AddColumnIfMissingAsync(
+        SqliteConnection connection,
+        string columnName,
+        string definition,
+        CancellationToken cancellationToken)
+    {
+        await using var inspection = connection.CreateCommand();
+        inspection.CommandText = "PRAGMA table_info(MilestoneSourceSettings);";
+        await using var reader = await inspection.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            if (string.Equals(reader.GetString(1), columnName, StringComparison.OrdinalIgnoreCase))
+                return;
+        }
+        await reader.DisposeAsync();
+
+        await using var migration = connection.CreateCommand();
+        migration.CommandText = $"ALTER TABLE MilestoneSourceSettings ADD COLUMN {columnName} {definition};";
+        await migration.ExecuteNonQueryAsync(cancellationToken);
     }
 }

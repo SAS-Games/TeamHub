@@ -135,3 +135,9 @@ public sealed record SaveCustomTeamRowRequest(
     IReadOnlyDictionary<string, string?> Values,
     string Actor);
 public sealed record ExcelTableSyncResult(int Added, int Updated, int Missing, int Restored, DateTime SyncedAtUtc);
+public sealed record ExcelSchemaImportResult(
+    int Added,
+    int Existing,
+    int MissingFromWorkbook,
+    string Worksheet,
+    int HeaderCount);

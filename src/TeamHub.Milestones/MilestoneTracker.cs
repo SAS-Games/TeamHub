@@ -22,7 +22,12 @@ public sealed class MilestoneDto
 public interface IMilestoneTrackerService
 {
     Task<IReadOnlyList<MilestoneDto>> GetMilestonesAsync(CancellationToken cancellationToken = default);
+    Task<MilestoneSourceTestResult> TestSourceAsync(
+        MilestoneSourceSettings settings,
+        CancellationToken cancellationToken = default);
 }
+
+public sealed record MilestoneSourceTestResult(int MilestoneCount);
 
 public sealed class MilestoneConfigurationOptions
 {
@@ -42,6 +47,22 @@ internal sealed class ExcelMilestoneTrackerService(
     public async Task<IReadOnlyList<MilestoneDto>> GetMilestonesAsync(CancellationToken cancellationToken = default)
     {
         var settings = await configurationService.GetSettingsAsync(cancellationToken);
+        return await ReadMilestonesAsync(settings, cancellationToken);
+    }
+
+    public async Task<MilestoneSourceTestResult> TestSourceAsync(
+        MilestoneSourceSettings settings,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(settings);
+        var milestones = await ReadMilestonesAsync(settings, cancellationToken);
+        return new MilestoneSourceTestResult(milestones.Count);
+    }
+
+    private async Task<IReadOnlyList<MilestoneDto>> ReadMilestonesAsync(
+        MilestoneSourceSettings settings,
+        CancellationToken cancellationToken)
+    {
         await using var workbookStream = await workbookSource.OpenAsync(
             CreateSourceRequest(settings),
             cancellationToken);
@@ -110,13 +131,20 @@ internal sealed class ExcelMilestoneTrackerService(
         {
             ExcelWorkbookSourceTypes.LocalFile => new(sourceType, LocalPath: settings.ExcelPath),
             ExcelWorkbookSourceTypes.ExcelUrl => new(sourceType, SourceUrl: settings.SourceUrl),
+            ExcelWorkbookSourceTypes.UploadedExcel => new(
+                sourceType,
+                ManagedReference: settings.SourceUrl),
             ExcelWorkbookSourceTypes.MicrosoftGraphExcel => new(
                 sourceType,
-                DriveId: settings.SourceDriveId,
-                ItemId: settings.SourceItemId),
+                DriveId: Optional(settings.SourceDriveId),
+                ItemId: Optional(settings.SourceItemId),
+                SharingUrl: Optional(settings.SourceUrl)),
             _ => throw new InvalidOperationException($"MilestoneConfiguration:SourceType '{sourceType}' is not supported.")
         };
     }
+
+    private static string? Optional(string? value) =>
+        string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 
     private static DateTime? ParseDate(IXLCell cell, int rowNumber, string field)
     {
