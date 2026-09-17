@@ -8,7 +8,7 @@
     <div>
         <div class="eyebrow">Admin Portal</div>
         <h1>Authorized Users</h1>
-        <p>Control exactly who can register or sign in, their TeamHub user type, and whether access is active.</p>
+        <p>Control exactly who can register or sign in with an email, user ID, or GID, their TeamHub user type, and whether access is active.</p>
     </div>
     <div class="d-flex gap-2">
         <a class="btn btn-outline-secondary" asp-page="/Configuration/Index">Admin Portal</a>
@@ -33,6 +33,7 @@
                 <form method="post" asp-page-handler="Save">
                     <input type="hidden" asp-for="Input.Id" />
                     <div class="mb-3"><label class="form-label" asp-for="Input.UserId">Organization email / User ID</label><input class="form-control" asp-for="Input.UserId" maxlength="256" required /></div>
+                    <div class="mb-3"><label class="form-label" asp-for="Input.Gid">GID</label><input class="form-control" asp-for="Input.Gid" inputmode="numeric" pattern="[0-9]+" maxlength="32" /><div class="form-text">Optional for existing accounts. When provided, it must contain numbers only and be unique.</div></div>
                     <div class="mb-3"><label class="form-label" asp-for="Input.DisplayName">Display name</label><input class="form-control" asp-for="Input.DisplayName" maxlength="256" required /></div>
                     <div class="mb-3"><label class="form-label" asp-for="Input.UserType">User type</label><select class="form-select" asp-for="Input.UserType">@foreach (var type in Model.UserTypes) { <option value="@type">@type</option> }</select></div>
                     <div class="mb-3"><label class="form-label" asp-for="Input.TemporaryPassword">Temporary password</label><input class="form-control" asp-for="Input.TemporaryPassword" type="password" minlength="8" autocomplete="new-password" /><div class="form-text">Optional. Registered users can self-register. Set this for an Admin or as a local fallback for a Privileged user.</div></div>
@@ -53,7 +54,7 @@
                     @foreach (var user in Model.AuthorizedUsers)
                     {
                         <tr>
-                            <td><strong>@user.DisplayName</strong><div class="small text-secondary">@user.UserId</div></td>
+                            <td><strong>@user.DisplayName</strong><div class="small text-secondary">@user.UserId</div>@if (!string.IsNullOrWhiteSpace(user.Gid)) { <div class="small text-secondary">GID: @user.Gid</div> }</td>
                             <td><span class="badge text-bg-light">@user.UserType</span></td>
                             <td>@(user.IsRegistered ? "Ready to sign in" : user.UserType == TeamHub.Authentication.TeamHubUserTypes.Registered ? "Awaiting registration" : "Organization sign-in")</td>
                             <td><span class="badge @(user.IsActive ? "text-bg-success" : "text-bg-secondary")">@(user.IsActive ? "Active" : "Inactive")</span></td>

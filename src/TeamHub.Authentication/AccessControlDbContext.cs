@@ -7,6 +7,7 @@ internal sealed class AuthorizedUserEntity
     public Guid Id { get; set; }
     public string UserId { get; set; } = string.Empty;
     public string NormalizedUserId { get; set; } = string.Empty;
+    public string? Gid { get; set; }
     public string DisplayName { get; set; } = string.Empty;
     public string UserType { get; set; } = TeamHubUserTypes.Registered;
     public bool IsActive { get; set; } = true;
@@ -52,10 +53,12 @@ internal sealed class AccessControlDbContext(DbContextOptions<AccessControlDbCon
         user.HasKey(item => item.Id);
         user.Property(item => item.UserId).HasMaxLength(256).IsRequired();
         user.Property(item => item.NormalizedUserId).HasMaxLength(256).IsRequired();
+        user.Property(item => item.Gid).HasMaxLength(32);
         user.Property(item => item.DisplayName).HasMaxLength(256).IsRequired();
         user.Property(item => item.UserType).HasMaxLength(32).IsRequired();
         user.Property(item => item.PasswordHash).HasMaxLength(1000);
         user.HasIndex(item => item.NormalizedUserId).IsUnique();
+        user.HasIndex(item => item.Gid).IsUnique();
 
         var permission = modelBuilder.Entity<ModulePermissionEntity>();
         permission.ToTable("ModulePermissions");

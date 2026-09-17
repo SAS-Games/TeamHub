@@ -31,6 +31,7 @@ public sealed class UsersModel(IUserAccessService users, IAtlassianConfiguration
         {
             Id = user.Id,
             UserId = user.UserId,
+            Gid = user.Gid,
             DisplayName = user.DisplayName,
             UserType = user.UserType,
             IsActive = user.IsActive
@@ -47,6 +48,7 @@ public sealed class UsersModel(IUserAccessService users, IAtlassianConfiguration
             var savedUser = await users.SaveUserAsync(new SaveAuthorizedUserRequest(
                 Input.Id,
                 Input.UserId,
+                Input.Gid,
                 Input.DisplayName,
                 Input.UserType,
                 Input.IsActive,
@@ -104,6 +106,7 @@ public sealed class UsersModel(IUserAccessService users, IAtlassianConfiguration
     {
         public Guid? Id { get; set; }
         public string UserId { get; set; } = string.Empty;
+        public string? Gid { get; set; }
         public string DisplayName { get; set; } = string.Empty;
         public string UserType { get; set; } = TeamHubUserTypes.Registered;
         public bool IsActive { get; set; } = true;

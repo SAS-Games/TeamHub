@@ -37,7 +37,7 @@ public sealed class AccessControlTests
         using var scope = host.Services.CreateScope();
         var users = scope.ServiceProvider.GetRequiredService<IUserAccessService>();
         var authorized = await users.SaveUserAsync(new SaveAuthorizedUserRequest(
-            null, "person@example.com", "Person", TeamHubUserTypes.Registered, true, null), "admin@example.com");
+            null, "person@example.com", null, "Person", TeamHubUserTypes.Registered, true, null), "admin@example.com");
 
         (await users.RegisterAsync(new("unknown@example.com", "password123"))).Success.Should().BeFalse();
         (await users.ValidateCredentialsAsync("person@example.com", "password123")).Should().BeNull();
@@ -46,6 +46,45 @@ public sealed class AccessControlTests
 
         await users.SetUserActiveAsync(authorized.Id, false, "admin@example.com");
         (await users.ValidateCredentialsAsync("person@example.com", "password123")).Should().BeNull();
+    }
+
+    [Fact]
+    public async Task RegistrationAndLogin_AcceptTheAuthorizedUsersGid()
+    {
+        await using var host = await AccessTestHost.CreateAsync();
+        using var scope = host.Services.CreateScope();
+        var users = scope.ServiceProvider.GetRequiredService<IUserAccessService>();
+        var authorized = await users.SaveUserAsync(new SaveAuthorizedUserRequest(
+            null, "gid.user@example.com", "00123456", "GID User", TeamHubUserTypes.Registered, true, null), "admin@example.com");
+
+        var registration = await users.RegisterAsync(new("00123456", "password123"));
+        var byGid = await users.ValidateCredentialsAsync("00123456", "password123");
+        var byEmail = await users.ValidateCredentialsAsync("gid.user@example.com", "password123");
+
+        registration.Success.Should().BeTrue();
+        byGid.Should().NotBeNull();
+        byGid!.Id.Should().Be(authorized.Id);
+        byGid.UserId.Should().Be("gid.user@example.com");
+        byGid.Gid.Should().Be("00123456");
+        byEmail!.Id.Should().Be(authorized.Id);
+    }
+
+    [Fact]
+    public async Task SaveUser_RequiresANumericUniqueGid()
+    {
+        await using var host = await AccessTestHost.CreateAsync();
+        using var scope = host.Services.CreateScope();
+        var users = scope.ServiceProvider.GetRequiredService<IUserAccessService>();
+        await users.SaveUserAsync(new SaveAuthorizedUserRequest(
+            null, "first@example.com", "123456", "First User", TeamHubUserTypes.Registered, true, null), "admin@example.com");
+
+        var invalid = async () => await users.SaveUserAsync(new SaveAuthorizedUserRequest(
+            null, "invalid@example.com", "12A456", "Invalid User", TeamHubUserTypes.Registered, true, null), "admin@example.com");
+        var duplicate = async () => await users.SaveUserAsync(new SaveAuthorizedUserRequest(
+            null, "duplicate@example.com", "123456", "Duplicate User", TeamHubUserTypes.Registered, true, null), "admin@example.com");
+
+        await invalid.Should().ThrowAsync<ArgumentException>().WithMessage("GID must contain numbers only*");
+        await duplicate.Should().ThrowAsync<InvalidOperationException>().WithMessage("That GID is already assigned*");
     }
 
     [Fact]
@@ -122,9 +161,9 @@ public sealed class AccessControlTests
         const string module = "Team Tab: restricted-workbook";
         await users.EnsureModulesAsync([module]);
         var allowed = await users.SaveUserAsync(new SaveAuthorizedUserRequest(
-            null, "allowed@example.com", "Allowed User", TeamHubUserTypes.Registered, true, "password123"), "admin@example.com");
+            null, "allowed@example.com", null, "Allowed User", TeamHubUserTypes.Registered, true, "password123"), "admin@example.com");
         var blocked = await users.SaveUserAsync(new SaveAuthorizedUserRequest(
-            null, "blocked@example.com", "Blocked User", TeamHubUserTypes.Registered, true, "password123"), "admin@example.com");
+            null, "blocked@example.com", null, "Blocked User", TeamHubUserTypes.Registered, true, "password123"), "admin@example.com");
 
         await users.SetUserPermissionsAsync([
             new(allowed.Id, module, AccessLevel.ReadOnly),
@@ -168,6 +207,31 @@ public sealed class AccessControlTests
     }
 
     [Fact]
+    public async Task InitializeAsync_AddsGidSchemaToAnExistingAccessDatabase()
+    {
+        await using var host = await AccessTestHost.CreateAsync();
+        await using (var connection = new SqliteConnection($"Data Source={host.DatabasePath};Pooling=False"))
+        {
+            await connection.OpenAsync();
+            await using var command = connection.CreateCommand();
+            command.CommandText = "DROP INDEX IX_AuthorizedUsers_Gid; ALTER TABLE AuthorizedUsers DROP COLUMN Gid;";
+            await command.ExecuteNonQueryAsync();
+        }
+
+        using var scope = host.Services.CreateScope();
+        await scope.ServiceProvider.GetRequiredService<IUserAccessService>().InitializeAsync();
+
+        await using var verification = new SqliteConnection($"Data Source={host.DatabasePath};Pooling=False");
+        await verification.OpenAsync();
+        await using var column = verification.CreateCommand();
+        column.CommandText = "SELECT COUNT(*) FROM pragma_table_info('AuthorizedUsers') WHERE name = 'Gid';";
+        Convert.ToInt32(await column.ExecuteScalarAsync()).Should().Be(1);
+        await using var index = verification.CreateCommand();
+        index.CommandText = "SELECT COUNT(*) FROM sqlite_master WHERE type = 'index' AND name = 'IX_AuthorizedUsers_Gid';";
+        Convert.ToInt32(await index.ExecuteScalarAsync()).Should().Be(1);
+    }
+
+    [Fact]
     public async Task RemoveModules_DeletesDynamicPermissionsButProtectsBuiltInModules()
     {
         await using var host = await AccessTestHost.CreateAsync();
@@ -178,7 +242,7 @@ public sealed class AccessControlTests
         await users.EnsureModulesAsync([module]);
         await users.SetPermissionsAsync([new(module, TeamHubUserTypes.Registered, AccessLevel.Edit)]);
         var user = await users.SaveUserAsync(new SaveAuthorizedUserRequest(
-            null, "temporary@example.com", "Temporary User", TeamHubUserTypes.Registered, true, "password123"), "admin@example.com");
+            null, "temporary@example.com", null, "Temporary User", TeamHubUserTypes.Registered, true, "password123"), "admin@example.com");
         await users.SetUserPermissionsAsync([new(user.Id, module, AccessLevel.ReadOnly)]);
 
         await users.RemoveModulesAsync([module, TeamHubModules.Team]);

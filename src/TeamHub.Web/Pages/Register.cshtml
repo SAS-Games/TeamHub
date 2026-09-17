@@ -8,7 +8,7 @@
     <div class="card p-4 mx-auto" style="max-width: 480px;">
         <div class="eyebrow">Authorized users only</div>
         <h1 class="h2 mb-2">Register for TeamHub</h1>
-        <p class="text-secondary">Your organization email or user ID must already be on the Admin-managed Authorized User List.</p>
+        <p class="text-secondary">Your organization email, user ID, or GID must already be on the Admin-managed Authorized User List.</p>
 
         @if (!string.IsNullOrWhiteSpace(Model.Message))
         {
@@ -19,8 +19,8 @@
         {
             <form method="post">
                 <div class="mb-3">
-                    <label asp-for="Input.UserId" class="form-label">Organization email / User ID</label>
-                    <input asp-for="Input.UserId" class="form-control" autocomplete="username" required />
+                    <label asp-for="Input.Identifier" class="form-label">Organization email / User ID / GID</label>
+                    <input asp-for="Input.Identifier" class="form-control" autocomplete="username" required />
                 </div>
                 <div class="mb-3">
                     <label asp-for="Input.Password" class="form-label">Password</label>

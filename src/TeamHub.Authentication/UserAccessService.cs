@@ -17,6 +17,7 @@ internal sealed class UserAccessService(
     {
         await using var context = await contextFactory.CreateDbContextAsync(cancellationToken);
         await context.Database.EnsureCreatedAsync(cancellationToken);
+        await EnsureGidSchemaAsync(context, cancellationToken);
         await EnsureUserPermissionSchemaAsync(context, cancellationToken);
         await MigrateStudioSupportPermissionsAsync(context, cancellationToken);
         await SeedPermissionsAsync(context, TeamHubModules.All, cancellationToken);
@@ -86,37 +87,32 @@ internal sealed class UserAccessService(
             .ExecuteDeleteAsync(cancellationToken);
     }
 
-    public async Task<AuthorizedUserRecord?> ValidateCredentialsAsync(string userId, string password, CancellationToken cancellationToken = default)
+    public async Task<AuthorizedUserRecord?> ValidateCredentialsAsync(string identifier, string password, CancellationToken cancellationToken = default)
     {
-        if (string.IsNullOrWhiteSpace(userId) || string.IsNullOrEmpty(password)) return null;
+        if (string.IsNullOrWhiteSpace(identifier) || string.IsNullOrEmpty(password)) return null;
         await using var context = await contextFactory.CreateDbContextAsync(cancellationToken);
-        var normalized = NormalizeUserId(userId);
-        var entity = await context.AuthorizedUsers.AsNoTracking()
-            .SingleOrDefaultAsync(item => item.NormalizedUserId == normalized && item.IsActive, cancellationToken);
+        var entity = await FindByIdentifierAsync(context, identifier, activeOnly: true, asNoTracking: true, cancellationToken);
         if (entity?.IsRegistered != true || string.IsNullOrWhiteSpace(entity.PasswordHash)) return null;
 
         var verification = passwordHasher.VerifyHashedPassword(entity, entity.PasswordHash, password);
         return verification == PasswordVerificationResult.Failed ? null : ToRecord(entity);
     }
 
-    public async Task<AuthorizedUserRecord?> FindActiveUserAsync(string userId, CancellationToken cancellationToken = default)
+    public async Task<AuthorizedUserRecord?> FindActiveUserAsync(string identifier, CancellationToken cancellationToken = default)
     {
-        if (string.IsNullOrWhiteSpace(userId)) return null;
+        if (string.IsNullOrWhiteSpace(identifier)) return null;
         await using var context = await contextFactory.CreateDbContextAsync(cancellationToken);
-        var normalized = NormalizeUserId(userId);
-        var entity = await context.AuthorizedUsers.AsNoTracking()
-            .SingleOrDefaultAsync(item => item.NormalizedUserId == normalized && item.IsActive, cancellationToken);
+        var entity = await FindByIdentifierAsync(context, identifier, activeOnly: true, asNoTracking: true, cancellationToken);
         return entity is null ? null : ToRecord(entity);
     }
 
     public async Task<RegistrationResult> RegisterAsync(RegisterAuthorizedUserRequest request, CancellationToken cancellationToken = default)
     {
-        if (string.IsNullOrWhiteSpace(request.UserId)) return new(false, "Enter your organization email or user ID.");
+        if (string.IsNullOrWhiteSpace(request.Identifier)) return new(false, "Enter your organization email, user ID, or GID.");
         if (string.IsNullOrEmpty(request.Password) || request.Password.Length < 8) return new(false, "Password must contain at least 8 characters.");
 
         await using var context = await contextFactory.CreateDbContextAsync(cancellationToken);
-        var normalized = NormalizeUserId(request.UserId);
-        var entity = await context.AuthorizedUsers.SingleOrDefaultAsync(item => item.NormalizedUserId == normalized, cancellationToken);
+        var entity = await FindByIdentifierAsync(context, request.Identifier, activeOnly: false, asNoTracking: false, cancellationToken);
         if (entity is null || !entity.IsActive) return new(false, "This user has not been authorized by a TeamHub administrator.");
         if (entity.UserType != TeamHubUserTypes.Registered) return new(false, "This account is managed by an administrator or organization sign-in.");
         if (entity.IsRegistered) return new(false, "This account is already registered. Sign in instead.");
@@ -149,6 +145,7 @@ internal sealed class UserAccessService(
     public async Task<AuthorizedUserRecord> SaveUserAsync(SaveAuthorizedUserRequest request, string? actorUserId, CancellationToken cancellationToken = default)
     {
         var userId = request.UserId?.Trim();
+        var gid = NormalizeGid(request.Gid);
         var displayName = request.DisplayName?.Trim();
         if (string.IsNullOrWhiteSpace(userId)) throw new ArgumentException("Organization email or user ID is required.");
         if (string.IsNullOrWhiteSpace(displayName)) throw new ArgumentException("Display name is required.");
@@ -157,9 +154,26 @@ internal sealed class UserAccessService(
 
         await using var context = await contextFactory.CreateDbContextAsync(cancellationToken);
         var normalized = NormalizeUserId(userId);
+        var normalizedGid = gid is null ? null : NormalizeUserId(gid);
         var duplicate = await context.AuthorizedUsers.AnyAsync(
             item => item.NormalizedUserId == normalized && (!request.Id.HasValue || item.Id != request.Id.Value), cancellationToken);
         if (duplicate) throw new InvalidOperationException("That organization email or user ID is already authorized.");
+        if (gid is not null && await context.AuthorizedUsers.AnyAsync(
+                item => item.Gid == gid && (!request.Id.HasValue || item.Id != request.Id.Value), cancellationToken))
+        {
+            throw new InvalidOperationException("That GID is already assigned to another authorized user.");
+        }
+        if (gid is not null && await context.AuthorizedUsers.AnyAsync(
+                item => item.NormalizedUserId == normalizedGid
+                    && (!request.Id.HasValue || item.Id != request.Id.Value), cancellationToken))
+        {
+            throw new InvalidOperationException("That GID conflicts with another user's email or user ID.");
+        }
+        if (IsNumericIdentifier(userId) && await context.AuthorizedUsers.AnyAsync(
+                item => item.Gid == userId && (!request.Id.HasValue || item.Id != request.Id.Value), cancellationToken))
+        {
+            throw new InvalidOperationException("That user ID conflicts with another user's GID.");
+        }
 
         var entity = request.Id.HasValue
             ? await context.AuthorizedUsers.SingleOrDefaultAsync(item => item.Id == request.Id.Value, cancellationToken)
@@ -176,6 +190,7 @@ internal sealed class UserAccessService(
         if (context.Entry(entity).State == EntityState.Detached) context.AuthorizedUsers.Add(entity);
         entity.UserId = userId;
         entity.NormalizedUserId = normalized;
+        entity.Gid = gid;
         entity.DisplayName = displayName;
         entity.UserType = userType;
         entity.IsActive = request.IsActive;
@@ -469,9 +484,69 @@ internal sealed class UserAccessService(
 
     private static string NormalizeUserId(string userId) => userId.Trim().ToUpperInvariant();
 
+    private static string? NormalizeGid(string? gid)
+    {
+        if (string.IsNullOrWhiteSpace(gid)) return null;
+        var normalized = gid.Trim();
+        if (normalized.Length > 32 || !IsNumericIdentifier(normalized))
+        {
+            throw new ArgumentException("GID must contain numbers only and be no longer than 32 digits.");
+        }
+        return normalized;
+    }
+
+    private static bool IsNumericIdentifier(string value) =>
+        value.Length > 0 && value.All(character => character is >= '0' and <= '9');
+
+    private static async Task<AuthorizedUserEntity?> FindByIdentifierAsync(
+        AccessControlDbContext context,
+        string identifier,
+        bool activeOnly,
+        bool asNoTracking,
+        CancellationToken cancellationToken)
+    {
+        var trimmed = identifier.Trim();
+        var normalizedUserId = NormalizeUserId(trimmed);
+        var gid = IsNumericIdentifier(trimmed) && trimmed.Length <= 32 ? trimmed : null;
+        IQueryable<AuthorizedUserEntity> query = context.AuthorizedUsers;
+        if (asNoTracking) query = query.AsNoTracking();
+        if (activeOnly) query = query.Where(item => item.IsActive);
+        return await query.SingleOrDefaultAsync(
+            item => item.NormalizedUserId == normalizedUserId || (gid != null && item.Gid == gid),
+            cancellationToken);
+    }
+
+    private static async Task EnsureGidSchemaAsync(AccessControlDbContext context, CancellationToken cancellationToken)
+    {
+        var connection = context.Database.GetDbConnection();
+        var shouldClose = connection.State == System.Data.ConnectionState.Closed;
+        if (shouldClose) await connection.OpenAsync(cancellationToken);
+        try
+        {
+            await using var columnCheck = connection.CreateCommand();
+            columnCheck.CommandText = "SELECT COUNT(*) FROM pragma_table_info('AuthorizedUsers') WHERE name = 'Gid';";
+            var gidColumnExists = Convert.ToInt32(await columnCheck.ExecuteScalarAsync(cancellationToken)) > 0;
+            if (!gidColumnExists)
+            {
+                await using var addColumn = connection.CreateCommand();
+                addColumn.CommandText = "ALTER TABLE AuthorizedUsers ADD COLUMN Gid TEXT NULL;";
+                await addColumn.ExecuteNonQueryAsync(cancellationToken);
+            }
+
+            await using var addIndex = connection.CreateCommand();
+            addIndex.CommandText = "CREATE UNIQUE INDEX IF NOT EXISTS IX_AuthorizedUsers_Gid ON AuthorizedUsers (Gid);";
+            await addIndex.ExecuteNonQueryAsync(cancellationToken);
+        }
+        finally
+        {
+            if (shouldClose) await connection.CloseAsync();
+        }
+    }
+
     private static AuthorizedUserRecord ToRecord(AuthorizedUserEntity entity) => new(
         entity.Id,
         entity.UserId,
+        entity.Gid,
         entity.DisplayName,
         entity.UserType,
         entity.IsActive,

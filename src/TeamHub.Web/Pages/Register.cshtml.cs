@@ -23,14 +23,14 @@ public sealed class RegisterModel(IUserAccessService users) : PageModel
         }
 
         var result = await users.RegisterAsync(
-            new RegisterAuthorizedUserRequest(Input.UserId, Input.Password), cancellationToken);
+            new RegisterAuthorizedUserRequest(Input.Identifier, Input.Password), cancellationToken);
         Success = result.Success;
         Message = result.Message;
     }
 
     public sealed class RegisterInput
     {
-        public string UserId { get; set; } = string.Empty;
+        public string Identifier { get; set; } = string.Empty;
         public string Password { get; set; } = string.Empty;
         public string ConfirmPassword { get; set; } = string.Empty;
     }
