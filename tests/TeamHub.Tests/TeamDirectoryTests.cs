@@ -123,6 +123,7 @@ public sealed class TeamDirectoryTests
             {
                 Title = "Performance target",
                 Description = "Reached the frame-time target.",
+                Impact = "Improved frame stability.",
                 AchievedBy = "Rendering pod",
                 AchievedOn = new DateTime(2026, 2, 12)
             });
@@ -131,6 +132,47 @@ public sealed class TeamDirectoryTests
 
             saved.Select(item => item.Title).Should().Equal("Performance target", "First release");
             saved[0].AchievedBy.Should().Be("Rendering pod");
+            saved[0].Impact.Should().Be("Improved frame stability.");
+        }
+        finally
+        {
+            DeleteDatabase(dbPath);
+        }
+    }
+
+    [Fact]
+    public async Task Achievements_CanBeEditedAndDeleted()
+    {
+        var dbPath = CreateDatabasePath();
+        try
+        {
+            await using var provider = CreateServices(dbPath);
+            await using var scope = provider.CreateAsyncScope();
+            await scope.ServiceProvider.GetRequiredService<ITeamDatabaseInitializer>().InitializeAsync();
+            var achievements = scope.ServiceProvider.GetRequiredService<ITeamAchievementService>();
+
+            var saved = await achievements.AddAchievementAsync(new TeamAchievementDto
+            {
+                Title = "Initial title",
+                Description = "Initial description",
+                Impact = "Initial impact",
+                AchievedBy = "Team",
+                AchievedOn = new DateTime(2026, 3, 4)
+            });
+
+            saved.Title = "Corrected title";
+            saved.Impact = "Corrected impact";
+            var updated = await achievements.SaveAchievementAsync(saved);
+
+            updated.Id.Should().Be(saved.Id);
+            updated.Title.Should().Be("Corrected title");
+            updated.Impact.Should().Be("Corrected impact");
+            (await achievements.GetAchievementAsync(saved.Id))!.Title.Should().Be("Corrected title");
+
+            await achievements.DeleteAchievementAsync(saved.Id);
+
+            (await achievements.GetAchievementsAsync()).Should().BeEmpty();
+            (await achievements.GetAchievementAsync(saved.Id)).Should().BeNull();
         }
         finally
         {
@@ -219,6 +261,54 @@ public sealed class TeamDirectoryTests
             }
 
             columns.Should().Contain("Section");
+        }
+        finally
+        {
+            DeleteDatabase(dbPath);
+        }
+    }
+
+    [Fact]
+    public async Task Initializer_AddsImpactToAnExistingAchievementsTable()
+    {
+        var dbPath = CreateDatabasePath();
+        try
+        {
+            await using (var connection = new SqliteConnection($"Data Source={dbPath}"))
+            {
+                await connection.OpenAsync();
+                await using var command = connection.CreateCommand();
+                command.CommandText = """
+                    CREATE TABLE TeamAchievements (
+                        Id TEXT NOT NULL CONSTRAINT PK_TeamAchievements PRIMARY KEY,
+                        Title TEXT NOT NULL,
+                        Description TEXT NOT NULL,
+                        AchievedBy TEXT NOT NULL,
+                        AchievedOn TEXT NOT NULL,
+                        CreatedAtUtc TEXT NOT NULL
+                    );
+                    """;
+                await command.ExecuteNonQueryAsync();
+            }
+
+            await using (var provider = CreateServices(dbPath))
+            await using (var scope = provider.CreateAsyncScope())
+            {
+                await scope.ServiceProvider.GetRequiredService<ITeamDatabaseInitializer>().InitializeAsync();
+            }
+
+            await using var verification = new SqliteConnection($"Data Source={dbPath}");
+            await verification.OpenAsync();
+            await using var verificationCommand = verification.CreateCommand();
+            verificationCommand.CommandText = "PRAGMA table_info(TeamAchievements);";
+            await using var reader = await verificationCommand.ExecuteReaderAsync();
+            var columns = new List<string>();
+            while (await reader.ReadAsync())
+            {
+                columns.Add(reader.GetString(1));
+            }
+
+            columns.Should().Contain("Impact");
         }
         finally
         {

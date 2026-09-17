@@ -39,6 +39,7 @@ public sealed class TeamAchievementDto
     public string Id { get; set; } = string.Empty;
     public string Title { get; set; } = string.Empty;
     public string Description { get; set; } = string.Empty;
+    public string Impact { get; set; } = string.Empty;
     public string AchievedBy { get; set; } = string.Empty;
     public DateTime AchievedOn { get; set; }
 }
@@ -127,6 +128,7 @@ public static class TeamPageAppearanceCatalog
             new("achieved-on", "Achievement Date"),
             new("title", "Title"),
             new("description", "Description"),
+            new("impact", "Impact"),
             new("achieved-by", "Achieved By")
         });
 

@@ -39,6 +39,7 @@ internal sealed class TeamAchievementRecord
     public Guid Id { get; set; } = Guid.NewGuid();
     public string Title { get; set; } = string.Empty;
     public string Description { get; set; } = string.Empty;
+    public string Impact { get; set; } = string.Empty;
     public string AchievedBy { get; set; } = string.Empty;
     public DateTime AchievedOn { get; set; }
     public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
@@ -82,6 +83,7 @@ internal sealed class TeamDbContext(DbContextOptions<TeamDbContext> options) : D
             entity.ToTable("TeamAchievements");
             entity.Property(x => x.Title).HasMaxLength(256);
             entity.Property(x => x.Description).HasMaxLength(2000);
+            entity.Property(x => x.Impact).HasMaxLength(2000);
             entity.Property(x => x.AchievedBy).HasMaxLength(512);
             entity.HasIndex(x => x.AchievedOn);
         });

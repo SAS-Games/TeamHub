@@ -136,25 +136,77 @@ internal sealed class SqliteTeamDirectoryService(TeamDbContext dbContext)
                 Id = achievement.Id.ToString(),
                 Title = achievement.Title,
                 Description = achievement.Description,
+                Impact = achievement.Impact,
                 AchievedBy = achievement.AchievedBy,
                 AchievedOn = achievement.AchievedOn
             })
             .ToListAsync(cancellationToken);
 
+    public async Task<TeamAchievementDto?> GetAchievementAsync(
+        string id,
+        CancellationToken cancellationToken = default)
+    {
+        if (!Guid.TryParse(id, out var achievementId))
+        {
+            return null;
+        }
+
+        var achievement = await dbContext.TeamAchievements
+            .AsNoTracking()
+            .FirstOrDefaultAsync(item => item.Id == achievementId, cancellationToken);
+        return achievement is null ? null : ToDto(achievement);
+    }
+
     public async Task<TeamAchievementDto> AddAchievementAsync(
+        TeamAchievementDto achievement,
+        CancellationToken cancellationToken = default) =>
+        await SaveAchievementAsync(achievement, cancellationToken);
+
+    public async Task<TeamAchievementDto> SaveAchievementAsync(
         TeamAchievementDto achievement,
         CancellationToken cancellationToken = default)
     {
-        var record = new TeamAchievementRecord
+        TeamAchievementRecord record;
+        if (string.IsNullOrWhiteSpace(achievement.Id))
         {
-            Title = achievement.Title.Trim(),
-            Description = achievement.Description.Trim(),
-            AchievedBy = achievement.AchievedBy.Trim(),
-            AchievedOn = achievement.AchievedOn.Date
-        };
-        dbContext.TeamAchievements.Add(record);
+            record = new TeamAchievementRecord();
+            dbContext.TeamAchievements.Add(record);
+        }
+        else if (Guid.TryParse(achievement.Id, out var achievementId))
+        {
+            record = await dbContext.TeamAchievements
+                .FirstOrDefaultAsync(item => item.Id == achievementId, cancellationToken)
+                ?? throw new KeyNotFoundException("Achievement was not found.");
+        }
+        else
+        {
+            throw new KeyNotFoundException("Achievement was not found.");
+        }
+
+        record.Title = achievement.Title.Trim();
+        record.Description = achievement.Description.Trim();
+        record.Impact = achievement.Impact.Trim();
+        record.AchievedBy = achievement.AchievedBy.Trim();
+        record.AchievedOn = achievement.AchievedOn.Date;
         await dbContext.SaveChangesAsync(cancellationToken);
         return ToDto(record);
+    }
+
+    public async Task DeleteAchievementAsync(string id, CancellationToken cancellationToken = default)
+    {
+        if (!Guid.TryParse(id, out var achievementId))
+        {
+            return;
+        }
+
+        var record = await dbContext.TeamAchievements.FindAsync([achievementId], cancellationToken);
+        if (record is null)
+        {
+            return;
+        }
+
+        dbContext.TeamAchievements.Remove(record);
+        await dbContext.SaveChangesAsync(cancellationToken);
     }
 
     public async Task<PageTextAppearanceDto> GetPageAppearanceAsync(
@@ -270,6 +322,7 @@ internal sealed class SqliteTeamDirectoryService(TeamDbContext dbContext)
         Id = achievement.Id.ToString(),
         Title = achievement.Title,
         Description = achievement.Description,
+        Impact = achievement.Impact,
         AchievedBy = achievement.AchievedBy,
         AchievedOn = achievement.AchievedOn
     };

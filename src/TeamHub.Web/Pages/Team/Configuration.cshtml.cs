@@ -57,6 +57,7 @@ public sealed class ConfigurationModel(
         string? section = null,
         string? memberId = null,
         string? specializationId = null,
+        string? achievementId = null,
         string? appearancePage = null,
         string? customTabId = null,
         CancellationToken cancellationToken = default)
@@ -87,6 +88,18 @@ public sealed class ConfigurationModel(
 
             SupportInput = SpecializationInput.FromDto(specialization);
             ActiveSection = SpecializationsSection;
+        }
+
+        if (!string.IsNullOrWhiteSpace(achievementId))
+        {
+            var achievement = await achievementService.GetAchievementAsync(achievementId, cancellationToken);
+            if (achievement is null)
+            {
+                return NotFound();
+            }
+
+            AchievementForm = AchievementInput.FromDto(achievement);
+            ActiveSection = AchievementsSection;
         }
 
         await LoadConfigurationAsync(cancellationToken);
@@ -158,8 +171,30 @@ public sealed class ConfigurationModel(
             return Page();
         }
 
-        var saved = await achievementService.AddAchievementAsync(AchievementForm.ToDto(), cancellationToken);
-        StatusMessage = $"Achievement added: {saved.Title}.";
+        var isEditing = !string.IsNullOrWhiteSpace(AchievementForm.Id);
+        TeamAchievementDto saved;
+        try
+        {
+            saved = await achievementService.SaveAchievementAsync(AchievementForm.ToDto(), cancellationToken);
+        }
+        catch (KeyNotFoundException exception)
+        {
+            ErrorMessage = exception.Message;
+            return RedirectToPage(new { section = AchievementsSection });
+        }
+
+        StatusMessage = isEditing
+            ? $"Achievement updated: {saved.Title}."
+            : $"Achievement added: {saved.Title}.";
+        return RedirectToPage(new { section = AchievementsSection });
+    }
+
+    public async Task<IActionResult> OnPostDeleteAchievementAsync(
+        string achievementId,
+        CancellationToken cancellationToken)
+    {
+        await achievementService.DeleteAchievementAsync(achievementId, cancellationToken);
+        StatusMessage = "Achievement deleted.";
         return RedirectToPage(new { section = AchievementsSection });
     }
 
@@ -583,11 +618,16 @@ public sealed class ConfigurationModel(
 
     public sealed class AchievementInput
     {
+        public string? Id { get; set; }
+
         [Required, StringLength(256)]
         public string Title { get; set; } = string.Empty;
 
         [Required, StringLength(2000)]
         public string Description { get; set; } = string.Empty;
+
+        [StringLength(2000)]
+        public string? Impact { get; set; }
 
         [Required, StringLength(512)]
         public string AchievedBy { get; set; } = string.Empty;
@@ -597,10 +637,22 @@ public sealed class ConfigurationModel(
 
         public TeamAchievementDto ToDto() => new()
         {
+            Id = Id ?? string.Empty,
             Title = Title,
             Description = Description,
+            Impact = Impact ?? string.Empty,
             AchievedBy = AchievedBy,
             AchievedOn = AchievedOn
+        };
+
+        public static AchievementInput FromDto(TeamAchievementDto achievement) => new()
+        {
+            Id = achievement.Id,
+            Title = achievement.Title,
+            Description = achievement.Description,
+            Impact = achievement.Impact,
+            AchievedBy = achievement.AchievedBy,
+            AchievedOn = achievement.AchievedOn
         };
     }
 }

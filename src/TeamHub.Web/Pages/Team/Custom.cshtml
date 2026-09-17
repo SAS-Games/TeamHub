@@ -49,6 +49,10 @@
             <div class="p-4 text-secondary">@(table.IsExcelBacked ? "Synchronize this table to import its Excel columns and rows." : "This table does not have any active columns.")</div>
             continue;
         }
+        @if (table.Columns.Any(column => column.FieldType == CustomTeamFieldTypes.LongText))
+        {
+            <div class="px-4 pt-3"><partial name="_MarkdownHelp" /></div>
+        }
         <div class="table-responsive">
             <table class="table styled-table align-middle">
                 <thead>
@@ -80,7 +84,14 @@
                                 }
                                 else
                                 {
-                                    <span class="custom-team-cell-value">@value</span>
+                                    @if (column.FieldType == CustomTeamFieldTypes.LongText)
+                                    {
+                                        <safe-markdown class="markdown-content custom-team-cell-value" text="@value"></safe-markdown>
+                                    }
+                                    else
+                                    {
+                                        <span class="custom-team-cell-value">@value</span>
+                                    }
                                 }
                             </td>
                         }

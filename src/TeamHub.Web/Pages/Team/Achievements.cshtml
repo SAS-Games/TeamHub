@@ -31,7 +31,14 @@ else
                     <time class="@Model.Appearance.CssClass("achieved-on")" datetime="@achievement.AchievedOn.ToString("yyyy-MM-dd")">@achievement.AchievedOn.ToString("dd MMM yyyy")</time>
                     <div>
                         <h3 class="@Model.Appearance.CssClass("title")">@achievement.Title</h3>
-                        <p class="@Model.Appearance.CssClass("description")">@achievement.Description</p>
+                        <safe-markdown class="markdown-content @Model.Appearance.CssClass("description")" text="@achievement.Description"></safe-markdown>
+                        @if (!string.IsNullOrWhiteSpace(achievement.Impact))
+                        {
+                            <div class="achievement-impact @Model.Appearance.CssClass("impact")">
+                                <span>Impact</span>
+                                <safe-markdown class="markdown-content" text="@achievement.Impact"></safe-markdown>
+                            </div>
+                        }
                         <strong class="@Model.Appearance.CssClass("achieved-by")">Achieved by @achievement.AchievedBy</strong>
                     </div>
                 </article>
