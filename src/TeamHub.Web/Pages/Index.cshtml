@@ -20,11 +20,11 @@
     <div class="section-body row g-4">
         <div class="col-md-6">
             <h3 class="h6">@content.VisionLabel</h3>
-            <p class="mb-0">@content.Vision</p>
+            <safe-markdown class="markdown-content mb-0" text="@content.Vision"></safe-markdown>
         </div>
         <div class="col-md-6">
             <h3 class="h6">@content.MissionLabel</h3>
-            <p class="mb-0">@content.Mission</p>
+            <safe-markdown class="markdown-content mb-0" text="@content.Mission"></safe-markdown>
         </div>
     </div>
 </section>
@@ -34,7 +34,7 @@
         <div><span>@content.AboutKicker</span><h2>@content.AboutTitle</h2></div>
     </div>
     <div class="section-body">
-        <p class="mb-0">@content.Description</p>
+        <safe-markdown class="markdown-content mb-0" text="@content.Description"></safe-markdown>
     </div>
 </section>
 
@@ -49,7 +49,7 @@
             {
                 <div class="col-md-4">
                     <h3 class="h6">@highlight.Title</h3>
-                    <p class="mb-0 small text-muted">@highlight.Detail</p>
+                    <safe-markdown class="markdown-content mb-0 small text-muted" text="@highlight.Detail"></safe-markdown>
                 </div>
             }
         </div>
@@ -67,7 +67,7 @@
             {
                 <div class="col-md-4">
                     <h3 class="h6"><a href="@link.Url" target="_blank" rel="noopener">@link.Label</a></h3>
-                    <p class="mb-0 small text-muted">@link.Description</p>
+                    <safe-markdown class="markdown-content mb-0 small text-muted" text="@link.Description"></safe-markdown>
                 </div>
             }
         </div>
