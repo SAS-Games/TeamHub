@@ -391,7 +391,7 @@ else
                             <div class="col-12" data-source-types="UploadedExcel"><label class="form-label">Excel file from this computer</label><input name="sourceFile" class="form-control" type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" required /></div>
                             <div class="col-md-3" data-excel-backed><label class="form-label">Worksheet <span class="text-secondary">(optional)</span></label><input name="sourceWorksheet" class="form-control" maxlength="200" /></div>
                             <div class="col-md-3" data-excel-backed><label class="form-label">Header row</label><input name="sourceHeaderRow" class="form-control" type="number" min="1" max="1000" value="1" /></div>
-                            <div class="col-md-6" data-excel-backed><label class="form-label">Primary key column</label><input name="primaryKeySourceHeader" class="form-control" maxlength="200" placeholder="Exact Excel header, for example Employee ID" required /></div>
+                            <div class="col-md-6" data-excel-backed><label class="form-label">Primary key column <span class="text-secondary">(select after schema import)</span></label><input name="primaryKeySourceHeader" class="form-control" maxlength="200" placeholder="Optional until the Excel schema is imported" /><div class="form-text">Save the table, import its Excel schema, and then select the primary-key header before synchronizing rows.</div></div>
                             <div class="col-md-4" data-source-types="ExcelUrl MicrosoftGraphExcel"><button class="btn btn-outline-primary w-100" type="submit" asp-page-handler="TestCustomTableSource" data-test-excel-source>Test workbook</button></div>
                             <div class="col-md-4 ms-auto"><button class="btn btn-primary w-100" type="submit">Add table</button></div>
                             <div class="col-12 alert mb-0" data-excel-source-test-result hidden></div>
@@ -401,6 +401,7 @@ else
 
                 @foreach (var table in selectedTab.Tables)
                 {
+                    var sourceColumns = table.Columns.Where(column => column.IsSourceColumn && !string.IsNullOrWhiteSpace(column.SourceHeader)).ToList();
                     <section class="content-section m-0 mb-4">
                         <div class="section-heading"><div><span>Configurable table</span><h2>@table.Name</h2></div><strong>@table.Columns.Count columns</strong></div>
                         <div class="section-body border-bottom">
@@ -420,25 +421,44 @@ else
                                 </div>
                                 <div class="col-md-3" data-excel-backed><label class="form-label">Worksheet <span class="text-secondary">(optional)</span></label><input name="sourceWorksheet" class="form-control form-control-sm" maxlength="200" value="@table.SourceWorksheet" /></div>
                                 <div class="col-md-3" data-excel-backed><label class="form-label">Header row</label><input name="sourceHeaderRow" class="form-control form-control-sm" type="number" min="1" max="1000" value="@table.SourceHeaderRow" /></div>
-                                <div class="col-md-6" data-excel-backed><label class="form-label">Primary key column</label><input name="primaryKeySourceHeader" class="form-control form-control-sm" maxlength="200" value="@table.PrimaryKeySourceHeader" readonly="@table.LastSyncedAtUtc.HasValue" required /></div>
+                                <div class="col-md-6" data-excel-backed>
+                                    <label class="form-label">Primary key column</label>
+                                    <select name="primaryKeySourceHeader" class="form-select form-select-sm" disabled="@(sourceColumns.Count == 0 || table.LastSyncedAtUtc.HasValue)">
+                                        <option value="">@(sourceColumns.Count == 0 ? "Import the Excel schema first" : "Select a primary-key header")</option>
+                                        @foreach (var sourceColumn in sourceColumns)
+                                        {
+                                            <option value="@sourceColumn.SourceHeader" selected="@(string.Equals(sourceColumn.SourceHeader, table.PrimaryKeySourceHeader, StringComparison.OrdinalIgnoreCase))">@sourceColumn.SourceHeader</option>
+                                        }
+                                    </select>
+                                    @if (table.LastSyncedAtUtc.HasValue)
+                                    {
+                                        <input type="hidden" name="primaryKeySourceHeader" value="@table.PrimaryKeySourceHeader" />
+                                    }
+                                </div>
                                 <div class="col-md-6" data-excel-backed><div class="form-text">The primary key is locked after the first successful sync. SharePoint/OneDrive synchronization uses Team Hub's configured Microsoft Graph application identity.</div></div>
                                 <div class="col-12" data-source-types="ExcelUrl MicrosoftGraphExcel"><button class="btn btn-sm btn-outline-primary" type="submit" asp-page-handler="TestCustomTableSource" data-test-excel-source>Test workbook</button></div>
                                 <div class="col-12 alert mb-0" data-excel-source-test-result hidden></div>
                             </form>
                             @if (table.IsExcelBacked)
                             {
-                                <form method="post" asp-page-handler="SyncCustomTable" class="mt-3">
-                                    <input type="hidden" name="tabId" value="@selectedTab.Id" /><input type="hidden" name="tableId" value="@table.Id" />
-                                    <button class="btn btn-sm btn-success" type="submit">Synchronize Excel</button>
+                                <div class="d-flex flex-wrap align-items-center gap-2 mt-3">
+                                    <form method="post" asp-page-handler="ImportCustomTableSchema">
+                                        <input type="hidden" name="tabId" value="@selectedTab.Id" /><input type="hidden" name="tableId" value="@table.Id" />
+                                        <button class="btn btn-sm btn-outline-primary" type="submit">Import schema from Excel</button>
+                                    </form>
+                                    <form method="post" asp-page-handler="SyncCustomTable">
+                                        <input type="hidden" name="tabId" value="@selectedTab.Id" /><input type="hidden" name="tableId" value="@table.Id" />
+                                        <button class="btn btn-sm btn-success" type="submit" disabled="@(sourceColumns.Count == 0 || string.IsNullOrWhiteSpace(table.PrimaryKeySourceHeader))">Synchronize Excel rows</button>
+                                    </form>
                                     @if (table.LastSyncedAtUtc.HasValue)
                                     {
-                                        <span class="small text-secondary ms-2">Last sync @table.LastSyncedAtUtc.Value.ToLocalTime().ToString("MMM d, yyyy h:mm tt") - @table.LastSyncMessage</span>
+                                        <span class="small text-secondary">Last sync @table.LastSyncedAtUtc.Value.ToLocalTime().ToString("MMM d, yyyy h:mm tt") - @table.LastSyncMessage</span>
                                     }
                                     else if (!string.IsNullOrWhiteSpace(table.LastSyncMessage))
                                     {
-                                        <span class="small text-danger ms-2">@table.LastSyncMessage</span>
+                                        <span class="small text-danger">@table.LastSyncMessage</span>
                                     }
-                                </form>
+                                </div>
                             }
                             <form method="post" asp-page-handler="ArchiveCustomTable" class="mt-2" onsubmit="return confirm('Archive this table?')">
                                 <input type="hidden" name="tabId" value="@selectedTab.Id" /><input type="hidden" name="tableId" value="@table.Id" />
@@ -453,39 +473,38 @@ else
                                     <tbody>
                                     @foreach (var column in table.Columns)
                                     {
-                                        if (column.IsSourceColumn)
-                                        {
-                                            <tr class="table-light">
-                                                <td><strong>@column.Label</strong><small class="d-block text-secondary">@column.Key</small></td>
-                                                <td>@column.FieldType</td>
-                                                <td>@(column.IsRequired ? "Yes" : "No")</td>
-                                                <td><span class="badge text-bg-secondary">Excel</span>@if (column.IsPrimaryKey) { <span class="badge text-bg-primary ms-1">Primary key</span> }</td>
-                                                <td class="text-secondary">-</td>
-                                                <td class="small text-secondary">Managed by synchronization</td>
-                                            </tr>
-                                        }
-                                        else
-                                        {
-                                            var columnFormId = $"column-{column.Id}";
-                                            <tr>
-                                                <td>
-                                                    <form id="@columnFormId" method="post" asp-page-handler="SaveCustomColumn">
-                                                        <input type="hidden" name="tabId" value="@selectedTab.Id" /><input type="hidden" name="tableId" value="@table.Id" /><input type="hidden" name="columnId" value="@column.Id" />
-                                                        <input name="label" class="form-control form-control-sm" maxlength="80" value="@column.Label" required />
-                                                        <input name="displayOrder" type="hidden" value="@column.DisplayOrder" />
-                                                    </form>
+                                        var columnFormId = $"column-{column.Id}";
+                                        <tr class="@(column.IsSourceColumn ? "table-light" : "")">
+                                            <td>
+                                                <form id="@columnFormId" method="post" asp-page-handler="SaveCustomColumn">
+                                                    <input type="hidden" name="tabId" value="@selectedTab.Id" /><input type="hidden" name="tableId" value="@table.Id" /><input type="hidden" name="columnId" value="@column.Id" />
+                                                    <input name="label" class="form-control form-control-sm" maxlength="80" value="@column.Label" required />
+                                                    <input name="displayOrder" class="form-control form-control-sm mt-1" type="number" min="0" value="@column.DisplayOrder" aria-label="Display order" />
+                                                </form>
+                                                @if (column.IsSourceColumn)
+                                                {
+                                                    <small class="d-block text-secondary mt-1">Excel header: @column.SourceHeader</small>
+                                                }
+                                                else
+                                                {
                                                     <small class="d-block text-secondary mt-1">@column.Key</small>
-                                                </td>
-                                                <td><select name="fieldType" form="@columnFormId" class="form-select form-select-sm">@foreach (var fieldType in Model.CustomFieldTypes) { <option value="@fieldType" selected="@(fieldType == column.FieldType)">@fieldType</option> }</select></td>
-                                                <td><div class="form-check"><input class="form-check-input" type="checkbox" name="isRequired" value="true" form="@columnFormId" id="required-@column.Id" checked="@column.IsRequired" /><label class="form-check-label" for="required-@column.Id">Required</label></div></td>
-                                                <td><span class="badge text-bg-success">Team Hub</span></td>
-                                                <td><textarea name="options" form="@columnFormId" class="form-control form-control-sm" rows="2">@string.Join(", ", column.Options)</textarea></td>
-                                                <td class="text-nowrap">
-                                                    <button class="btn btn-sm btn-outline-primary" type="submit" form="@columnFormId">Save</button>
+                                                }
+                                            </td>
+                                            <td><select name="fieldType" form="@columnFormId" class="form-select form-select-sm">@foreach (var fieldType in Model.CustomFieldTypes) { <option value="@fieldType" selected="@(fieldType == column.FieldType)">@fieldType</option> }</select></td>
+                                            <td><div class="form-check"><input class="form-check-input" type="checkbox" name="isRequired" value="true" form="@columnFormId" id="required-@column.Id" checked="@column.IsRequired" /><label class="form-check-label" for="required-@column.Id">Required</label></div></td>
+                                            <td>
+                                                <span class="badge @(column.IsSourceColumn ? "text-bg-secondary" : "text-bg-success")">@(column.IsSourceColumn ? "Excel" : "Team Hub")</span>
+                                                @if (column.IsPrimaryKey) { <span class="badge text-bg-primary ms-1">Primary key</span> }
+                                            </td>
+                                            <td><textarea name="options" form="@columnFormId" class="form-control form-control-sm" rows="2" placeholder="Required for Choice type">@string.Join(", ", column.Options)</textarea></td>
+                                            <td class="text-nowrap">
+                                                <button class="btn btn-sm btn-outline-primary" type="submit" form="@columnFormId">Save</button>
+                                                @if (!column.IsSourceColumn)
+                                                {
                                                     <form method="post" asp-page-handler="ArchiveCustomColumn" class="d-inline" onsubmit="return confirm('Archive this column?')"><input type="hidden" name="tabId" value="@selectedTab.Id" /><input type="hidden" name="columnId" value="@column.Id" /><button class="btn btn-sm btn-outline-danger" type="submit">Archive</button></form>
-                                                </td>
-                                            </tr>
-                                        }
+                                                }
+                                            </td>
+                                        </tr>
                                     }
                                     </tbody>
                                 </table>

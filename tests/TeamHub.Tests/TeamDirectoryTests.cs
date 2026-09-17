@@ -483,6 +483,67 @@ public sealed class TeamDirectoryTests
     }
 
     [Fact]
+    public async Task ExcelSchemaImport_CreatesEditableColumnsBeforeRowsAreSynchronized()
+    {
+        var dbPath = CreateDatabasePath();
+        try
+        {
+            var reader = new FakeExcelTableSourceReader { Data = ExcelData(("E-001", "Asha")) };
+            await using var provider = CreateServices(dbPath, reader);
+            await using var scope = provider.CreateAsyncScope();
+            await scope.ServiceProvider.GetRequiredService<ITeamDatabaseInitializer>().InitializeAsync();
+            var tabs = scope.ServiceProvider.GetRequiredService<ICustomTeamTabService>();
+            var tab = await tabs.SaveTabAsync(new(null, "Schema import"));
+            var table = await tabs.SaveTableAsync(new(
+                tab.Id,
+                null,
+                "People",
+                SourceType: CustomTeamTableSourceTypes.ExcelUrl,
+                SourceUrl: "https://example.test/people.xlsx",
+                SourceWorksheet: "People"));
+
+            var imported = await tabs.ImportExcelSchemaAsync(table.Id);
+            var afterImport = (await tabs.GetTabAsync(tab.Slug))!.Tables.Single();
+
+            imported.Added.Should().Be(2);
+            imported.HeaderCount.Should().Be(2);
+            afterImport.Rows.Should().BeEmpty();
+            afterImport.Columns.Should().OnlyContain(column => column.IsSourceColumn);
+            afterImport.Columns.Select(column => column.SourceHeader).Should().BeEquivalentTo("Employee ID", "Name");
+
+            var nameColumn = afterImport.Columns.Single(column => column.SourceHeader == "Name");
+            await tabs.SaveColumnAsync(new SaveCustomTeamColumnRequest(
+                table.Id,
+                nameColumn.Id,
+                "Employee name",
+                CustomTeamFieldTypes.Text,
+                true,
+                [],
+                7));
+            await tabs.SaveTableAsync(new SaveCustomTeamTableRequest(
+                tab.Id,
+                table.Id,
+                "People",
+                SourceType: CustomTeamTableSourceTypes.ExcelUrl,
+                SourceUrl: "https://example.test/people.xlsx",
+                SourceWorksheet: "People",
+                PrimaryKeySourceHeader: "Employee ID"));
+
+            await tabs.SyncExcelTableAsync(table.Id, "admin@example.com");
+            var synchronized = (await tabs.GetTabAsync(tab.Slug))!.Tables.Single();
+            var editedColumn = synchronized.Columns.Single(column => column.SourceHeader == "Name");
+            editedColumn.Label.Should().Be("Employee name");
+            editedColumn.IsRequired.Should().BeTrue();
+            editedColumn.DisplayOrder.Should().Be(7);
+            synchronized.Rows.Should().ContainSingle();
+        }
+        finally
+        {
+            DeleteDatabase(dbPath);
+        }
+    }
+
+    [Fact]
     public async Task ExcelBackedTable_UsesPrimaryKeyAndPreservesLocalValuesAcrossReorderingAndRemoval()
     {
         var dbPath = CreateDatabasePath();

@@ -366,6 +366,25 @@ public sealed class ConfigurationModel(
         return CustomRedirect(tabId);
     }
 
+    public async Task<IActionResult> OnPostImportCustomTableSchemaAsync(
+        string tabId,
+        string tableId,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var result = await customTabs.ImportExcelSchemaAsync(tableId, cancellationToken);
+            StatusMessage = result.MissingFromWorkbook == 0
+                ? $"Excel schema imported from '{result.Worksheet}': {result.Added} column(s) added, {result.Existing} already present."
+                : $"Excel schema imported from '{result.Worksheet}': {result.Added} added, {result.Existing} already present, {result.MissingFromWorkbook} mapped column(s) no longer found in the workbook.";
+        }
+        catch (Exception exception) when (exception is ArgumentException or InvalidOperationException or KeyNotFoundException)
+        {
+            ErrorMessage = exception.Message;
+        }
+        return CustomRedirect(tabId);
+    }
+
     public async Task<IActionResult> OnPostSaveCustomColumnAsync(
         string tabId,
         string tableId,
