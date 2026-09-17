@@ -88,13 +88,31 @@ body {
 .achievement-item time { color: #c05a35; font-size: .78rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; }
 .achievement-item h3 { margin: 0 0 8px; font-size: 1.1rem; }
 .achievement-item p { margin: 0 0 10px; color: #52665f; white-space: pre-line; }
+.achievement-item .markdown-content { margin: 0 0 10px; color: #52665f; }
 .achievement-item strong { color: #65766f; font-size: .78rem; }
+.achievement-impact { margin: 12px 0; padding: 10px 12px; background: #f3f7f4; border-left: 3px solid #4d9b72; border-radius: 0 6px 6px 0; }
+.achievement-impact > span { display: block; margin-bottom: 5px; color: #357154; font-size: .7rem; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; }
+.achievement-impact .markdown-content { margin-bottom: 0; }
+.achievement-admin-actions { display: flex; gap: 6px; margin-top: 14px; }
 .achievement-list-compact { max-height: 610px; overflow-y: auto; }
 .achievement-list-compact .achievement-item { grid-template-columns: 110px minmax(0, 1fr); padding: 18px 20px; }
 .styled-table { margin: 0; }
 .styled-table th { color: #65766f; font-size: .75rem; text-transform: uppercase; letter-spacing: .05em; white-space: nowrap; }
 .styled-table td, .styled-table th { padding: 14px 18px; vertical-align: middle; }
 .custom-team-cell-value { white-space: pre-line; overflow-wrap: anywhere; }
+.markdown-content { overflow-wrap: anywhere; }
+.markdown-content > :first-child { margin-top: 0; }
+.markdown-content > :last-child { margin-bottom: 0; }
+.markdown-content p { margin-bottom: .65rem; }
+.markdown-content ul, .markdown-content ol { margin: 0 0 .65rem; padding-left: 1.4rem; }
+.markdown-content blockquote { margin: 0 0 .65rem; padding: .55rem .8rem; color: #52665f; background: #f2f6f3; border-left: 3px solid #7a9188; }
+.markdown-content h1, .markdown-content h2, .markdown-content h3 { margin: .85rem 0 .45rem; font-family: inherit; font-size: 1rem; font-weight: 700; }
+.markdown-content mark { padding: .08em .22em; color: inherit; background: #ffe89a; border-radius: 3px; }
+.markdown-content code { padding: .1em .3em; color: #7b2d21; background: #f3eeeb; border-radius: 3px; }
+.markdown-help { margin-top: .6rem; padding: .65rem .8rem; color: #52665f; background: #f6f8f6; border: 1px solid #d9e1dc; border-radius: 6px; font-size: .82rem; }
+.markdown-help summary { color: #36554d; font-weight: 700; cursor: pointer; }
+.markdown-help-grid { display: grid; grid-template-columns: minmax(180px, 1fr) minmax(140px, 1fr); gap: .35rem 1rem; margin: .7rem 0; }
+.markdown-help-grid > code { overflow-wrap: anywhere; color: #7b2d21; }
 .custom-team-row-missing > td { background: #fff8df; color: #68551a; }
 .stat-tiles { display: flex; flex-wrap: wrap; gap: 16px; padding: 20px 22px; }
 .stat-tile { flex: 1 1 160px; background: #edf2ee; border-radius: 8px; padding: 16px 18px; }

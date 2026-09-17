@@ -18,7 +18,10 @@ public interface ITeamConfigurationService
 public interface ITeamAchievementService
 {
     Task<IReadOnlyList<TeamAchievementDto>> GetAchievementsAsync(CancellationToken cancellationToken = default);
+    Task<TeamAchievementDto?> GetAchievementAsync(string id, CancellationToken cancellationToken = default);
     Task<TeamAchievementDto> AddAchievementAsync(TeamAchievementDto achievement, CancellationToken cancellationToken = default);
+    Task<TeamAchievementDto> SaveAchievementAsync(TeamAchievementDto achievement, CancellationToken cancellationToken = default);
+    Task DeleteAchievementAsync(string id, CancellationToken cancellationToken = default);
 }
 
 public interface IPageTextAppearanceService

@@ -206,8 +206,11 @@ else if (Model.ActiveSection == "achievements")
     <div class="team-config-panel row g-4">
         <div class="col-12 col-xl-5">
             <section class="content-section h-100 m-0">
-                <div class="section-heading"><div><span>Team history</span><h2>Add Achievement</h2></div></div>
+                <div class="section-heading">
+                    <div><span>Team history</span><h2>@(string.IsNullOrWhiteSpace(Model.AchievementForm.Id) ? "Add Achievement" : "Edit Achievement")</h2></div>
+                </div>
                 <form method="post" asp-page-handler="SaveAchievement" class="section-body">
+                    <input asp-for="AchievementForm.Id" type="hidden" />
                     <div asp-validation-summary="ModelOnly" class="text-danger mb-3"></div>
                     <div class="mb-3">
                         <label asp-for="AchievementForm.Title" class="form-label"></label>
@@ -226,10 +229,20 @@ else if (Model.ActiveSection == "achievements")
                     </div>
                     <div class="mb-3">
                         <label asp-for="AchievementForm.Description" class="form-label"></label>
-                        <textarea asp-for="AchievementForm.Description" class="form-control" rows="5" placeholder="Describe the achievement and its impact"></textarea>
+                        <textarea asp-for="AchievementForm.Description" class="form-control" rows="5" placeholder="Describe what the team achieved"></textarea>
                         <span asp-validation-for="AchievementForm.Description" class="text-danger"></span>
                     </div>
-                    <button type="submit" class="btn btn-primary">Add Achievement</button>
+                    <div class="mb-3">
+                        <label asp-for="AchievementForm.Impact" class="form-label"></label>
+                        <textarea asp-for="AchievementForm.Impact" class="form-control" rows="4" placeholder="Describe the value or outcome created by this achievement"></textarea>
+                        <span asp-validation-for="AchievementForm.Impact" class="text-danger"></span>
+                        <partial name="_MarkdownHelp" />
+                    </div>
+                    <button type="submit" class="btn btn-primary">@(string.IsNullOrWhiteSpace(Model.AchievementForm.Id) ? "Add Achievement" : "Save Changes")</button>
+                    @if (!string.IsNullOrWhiteSpace(Model.AchievementForm.Id))
+                    {
+                        <a class="btn btn-outline-secondary ms-1" asp-page="/Team/Configuration" asp-route-section="achievements">Cancel</a>
+                    }
                 </form>
             </section>
         </div>
@@ -252,8 +265,22 @@ else if (Model.ActiveSection == "achievements")
                                 <time datetime="@achievement.AchievedOn.ToString("yyyy-MM-dd")">@achievement.AchievedOn.ToString("dd MMM yyyy")</time>
                                 <div>
                                     <h3>@achievement.Title</h3>
-                                    <p>@achievement.Description</p>
+                                    <safe-markdown class="markdown-content" text="@achievement.Description"></safe-markdown>
+                                    @if (!string.IsNullOrWhiteSpace(achievement.Impact))
+                                    {
+                                        <div class="achievement-impact">
+                                            <span>Impact</span>
+                                            <safe-markdown class="markdown-content" text="@achievement.Impact"></safe-markdown>
+                                        </div>
+                                    }
                                     <strong>Achieved by @achievement.AchievedBy</strong>
+                                    <div class="achievement-admin-actions">
+                                        <a class="btn btn-sm btn-outline-primary" asp-page="/Team/Configuration" asp-route-section="achievements" asp-route-achievementId="@achievement.Id">Edit</a>
+                                        <form method="post" asp-page-handler="DeleteAchievement" class="d-inline">
+                                            <input type="hidden" name="achievementId" value="@achievement.Id" />
+                                            <button type="submit" class="btn btn-sm btn-outline-danger" onclick="return confirm('Delete this achievement permanently?')">Delete</button>
+                                        </form>
+                                    </div>
                                 </div>
                             </article>
                         }
