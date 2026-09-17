@@ -6,6 +6,8 @@ internal sealed class CustomTeamTabRecord
     public string Name { get; set; } = string.Empty;
     public string Slug { get; set; } = string.Empty;
     public int DisplayOrder { get; set; }
+    public string NavigationPlacement { get; set; } = CustomTeamTabPlacements.TeamSection;
+    public string PageWidth { get; set; } = CustomTeamPageWidths.Standard;
     public bool IsArchived { get; set; }
     public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow;
     public DateTime UpdatedAtUtc { get; set; } = DateTime.UtcNow;

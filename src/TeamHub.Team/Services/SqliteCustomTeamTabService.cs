@@ -17,7 +17,9 @@ internal sealed partial class SqliteCustomTeamTabService(TeamDbContext dbContext
                 Id = tab.Id.ToString(),
                 Name = tab.Name,
                 Slug = tab.Slug,
-                DisplayOrder = tab.DisplayOrder
+                DisplayOrder = tab.DisplayOrder,
+                NavigationPlacement = tab.NavigationPlacement,
+                PageWidth = tab.PageWidth
             })
             .ToListAsync(cancellationToken);
 
@@ -40,6 +42,8 @@ internal sealed partial class SqliteCustomTeamTabService(TeamDbContext dbContext
     public async Task<CustomTeamTabDto> SaveTabAsync(SaveCustomTeamTabRequest request, CancellationToken cancellationToken = default)
     {
         var name = Required(request.Name, "Tab name", 80);
+        var navigationPlacement = CustomTeamTabPlacements.Normalize(request.NavigationPlacement);
+        var pageWidth = CustomTeamPageWidths.Normalize(request.PageWidth);
         CustomTeamTabRecord? tab = null;
         if (Guid.TryParse(request.Id, out var tabId))
         {
@@ -55,6 +59,8 @@ internal sealed partial class SqliteCustomTeamTabService(TeamDbContext dbContext
 
         tab.Name = name;
         tab.DisplayOrder = Math.Max(0, request.DisplayOrder);
+        tab.NavigationPlacement = navigationPlacement;
+        tab.PageWidth = pageWidth;
         tab.UpdatedAtUtc = DateTime.UtcNow;
         await dbContext.SaveChangesAsync(cancellationToken);
         return (await GetTabByIdAsync(tab.Id.ToString(), cancellationToken))!;
@@ -789,7 +795,12 @@ internal sealed partial class SqliteCustomTeamTabService(TeamDbContext dbContext
 
     private static CustomTeamTabDto ToDto(CustomTeamTabRecord tab) => new()
     {
-        Id = tab.Id.ToString(), Name = tab.Name, Slug = tab.Slug, DisplayOrder = tab.DisplayOrder
+        Id = tab.Id.ToString(),
+        Name = tab.Name,
+        Slug = tab.Slug,
+        DisplayOrder = tab.DisplayOrder,
+        NavigationPlacement = tab.NavigationPlacement,
+        PageWidth = tab.PageWidth
     };
 
     private static CustomTeamColumnDto ToDto(CustomTeamColumnRecord column, string? primaryKeySourceHeader = null) => new()

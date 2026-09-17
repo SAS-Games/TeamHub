@@ -357,9 +357,11 @@ else
     <div class="team-config-panel row g-4">
         <div class="col-12 col-xl-4">
             <section class="content-section h-100 m-0">
-                <div class="section-heading"><div><span>Navigation</span><h2>Create Team Tab</h2></div></div>
+                <div class="section-heading"><div><span>Navigation</span><h2>Create configurable page</h2></div></div>
                 <form method="post" asp-page-handler="SaveCustomTab" class="section-body">
                     <div class="mb-3"><label class="form-label" for="new-tab-name">Tab name</label><input id="new-tab-name" name="name" class="form-control" maxlength="80" required /></div>
+                    <div class="mb-3"><label class="form-label" for="new-tab-placement">Navigation placement</label><select id="new-tab-placement" name="navigationPlacement" class="form-select"><option value="TeamSection">Team section</option><option value="MainNavigation">Main navigation</option></select><div class="form-text">Use Main navigation for pages such as FAQs, samples, or shared documentation.</div></div>
+                    <div class="mb-3"><label class="form-label" for="new-tab-width">Page width</label><select id="new-tab-width" name="pageWidth" class="form-select"><option value="Standard">Standard</option><option value="Wide">Wide</option><option value="Full">Full width</option></select><div class="form-text">Wide is recommended for tables with several columns.</div></div>
                     <div class="mb-3"><label class="form-label" for="new-tab-order">Display order</label><input id="new-tab-order" name="displayOrder" class="form-control" type="number" min="0" value="0" /></div>
                     <button class="btn btn-primary" type="submit">Create Tab</button>
                 </form>
@@ -367,7 +369,7 @@ else
                     @foreach (var tab in Model.CustomTabs)
                     {
                         <a class="list-group-item list-group-item-action @(Model.SelectedCustomTab?.Id == tab.Id ? "active" : "")" asp-page="/Team/Configuration" asp-route-section="custom-tabs" asp-route-customTabId="@tab.Id">
-                            <strong>@tab.Name</strong><small class="d-block opacity-75">/@tab.Slug</small>
+                            <strong>@tab.Name</strong><small class="d-block opacity-75">@(tab.NavigationPlacement == CustomTeamTabPlacements.MainNavigation ? "Main navigation" : "Team section") · @tab.PageWidth width · /@tab.Slug</small>
                         </a>
                     }
                 </div>
@@ -389,8 +391,10 @@ else
                     <div class="section-body">
                         <form method="post" asp-page-handler="SaveCustomTab" class="row g-2 align-items-end">
                             <input type="hidden" name="id" value="@selectedTab.Id" />
-                            <div class="col-md-7"><label class="form-label">Tab name</label><input name="name" class="form-control" maxlength="80" value="@selectedTab.Name" required /></div>
-                            <div class="col-md-3"><label class="form-label">Display order</label><input name="displayOrder" class="form-control" type="number" min="0" value="@selectedTab.DisplayOrder" /></div>
+                            <div class="col-md-4"><label class="form-label">Tab name</label><input name="name" class="form-control" maxlength="80" value="@selectedTab.Name" required /></div>
+                            <div class="col-md-3"><label class="form-label">Navigation placement</label><select name="navigationPlacement" class="form-select"><option value="TeamSection" selected="@(selectedTab.NavigationPlacement == CustomTeamTabPlacements.TeamSection)">Team section</option><option value="MainNavigation" selected="@(selectedTab.NavigationPlacement == CustomTeamTabPlacements.MainNavigation)">Main navigation</option></select></div>
+                            <div class="col-md-2"><label class="form-label">Page width</label><select name="pageWidth" class="form-select"><option value="Standard" selected="@(selectedTab.PageWidth == CustomTeamPageWidths.Standard)">Standard</option><option value="Wide" selected="@(selectedTab.PageWidth == CustomTeamPageWidths.Wide)">Wide</option><option value="Full" selected="@(selectedTab.PageWidth == CustomTeamPageWidths.Full)">Full</option></select></div>
+                            <div class="col-md-1"><label class="form-label">Order</label><input name="displayOrder" class="form-control" type="number" min="0" value="@selectedTab.DisplayOrder" /></div>
                             <div class="col-md-2"><button class="btn btn-outline-primary w-100" type="submit">Save</button></div>
                         </form>
                         <form method="post" asp-page-handler="ArchiveCustomTab" class="mt-3" onsubmit="return confirm('Archive this tab and hide it from users?')">
@@ -502,7 +506,7 @@ else
                         {
                             <div class="table-responsive">
                                 <table class="table styled-table align-middle mb-0">
-                                    <thead><tr><th>Column</th><th>Type</th><th>Required</th><th>Origin</th><th>Options</th><th></th></tr></thead>
+                                    <thead><tr><th>Column</th><th>Type</th><th>Required</th><th>Origin</th><th>Choice options</th><th></th></tr></thead>
                                     <tbody>
                                     @foreach (var column in table.Columns)
                                     {
@@ -523,13 +527,13 @@ else
                                                     <small class="d-block text-secondary mt-1">@column.Key</small>
                                                 }
                                             </td>
-                                            <td><select name="fieldType" form="@columnFormId" class="form-select form-select-sm">@foreach (var fieldType in Model.CustomFieldTypes) { <option value="@fieldType" selected="@(fieldType == column.FieldType)">@fieldType</option> }</select></td>
+                                            <td><select name="fieldType" form="@columnFormId" class="form-select form-select-sm" data-column-type data-choice-target="options-@column.Id">@foreach (var fieldType in Model.CustomFieldTypes) { <option value="@fieldType" selected="@(fieldType == column.FieldType)">@fieldType</option> }</select></td>
                                             <td><div class="form-check"><input class="form-check-input" type="checkbox" name="isRequired" value="true" form="@columnFormId" id="required-@column.Id" checked="@column.IsRequired" /><label class="form-check-label" for="required-@column.Id">Required</label></div></td>
                                             <td>
                                                 <span class="badge @(column.IsSourceColumn ? "text-bg-secondary" : "text-bg-success")">@(column.IsSourceColumn ? "Excel" : "Team Hub")</span>
                                                 @if (column.IsPrimaryKey) { <span class="badge text-bg-primary ms-1">Primary key</span> }
                                             </td>
-                                            <td><textarea name="options" form="@columnFormId" class="form-control form-control-sm" rows="2" placeholder="Required for Choice type">@string.Join(", ", column.Options)</textarea></td>
+                                            <td><div id="options-@column.Id" data-choice-options><textarea name="options" form="@columnFormId" class="form-control form-control-sm" rows="2">@string.Join(", ", column.Options)</textarea><small class="text-secondary" data-choice-options-help>Only used for Choice columns.</small></div></td>
                                             <td class="text-nowrap">
                                                 <button class="btn btn-sm btn-outline-primary" type="submit" form="@columnFormId">Save</button>
                                                 @if (!column.IsSourceColumn)
@@ -543,7 +547,7 @@ else
                                 </table>
                             </div>
                         }
-                        <form method="post" asp-page-handler="SaveCustomColumn" class="section-body bg-light-subtle">
+                        <form method="post" asp-page-handler="SaveCustomColumn" class="section-body bg-light-subtle" data-custom-column-form>
                             <input type="hidden" name="tabId" value="@selectedTab.Id" /><input type="hidden" name="tableId" value="@table.Id" />
                             <h3 class="h6">@(table.IsExcelBacked ? "Add Team Hub column" : "Add column")</h3>
                             @if (table.IsExcelBacked)
@@ -552,10 +556,10 @@ else
                             }
                             <div class="row g-2">
                                 <div class="col-md-4"><label class="form-label">Column label</label><input name="label" class="form-control form-control-sm" maxlength="80" required /></div>
-                                <div class="col-md-3"><label class="form-label">Type</label><select name="fieldType" class="form-select form-select-sm">@foreach (var fieldType in Model.CustomFieldTypes) { <option value="@fieldType">@fieldType</option> }</select></div>
+                                <div class="col-md-3"><label class="form-label">Type</label><select name="fieldType" class="form-select form-select-sm" data-column-type data-choice-target="new-options-@table.Id">@foreach (var fieldType in Model.CustomFieldTypes) { <option value="@fieldType">@fieldType</option> }</select></div>
                                 <div class="col-md-2"><label class="form-label">Order</label><input name="displayOrder" class="form-control form-control-sm" type="number" min="0" value="@table.Columns.Count" /></div>
                                 <div class="col-md-3 d-flex align-items-end"><div class="form-check mb-1"><input class="form-check-input" type="checkbox" name="isRequired" value="true" id="required-@table.Id" /><label class="form-check-label" for="required-@table.Id">Required</label></div></div>
-                                <div class="col-12"><label class="form-label">Choice options <span class="text-secondary">(comma or line separated)</span></label><textarea name="options" class="form-control form-control-sm" rows="2"></textarea></div>
+                                <div class="col-12" id="new-options-@table.Id" data-choice-options><label class="form-label">Choice options <span class="text-secondary">(comma or line separated)</span></label><textarea name="options" class="form-control form-control-sm" rows="2"></textarea><div class="form-text" data-choice-options-help>Choose the Choice type to configure allowed values.</div></div>
                             </div>
                             <button class="btn btn-sm btn-primary mt-3" type="submit">Add Team Hub Column</button>
                         </form>
@@ -625,6 +629,23 @@ else
                     button.disabled = false;
                 }
             });
+        });
+
+        document.querySelectorAll('[data-column-type]').forEach(type => {
+            const options = document.getElementById(type.dataset.choiceTarget);
+            if (!options) return;
+            const input = options.querySelector('textarea[name="options"]');
+            const help = options.querySelector('[data-choice-options-help]');
+            const refresh = () => {
+                const isChoice = type.value === 'Choice';
+                if (input) {
+                    input.hidden = !isChoice;
+                    input.disabled = !isChoice;
+                }
+                if (help) help.hidden = isChoice;
+            };
+            type.addEventListener('change', refresh);
+            refresh();
         });
     </script>
 }

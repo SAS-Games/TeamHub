@@ -357,6 +357,7 @@ public sealed class TeamDirectoryTests
 
             await using var verification = new SqliteConnection($"Data Source={dbPath}");
             await verification.OpenAsync();
+            (await ColumnNamesAsync(verification, "CustomTeamTabs")).Should().Contain(["NavigationPlacement", "PageWidth"]);
             (await ColumnNamesAsync(verification, "CustomTeamTables")).Should().Contain([
                 "SourceType", "SourceUrl", "SourceDriveId", "SourceItemId", "SourceDisplayName",
                 "SourceWorksheet", "SourceHeaderRow",
@@ -381,7 +382,12 @@ public sealed class TeamDirectoryTests
             await scope.ServiceProvider.GetRequiredService<ITeamDatabaseInitializer>().InitializeAsync();
             var tabs = scope.ServiceProvider.GetRequiredService<ICustomTeamTabService>();
 
-            var tab = await tabs.SaveTabAsync(new(null, "Support Metrics", 2));
+            var tab = await tabs.SaveTabAsync(new(
+                null,
+                "Support Metrics",
+                2,
+                CustomTeamTabPlacements.MainNavigation,
+                CustomTeamPageWidths.Wide));
             var table = await tabs.SaveTableAsync(new(tab.Id, null, "Weekly Metrics"));
             var status = await tabs.SaveColumnAsync(new(
                 table.Id, null, "Status", CustomTeamFieldTypes.Choice, true, ["Green", "Amber", "Red"]));
@@ -397,7 +403,9 @@ public sealed class TeamDirectoryTests
             var loaded = await tabs.GetTabAsync("support-metrics");
 
             loaded.Should().NotBeNull();
-            loaded!.Tables.Should().ContainSingle();
+            loaded!.NavigationPlacement.Should().Be(CustomTeamTabPlacements.MainNavigation);
+            loaded.PageWidth.Should().Be(CustomTeamPageWidths.Wide);
+            loaded.Tables.Should().ContainSingle();
             loaded.Tables[0].Columns.Should().HaveCount(2);
             loaded.Tables[0].Rows.Should().ContainSingle().Which.Values[status.Key].Should().Be("Green");
 

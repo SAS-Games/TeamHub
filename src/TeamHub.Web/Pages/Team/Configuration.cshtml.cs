@@ -244,11 +244,18 @@ public sealed class ConfigurationModel(
     }
 
     public async Task<IActionResult> OnPostSaveCustomTabAsync(
-        string? id, string name, int displayOrder, CancellationToken cancellationToken)
+        string? id,
+        string name,
+        int displayOrder,
+        string navigationPlacement,
+        string pageWidth,
+        CancellationToken cancellationToken)
     {
         try
         {
-            var saved = await customTabs.SaveTabAsync(new SaveCustomTeamTabRequest(id, name, displayOrder), cancellationToken);
+            var saved = await customTabs.SaveTabAsync(
+                new SaveCustomTeamTabRequest(id, name, displayOrder, navigationPlacement, pageWidth),
+                cancellationToken);
             await users.EnsureModulesAsync([CustomTeamTabAccess.ModuleForSlug(saved.Slug)], cancellationToken);
             StatusMessage = $"Team tab saved: {saved.Name}.";
             return CustomRedirect(saved.Id);
