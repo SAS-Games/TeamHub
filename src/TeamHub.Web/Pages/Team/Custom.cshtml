@@ -4,16 +4,20 @@
 @{
     ViewData["Title"] = Model.Tab.Name;
     ViewData["TeamTab"] = "Custom:" + Model.Tab.Slug;
+    ViewData["PageWidth"] = Model.Tab.PageWidth;
 }
 
 <div class="page-hero">
     <div>
-        <div class="eyebrow">Team</div>
+        <div class="eyebrow">@(Model.Tab.NavigationPlacement == CustomTeamTabPlacements.MainNavigation ? "Shared knowledge" : "Team")</div>
         <h1>@Model.Tab.Name</h1>
         <p>Shared team information maintained in configurable tables.</p>
     </div>
 </div>
-<partial name="_TeamNav" />
+@if (Model.Tab.NavigationPlacement == CustomTeamTabPlacements.TeamSection)
+{
+    <partial name="_TeamNav" />
+}
 
 @if (!string.IsNullOrWhiteSpace(Model.StatusMessage))
 {
@@ -32,6 +36,8 @@
 @foreach (var table in Model.Tab.Tables)
 {
     var localColumns = table.Columns.Where(column => !column.IsSourceColumn).ToList();
+    var showActions = Model.CanEdit
+        && (localColumns.Count > 0 || !table.IsExcelBacked || table.Rows.Any(row => row.IsMissingFromSource));
     <section class="content-section custom-team-table">
         <div class="section-heading">
             <div>
@@ -62,7 +68,7 @@
                         {
                             <th>@column.Label@if (column.IsRequired) { <span class="text-danger"> *</span> }@if (column.IsSourceColumn) { <span class="badge text-bg-light ms-1">Excel</span> }</th>
                         }
-                        @if (Model.CanEdit) { <th>Actions</th> }
+                        @if (showActions) { <th>Actions</th> }
                     </tr>
                 </thead>
                 <tbody>
@@ -95,7 +101,7 @@
                                 }
                             </td>
                         }
-                        @if (Model.CanEdit)
+                        @if (showActions)
                         {
                             <td class="text-nowrap">
                                 <form id="@rowFormId" method="post" asp-page-handler="SaveRow" asp-route-slug="@Model.Tab.Slug">

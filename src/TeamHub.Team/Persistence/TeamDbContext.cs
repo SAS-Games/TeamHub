@@ -101,6 +101,8 @@ internal sealed class TeamDbContext(DbContextOptions<TeamDbContext> options) : D
             entity.ToTable("CustomTeamTabs");
             entity.Property(x => x.Name).HasMaxLength(80);
             entity.Property(x => x.Slug).HasMaxLength(80);
+            entity.Property(x => x.NavigationPlacement).HasMaxLength(32);
+            entity.Property(x => x.PageWidth).HasMaxLength(16);
             entity.HasIndex(x => x.Slug).IsUnique();
         });
 

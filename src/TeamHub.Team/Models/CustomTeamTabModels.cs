@@ -1,5 +1,28 @@
 namespace TeamHub.Team;
 
+public static class CustomTeamTabPlacements
+{
+    public const string TeamSection = "TeamSection";
+    public const string MainNavigation = "MainNavigation";
+    public static IReadOnlyList<string> All { get; } = [TeamSection, MainNavigation];
+
+    public static string Normalize(string? value) => All.FirstOrDefault(
+        item => string.Equals(item, value?.Trim(), StringComparison.OrdinalIgnoreCase))
+        ?? throw new ArgumentException("Select a supported tab placement.", nameof(value));
+}
+
+public static class CustomTeamPageWidths
+{
+    public const string Standard = "Standard";
+    public const string Wide = "Wide";
+    public const string Full = "Full";
+    public static IReadOnlyList<string> All { get; } = [Standard, Wide, Full];
+
+    public static string Normalize(string? value) => All.FirstOrDefault(
+        item => string.Equals(item, value?.Trim(), StringComparison.OrdinalIgnoreCase))
+        ?? throw new ArgumentException("Select a supported page width.", nameof(value));
+}
+
 public static class CustomTeamFieldTypes
 {
     public const string Text = "Text";
@@ -47,6 +70,8 @@ public sealed class CustomTeamTabDto
     public string Name { get; set; } = string.Empty;
     public string Slug { get; set; } = string.Empty;
     public int DisplayOrder { get; set; }
+    public string NavigationPlacement { get; set; } = CustomTeamTabPlacements.TeamSection;
+    public string PageWidth { get; set; } = CustomTeamPageWidths.Standard;
     public IReadOnlyList<CustomTeamTableDto> Tables { get; set; } = [];
 }
 
@@ -106,7 +131,12 @@ public sealed class CustomTeamRowDto
     public bool IsMissingFromSource => SourceStatus == CustomTeamRowSourceStatuses.Missing;
 }
 
-public sealed record SaveCustomTeamTabRequest(string? Id, string Name, int DisplayOrder = 0);
+public sealed record SaveCustomTeamTabRequest(
+    string? Id,
+    string Name,
+    int DisplayOrder = 0,
+    string NavigationPlacement = CustomTeamTabPlacements.TeamSection,
+    string PageWidth = CustomTeamPageWidths.Standard);
 public sealed record SaveCustomTeamTableRequest(
     string TabId,
     string? Id,

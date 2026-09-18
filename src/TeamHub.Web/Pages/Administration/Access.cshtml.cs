@@ -71,7 +71,9 @@ public sealed class AccessModel(
     {
         var tabs = await customTabs.ListTabsAsync(cancellationToken);
         var dynamicModules = tabs
-            .Select(tab => new ModuleOption(CustomTeamTabAccess.ModuleForSlug(tab.Slug), $"Team - {tab.Name}"))
+            .Select(tab => new ModuleOption(
+                CustomTeamTabAccess.ModuleForSlug(tab.Slug),
+                $"{(tab.NavigationPlacement == CustomTeamTabPlacements.MainNavigation ? "Main" : "Team")} - {tab.Name}"))
             .ToList();
         await users.EnsureModulesAsync(dynamicModules.Select(item => item.Key).ToList(), cancellationToken);
 

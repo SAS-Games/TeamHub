@@ -12,8 +12,9 @@ internal sealed class ManagedExcelSourceFileStore(IConfiguration configuration) 
         CancellationToken cancellationToken = default)
     {
         var displayName = Path.GetFileName(fileName)?.Trim() ?? string.Empty;
-        if (displayName.Length == 0 || !displayName.EndsWith(".xlsx", StringComparison.OrdinalIgnoreCase))
-            throw new ArgumentException("Select an .xlsx Excel workbook.", nameof(fileName));
+        var extension = Path.GetExtension(displayName).ToLowerInvariant();
+        if (displayName.Length == 0 || extension is not (".xlsx" or ".xls"))
+            throw new ArgumentException("Select an .xls or .xlsx Excel workbook.", nameof(fileName));
         if (displayName.Length > 260)
             throw new ArgumentException("The Excel file name cannot exceed 260 characters.", nameof(fileName));
         if (length is <= 0 or > DirectDownloadExcelTableSourceReader.MaximumWorkbookBytes)
@@ -21,7 +22,7 @@ internal sealed class ManagedExcelSourceFileStore(IConfiguration configuration) 
 
         var root = ExcelWorkbookSourceStorage.UploadRoot(configuration);
         Directory.CreateDirectory(root);
-        var reference = $"{Guid.NewGuid():N}.xlsx";
+        var reference = $"{Guid.NewGuid():N}{extension}";
         var path = Path.Combine(root, reference);
         await using var destination = new FileStream(
             path,

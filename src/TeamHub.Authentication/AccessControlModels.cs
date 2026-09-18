@@ -59,6 +59,7 @@ public enum AccessLevel
 public sealed record AuthorizedUserRecord(
     Guid Id,
     string UserId,
+    string? Gid,
     string DisplayName,
     string UserType,
     bool IsActive,
@@ -69,12 +70,13 @@ public sealed record AuthorizedUserRecord(
 public sealed record SaveAuthorizedUserRequest(
     Guid? Id,
     string UserId,
+    string? Gid,
     string DisplayName,
     string UserType,
     bool IsActive,
     string? TemporaryPassword);
 
-public sealed record RegisterAuthorizedUserRequest(string UserId, string Password);
+public sealed record RegisterAuthorizedUserRequest(string Identifier, string Password);
 
 public sealed record RegistrationResult(bool Success, string Message);
 
@@ -86,8 +88,8 @@ public interface IUserAccessService
     Task InitializeAsync(CancellationToken cancellationToken = default);
     Task EnsureModulesAsync(IReadOnlyCollection<string> modules, CancellationToken cancellationToken = default);
     Task RemoveModulesAsync(IReadOnlyCollection<string> modules, CancellationToken cancellationToken = default);
-    Task<AuthorizedUserRecord?> ValidateCredentialsAsync(string userId, string password, CancellationToken cancellationToken = default);
-    Task<AuthorizedUserRecord?> FindActiveUserAsync(string userId, CancellationToken cancellationToken = default);
+    Task<AuthorizedUserRecord?> ValidateCredentialsAsync(string identifier, string password, CancellationToken cancellationToken = default);
+    Task<AuthorizedUserRecord?> FindActiveUserAsync(string identifier, CancellationToken cancellationToken = default);
     Task<RegistrationResult> RegisterAsync(RegisterAuthorizedUserRequest request, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<AuthorizedUserRecord>> ListUsersAsync(CancellationToken cancellationToken = default);
     Task<AuthorizedUserRecord?> GetUserAsync(Guid id, CancellationToken cancellationToken = default);

@@ -1,4 +1,6 @@
+using System.Globalization;
 using ClosedXML.Excel;
+using ExcelDataReader;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
@@ -66,6 +68,10 @@ internal sealed class ExcelMilestoneTrackerService(
         await using var workbookStream = await workbookSource.OpenAsync(
             CreateSourceRequest(settings),
             cancellationToken);
+        if (LegacyExcelWorkbook.IsLegacyBinary(workbookStream))
+        {
+            return ReadLegacyMilestones(workbookStream, cancellationToken);
+        }
         using var workbook = new XLWorkbook(workbookStream);
         var milestones = new List<MilestoneDto>();
         if (workbook.Worksheets.Count == 0)
@@ -120,6 +126,90 @@ internal sealed class ExcelMilestoneTrackerService(
         }
 
         return milestones;
+    }
+
+    private static IReadOnlyList<MilestoneDto> ReadLegacyMilestones(
+        Stream workbookStream,
+        CancellationToken cancellationToken)
+    {
+        using var reader = LegacyExcelWorkbook.Open(workbookStream);
+        var milestones = new List<MilestoneDto>();
+        do
+        {
+            Dictionary<string, int>? headers = null;
+            var currentSlNo = string.Empty;
+            var currentProgram = string.Empty;
+            var currentTitle = string.Empty;
+            var currentDeveloper = string.Empty;
+            while (reader.Read())
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                if (headers is null)
+                {
+                    headers = TryGetLegacyHeaderMap(reader);
+                    continue;
+                }
+
+                var slNo = LegacyText(reader, headers["Sl. No"]);
+                var program = LegacyText(reader, headers["Program"]);
+                var title = LegacyText(reader, headers["Title"]);
+                var developer = LegacyText(reader, headers["Developer"]);
+                var milestone = LegacyText(reader, headers["Milestone"]);
+                if (string.IsNullOrWhiteSpace(program) && string.IsNullOrWhiteSpace(milestone)) continue;
+
+                currentSlNo = string.IsNullOrWhiteSpace(slNo) ? currentSlNo : slNo;
+                currentProgram = string.IsNullOrWhiteSpace(program) ? currentProgram : program;
+                currentTitle = string.IsNullOrWhiteSpace(title) ? currentTitle : title;
+                currentDeveloper = string.IsNullOrWhiteSpace(developer) ? currentDeveloper : developer;
+                var rowNumber = reader.Depth + 1;
+                milestones.Add(new MilestoneDto
+                {
+                    SlNo = currentSlNo,
+                    Program = currentProgram,
+                    Title = currentTitle,
+                    Developer = currentDeveloper,
+                    Milestone = milestone,
+                    Description = LegacyText(reader, headers["Description"]),
+                    DeliveryDate = ParseLegacyDate(reader, headers["Delivery Date"], rowNumber, "Delivery Date"),
+                    MsApprovalDate = ParseLegacyDate(reader, headers["MS Approval Date"], rowNumber, "MS Approval Date"),
+                    ReleaseDate = ParseLegacyDate(reader, headers["Release Date"], rowNumber, "Release Date")
+                });
+            }
+        } while (reader.NextResult());
+        return milestones;
+    }
+
+    private static Dictionary<string, int>? TryGetLegacyHeaderMap(IExcelDataReader reader)
+    {
+        string[] requiredHeaders = ["Sl. No", "Program", "Title", "Developer", "Milestone", "Description", "Delivery Date", "MS Approval Date", "Release Date"];
+        var headers = Enumerable.Range(0, reader.FieldCount)
+            .Select(index => (Name: NormalizeHeader(LegacyExcelWorkbook.GetCellText(reader, index)), Index: index))
+            .Where(item => item.Name.Length > 0)
+            .GroupBy(item => item.Name, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(group => group.Key, group => group.First().Index, StringComparer.OrdinalIgnoreCase);
+        return requiredHeaders.All(headers.ContainsKey) ? headers : null;
+    }
+
+    private static string LegacyText(IExcelDataReader reader, int columnIndex) =>
+        LegacyExcelWorkbook.GetCellText(reader, columnIndex).Trim();
+
+    private static DateTime? ParseLegacyDate(
+        IExcelDataReader reader,
+        int columnIndex,
+        int rowNumber,
+        string field)
+    {
+        var value = reader.GetValue(columnIndex);
+        if (value is null or DBNull || string.IsNullOrWhiteSpace(value.ToString())) return null;
+        if (value is DateTime date) return date;
+        if (value is double serial)
+        {
+            try { return DateTime.FromOADate(serial); }
+            catch (ArgumentException) { }
+        }
+        if (DateTime.TryParse(value.ToString(), CultureInfo.InvariantCulture, DateTimeStyles.AllowWhiteSpaces, out var parsed))
+            return parsed;
+        throw new InvalidDataException($"Invalid {field} on row {rowNumber}.");
     }
 
     private static ExcelWorkbookSourceRequest CreateSourceRequest(MilestoneSourceSettings settings)

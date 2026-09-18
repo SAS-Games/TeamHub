@@ -22,7 +22,7 @@ public class LoginModel(IWorkflowAuthenticationService authenticationService) : 
 
         if (user is null)
         {
-            ErrorMessage = "Invalid username or password.";
+            ErrorMessage = "Invalid email, user ID, GID, or password.";
             return Page();
         }
 

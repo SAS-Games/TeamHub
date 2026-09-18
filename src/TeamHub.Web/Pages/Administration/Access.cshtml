@@ -110,7 +110,7 @@
                         @foreach (var user in Model.AuthorizedUsers)
                         {
                             <tr>
-                                <td><strong>@user.DisplayName</strong><small class="d-block text-secondary">@user.UserId</small></td>
+                                <td><strong>@user.DisplayName</strong><small class="d-block text-secondary">@user.UserId</small>@if (!string.IsNullOrWhiteSpace(user.Gid)) { <small class="d-block text-secondary">GID: @user.Gid</small> }</td>
                                 <td>@user.UserType</td>
                                 @foreach (var module in Model.CustomTabModules)
                                 {

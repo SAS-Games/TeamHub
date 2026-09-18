@@ -31,6 +31,9 @@ body {
   color: #18322d;
 }
 
+.teamhub-page-wide { width: min(calc(100% - 2rem), 1800px); margin-inline: auto; }
+.teamhub-page-full { width: 100%; padding-inline: 1.5rem; }
+
 .home-hero { position: relative; background-size: cover; background-position: center; min-height: 260px; display: flex; align-items: flex-end; overflow: hidden; border-radius: 8px; }
 .home-hero-overlay { background: rgba(10, 20, 40, 0.55); color: #fff; width: 100%; }
 
@@ -148,6 +151,7 @@ body {
 }
 
 @media (max-width: 700px) {
+  .teamhub-page-wide, .teamhub-page-full { width: 100%; padding-inline: .75rem; }
   .milestone-hero { align-items: start; flex-direction: column; }
   .milestone-date { text-align: left; }
   .section-heading, .roadmap-header { align-items: start; flex-direction: column; }

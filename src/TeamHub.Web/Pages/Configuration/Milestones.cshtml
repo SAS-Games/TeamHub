@@ -37,7 +37,7 @@
             <div class="col-12 milestone-source-fields" data-source="@ExcelWorkbookSourceTypes.LocalFile">
                 <label asp-for="Settings.ExcelPath" class="form-label">Excel file path</label>
                 <input asp-for="Settings.ExcelPath" class="form-control" maxlength="2048" />
-                <div class="form-text">Enter the path as seen by the TeamHub server, for example <code>config/MilestoneTracker.xlsx</code> or an absolute server path.</div>
+                <div class="form-text">Enter the path as seen by the TeamHub server, for example <code>config/MilestoneTracker.xlsx</code> or an absolute server path. Both .xls and .xlsx are supported.</div>
             </div>
 
             <div class="col-12 milestone-source-fields" data-sources="@ExcelWorkbookSourceTypes.ExcelUrl @ExcelWorkbookSourceTypes.MicrosoftGraphExcel">
@@ -54,8 +54,8 @@
                 <input type="hidden" name="Settings.SourceUrl" value="@Model.Settings.SourceUrl" />
                 <input type="hidden" name="Settings.SourceDisplayName" value="@Model.Settings.SourceDisplayName" />
                 <label asp-for="WorkbookFile" class="form-label">Milestone workbook</label>
-                <input asp-for="WorkbookFile" class="form-control" type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" />
-                <div class="form-text">Browse for an .xlsx file up to 25 MB. Current file: @(string.IsNullOrWhiteSpace(Model.Settings.SourceDisplayName) ? "No workbook uploaded" : Model.Settings.SourceDisplayName)</div>
+                <input asp-for="WorkbookFile" class="form-control" type="file" accept=".xls,.xlsx,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" />
+                <div class="form-text">Browse for an .xls or .xlsx file up to 25 MB. Current file: @(string.IsNullOrWhiteSpace(Model.Settings.SourceDisplayName) ? "No workbook uploaded" : Model.Settings.SourceDisplayName)</div>
             </div>
         </div>
     </section>

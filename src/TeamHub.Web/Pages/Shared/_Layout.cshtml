@@ -1,5 +1,6 @@
 @using Microsoft.Extensions.Options
 @using TeamHub.Studio
+@using TeamHub.Team
 @using TeamHub.Authentication
 @using TeamHub.Web.AccessControl
 @using TeamHub.Web.Navigation
@@ -7,6 +8,7 @@
 @inject IOptions<List<NavigationTabOptions>> NavigationTabsOptions
 @inject IOptions<ApplicationOptions> ApplicationOptions
 @inject IStudioDirectoryService StudioDirectoryService
+@inject ICustomTeamTabService CustomTabs
 @inject ICurrentAccessService CurrentAccess
 @{
     var applicationName = ApplicationOptions.Value.Name;
@@ -28,6 +30,29 @@
             navigationTabs.Add(tab);
         }
     }
+    var mainNavigationTabs = new List<CustomTeamTabDto>();
+    try
+    {
+        foreach (var tab in (await CustomTabs.ListTabsAsync(Context.RequestAborted))
+            .Where(tab => tab.NavigationPlacement == CustomTeamTabPlacements.MainNavigation)
+            .OrderBy(tab => tab.DisplayOrder)
+            .ThenBy(tab => tab.Name))
+        {
+            if (await CurrentAccess.CanAsync(CustomTeamTabAccess.ModuleForSlug(tab.Slug), AccessLevel.ReadOnly, Context.RequestAborted))
+            {
+                mainNavigationTabs.Add(tab);
+            }
+        }
+    }
+    catch
+    {
+        mainNavigationTabs = [];
+    }
+    var mainNavigationInsertPage = navigationTabs.Any(tab => string.Equals(tab.Page, "/Configuration/Index", StringComparison.OrdinalIgnoreCase))
+        ? "/Configuration/Index"
+        : navigationTabs.Any(tab => string.Equals(tab.Page, "/Logout", StringComparison.OrdinalIgnoreCase))
+            ? "/Logout"
+            : null;
     IReadOnlyList<StudioDetails> studioTabs = [];
     try
     {
@@ -45,6 +70,15 @@
         studioTabs = [];
     }
     var fullBleed = ViewData["FullBleed"] is true;
+    var pageWidth = ViewData["PageWidth"] as string;
+    var pageContainerClass = fullBleed
+        ? "container-fluid p-0"
+        : pageWidth switch
+        {
+            CustomTeamPageWidths.Wide => "teamhub-page-wide",
+            CustomTeamPageWidths.Full => "teamhub-page-full",
+            _ => "container"
+        };
 }
 <!DOCTYPE html>
 <html lang="en">
@@ -70,6 +104,13 @@
                     <ul class="navbar-nav flex-grow-1">
                         @foreach (var tab in navigationTabs)
                         {
+                            if (string.Equals(tab.Page, mainNavigationInsertPage, StringComparison.OrdinalIgnoreCase))
+                            {
+                                @foreach (var customTab in mainNavigationTabs)
+                                {
+                                    <li class="nav-item"><a class="nav-link text-dark" asp-page="/Team/Custom" asp-route-slug="@customTab.Slug">@customTab.Name</a></li>
+                                }
+                            }
                             if (string.Equals(tab.Page, "/Studio/Index", StringComparison.OrdinalIgnoreCase))
                             {
                                 <li class="nav-item dropdown">
@@ -109,6 +150,13 @@
                                 <li class="nav-item"><a class="nav-link text-dark" asp-page="@tab.Page">@tab.Name</a></li>
                             }
                         }
+                        @if (mainNavigationInsertPage is null)
+                        {
+                            @foreach (var customTab in mainNavigationTabs)
+                            {
+                                <li class="nav-item"><a class="nav-link text-dark" asp-page="/Team/Custom" asp-route-slug="@customTab.Slug">@customTab.Name</a></li>
+                            }
+                        }
                     </ul>
                     @if (User.Identity?.IsAuthenticated == true)
                     {
@@ -126,7 +174,7 @@
             </div>
         </nav>
     </header>
-    <div class="@(fullBleed ? "container-fluid p-0" : "container")">
+    <div class="@pageContainerClass">
         <main role="main" class="pb-3">
             @if (isReadOnlyPage && User.Identity?.IsAuthenticated == true)
             {

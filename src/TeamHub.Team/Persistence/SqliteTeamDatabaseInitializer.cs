@@ -94,6 +94,8 @@ internal sealed class SqliteTeamDatabaseInitializer(TeamDbContext dbContext) : I
                     Name TEXT NOT NULL,
                     Slug TEXT NOT NULL,
                     DisplayOrder INTEGER NOT NULL,
+                    NavigationPlacement TEXT NOT NULL DEFAULT 'TeamSection',
+                    PageWidth TEXT NOT NULL DEFAULT 'Standard',
                     IsArchived INTEGER NOT NULL,
                     CreatedAtUtc TEXT NOT NULL,
                     UpdatedAtUtc TEXT NOT NULL
@@ -166,6 +168,8 @@ internal sealed class SqliteTeamDatabaseInitializer(TeamDbContext dbContext) : I
                     ON CustomTeamRowAudits (RowId, CreatedAtUtc);
                 """, cancellationToken);
 
+            await AddColumnIfMissingAsync("CustomTeamTabs", "NavigationPlacement", "TEXT NOT NULL DEFAULT 'TeamSection'", cancellationToken);
+            await AddColumnIfMissingAsync("CustomTeamTabs", "PageWidth", "TEXT NOT NULL DEFAULT 'Standard'", cancellationToken);
             await AddColumnIfMissingAsync("CustomTeamTables", "SourceType", "TEXT NOT NULL DEFAULT 'Manual'", cancellationToken);
             await AddColumnIfMissingAsync("CustomTeamTables", "SourceUrl", "TEXT NULL", cancellationToken);
             await AddColumnIfMissingAsync("CustomTeamTables", "SourceDriveId", "TEXT NULL", cancellationToken);

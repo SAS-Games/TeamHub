@@ -10,6 +10,7 @@ public interface ICustomTeamTabService
     Task DeleteTabAsync(string id, CancellationToken cancellationToken = default);
     Task<CustomTeamTableDto> SaveTableAsync(SaveCustomTeamTableRequest request, CancellationToken cancellationToken = default);
     Task ArchiveTableAsync(string id, CancellationToken cancellationToken = default);
+    Task DeleteTableAsync(string id, CancellationToken cancellationToken = default);
     Task<CustomTeamColumnDto> SaveColumnAsync(SaveCustomTeamColumnRequest request, CancellationToken cancellationToken = default);
     Task ArchiveColumnAsync(string id, CancellationToken cancellationToken = default);
     Task<ExcelSchemaImportResult> ImportExcelSchemaAsync(string tableId, CancellationToken cancellationToken = default);
