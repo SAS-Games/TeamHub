@@ -1,14 +1,17 @@
 @page "/Configuration/Email"
 @model TeamHub.Web.Pages.Configuration.EmailModel
 @{
-    ViewData["Title"] = "Work Center Email Configuration";
+    ViewData["Title"] = "Email Sevice Configuration";
+    var passwordPlaceholder = Model.Settings.HasPassword
+        ? "Stored securely - leave blank to keep"
+        : "Enter SMTP password";
 }
 
 <div class="page-hero">
     <div>
         <div class="eyebrow">Configuration</div>
-        <h1>Work Center Email</h1>
-        <p>Configure secure SMTP delivery, notification templates, recipients, and retry behavior.</p>
+        <h1>Email Service</h1>
+        <p>Configure SMTP delivery for account invitations, password resets, workflow notifications, retries, and delivery history.</p>
     </div>
     <a class="btn btn-outline-secondary" asp-page="/Configuration/Index">All Configuration</a>
 </div>
@@ -35,7 +38,7 @@
             <div class="col-md-6"><label asp-for="Settings.FromAddress" class="form-label">From address</label><input asp-for="Settings.FromAddress" class="form-control" type="email" /></div>
             <div class="col-md-6">
                 <label asp-for="Password" class="form-label">Password</label>
-                <input asp-for="Password" class="form-control" autocomplete="new-password" placeholder="@(Model.Settings.HasPassword ? "Stored securely — leave blank to keep" : "Enter SMTP password")" />
+                <input asp-for="Password" class="form-control" autocomplete="new-password" placeholder="@passwordPlaceholder" />
                 <div class="form-text">The password is encrypted using TeamHub Data Protection and is never displayed again.</div>
             </div>
             <div class="col-md-3">
@@ -98,12 +101,19 @@
                 <tbody>
                 @foreach (var item in Model.History)
                 {
+                    var statusClass = item.Status switch
+                    {
+                        "Sent" => "success",
+                        "Failed" => "danger",
+                        "Pending" => "warning",
+                        _ => "secondary"
+                    };
                     <tr>
                         <td>@item.CreatedAtUtc.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</td>
                         <td>@item.Type</td>
                         <td>@item.Recipient</td>
                         <td>@item.Subject</td>
-                        <td><span class="badge text-bg-@(item.Status == "Sent" ? "success" : item.Status == "Failed" ? "danger" : item.Status == "Pending" ? "warning" : "secondary")">@item.Status</span></td>
+                        <td><span class="badge text-bg-@statusClass">@item.Status</span></td>
                         <td>@item.Attempts</td>
                         <td class="small text-secondary">@item.ErrorMessage</td>
                         <td>
