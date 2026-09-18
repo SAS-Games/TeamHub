@@ -39,12 +39,25 @@ internal sealed class AccessSettingEntity
     public string Value { get; set; } = string.Empty;
 }
 
+internal sealed class AccountTokenEntity
+{
+    public Guid Id { get; set; }
+    public Guid AuthorizedUserId { get; set; }
+    public string TokenHash { get; set; } = string.Empty;
+    public string Purpose { get; set; } = string.Empty;
+    public DateTime CreatedAtUtc { get; set; }
+    public DateTime ExpiresAtUtc { get; set; }
+    public DateTime? UsedAtUtc { get; set; }
+    public string? CreatedBy { get; set; }
+}
+
 internal sealed class AccessControlDbContext(DbContextOptions<AccessControlDbContext> options) : DbContext(options)
 {
     public DbSet<AuthorizedUserEntity> AuthorizedUsers => Set<AuthorizedUserEntity>();
     public DbSet<ModulePermissionEntity> ModulePermissions => Set<ModulePermissionEntity>();
     public DbSet<UserModulePermissionEntity> UserModulePermissions => Set<UserModulePermissionEntity>();
     public DbSet<AccessSettingEntity> Settings => Set<AccessSettingEntity>();
+    public DbSet<AccountTokenEntity> AccountTokens => Set<AccountTokenEntity>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -82,5 +95,18 @@ internal sealed class AccessControlDbContext(DbContextOptions<AccessControlDbCon
         setting.HasKey(item => item.Key);
         setting.Property(item => item.Key).HasMaxLength(100);
         setting.Property(item => item.Value).HasMaxLength(500);
+
+        var accountToken = modelBuilder.Entity<AccountTokenEntity>();
+        accountToken.ToTable("AccountTokens");
+        accountToken.HasKey(item => item.Id);
+        accountToken.Property(item => item.TokenHash).HasMaxLength(64).IsRequired();
+        accountToken.Property(item => item.Purpose).HasMaxLength(64).IsRequired();
+        accountToken.Property(item => item.CreatedBy).HasMaxLength(256);
+        accountToken.HasIndex(item => item.TokenHash).IsUnique();
+        accountToken.HasIndex(item => new { item.AuthorizedUserId, item.Purpose });
+        accountToken.HasOne<AuthorizedUserEntity>()
+            .WithMany()
+            .HasForeignKey(item => item.AuthorizedUserId)
+            .OnDelete(DeleteBehavior.Cascade);
     }
 }

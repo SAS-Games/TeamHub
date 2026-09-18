@@ -16,7 +16,7 @@ public sealed partial class TeamHubModuleCatalog : ITeamHubModuleCatalog
 {
     private static readonly HashSet<string> UnrestrictedPages = new(StringComparer.OrdinalIgnoreCase)
     {
-        "Login", "Logout", "Register", "AccessDenied", "Error"
+        "Login", "Logout", "Register", "AcceptInvitation", "ForgotPassword", "ResetPassword", "AccessDenied", "Error"
     };
 
     private readonly HashSet<string> modules = new(TeamHubModules.All, StringComparer.Ordinal);

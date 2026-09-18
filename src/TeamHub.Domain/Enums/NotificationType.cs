@@ -7,5 +7,7 @@ public enum NotificationType
     Overdue = 2,
     Escalation = 3,
     Completion = 4,
-    WorkflowCompleted = 5
+    WorkflowCompleted = 5,
+    AccountInvitation = 6,
+    PasswordReset = 7
 }

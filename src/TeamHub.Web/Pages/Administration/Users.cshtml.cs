@@ -2,12 +2,18 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
 using TeamHub.Authentication;
+using TeamHub.Application.Interfaces;
+using TeamHub.Domain.Enums;
 using TeamHub.Studio;
 
 namespace TeamHub.Web.Pages.Administration;
 
 [Authorize(Roles = TeamHubUserTypes.Admin)]
-public sealed class UsersModel(IUserAccessService users, IAtlassianConfigurationService atlassianConfiguration) : PageModel
+public sealed class UsersModel(
+    IUserAccessService users,
+    IAtlassianConfigurationService atlassianConfiguration,
+    INotificationService notifications,
+    IEmailNotificationConfigurationService emailConfiguration) : PageModel
 {
     public IReadOnlyList<AuthorizedUserRecord> AuthorizedUsers { get; private set; } = [];
     public IReadOnlyList<string> UserTypes { get; } =
@@ -91,6 +97,38 @@ public sealed class UsersModel(IUserAccessService users, IAtlassianConfiguration
             await users.DeleteUserAsync(id, User.Identity?.Name, cancellationToken);
             await atlassianConfiguration.DeleteUserTokensAsync(user.UserId, cancellationToken);
             StatusMessage = "Authorized user removed.";
+        }
+        catch (Exception exception) when (exception is InvalidOperationException or KeyNotFoundException)
+        {
+            StatusMessage = exception.Message;
+        }
+        return RedirectToPage();
+    }
+
+    public async Task<IActionResult> OnPostInviteAsync(Guid id, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var invitation = await users.CreatePrivilegedInvitationAsync(
+                id, User.Identity?.Name, cancellationToken);
+            var link = Url.Page(
+                "/AcceptInvitation",
+                pageHandler: null,
+                values: new { token = invitation.Token },
+                protocol: Request.Scheme);
+            if (string.IsNullOrWhiteSpace(link)) throw new InvalidOperationException("The invitation link could not be created.");
+            await notifications.SendAsync(new NotificationMessage
+            {
+                WorkflowInstanceId = Guid.Empty,
+                Type = NotificationType.AccountInvitation,
+                Recipient = invitation.Recipient,
+                Subject = "Your TeamHub Privileged account invitation",
+                Body = $"Hello {invitation.DisplayName},\n\nYou have been invited to TeamHub as a Privileged user. Set your password using this single-use link:\n\n{link}\n\nThis link expires on {invitation.ExpiresAt:dd MMM yyyy HH:mm} UTC. If you did not expect this invitation, ignore this email."
+            }, cancellationToken);
+            var emailSettings = await emailConfiguration.GetSettingsAsync(cancellationToken);
+            StatusMessage = emailSettings.Enabled
+                ? $"Invitation email queued for {invitation.Recipient}."
+                : "Invitation created, but email delivery is disabled. Enable SMTP email and send the invitation again.";
         }
         catch (Exception exception) when (exception is InvalidOperationException or KeyNotFoundException)
         {

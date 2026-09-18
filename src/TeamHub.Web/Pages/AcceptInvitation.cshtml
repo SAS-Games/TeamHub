@@ -1,0 +1,35 @@
+@page
+@model TeamHub.Web.Pages.AcceptInvitationModel
+@{
+    ViewData["Title"] = "Accept invitation";
+}
+
+<div class="container py-4">
+    <div class="card p-4 mx-auto" style="max-width: 480px;">
+        <div class="eyebrow">Privileged access</div>
+        <h1 class="h2 mb-2">Accept your TeamHub invitation</h1>
+        @if (!string.IsNullOrWhiteSpace(Model.Message))
+        {
+            <div class="alert @(Model.Success ? "alert-success" : "alert-danger")">@Model.Message</div>
+        }
+        @if (Model.Success)
+        {
+            <a class="btn btn-primary" asp-page="/Login">Continue to sign in</a>
+        }
+        else if (Model.IsValid)
+        {
+            <p class="text-secondary">Hello @Model.DisplayName. Choose a password with at least eight characters to activate your Privileged account.</p>
+            <form method="post">
+                <input asp-for="Token" type="hidden" />
+                <div class="mb-3"><label asp-for="Password" class="form-label">Password</label><input asp-for="Password" class="form-control" type="password" minlength="8" autocomplete="new-password" required /></div>
+                <div class="mb-3"><label asp-for="ConfirmPassword" class="form-label">Confirm password</label><input asp-for="ConfirmPassword" class="form-control" type="password" minlength="8" autocomplete="new-password" required /></div>
+                <button class="btn btn-primary" type="submit">Activate account</button>
+            </form>
+        }
+        else
+        {
+            <p class="text-secondary">Ask a TeamHub administrator to send a new invitation.</p>
+            <a class="btn btn-outline-primary" asp-page="/Login">Back to sign in</a>
+        }
+    </div>
+</div>

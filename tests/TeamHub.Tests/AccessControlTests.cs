@@ -70,6 +70,53 @@ public sealed class AccessControlTests
     }
 
     [Fact]
+    public async Task PrivilegedInvitation_IsSingleUseAndActivatesTheAccount()
+    {
+        await using var host = await AccessTestHost.CreateAsync();
+        using var scope = host.Services.CreateScope();
+        var users = scope.ServiceProvider.GetRequiredService<IUserAccessService>();
+        var privileged = await users.SaveUserAsync(new SaveAuthorizedUserRequest(
+            null, "privileged@example.com", "456789", "Privileged User",
+            TeamHubUserTypes.Privileged, true, null), "admin@example.com");
+
+        var first = await users.CreatePrivilegedInvitationAsync(privileged.Id, "admin@example.com");
+        var second = await users.CreatePrivilegedInvitationAsync(privileged.Id, "admin@example.com");
+
+        (await users.ValidateAccountTokenAsync(first.Token, AccountTokenPurposes.PrivilegedInvitation))
+            .IsValid.Should().BeFalse();
+        (await users.ValidateAccountTokenAsync(second.Token, AccountTokenPurposes.PrivilegedInvitation))
+            .IsValid.Should().BeTrue();
+        (await users.SetPasswordWithTokenAsync(
+            second.Token, AccountTokenPurposes.PrivilegedInvitation, "new-password-123")).Success.Should().BeTrue();
+        (await users.ValidateCredentialsAsync("456789", "new-password-123"))!.UserType
+            .Should().Be(TeamHubUserTypes.Privileged);
+        (await users.SetPasswordWithTokenAsync(
+            second.Token, AccountTokenPurposes.PrivilegedInvitation, "another-password")).Success.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task PasswordReset_ReplacesThePasswordWithoutRevealingUnknownUsers()
+    {
+        await using var host = await AccessTestHost.CreateAsync();
+        using var scope = host.Services.CreateScope();
+        var users = scope.ServiceProvider.GetRequiredService<IUserAccessService>();
+        await users.SaveUserAsync(new SaveAuthorizedUserRequest(
+            null, "reset@example.com", "987654", "Reset User",
+            TeamHubUserTypes.Registered, true, "old-password-123"), "admin@example.com");
+
+        (await users.CreatePasswordResetAsync("unknown@example.com")).Should().BeNull();
+        var reset = await users.CreatePasswordResetAsync("987654");
+        reset.Should().NotBeNull();
+        (await users.SetPasswordWithTokenAsync(
+            reset!.Token, AccountTokenPurposes.PasswordReset, "new-password-456")).Success.Should().BeTrue();
+
+        (await users.ValidateCredentialsAsync("reset@example.com", "old-password-123")).Should().BeNull();
+        (await users.ValidateCredentialsAsync("reset@example.com", "new-password-456")).Should().NotBeNull();
+        (await users.ValidateAccountTokenAsync(reset.Token, AccountTokenPurposes.PasswordReset))
+            .IsValid.Should().BeFalse();
+    }
+
+    [Fact]
     public async Task SaveUser_RequiresANumericUniqueGid()
     {
         await using var host = await AccessTestHost.CreateAsync();
@@ -232,6 +279,28 @@ public sealed class AccessControlTests
     }
 
     [Fact]
+    public async Task InitializeAsync_AddsAccountTokenSchemaToAnExistingAccessDatabase()
+    {
+        await using var host = await AccessTestHost.CreateAsync();
+        await using (var connection = new SqliteConnection($"Data Source={host.DatabasePath};Pooling=False"))
+        {
+            await connection.OpenAsync();
+            await using var command = connection.CreateCommand();
+            command.CommandText = "DROP TABLE AccountTokens;";
+            await command.ExecuteNonQueryAsync();
+        }
+
+        using var scope = host.Services.CreateScope();
+        await scope.ServiceProvider.GetRequiredService<IUserAccessService>().InitializeAsync();
+
+        await using var verification = new SqliteConnection($"Data Source={host.DatabasePath};Pooling=False");
+        await verification.OpenAsync();
+        await using var exists = verification.CreateCommand();
+        exists.CommandText = "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'AccountTokens';";
+        Convert.ToInt32(await exists.ExecuteScalarAsync()).Should().Be(1);
+    }
+
+    [Fact]
     public async Task RemoveModules_DeletesDynamicPermissionsButProtectsBuiltInModules()
     {
         await using var host = await AccessTestHost.CreateAsync();
@@ -260,6 +329,9 @@ public sealed class AccessControlTests
     [InlineData("/Studio/WeeklyUpdates", TeamHubModules.StudioSupport)]
     [InlineData("/Team/Custom/support-metrics", "Team Tab: support-metrics")]
     [InlineData("/Register", null)]
+    [InlineData("/AcceptInvitation", null)]
+    [InlineData("/ForgotPassword", null)]
+    [InlineData("/ResetPassword", null)]
     [InlineData("/Logout", null)]
     public void PageDiscovery_UsesFirstFolderAndPreservesSpecialModules(string pagePath, string? expected)
     {
