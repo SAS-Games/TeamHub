@@ -86,6 +86,8 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>@ViewData["Title"] - @applicationName</title>
+    <link rel="icon" type="image/svg+xml" href="~/images/teamhub-logo.svg" asp-append-version="true" />
+    <link rel="alternate icon" href="~/favicon.ico" />
     <script type="importmap"></script>
     <link rel="stylesheet" href="~/lib/bootstrap/dist/css/bootstrap.min.css" />
     <link rel="stylesheet" href="~/css/site.css" asp-append-version="true" />
@@ -96,6 +98,13 @@
     <header>
         <nav class="navbar navbar-expand-sm navbar-toggleable-sm navbar-light bg-white border-bottom box-shadow @(fullBleed ? "mb-0" : "mb-3")">
             <div class="container">
+                <a class="navbar-brand teamhub-navbar-brand" asp-page="/Index" aria-label="@applicationName Team Hub home">
+                    <img class="teamhub-navbar-logo" src="~/images/teamhub-logo.svg" alt="" aria-hidden="true" asp-append-version="true" />
+                    <span class="teamhub-navbar-brand-copy">
+                        <strong>@applicationName</strong>
+                        <span>Team Hub</span>
+                    </span>
+                </a>
                 <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target=".navbar-collapse" aria-controls="navbarSupportedContent"
                         aria-expanded="false" aria-label="Toggle navigation">
                     <span class="navbar-toggler-icon"></span>

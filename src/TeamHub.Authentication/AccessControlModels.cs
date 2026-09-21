@@ -80,6 +80,23 @@ public sealed record RegisterAuthorizedUserRequest(string Identifier, string Pas
 
 public sealed record RegistrationResult(bool Success, string Message);
 
+public static class AccountTokenPurposes
+{
+    public const string PrivilegedInvitation = "PrivilegedInvitation";
+    public const string PasswordReset = "PasswordReset";
+}
+
+public sealed record AccountTokenIssueResult(
+    string Token,
+    string Recipient,
+    string DisplayName,
+    DateTimeOffset ExpiresAt);
+
+public sealed record AccountTokenValidationResult(
+    bool IsValid,
+    string? DisplayName,
+    string Message);
+
 public sealed record ModulePermissionRecord(string Module, string UserType, AccessLevel AccessLevel);
 public sealed record UserModulePermissionRecord(Guid AuthorizedUserId, string Module, AccessLevel? AccessLevel);
 
@@ -91,6 +108,22 @@ public interface IUserAccessService
     Task<AuthorizedUserRecord?> ValidateCredentialsAsync(string identifier, string password, CancellationToken cancellationToken = default);
     Task<AuthorizedUserRecord?> FindActiveUserAsync(string identifier, CancellationToken cancellationToken = default);
     Task<RegistrationResult> RegisterAsync(RegisterAuthorizedUserRequest request, CancellationToken cancellationToken = default);
+    Task<AccountTokenIssueResult> CreatePrivilegedInvitationAsync(
+        Guid userId,
+        string? actorUserId,
+        CancellationToken cancellationToken = default);
+    Task<AccountTokenIssueResult?> CreatePasswordResetAsync(
+        string identifier,
+        CancellationToken cancellationToken = default);
+    Task<AccountTokenValidationResult> ValidateAccountTokenAsync(
+        string token,
+        string purpose,
+        CancellationToken cancellationToken = default);
+    Task<RegistrationResult> SetPasswordWithTokenAsync(
+        string token,
+        string purpose,
+        string password,
+        CancellationToken cancellationToken = default);
     Task<IReadOnlyList<AuthorizedUserRecord>> ListUsersAsync(CancellationToken cancellationToken = default);
     Task<AuthorizedUserRecord?> GetUserAsync(Guid id, CancellationToken cancellationToken = default);
     Task<AuthorizedUserRecord> SaveUserAsync(SaveAuthorizedUserRequest request, string? actorUserId, CancellationToken cancellationToken = default);

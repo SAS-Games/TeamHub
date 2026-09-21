@@ -40,6 +40,20 @@ dotnet run --project src/TeamHub.Web/TeamHub.Web.csproj
 4. Start workflow instances from Work Center.
 5. Complete tasks from My Tasks.
 
+## Windows Server hosting
+
+Run **Host-TeamHub.bat** on the target Windows server for interactive IIS
+hosting. It publishes or deploys Team Hub, preserves production data, configures
+the IIS site and application pool, binds an installed HTTPS certificate,
+initializes the first administrator, and optionally configures Microsoft Graph
+credentials.
+
+Run **Publish-TeamHub.bat** on a development machine to create a clean,
+timestamped deployment package that can be copied to the server.
+
+See **scripts/hosting/README.md** for prerequisites, prompted values, update
+behavior, and the current cross-server recovery limitation.
+
 ## Configuration file paths
 
 File paths configured for Home content and the initial Milestone workbook use portable `config/...` paths. Paths resolve to the nearest `config` directory at or above the application's content root, so local runs use the repository-level `config` directory directly. Absolute overrides are still supported.

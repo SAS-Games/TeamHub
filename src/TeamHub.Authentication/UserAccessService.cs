@@ -1,3 +1,6 @@
+using System.Net.Mail;
+using System.Security.Cryptography;
+using System.Text;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
@@ -19,6 +22,7 @@ internal sealed class UserAccessService(
         await context.Database.EnsureCreatedAsync(cancellationToken);
         await EnsureGidSchemaAsync(context, cancellationToken);
         await EnsureUserPermissionSchemaAsync(context, cancellationToken);
+        await EnsureAccountTokenSchemaAsync(context, cancellationToken);
         await MigrateStudioSupportPermissionsAsync(context, cancellationToken);
         await SeedPermissionsAsync(context, TeamHubModules.All, cancellationToken);
 
@@ -124,6 +128,93 @@ internal sealed class UserAccessService(
         return new(true, "Registration complete. You can now sign in.");
     }
 
+    public async Task<AccountTokenIssueResult> CreatePrivilegedInvitationAsync(
+        Guid userId, string? actorUserId, CancellationToken cancellationToken = default)
+    {
+        await using var context = await contextFactory.CreateDbContextAsync(cancellationToken);
+        var user = await context.AuthorizedUsers.SingleOrDefaultAsync(item => item.Id == userId, cancellationToken)
+            ?? throw new KeyNotFoundException("Authorized user was not found.");
+        if (!user.IsActive) throw new InvalidOperationException("Activate the user before sending an invitation.");
+        if (user.UserType != TeamHubUserTypes.Privileged)
+            throw new InvalidOperationException("Invitations are available only for Privileged users.");
+        if (user.IsRegistered && !string.IsNullOrWhiteSpace(user.PasswordHash))
+            throw new InvalidOperationException("This user already has a password. Use password reset instead.");
+        if (!TryGetEmail(user.UserId, out var recipient))
+            throw new InvalidOperationException("A valid email address is required before an invitation can be sent.");
+        return await CreateAccountTokenAsync(context, user, recipient,
+            AccountTokenPurposes.PrivilegedInvitation, DateTime.UtcNow.AddDays(7), actorUserId, cancellationToken);
+    }
+
+    public async Task<AccountTokenIssueResult?> CreatePasswordResetAsync(
+        string identifier, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(identifier)) return null;
+        await using var context = await contextFactory.CreateDbContextAsync(cancellationToken);
+        var user = await FindByIdentifierAsync(context, identifier, activeOnly: true, asNoTracking: false, cancellationToken);
+        if (user is null || !user.IsRegistered || string.IsNullOrWhiteSpace(user.PasswordHash)
+            || !TryGetEmail(user.UserId, out var recipient)) return null;
+        var recentRequestExists = await context.AccountTokens.AsNoTracking().AnyAsync(
+            item => item.AuthorizedUserId == user.Id
+                && item.Purpose == AccountTokenPurposes.PasswordReset
+                && item.UsedAtUtc == null
+                && item.ExpiresAtUtc > DateTime.UtcNow
+                && item.CreatedAtUtc > DateTime.UtcNow.AddMinutes(-5),
+            cancellationToken);
+        if (recentRequestExists) return null;
+        return await CreateAccountTokenAsync(context, user, recipient,
+            AccountTokenPurposes.PasswordReset, DateTime.UtcNow.AddHours(1), user.UserId, cancellationToken);
+    }
+
+    public async Task<AccountTokenValidationResult> ValidateAccountTokenAsync(
+        string token, string purpose, CancellationToken cancellationToken = default)
+    {
+        if (!IsKnownTokenPurpose(purpose) || string.IsNullOrWhiteSpace(token)) return InvalidTokenResult();
+        await using var context = await contextFactory.CreateDbContextAsync(cancellationToken);
+        var accountToken = await context.AccountTokens.AsNoTracking()
+            .SingleOrDefaultAsync(item => item.TokenHash == HashToken(token) && item.Purpose == purpose, cancellationToken);
+        if (accountToken is null || accountToken.UsedAtUtc.HasValue || accountToken.ExpiresAtUtc <= DateTime.UtcNow)
+            return InvalidTokenResult();
+        var user = await context.AuthorizedUsers.AsNoTracking()
+            .SingleOrDefaultAsync(item => item.Id == accountToken.AuthorizedUserId, cancellationToken);
+        return CanUseToken(user, purpose)
+            ? new(true, user!.DisplayName, string.Empty)
+            : InvalidTokenResult();
+    }
+
+    public async Task<RegistrationResult> SetPasswordWithTokenAsync(
+        string token, string purpose, string password, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrEmpty(password) || password.Length < 8)
+            return new(false, "Password must contain at least 8 characters.");
+        if (!IsKnownTokenPurpose(purpose) || string.IsNullOrWhiteSpace(token))
+            return new(false, "This link is invalid or has expired. Request a new link.");
+
+        await using var context = await contextFactory.CreateDbContextAsync(cancellationToken);
+        await using var transaction = await context.Database.BeginTransactionAsync(cancellationToken);
+        var accountToken = await context.AccountTokens
+            .SingleOrDefaultAsync(item => item.TokenHash == HashToken(token) && item.Purpose == purpose, cancellationToken);
+        if (accountToken is null || accountToken.UsedAtUtc.HasValue || accountToken.ExpiresAtUtc <= DateTime.UtcNow)
+            return new(false, "This link is invalid or has expired. Request a new link.");
+        var user = await context.AuthorizedUsers
+            .SingleOrDefaultAsync(item => item.Id == accountToken.AuthorizedUserId, cancellationToken);
+        if (!CanUseToken(user, purpose))
+            return new(false, "This link is invalid or has expired. Request a new link.");
+
+        var now = DateTime.UtcNow;
+        user!.PasswordHash = passwordHasher.HashPassword(user, password);
+        user.IsRegistered = true;
+        user.UpdatedAtUtc = now;
+        var outstandingTokens = await context.AccountTokens
+            .Where(item => item.AuthorizedUserId == user.Id && item.UsedAtUtc == null)
+            .ToListAsync(cancellationToken);
+        foreach (var outstandingToken in outstandingTokens) outstandingToken.UsedAtUtc = now;
+        await context.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+        return new(true, purpose == AccountTokenPurposes.PrivilegedInvitation
+            ? "Your Privileged account is ready. You can now sign in."
+            : "Your password has been reset. You can now sign in.");
+    }
+
     public async Task<IReadOnlyList<AuthorizedUserRecord>> ListUsersAsync(CancellationToken cancellationToken = default)
     {
         await using var context = await contextFactory.CreateDbContextAsync(cancellationToken);
@@ -199,6 +290,10 @@ internal sealed class UserAccessService(
         {
             entity.PasswordHash = passwordHasher.HashPassword(entity, request.TemporaryPassword);
             entity.IsRegistered = true;
+            var outstandingTokens = await context.AccountTokens
+                .Where(item => item.AuthorizedUserId == entity.Id && item.UsedAtUtc == null)
+                .ToListAsync(cancellationToken);
+            foreach (var outstandingToken in outstandingTokens) outstandingToken.UsedAtUtc = now;
         }
 
         await context.SaveChangesAsync(cancellationToken);
@@ -368,6 +463,28 @@ internal sealed class UserAccessService(
             );
             CREATE UNIQUE INDEX IF NOT EXISTS IX_UserModulePermissions_AuthorizedUserId_Module
                 ON UserModulePermissions (AuthorizedUserId, Module);
+            """, cancellationToken);
+    }
+
+    private static async Task EnsureAccountTokenSchemaAsync(
+        AccessControlDbContext context, CancellationToken cancellationToken)
+    {
+        await context.Database.ExecuteSqlRawAsync("""
+            CREATE TABLE IF NOT EXISTS AccountTokens (
+                Id TEXT NOT NULL CONSTRAINT PK_AccountTokens PRIMARY KEY,
+                AuthorizedUserId TEXT NOT NULL,
+                TokenHash TEXT NOT NULL,
+                Purpose TEXT NOT NULL,
+                CreatedAtUtc TEXT NOT NULL,
+                ExpiresAtUtc TEXT NOT NULL,
+                UsedAtUtc TEXT NULL,
+                CreatedBy TEXT NULL,
+                CONSTRAINT FK_AccountTokens_AuthorizedUsers_AuthorizedUserId
+                    FOREIGN KEY (AuthorizedUserId) REFERENCES AuthorizedUsers (Id) ON DELETE CASCADE
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS IX_AccountTokens_TokenHash ON AccountTokens (TokenHash);
+            CREATE INDEX IF NOT EXISTS IX_AccountTokens_AuthorizedUserId_Purpose
+                ON AccountTokens (AuthorizedUserId, Purpose);
             """, cancellationToken);
     }
 
@@ -541,6 +658,65 @@ internal sealed class UserAccessService(
         {
             if (shouldClose) await connection.CloseAsync();
         }
+    }
+
+    private static async Task<AccountTokenIssueResult> CreateAccountTokenAsync(
+        AccessControlDbContext context,
+        AuthorizedUserEntity user,
+        string recipient,
+        string purpose,
+        DateTime expiresAtUtc,
+        string? actorUserId,
+        CancellationToken cancellationToken)
+    {
+        var now = DateTime.UtcNow;
+        var previousTokens = await context.AccountTokens
+            .Where(item => item.AuthorizedUserId == user.Id && item.Purpose == purpose && item.UsedAtUtc == null)
+            .ToListAsync(cancellationToken);
+        foreach (var previousToken in previousTokens) previousToken.UsedAtUtc = now;
+        var rawToken = Convert.ToHexString(RandomNumberGenerator.GetBytes(32));
+        context.AccountTokens.Add(new AccountTokenEntity
+        {
+            Id = Guid.NewGuid(),
+            AuthorizedUserId = user.Id,
+            TokenHash = HashToken(rawToken),
+            Purpose = purpose,
+            CreatedAtUtc = now,
+            ExpiresAtUtc = expiresAtUtc,
+            CreatedBy = actorUserId?.Trim()
+        });
+        await context.SaveChangesAsync(cancellationToken);
+        return new(rawToken, recipient, user.DisplayName, new DateTimeOffset(expiresAtUtc, TimeSpan.Zero));
+    }
+
+    private static bool CanUseToken(AuthorizedUserEntity? user, string purpose)
+    {
+        if (user is null || !user.IsActive) return false;
+        if (purpose == AccountTokenPurposes.PrivilegedInvitation)
+            return user.UserType == TeamHubUserTypes.Privileged && !user.IsRegistered;
+        return purpose == AccountTokenPurposes.PasswordReset
+            && user.IsRegistered
+            && !string.IsNullOrWhiteSpace(user.PasswordHash);
+    }
+
+    private static AccountTokenValidationResult InvalidTokenResult() =>
+        new(false, null, "This link is invalid or has expired. Request a new link.");
+
+    private static bool IsKnownTokenPurpose(string purpose) =>
+        purpose is AccountTokenPurposes.PrivilegedInvitation or AccountTokenPurposes.PasswordReset;
+
+    private static string HashToken(string token) =>
+        Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(token.Trim())));
+
+    private static bool TryGetEmail(string value, out string email)
+    {
+        if (MailAddress.TryCreate(value?.Trim(), out var address) && address.Address.Contains('@'))
+        {
+            email = address.Address;
+            return true;
+        }
+        email = string.Empty;
+        return false;
     }
 
     private static AuthorizedUserRecord ToRecord(AuthorizedUserEntity entity) => new(

@@ -56,11 +56,15 @@
                         <tr>
                             <td><strong>@user.DisplayName</strong><div class="small text-secondary">@user.UserId</div>@if (!string.IsNullOrWhiteSpace(user.Gid)) { <div class="small text-secondary">GID: @user.Gid</div> }</td>
                             <td><span class="badge text-bg-light">@user.UserType</span></td>
-                            <td>@(user.IsRegistered ? "Ready to sign in" : user.UserType == TeamHub.Authentication.TeamHubUserTypes.Registered ? "Awaiting registration" : "Organization sign-in")</td>
+                            <td>@(user.IsRegistered ? "Ready to sign in" : user.UserType == TeamHub.Authentication.TeamHubUserTypes.Registered ? "Awaiting registration" : user.UserType == TeamHub.Authentication.TeamHubUserTypes.Privileged ? "Awaiting invitation" : "Password required")</td>
                             <td><span class="badge @(user.IsActive ? "text-bg-success" : "text-bg-secondary")">@(user.IsActive ? "Active" : "Inactive")</span></td>
                             <td>
                                 <div class="d-flex flex-wrap gap-1">
                                     <a class="btn btn-sm btn-outline-primary" asp-page="/Administration/Users" asp-route-editId="@user.Id">Edit</a>
+                                    @if (user.IsActive && !user.IsRegistered && user.UserType == TeamHub.Authentication.TeamHubUserTypes.Privileged)
+                                    {
+                                        <form method="post" asp-page-handler="Invite"><input type="hidden" name="id" value="@user.Id" /><button class="btn btn-sm btn-outline-success" type="submit">Send invitation</button></form>
+                                    }
                                     <form method="post" asp-page-handler="Toggle"><input type="hidden" name="id" value="@user.Id" /><input type="hidden" name="active" value="@(!user.IsActive)" /><button class="btn btn-sm btn-outline-secondary" type="submit">@(user.IsActive ? "Deactivate" : "Activate")</button></form>
                                     <form method="post" asp-page-handler="Delete" onsubmit="return confirm('Remove this user from TeamHub?');"><input type="hidden" name="id" value="@user.Id" /><button class="btn btn-sm btn-outline-danger" type="submit">Remove</button></form>
                                 </div>
