@@ -13,7 +13,7 @@ public sealed class EmailModel(
     INotificationService notifications) : PageModel
 {
     [BindProperty]
-    public EmailNotificationSettings Settings { get; set; } = new();
+    public EmailNotificationSettingsInput Settings { get; set; } = new();
 
     [BindProperty, DataType(DataType.Password)]
     public string? Password { get; set; }
@@ -35,14 +35,14 @@ public sealed class EmailModel(
     {
         if (!ModelState.IsValid)
         {
-            History = await configuration.GetDeliveryHistoryAsync(cancellationToken: cancellationToken);
+            await LoadInvalidSaveStateAsync(cancellationToken);
             return Page();
         }
         try
         {
             await configuration.SaveSettingsAsync(new SaveEmailNotificationSettingsRequest
             {
-                Settings = Settings,
+                Settings = Settings.ToSettings(),
                 Password = Password,
                 RemovePassword = RemovePassword
             }, cancellationToken);
@@ -50,7 +50,7 @@ public sealed class EmailModel(
         catch (ArgumentException exception)
         {
             ModelState.AddModelError(string.Empty, exception.Message);
-            History = await configuration.GetDeliveryHistoryAsync(cancellationToken: cancellationToken);
+            await LoadInvalidSaveStateAsync(cancellationToken);
             return Page();
         }
         StatusMessage = "Email configuration saved securely.";
@@ -84,7 +84,86 @@ public sealed class EmailModel(
 
     private async Task LoadAsync(CancellationToken cancellationToken)
     {
-        Settings = await configuration.GetSettingsAsync(cancellationToken);
+        Settings = EmailNotificationSettingsInput.FromSettings(
+            await configuration.GetSettingsAsync(cancellationToken));
         History = await configuration.GetDeliveryHistoryAsync(cancellationToken: cancellationToken);
     }
+
+    private async Task LoadInvalidSaveStateAsync(CancellationToken cancellationToken)
+    {
+        Settings.HasPassword = (await configuration.GetSettingsAsync(cancellationToken)).HasPassword;
+        History = await configuration.GetDeliveryHistoryAsync(cancellationToken: cancellationToken);
+    }
+}
+
+public sealed class EmailNotificationSettingsInput
+{
+    public bool Enabled { get; set; }
+    public string? Host { get; set; } = "smtp.office365.com";
+    public int? Port { get; set; } = 587;
+    public string? Username { get; set; }
+    public string? FromAddress { get; set; }
+    public bool UseSsl { get; set; } = true;
+    public bool HasPassword { get; set; }
+    public string? DefaultCc { get; set; }
+    public string? DefaultBcc { get; set; }
+    public string? CompletionRecipient { get; set; }
+    public int? MaxDeliveryAttempts { get; set; } = 3;
+    public int? RetryDelayMinutes { get; set; } = 5;
+    public string? AssignmentSubjectTemplate { get; set; } = "{Subject}";
+    public string? AssignmentBodyTemplate { get; set; } = "{Body}";
+    public string? ReminderSubjectTemplate { get; set; } = "{Subject}";
+    public string? ReminderBodyTemplate { get; set; } = "{Body}";
+    public string? EscalationSubjectTemplate { get; set; } = "{Subject}";
+    public string? EscalationBodyTemplate { get; set; } = "{Body}";
+    public string? CompletionSubjectTemplate { get; set; } = "{Subject}";
+    public string? CompletionBodyTemplate { get; set; } = "{Body}";
+
+    public EmailNotificationSettings ToSettings() => new()
+    {
+        Enabled = Enabled,
+        Host = Host ?? string.Empty,
+        Port = Port ?? 587,
+        Username = Username ?? string.Empty,
+        FromAddress = FromAddress ?? string.Empty,
+        UseSsl = UseSsl,
+        HasPassword = HasPassword,
+        DefaultCc = DefaultCc ?? string.Empty,
+        DefaultBcc = DefaultBcc ?? string.Empty,
+        CompletionRecipient = CompletionRecipient ?? string.Empty,
+        MaxDeliveryAttempts = MaxDeliveryAttempts ?? 3,
+        RetryDelayMinutes = RetryDelayMinutes ?? 5,
+        AssignmentSubjectTemplate = AssignmentSubjectTemplate ?? string.Empty,
+        AssignmentBodyTemplate = AssignmentBodyTemplate ?? string.Empty,
+        ReminderSubjectTemplate = ReminderSubjectTemplate ?? string.Empty,
+        ReminderBodyTemplate = ReminderBodyTemplate ?? string.Empty,
+        EscalationSubjectTemplate = EscalationSubjectTemplate ?? string.Empty,
+        EscalationBodyTemplate = EscalationBodyTemplate ?? string.Empty,
+        CompletionSubjectTemplate = CompletionSubjectTemplate ?? string.Empty,
+        CompletionBodyTemplate = CompletionBodyTemplate ?? string.Empty
+    };
+
+    public static EmailNotificationSettingsInput FromSettings(EmailNotificationSettings settings) => new()
+    {
+        Enabled = settings.Enabled,
+        Host = settings.Host,
+        Port = settings.Port,
+        Username = settings.Username,
+        FromAddress = settings.FromAddress,
+        UseSsl = settings.UseSsl,
+        HasPassword = settings.HasPassword,
+        DefaultCc = settings.DefaultCc,
+        DefaultBcc = settings.DefaultBcc,
+        CompletionRecipient = settings.CompletionRecipient,
+        MaxDeliveryAttempts = settings.MaxDeliveryAttempts,
+        RetryDelayMinutes = settings.RetryDelayMinutes,
+        AssignmentSubjectTemplate = settings.AssignmentSubjectTemplate,
+        AssignmentBodyTemplate = settings.AssignmentBodyTemplate,
+        ReminderSubjectTemplate = settings.ReminderSubjectTemplate,
+        ReminderBodyTemplate = settings.ReminderBodyTemplate,
+        EscalationSubjectTemplate = settings.EscalationSubjectTemplate,
+        EscalationBodyTemplate = settings.EscalationBodyTemplate,
+        CompletionSubjectTemplate = settings.CompletionSubjectTemplate,
+        CompletionBodyTemplate = settings.CompletionBodyTemplate
+    };
 }

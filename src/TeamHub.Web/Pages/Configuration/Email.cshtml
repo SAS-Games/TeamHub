@@ -1,7 +1,7 @@
 @page "/Configuration/Email"
 @model TeamHub.Web.Pages.Configuration.EmailModel
 @{
-    ViewData["Title"] = "Email Sevice Configuration";
+    ViewData["Title"] = "Email Service Configuration";
     var passwordPlaceholder = Model.Settings.HasPassword
         ? "Stored securely - leave blank to keep"
         : "Enter SMTP password";
@@ -55,9 +55,10 @@
     <section class="content-section">
         <div class="section-heading"><div><span>Recipients</span><h2>Delivery defaults</h2></div></div>
         <div class="section-body row g-3">
-            <div class="col-md-6"><label asp-for="Settings.DefaultCc" class="form-label">Default CC</label><input asp-for="Settings.DefaultCc" class="form-control" placeholder="name@company.com; another@company.com" /></div>
-            <div class="col-md-6"><label asp-for="Settings.DefaultBcc" class="form-label">Default BCC</label><input asp-for="Settings.DefaultBcc" class="form-control" /></div>
-            <div class="col-md-6"><label asp-for="Settings.CompletionRecipient" class="form-label">Workflow completion recipient</label><input asp-for="Settings.CompletionRecipient" class="form-control" placeholder="Leave blank to notify the final actor" /><div class="form-text">Accepts an email address or an active TeamHub user ID/display name whose User ID is an email.</div></div>
+            <div class="col-12"><div class="form-text mt-0">Recipient defaults are optional. Leave them blank to use only the notification's primary recipient.</div></div>
+            <div class="col-md-6"><label asp-for="Settings.DefaultCc" class="form-label">Default CC <span class="text-secondary">(optional)</span></label><input asp-for="Settings.DefaultCc" class="form-control" placeholder="name@company.com; another@company.com" /></div>
+            <div class="col-md-6"><label asp-for="Settings.DefaultBcc" class="form-label">Default BCC <span class="text-secondary">(optional)</span></label><input asp-for="Settings.DefaultBcc" class="form-control" /></div>
+            <div class="col-md-6"><label asp-for="Settings.CompletionRecipient" class="form-label">Workflow completion recipient <span class="text-secondary">(optional)</span></label><input asp-for="Settings.CompletionRecipient" class="form-control" placeholder="Leave blank to notify the final actor" /><div class="form-text">Accepts an email address or an active TeamHub user ID/display name whose User ID is an email.</div></div>
             <div class="col-md-3"><label asp-for="Settings.MaxDeliveryAttempts" class="form-label">Maximum attempts</label><input asp-for="Settings.MaxDeliveryAttempts" class="form-control" type="number" min="1" max="10" /></div>
             <div class="col-md-3"><label asp-for="Settings.RetryDelayMinutes" class="form-label">Retry delay (minutes)</label><input asp-for="Settings.RetryDelayMinutes" class="form-control" type="number" min="1" max="1440" /></div>
         </div>
