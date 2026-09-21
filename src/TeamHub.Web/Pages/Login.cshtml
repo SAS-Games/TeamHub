@@ -4,25 +4,30 @@
     ViewData["Title"] = "Login";
 }
 
-<partial name="_AuthenticationBrand" />
-<h1 class="mb-2">Sign in to TeamHub</h1>
-<p class="text-secondary mb-4">Only users authorized by a TeamHub administrator can sign in.</p>
+<div class="auth-page">
+    <div class="card auth-card">
+        <h1 class="h2 mb-2">Sign in to TeamHub</h1>
+        <p class="text-secondary mb-4">Only users authorized by a TeamHub administrator can sign in.</p>
 
-@if (!string.IsNullOrWhiteSpace(Model.ErrorMessage))
-{
-    <div class="alert alert-danger">@Model.ErrorMessage</div>
-}
+        @if (!string.IsNullOrWhiteSpace(Model.ErrorMessage))
+        {
+            <div class="alert alert-danger">@Model.ErrorMessage</div>
+        }
 
-<form method="post" class="card p-4" style="max-width: 420px;">
-    <div class="mb-3">
-        <label asp-for="Input.Username" class="form-label">Email / User ID / GID</label>
-        <input asp-for="Input.Username" class="form-control" autocomplete="username" required />
+        <form method="post">
+            <div class="mb-3">
+                <label asp-for="Input.Username" class="form-label">Email / User ID / GID</label>
+                <input asp-for="Input.Username" class="form-control" autocomplete="username" required />
+            </div>
+            <div class="mb-3">
+                <label asp-for="Input.Password" class="form-label">Password</label>
+                <input asp-for="Input.Password" type="password" class="form-control" autocomplete="current-password" required />
+            </div>
+            <div class="auth-actions">
+                <button type="submit" class="btn btn-primary">Sign in</button>
+                <a class="btn btn-link" asp-page="/Register">Register an authorized account</a>
+                <a class="btn btn-link" asp-page="/ForgotPassword">Forgot password?</a>
+            </div>
+        </form>
     </div>
-    <div class="mb-3">
-        <label asp-for="Input.Password" class="form-label">Password</label>
-        <input asp-for="Input.Password" type="password" class="form-control" autocomplete="current-password" required />
-    </div>
-    <button type="submit" class="btn btn-primary">Sign in</button>
-    <a class="btn btn-link" asp-page="/Register">Register an authorized account</a>
-    <a class="btn btn-link" asp-page="/ForgotPassword">Forgot password?</a>
-</form>
+</div>

@@ -4,9 +4,8 @@
     ViewData["Title"] = "Accept invitation";
 }
 
-<div class="container py-4">
-    <div class="card p-4 mx-auto" style="max-width: 480px;">
-        <partial name="_AuthenticationBrand" />
+<div class="auth-page">
+    <div class="card auth-card">
         <div class="eyebrow">Privileged access</div>
         <h1 class="h2 mb-2">Accept your TeamHub invitation</h1>
         @if (!string.IsNullOrWhiteSpace(Model.Message))

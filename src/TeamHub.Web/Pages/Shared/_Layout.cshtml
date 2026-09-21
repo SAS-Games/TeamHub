@@ -96,7 +96,7 @@
 </head>
 <body class="@(fullBleed ? "fd-host-designer-page" : null)">
     <header>
-        <nav class="navbar navbar-expand-sm navbar-toggleable-sm navbar-light bg-white border-bottom box-shadow @(fullBleed ? "mb-0" : "mb-3")">
+        <nav class="navbar navbar-expand-xxl navbar-light bg-white border-bottom box-shadow teamhub-navbar @(fullBleed ? "mb-0" : "mb-3")">
             <div class="container">
                 <a class="navbar-brand teamhub-navbar-brand" asp-page="/Index" aria-label="@applicationName Team Hub home">
                     <img class="teamhub-navbar-logo" src="~/images/teamhub-logo.svg" alt="" aria-hidden="true" asp-append-version="true" />
@@ -109,7 +109,7 @@
                         aria-expanded="false" aria-label="Toggle navigation">
                     <span class="navbar-toggler-icon"></span>
                 </button>
-                <div class="navbar-collapse collapse d-sm-inline-flex justify-content-between">
+                <div class="navbar-collapse collapse d-xxl-inline-flex justify-content-between">
                     <ul class="navbar-nav flex-grow-1">
                         @foreach (var tab in navigationTabs)
                         {
@@ -183,7 +183,7 @@
             </div>
         </nav>
     </header>
-    <div class="@pageContainerClass">
+    <div class="@pageContainerClass teamhub-page-frame">
         <main role="main" class="pb-3">
             @if (isReadOnlyPage && User.Identity?.IsAuthenticated == true)
             {

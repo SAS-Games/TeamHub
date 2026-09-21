@@ -26,9 +26,18 @@ html {
 }
 
 body {
-  margin-bottom: 60px;
+  min-height: 100vh;
+  min-height: 100dvh;
+  margin-bottom: 0;
+  display: flex;
+  flex-direction: column;
   background-color: var(--page-bg-color);
   color: #18322d;
+}
+
+.teamhub-page-frame {
+  flex: 1 1 auto;
+  min-height: 0;
 }
 
 .teamhub-navbar-brand {
@@ -54,8 +63,7 @@ body {
   object-fit: contain;
 }
 
-.teamhub-navbar-brand-copy,
-.teamhub-auth-brand-copy {
+.teamhub-navbar-brand-copy {
   display: flex;
   flex-direction: column;
   line-height: 1.05;
@@ -75,40 +83,28 @@ body {
   text-transform: uppercase;
 }
 
-.teamhub-auth-brand {
-  display: inline-flex;
+.auth-page {
+  display: flex;
+  width: 100%;
+  justify-content: center;
+  padding: clamp(1.5rem, 4vw, 3rem) 0;
+}
+
+.auth-card {
+  width: min(100%, 480px);
+  align-self: flex-start;
+  padding: clamp(1.25rem, 3vw, 2rem);
+}
+
+.auth-actions {
+  display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: .8rem;
-  margin-bottom: 1.25rem;
-  color: #18322d;
-  text-decoration: none;
+  gap: .25rem .5rem;
 }
 
-.teamhub-auth-brand:hover,
-.teamhub-auth-brand:focus {
-  color: #18322d;
-}
-
-.teamhub-auth-logo {
-  width: 52px;
-  height: 52px;
-  flex: 0 0 52px;
-  object-fit: contain;
-}
-
-.teamhub-auth-brand-copy strong {
-  font-family: Georgia, serif;
-  font-size: 1.35rem;
-  font-weight: 500;
-}
-
-.teamhub-auth-brand-copy span {
-  margin-top: .25rem;
-  color: #c05a35;
-  font-size: .7rem;
-  font-weight: 700;
-  letter-spacing: .09em;
-  text-transform: uppercase;
+.auth-actions .btn-link {
+  white-space: normal;
 }
 
 .teamhub-page-wide { width: min(calc(100% - 2rem), 1800px); margin-inline: auto; }
@@ -241,6 +237,22 @@ body {
   .achievement-item { grid-template-columns: 1fr; gap: 8px; }
   .roadmap-step { flex-basis: 190px; }
   .roadmap-step-top { align-items: start; flex-direction: column; gap: 2px; }
+}
+
+@media (min-width: 1400px) {
+  .teamhub-navbar .navbar-collapse,
+  .teamhub-navbar .navbar-nav {
+    min-width: 0;
+  }
+
+  .teamhub-navbar .navbar-nav {
+    flex-wrap: wrap;
+    row-gap: .15rem;
+  }
+
+  .teamhub-navbar .nav-link {
+    white-space: nowrap;
+  }
 }
 
 .form-floating > .form-control-plaintext::placeholder, .form-floating > .form-control::placeholder {
