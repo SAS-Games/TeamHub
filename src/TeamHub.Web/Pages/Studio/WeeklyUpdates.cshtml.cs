@@ -23,8 +23,11 @@ public sealed class WeeklyUpdatesModel(
     {
         Studios = (await studioDirectoryService.GetStudiosAsync(cancellationToken))
             .Where(studio => studio.IsActive)
-            .OrderBy(studio => studio.StudioGroup)
-            .ThenBy(studio => studio.StudioName)
+            .OrderBy(studio => studio.GroupDisplayOrder ?? int.MaxValue)
+            .ThenBy(studio => studio.StudioGroup, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(studio => studio.StudioDisplayOrder ?? int.MaxValue)
+            .ThenBy(studio => studio.StudioName, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(studio => studio.ProjectName, StringComparer.OrdinalIgnoreCase)
             .ToList();
         if (Studios.Count == 0)
         {
@@ -44,6 +47,14 @@ public sealed class WeeklyUpdatesModel(
                     StartDate = StartDate,
                     EndDate = EndDate
                 }, cancellationToken);
+            UpdateResult.Updates = UpdateResult.Updates
+                .OrderByDescending(update => update.WeekStart)
+                .ThenBy(update => FindStudio(update.StudioId)?.GroupDisplayOrder ?? int.MaxValue)
+                .ThenBy(update => GetStudioGroup(update.StudioId), StringComparer.OrdinalIgnoreCase)
+                .ThenBy(update => FindStudio(update.StudioId)?.StudioDisplayOrder ?? int.MaxValue)
+                .ThenBy(update => GetStudioName(update.StudioId), StringComparer.OrdinalIgnoreCase)
+                .ThenBy(update => FindStudio(update.StudioId)?.ProjectName ?? string.Empty, StringComparer.OrdinalIgnoreCase)
+                .ToList();
             return;
         }
 
