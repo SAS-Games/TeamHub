@@ -53,8 +53,10 @@ internal sealed class EmailNotificationConfigurationService :
             if (string.IsNullOrWhiteSpace(host)) throw new ArgumentException("SMTP host is required when email is enabled.");
             if (input.Port is < 1 or > 65535) throw new ArgumentException("SMTP port must be between 1 and 65535.");
             if (!IsEmail(fromAddress)) throw new ArgumentException("A valid From address is required when email is enabled.");
-            if (string.IsNullOrWhiteSpace(username)) throw new ArgumentException("SMTP username is required when email is enabled.");
-            if (!passwordWillExist) throw new ArgumentException("SMTP password is required when email is enabled.");
+            if (input.UseAuthentication && string.IsNullOrWhiteSpace(username))
+                throw new ArgumentException("SMTP username is required when authentication is enabled.");
+            if (input.UseAuthentication && !passwordWillExist)
+                throw new ArgumentException("SMTP password is required when authentication is enabled.");
         }
 
         ValidateEmailList(input.DefaultCc, "Default CC");
@@ -62,7 +64,7 @@ internal sealed class EmailNotificationConfigurationService :
         record.Enabled = input.Enabled;
         record.Host = host;
         record.Port = Math.Clamp(input.Port, 1, 65535);
-        record.Username = username;
+        record.Username = input.UseAuthentication ? username : string.Empty;
         record.FromAddress = fromAddress;
         record.UseSsl = input.UseSsl;
         record.DefaultCc = input.DefaultCc?.Trim() ?? string.Empty;
@@ -78,7 +80,7 @@ internal sealed class EmailNotificationConfigurationService :
         record.EscalationBodyTemplate = Template(input.EscalationBodyTemplate, "{Body}");
         record.CompletionSubjectTemplate = Template(input.CompletionSubjectTemplate, "{Subject}");
         record.CompletionBodyTemplate = Template(input.CompletionBodyTemplate, "{Body}");
-        if (request.RemovePassword) record.PasswordProtected = null;
+        if (!input.UseAuthentication || request.RemovePassword) record.PasswordProtected = null;
         else if (!string.IsNullOrWhiteSpace(request.Password)) record.PasswordProtected = protector.Protect(request.Password);
         record.UpdatedAtUtc = DateTime.UtcNow;
         await dbContext.SaveChangesAsync(cancellationToken);
@@ -132,6 +134,7 @@ internal sealed class EmailNotificationConfigurationService :
         Enabled = record.Enabled,
         Host = record.Host,
         Port = record.Port,
+        UseAuthentication = !string.IsNullOrWhiteSpace(record.Username),
         Username = record.Username,
         FromAddress = record.FromAddress,
         UseSsl = record.UseSsl,

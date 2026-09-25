@@ -33,6 +33,52 @@ public sealed class EmailNotificationTests
     }
 
     [Fact]
+    public async Task RelaySettings_DoNotRequireOrRetainCredentials()
+    {
+        await using var context = CreateDbContext();
+        var service = new EmailNotificationConfigurationService(context, new EphemeralDataProtectionProvider());
+        var authenticated = ValidSettings();
+        await service.SaveSettingsAsync(new SaveEmailNotificationSettingsRequest
+        {
+            Settings = authenticated,
+            Password = "smtp-secret-value"
+        });
+
+        authenticated.Host = "mrelay.noc.sony.co.jp";
+        authenticated.Port = 25;
+        authenticated.UseAuthentication = false;
+        authenticated.UseSsl = false;
+        await service.SaveSettingsAsync(new SaveEmailNotificationSettingsRequest { Settings = authenticated });
+
+        var stored = await context.EmailNotificationSettings.SingleAsync();
+        stored.Username.Should().BeEmpty();
+        stored.PasswordProtected.Should().BeNull();
+        var returned = await service.GetSettingsAsync();
+        returned.UseAuthentication.Should().BeFalse();
+        returned.HasPassword.Should().BeFalse();
+    }
+
+    [Fact]
+    public void RelayClient_UsesPlainSmtpWithoutAnyCredentials()
+    {
+        var settings = new EmailNotificationSettings
+        {
+            Host = "mrelay.noc.sony.co.jp",
+            Port = 25,
+            UseAuthentication = false,
+            UseSsl = false
+        };
+
+        using var client = SmtpEmailOutboxProcessor.CreateClient(settings, string.Empty);
+
+        client.Host.Should().Be("mrelay.noc.sony.co.jp");
+        client.Port.Should().Be(25);
+        client.EnableSsl.Should().BeFalse();
+        client.UseDefaultCredentials.Should().BeFalse();
+        client.Credentials.Should().BeNull();
+    }
+
+    [Fact]
     public async Task Notification_IsResolvedTemplatedAndStoredInDurableOutbox()
     {
         await using var context = CreateDbContext();
@@ -101,8 +147,41 @@ public sealed class EmailNotificationTests
 
         await new WorkflowDatabaseInitializer(context).InitializeAsync();
 
-        (await context.EmailNotificationSettings.SingleAsync()).Host.Should().Be("smtp.office365.com");
+        var settings = await context.EmailNotificationSettings.SingleAsync();
+        settings.Host.Should().Be("mrelay.noc.sony.co.jp");
+        settings.Port.Should().Be(25);
+        settings.UseSsl.Should().BeFalse();
         (await context.NotificationOutbox.CountAsync()).Should().Be(0);
+    }
+
+    [Fact]
+    public async Task DatabaseInitializer_MigratesLegacyOffice365SettingsToRelay()
+    {
+        var options = new DbContextOptionsBuilder<WorkflowDbContext>()
+            .UseSqlite("Data Source=:memory:")
+            .Options;
+        await using var context = new WorkflowDbContext(options);
+        await context.Database.OpenConnectionAsync();
+        await new WorkflowDatabaseInitializer(context).InitializeAsync();
+        var settings = await context.EmailNotificationSettings.SingleAsync();
+        settings.Host = "smtp.office365.com";
+        settings.Port = 587;
+        settings.Username = "sender@example.com";
+        settings.PasswordProtected = "protected-value";
+        settings.FromAddress = "sender@example.com";
+        settings.UseSsl = true;
+        await context.SaveChangesAsync();
+
+        await new WorkflowDatabaseInitializer(context).InitializeAsync();
+        context.ChangeTracker.Clear();
+
+        settings = await context.EmailNotificationSettings.SingleAsync();
+        settings.Host.Should().Be("mrelay.noc.sony.co.jp");
+        settings.Port.Should().Be(25);
+        settings.Username.Should().BeEmpty();
+        settings.PasswordProtected.Should().BeNull();
+        settings.FromAddress.Should().Be("sender@example.com");
+        settings.UseSsl.Should().BeFalse();
     }
 
     private static WorkflowDbContext CreateDbContext() => new(
@@ -115,6 +194,7 @@ public sealed class EmailNotificationTests
         Enabled = true,
         Host = "smtp.example.com",
         Port = 587,
+        UseAuthentication = true,
         Username = "sender@example.com",
         FromAddress = "sender@example.com",
         UseSsl = true

@@ -16,6 +16,7 @@ public sealed class EmailConfigurationPageTests
             Enabled = true,
             Host = "smtp.saved.example",
             Port = 2525,
+            UseAuthentication = true,
             Username = "saved-user",
             FromAddress = "teamhub@example.com",
             HasPassword = true,
@@ -31,6 +32,7 @@ public sealed class EmailConfigurationPageTests
 
         model.Settings.Host.Should().Be("smtp.saved.example");
         model.Settings.Port.Should().Be(2525);
+        model.Settings.UseAuthentication.Should().BeTrue();
         model.Settings.Username.Should().Be("saved-user");
         model.Settings.FromAddress.Should().Be("teamhub@example.com");
         model.Settings.HasPassword.Should().BeTrue();

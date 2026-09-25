@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Mail;
+using System.Text;
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -110,17 +111,14 @@ internal sealed class SmtpEmailOutboxProcessor(
             await dbContext.SaveChangesAsync(cancellationToken);
             try
             {
-                using var client = new SmtpClient(settings.Host, settings.Port)
-                {
-                    EnableSsl = settings.UseSsl,
-                    Credentials = new NetworkCredential(settings.Username, password),
-                    DeliveryMethod = SmtpDeliveryMethod.Network
-                };
+                using var client = CreateClient(settings, password);
                 using var mail = new MailMessage
                 {
                     From = new MailAddress(settings.FromAddress),
                     Subject = item.Subject,
                     Body = item.Body,
+                    SubjectEncoding = Encoding.UTF8,
+                    BodyEncoding = Encoding.UTF8,
                     IsBodyHtml = false
                 };
                 mail.To.Add(item.Recipient);
@@ -152,6 +150,19 @@ internal sealed class SmtpEmailOutboxProcessor(
             await dbContext.SaveChangesAsync(cancellationToken);
         }
         return sent;
+    }
+
+    internal static SmtpClient CreateClient(EmailNotificationSettings settings, string password)
+    {
+        var client = new SmtpClient(settings.Host, settings.Port)
+        {
+            EnableSsl = settings.UseSsl,
+            DeliveryMethod = SmtpDeliveryMethod.Network,
+            UseDefaultCredentials = false
+        };
+        if (settings.UseAuthentication)
+            client.Credentials = new NetworkCredential(settings.Username, password);
+        return client;
     }
 
     private void AddLog(NotificationOutboxItem item, bool succeeded, string? error) =>

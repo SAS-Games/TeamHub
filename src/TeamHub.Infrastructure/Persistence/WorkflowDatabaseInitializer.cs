@@ -45,9 +45,19 @@ internal sealed class WorkflowDatabaseInitializer(WorkflowDbContext dbContext) :
                 ReminderBodyTemplate, EscalationSubjectTemplate, EscalationBodyTemplate,
                 CompletionSubjectTemplate, CompletionBodyTemplate, UpdatedAtUtc)
             VALUES (
-                1, 0, 'smtp.office365.com', 587, '', NULL, '', 1,
+                1, 0, 'mrelay.noc.sony.co.jp', 25, '', NULL, '', 0,
                 '', '', '', 3, 5, '{{Subject}}', '{{Body}}', '{{Subject}}', '{{Body}}',
                 '{{Subject}}', '{{Body}}', '{{Subject}}', '{{Body}}', CURRENT_TIMESTAMP);
+
+            UPDATE EmailNotificationSettings
+            SET Host = 'mrelay.noc.sony.co.jp',
+                Port = 25,
+                Username = '',
+                PasswordProtected = NULL,
+                UseSsl = 0,
+                UpdatedAtUtc = CURRENT_TIMESTAMP
+            WHERE lower(trim(Host)) = 'smtp.office365.com'
+                AND Port = 587;
 
             CREATE TABLE IF NOT EXISTS NotificationOutbox (
                 Id TEXT NOT NULL CONSTRAINT PK_NotificationOutbox PRIMARY KEY,

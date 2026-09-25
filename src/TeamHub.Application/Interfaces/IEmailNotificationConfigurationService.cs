@@ -5,11 +5,12 @@ namespace TeamHub.Application.Interfaces;
 public sealed class EmailNotificationSettings
 {
     public bool Enabled { get; set; }
-    public string Host { get; set; } = "smtp.office365.com";
-    public int Port { get; set; } = 587;
+    public string Host { get; set; } = "mrelay.noc.sony.co.jp";
+    public int Port { get; set; } = 25;
+    public bool UseAuthentication { get; set; }
     public string Username { get; set; } = string.Empty;
     public string FromAddress { get; set; } = string.Empty;
-    public bool UseSsl { get; set; } = true;
+    public bool UseSsl { get; set; }
     public bool HasPassword { get; set; }
     public string DefaultCc { get; set; } = string.Empty;
     public string DefaultBcc { get; set; } = string.Empty;
