@@ -4,12 +4,12 @@ public sealed class EmailNotificationSettingsRecord
 {
     public int Id { get; set; } = 1;
     public bool Enabled { get; set; }
-    public string Host { get; set; } = "smtp.office365.com";
-    public int Port { get; set; } = 587;
+    public string Host { get; set; } = "mrelay.noc.sony.co.jp";
+    public int Port { get; set; } = 25;
     public string Username { get; set; } = string.Empty;
     public string? PasswordProtected { get; set; }
     public string FromAddress { get; set; } = string.Empty;
-    public bool UseSsl { get; set; } = true;
+    public bool UseSsl { get; set; }
     public string DefaultCc { get; set; } = string.Empty;
     public string DefaultBcc { get; set; } = string.Empty;
     public string CompletionRecipient { get; set; } = string.Empty;

@@ -4,7 +4,7 @@
     ViewData["Title"] = "Email Service Configuration";
     var passwordPlaceholder = Model.Settings.HasPassword
         ? "Stored securely - leave blank to keep"
-        : "Enter SMTP password";
+        : "Only required when authentication is enabled";
 }
 
 <div class="page-hero">
@@ -34,18 +34,24 @@
             </div>
             <div class="col-md-8"><label asp-for="Settings.Host" class="form-label">SMTP host</label><input asp-for="Settings.Host" class="form-control" /></div>
             <div class="col-md-4"><label asp-for="Settings.Port" class="form-label">Port</label><input asp-for="Settings.Port" class="form-control" type="number" min="1" max="65535" /></div>
-            <div class="col-md-6"><label asp-for="Settings.Username" class="form-label">Username</label><input asp-for="Settings.Username" class="form-control" autocomplete="off" /></div>
-            <div class="col-md-6"><label asp-for="Settings.FromAddress" class="form-label">From address</label><input asp-for="Settings.FromAddress" class="form-control" type="email" /></div>
-            <div class="col-md-6">
-                <label asp-for="Password" class="form-label">Password</label>
-                <input asp-for="Password" class="form-control" autocomplete="new-password" placeholder="@passwordPlaceholder" />
-                <div class="form-text">The password is encrypted using TeamHub Data Protection and is never displayed again.</div>
+            <div class="col-md-6"><label asp-for="Settings.FromAddress" class="form-label">From address</label><input asp-for="Settings.FromAddress" class="form-control" type="email" /><div class="form-text">Use the same sender address accepted by the SMTP relay.</div></div>
+            <div class="col-md-3">
+                <label class="form-label">Authentication</label>
+                <div class="form-check mt-2"><input asp-for="Settings.UseAuthentication" class="form-check-input" /><label asp-for="Settings.UseAuthentication" class="form-check-label">Use SMTP authentication</label></div>
+                <div class="form-text">Leave off for the internal Sony relay.</div>
             </div>
             <div class="col-md-3">
                 <label class="form-label">Transport</label>
-                <div class="form-check mt-2"><input asp-for="Settings.UseSsl" class="form-check-input" /><label asp-for="Settings.UseSsl" class="form-check-label">Use SSL/TLS</label></div>
+                <div class="form-check mt-2"><input asp-for="Settings.UseSsl" class="form-check-input" /><label asp-for="Settings.UseSsl" class="form-check-label">Use STARTTLS</label></div>
+                <div class="form-text">Leave off for the port 25 relay shown in the working script.</div>
             </div>
-            <div class="col-md-3">
+            <div class="col-md-6"><label asp-for="Settings.Username" class="form-label">Username <span class="text-secondary">(authenticated SMTP only)</span></label><input asp-for="Settings.Username" class="form-control" autocomplete="off" /></div>
+            <div class="col-md-6">
+                <label asp-for="Password" class="form-label">Password <span class="text-secondary">(authenticated SMTP only)</span></label>
+                <input asp-for="Password" class="form-control" autocomplete="new-password" placeholder="@passwordPlaceholder" />
+                <div class="form-text">The password is encrypted using TeamHub Data Protection and is never displayed again.</div>
+            </div>
+            <div class="col-md-6">
                 <label class="form-label">Stored credential</label>
                 <div class="form-check mt-2"><input asp-for="RemovePassword" class="form-check-input" /><label asp-for="RemovePassword" class="form-check-label">Remove password</label></div>
             </div>

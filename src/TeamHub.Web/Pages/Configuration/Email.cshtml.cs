@@ -99,11 +99,12 @@ public sealed class EmailModel(
 public sealed class EmailNotificationSettingsInput
 {
     public bool Enabled { get; set; }
-    public string? Host { get; set; } = "smtp.office365.com";
-    public int? Port { get; set; } = 587;
+    public string? Host { get; set; } = "mrelay.noc.sony.co.jp";
+    public int? Port { get; set; } = 25;
+    public bool UseAuthentication { get; set; }
     public string? Username { get; set; }
     public string? FromAddress { get; set; }
-    public bool UseSsl { get; set; } = true;
+    public bool UseSsl { get; set; }
     public bool HasPassword { get; set; }
     public string? DefaultCc { get; set; }
     public string? DefaultBcc { get; set; }
@@ -123,7 +124,8 @@ public sealed class EmailNotificationSettingsInput
     {
         Enabled = Enabled,
         Host = Host ?? string.Empty,
-        Port = Port ?? 587,
+        Port = Port ?? 25,
+        UseAuthentication = UseAuthentication,
         Username = Username ?? string.Empty,
         FromAddress = FromAddress ?? string.Empty,
         UseSsl = UseSsl,
@@ -148,6 +150,7 @@ public sealed class EmailNotificationSettingsInput
         Enabled = settings.Enabled,
         Host = settings.Host,
         Port = settings.Port,
+        UseAuthentication = settings.UseAuthentication,
         Username = settings.Username,
         FromAddress = settings.FromAddress,
         UseSsl = settings.UseSsl,
