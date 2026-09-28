@@ -18,7 +18,6 @@
                 <p class="text-secondary mb-4">Describe the diagram and paste the source-of-truth material. AI creates a proposal; nothing is saved until you review and confirm it.</p>
 
                 <form method="post" asp-page-handler="Generate" id="generateFlowForm">
-                    <div asp-validation-summary="ModelOnly" class="alert alert-warning" role="alert" aria-live="assertive" tabindex="-1" data-generation-errors></div>
                     <div class="mb-4">
                         <label class="form-label fw-semibold" asp-for="Prompt"></label>
                         <textarea class="form-control" asp-for="Prompt" rows="5" maxlength="4000" placeholder="Example: Create a standard flowchart showing how a support request is triaged, assigned, resolved, and closed."></textarea>
@@ -51,6 +50,7 @@
                             </section>
                         }
                     </div>
+                    <div asp-validation-summary="ModelOnly" class="alert alert-danger mt-4 mb-0" role="alert" aria-live="assertive" tabindex="-1" data-generation-errors></div>
                     <div class="alert alert-info d-none mt-4 mb-0" id="generationStatus" role="status" aria-live="polite">
                         <span class="spinner-border spinner-border-sm me-2" aria-hidden="true"></span>
                         <span>Generating preview with the local model. This can take a minute.</span>

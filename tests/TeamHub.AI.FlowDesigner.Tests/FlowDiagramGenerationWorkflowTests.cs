@@ -120,6 +120,27 @@ public sealed class FlowDiagramGenerationWorkflowTests
         model.CallCount.Should().Be(0);
     }
 
+    [Fact]
+    public async Task Reports_the_selected_provider_and_model_when_the_model_is_unavailable()
+    {
+        var model = new StubAiModelService(SingleDiagramResponse)
+        {
+            HealthResult = new AiProviderHealthResult(
+                true,
+                "Ollama",
+                "qwen3:8b",
+                false,
+                "Provider is available, but the configured model was not found.")
+        };
+        var workflow = CreateWorkflow(model);
+
+        var action = () => workflow.CreateDraftAsync(Request());
+
+        await action.Should().ThrowAsync<AiModelProviderException>()
+            .WithMessage("*Ollama*qwen3:8b*not available*");
+        model.CallCount.Should().Be(0);
+    }
+
     private static CreateFlowDiagramDraftRequest Request() => new(
         "Create the approval process.",
         [new FlowDesignerSourceDocument("policy", "Approval policy", "text/markdown", "# Approval\nA reviewer approves or rejects the request.")]);
@@ -144,9 +165,11 @@ public sealed class FlowDiagramGenerationWorkflowTests
     {
         public int CallCount { get; private set; }
         public AiStructuredGenerationRequest? LastRequest { get; private set; }
+        public AiProviderHealthResult HealthResult { get; init; } =
+            new(true, "test", "structured-model", true, "Ready");
 
         public Task<AiProviderHealthResult> CheckHealthAsync(CancellationToken cancellationToken = default) =>
-            Task.FromResult(new AiProviderHealthResult(true, "test", "structured-model", true, "Ready"));
+            Task.FromResult(HealthResult);
 
         public Task<AiStructuredGenerationResult> GenerateStructuredAsync(
             AiStructuredGenerationRequest request,

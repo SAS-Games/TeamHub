@@ -23,6 +23,19 @@ internal sealed class FlowDiagramGenerationWorkflow(
         }
 
         var input = inputProcessor.Prepare(request);
+        var health = await modelService.CheckHealthAsync(cancellationToken);
+        if (!health.IsAvailable)
+        {
+            throw new AiModelProviderException(
+                $"AI provider '{health.Provider}' is unavailable for model '{health.Model}'. {health.Message}");
+        }
+        if (!health.IsModelAvailable)
+        {
+            throw new AiModelProviderException(
+                $"AI provider '{health.Provider}' is running, but configured model '{health.Model}' is not available. " +
+                health.Message);
+        }
+
         var modelRequest = promptBuilder.Build(
             input,
             options.Value.MaximumOutputTokens,
