@@ -22,6 +22,7 @@ The existing Confluence-backed consolidated report remains the source of truth. 
 
 - The MVP starts with local inference using Qwen3 8B served by Ollama.
 - Ollama is the recommended local runtime, not a hard application dependency; another OpenAI-compatible local runtime can be selected through configuration.
+- llama.cpp is registered as a first-class local provider for restricted and air-gapped deployments using an approved llama-server binary and GGUF model.
 - Offline-only mode is enabled by default and prevents AI requests to non-loopback endpoints.
 - The reporting domain and generation workflow are provider-neutral and must not reference Ollama-specific request types.
 - Administrators select the provider, endpoint, model, and generation settings through configuration.
@@ -224,6 +225,7 @@ Configuration selects a provider by a stable key, for example:
 
 ```text
 Ollama
+LlamaCpp
 OpenAICompatible
 FoundryLocal
 ```
@@ -231,6 +233,7 @@ FoundryLocal
 Portability rules:
 
 - Ollama model change, such as `qwen3:8b` to another installed Ollama model: configuration only.
+- Ollama to llama.cpp: change only `AI__Provider`; each runtime retains its own endpoint and model profile.
 - Ollama to Foundry Local or another OpenAI-compatible endpoint: configuration only through `OpenAICompatible` when the required structured-output contract is supported.
 - OpenAI-compatible local endpoint to an approved hosted endpoint: configuration and protected credential only.
 - A provider with a proprietary API or different authentication/response format: implement one new `IAiModelProvider` adapter, register it, and then use configuration for future switching.

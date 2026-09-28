@@ -64,6 +64,12 @@ Repository configuration files are not copied into `bin`; changes are read from 
 
 Email delivery is configured by an administrator under **Configuration > Email Service**. The default connection matches the internal relay configuration: mrelay.noc.sony.co.jp on port 25, with SMTP authentication and STARTTLS disabled. Configure the From address with an address accepted by the relay, enable delivery, save, and use **Send a test** to verify it. Authenticated SMTP remains available by enabling SMTP authentication and entering a username and password.
 
+## Local AI runtime
+
+Team Hub supports `Ollama`, `LlamaCpp`, and a generic `OpenAICompatible` provider. Ollama and llama.cpp have separate endpoint/model profiles in `appsettings.json`; switch between them by changing only `AI:Provider` and restarting Team Hub.
+
+For an organization-approved llama.cpp deployment, see `scripts/ai/README.md`. The supplied scripts never download software or models, bind llama-server to loopback, optionally verify SHA-256 hashes, and validate that the configured model alias is available. The runtime binary and GGUF model must be obtained through the organization's approved software-distribution process.
+
 ## Home content and page background
 
 Home text, the banner image URL, and links are stored on the server in `config/Home/project-info.json` and `config/Home/useful-links.json`. Clearing browser storage does not remove this configuration.

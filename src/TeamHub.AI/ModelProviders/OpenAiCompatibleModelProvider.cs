@@ -165,3 +165,11 @@ public sealed class OllamaModelProvider(
 {
     public override string Key => AiModelProviderKeys.Ollama;
 }
+
+public sealed class LlamaCppModelProvider(
+    IHttpClientFactory httpClientFactory,
+    IAiProviderCredentialAccessor credentials)
+    : OpenAiCompatibleModelProvider(httpClientFactory, credentials)
+{
+    public override string Key => AiModelProviderKeys.LlamaCpp;
+}

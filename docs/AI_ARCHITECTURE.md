@@ -34,7 +34,7 @@ Owns reusable inference infrastructure:
 
 - Provider-neutral `IAiModelService` and `IAiModelProvider` contracts.
 - Provider registry and configuration-based provider selection.
-- Ollama and generic OpenAI-compatible adapters.
+- Ollama, llama.cpp, and generic OpenAI-compatible adapters.
 - Model health checks and structured JSON-schema generation.
 - Timeout, cancellation, protected credential access, and sanitized provider failures.
 
@@ -107,8 +107,10 @@ Shared model runtime:
 
 ```text
 AI__Provider=Ollama
-AI__Endpoint=http://127.0.0.1:11434
-AI__Model=qwen3:8b
+AI__Providers__Ollama__Endpoint=http://127.0.0.1:11434
+AI__Providers__Ollama__Model=qwen3:8b
+AI__Providers__LlamaCpp__Endpoint=http://127.0.0.1:8080
+AI__Providers__LlamaCpp__Model=qwen3:8b
 AI__OfflineOnly=true
 AI__Temperature=0
 AI__TimeoutSeconds=180
@@ -127,7 +129,7 @@ AI__FlowDesigner__MaximumSourceDocuments=10
 AI__FlowDesigner__MaximumSourceBytes=10485760
 ```
 
-Changing between registered providers or models is configuration-only. A provider with an incompatible API requires one adapter in `TeamHub.AI`; feature workflows remain unchanged.
+Changing between registered providers or models is configuration-only. Ollama and llama.cpp retain separate endpoint/model profiles, so switching between them requires changing only `AI__Provider`. The legacy top-level `AI__Endpoint` and `AI__Model` settings remain available for generic OpenAI-compatible runtimes and older deployments. A provider with an incompatible API requires one adapter in `TeamHub.AI`; feature workflows remain unchanged.
 
 `AI__OfflineOnly=true` is the safe default. It rejects any AI endpoint that is not `localhost`, `127.0.0.1`, or another loopback address, preventing accidental prompt transmission to a hosted service. Set it to `false` only as an explicit deployment decision to use an approved remote endpoint.
 
@@ -136,12 +138,15 @@ Changing between registered providers or models is configuration-only. A provide
 Team Hub still needs an inference runtime capable of loading and executing the local model. That runtime can be Ollama, llama.cpp server, LM Studio, Foundry Local, or another server that implements the required OpenAI-compatible model-list, chat-completions, and structured-output behavior.
 
 - With Ollama, use `AI__Provider=Ollama` and the default loopback endpoint.
+- With llama.cpp, use `AI__Provider=LlamaCpp`; its default profile uses `http://127.0.0.1:8080` and model alias `qwen3:8b`.
 - With another compatible local runtime, use `AI__Provider=OpenAICompatible` and its loopback endpoint.
 - No provider credential is required unless the selected local runtime is configured to require one.
 - After the runtime and model files are installed, normal generation requires no internet connection.
 - Model installation or download is a separate deployment step. For an air-gapped host, transfer an approved runtime installer and model artifact through the organization's offline software-distribution process.
 
 The current architecture uses a separate local inference process; it does not load GGUF or ONNX weights directly inside the Team Hub web process. Keeping inference out of process isolates native model dependencies and allows the local runtime or model to change without changing the report or Flow Designer workflows.
+
+For restricted or air-gapped environments, `scripts/ai/Start-TeamHubLlamaCpp.ps1` starts an organization-approved llama-server binary and GGUF model on loopback. It can verify approved SHA-256 hashes and performs no downloads. `scripts/ai/Test-TeamHubLocalAi.ps1` validates the model-list endpoint and configured model alias. Published Team Hub packages include both scripts under `tools/ai`.
 
 ## Rules for every AI workflow
 

@@ -2,6 +2,7 @@
 setlocal
 title Publish Team Hub Package
 
+set "AI_TOOLS_SOURCE=%~dp0scripts/ai"
 set "ROOT=%~dp0"
 set "PROJECT=%ROOT%src\TeamHub.Web\TeamHub.Web.csproj"
 set "CONFIG_SOURCE=%ROOT%config"
@@ -47,6 +48,12 @@ if exist "%CONFIG_SOURCE%\" (
     if errorlevel 8 goto :fail_config
 )
 
+if exist "%AI_TOOLS_SOURCE%/" (
+    echo Adding local AI deployment tools...
+    robocopy.exe "%AI_TOOLS_SOURCE%" "%OUTPUT%/tools/ai" /E /COPY:DAT /DCOPY:DAT /R:2 /W:2 /NFL /NDL /NP >nul
+    if errorlevel 8 goto :fail_ai_tools
+)
+
 echo.
 echo Team Hub package created successfully:
 echo %OUTPUT%
@@ -88,6 +95,10 @@ goto :fail
 
 :fail_config
 echo The application was published, but the default configuration could not be copied.
+goto :fail
+
+:fail_ai_tools
+echo The application was published, but the local AI deployment tools could not be copied.
 
 :fail
 echo.

@@ -7,6 +7,8 @@ public sealed class AiRuntimeOptions
     public string Provider { get; set; } = AiModelProviderKeys.Ollama;
     public string Endpoint { get; set; } = "http://127.0.0.1:11434";
     public string Model { get; set; } = "qwen3:8b";
+    public Dictionary<string, AiProviderProfileOptions> Providers { get; set; } =
+        new(StringComparer.OrdinalIgnoreCase);
     public bool OfflineOnly { get; set; } = true;
     public double Temperature { get; set; }
     public int TimeoutSeconds { get; set; } = 180;
@@ -14,7 +16,7 @@ public sealed class AiRuntimeOptions
 
     public AiProviderSettings ToProviderSettings()
     {
-        var endpoint = new Uri(Endpoint.Trim(), UriKind.Absolute);
+        var endpoint = new Uri(GetSelectedEndpoint().Trim(), UriKind.Absolute);
         if (OfflineOnly && !endpoint.IsLoopback)
         {
             throw new InvalidOperationException(
@@ -24,11 +26,33 @@ public sealed class AiRuntimeOptions
         return new AiProviderSettings(
             Provider.Trim(),
             endpoint,
-            Model.Trim(),
+            GetSelectedModel().Trim(),
             Temperature,
             TimeSpan.FromSeconds(TimeoutSeconds),
-            CredentialEnvironmentVariable.Trim());
+            GetSelectedCredentialEnvironmentVariable().Trim());
     }
+
+    internal string GetSelectedEndpoint()
+    {
+        var value = GetSelectedProfile()?.Endpoint;
+        return string.IsNullOrWhiteSpace(value) ? Endpoint : value;
+    }
+
+    internal string GetSelectedModel()
+    {
+        var value = GetSelectedProfile()?.Model;
+        return string.IsNullOrWhiteSpace(value) ? Model : value;
+    }
+
+    internal string GetSelectedCredentialEnvironmentVariable()
+    {
+        var value = GetSelectedProfile()?.CredentialEnvironmentVariable;
+        return string.IsNullOrWhiteSpace(value) ? CredentialEnvironmentVariable : value;
+    }
+
+    private AiProviderProfileOptions? GetSelectedProfile() =>
+        Providers.FirstOrDefault(profile =>
+            string.Equals(profile.Key, Provider?.Trim(), StringComparison.OrdinalIgnoreCase)).Value;
 
     internal static bool IsLoopbackEndpoint(string? value) =>
         Uri.TryCreate(value?.Trim(), UriKind.Absolute, out var endpoint)
@@ -39,7 +63,15 @@ public sealed class AiRuntimeOptions
 public static class AiModelProviderKeys
 {
     public const string Ollama = "Ollama";
+    public const string LlamaCpp = "LlamaCpp";
     public const string OpenAiCompatible = "OpenAICompatible";
+}
+
+public sealed class AiProviderProfileOptions
+{
+    public string Endpoint { get; set; } = string.Empty;
+    public string Model { get; set; } = string.Empty;
+    public string? CredentialEnvironmentVariable { get; set; }
 }
 
 public sealed record AiProviderSettings(

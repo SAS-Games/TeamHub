@@ -81,11 +81,17 @@ public sealed class CreateWithAiModel(
         }
         catch (FlowDiagramGenerationException exception)
         {
-            ModelState.AddModelError(string.Empty, exception.Message);
+            ModelState.AddModelError(
+                string.Empty,
+                $"The model returned a diagram that Team Hub could not use. {exception.Message} " +
+                "Try again with clearer source content or select a larger local model.");
         }
         catch (AiModelProviderException exception)
         {
-            ModelState.AddModelError(string.Empty, $"The configured AI model could not generate the diagram. {exception.Message}");
+            ModelState.AddModelError(
+                string.Empty,
+                $"The configured AI model could not generate the diagram. {exception.Message} " +
+                "Confirm that the local model server is running and that its model alias matches Team Hub configuration.");
         }
         return Page();
     }

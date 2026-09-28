@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
 using Microsoft.AspNetCore.Mvc.ViewFeatures;
 using Microsoft.Extensions.Options;
+using TeamHub.AI.Contracts;
 using TeamHub.AI.FlowDesigner.Contracts;
 using TeamHub.FlowDesigner.Core.Contracts;
 using TeamHub.FlowDesigner.Core.Models;
@@ -38,6 +39,43 @@ public sealed class CreateWithAiPageTests
         hierarchies.Proposal!.Flows.Should().HaveCount(2);
         hierarchies.Proposal.Flows.Single(flow => flow.Id == root.Id)
             .Nodes.Single(node => node.Id == "work").ChildFlowId.Should().Be(child.Id);
+    }
+
+    [Fact]
+    public async Task Generation_failure_explains_that_a_larger_model_may_be_required()
+    {
+        var model = CreatePageModel(
+            new ThrowingGenerationWorkflow(
+                new FlowDiagramGenerationException("A generated connection references a missing node.")),
+            new RecordingHierarchyService());
+        model.Prompt = "Create the documented process.";
+        model.Sources = [new AiFlowSourceInput { Title = "Process", Content = "Start, work, finish." }];
+
+        var result = await model.OnPostGenerateAsync(CancellationToken.None);
+
+        result.Should().BeOfType<PageResult>();
+        model.ModelState[string.Empty]!.Errors.Single().ErrorMessage.Should()
+            .Contain("could not use")
+            .And.Contain("larger local model")
+            .And.Contain("missing node");
+    }
+
+    [Fact]
+    public async Task Provider_failure_explains_how_to_check_the_local_runtime()
+    {
+        var model = CreatePageModel(
+            new ThrowingGenerationWorkflow(new AiModelProviderException("The request timed out.")),
+            new RecordingHierarchyService());
+        model.Prompt = "Create the documented process.";
+        model.Sources = [new AiFlowSourceInput { Title = "Process", Content = "Start, work, finish." }];
+
+        var result = await model.OnPostGenerateAsync(CancellationToken.None);
+
+        result.Should().BeOfType<PageResult>();
+        model.ModelState[string.Empty]!.Errors.Single().ErrorMessage.Should()
+            .Contain("local model server")
+            .And.Contain("model alias")
+            .And.Contain("timed out");
     }
 
     private static CreateWithAiModel CreatePageModel(
@@ -81,6 +119,13 @@ public sealed class CreateWithAiPageTests
         public Task<FlowDiagramGenerationDraft> CreateDraftAsync(
             CreateFlowDiagramDraftRequest request,
             CancellationToken cancellationToken = default) => Task.FromResult(draft);
+    }
+
+    private sealed class ThrowingGenerationWorkflow(Exception exception) : IFlowDiagramGenerationWorkflow
+    {
+        public Task<FlowDiagramGenerationDraft> CreateDraftAsync(
+            CreateFlowDiagramDraftRequest request,
+            CancellationToken cancellationToken = default) => Task.FromException<FlowDiagramGenerationDraft>(exception);
     }
 
     private sealed class RecordingHierarchyService : IFlowHierarchyService

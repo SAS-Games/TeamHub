@@ -18,13 +18,16 @@ public sealed class AiModelProviderTests
         var registry = services.GetRequiredService<IAiModelProviderRegistry>();
 
         registry.GetRequired("ollama").Key.Should().Be(AiModelProviderKeys.Ollama);
+        registry.GetRequired("LLAMACPP").Key.Should().Be(AiModelProviderKeys.LlamaCpp);
         registry.GetRequired("OPENAICOMPATIBLE").Key.Should().Be(AiModelProviderKeys.OpenAiCompatible);
     }
 
     [Fact]
     public async Task Ollama_health_check_uses_open_ai_compatible_model_list()
     {
-        var handler = CreateHealthyHandler();
+        var handler = CreateHealthyHandler(
+            "http://127.0.0.1:11434/v1/models",
+            "llama3.2:latest");
         var provider = new OllamaModelProvider(
             new StubHttpClientFactory(handler),
             new NullCredentialAccessor());
@@ -46,7 +49,9 @@ public sealed class AiModelProviderTests
     [Fact]
     public async Task Runtime_uses_the_provider_and_model_selected_in_shared_configuration()
     {
-        var handler = CreateHealthyHandler();
+        var handler = CreateHealthyHandler(
+            "http://127.0.0.1:11434/v1/models",
+            "llama3.2:latest");
         using var services = CreateServices(handler).BuildServiceProvider();
         var runtime = services.GetRequiredService<IAiModelService>();
 
@@ -66,7 +71,7 @@ public sealed class AiModelProviderTests
             handler,
             new Dictionary<string, string?>
             {
-                ["AI:Endpoint"] = "https://example.com",
+                ["AI:Providers:Ollama:Endpoint"] = "https://example.com",
                 ["AI:OfflineOnly"] = "true"
             }).BuildServiceProvider();
         var runtime = services.GetRequiredService<IAiModelService>();
@@ -78,16 +83,39 @@ public sealed class AiModelProviderTests
     }
 
     [Fact]
-    public async Task Generic_open_ai_provider_can_run_fully_offline_on_loopback()
+    public async Task Llama_cpp_profile_is_selected_by_changing_only_the_provider()
     {
-        var handler = CreateHealthyHandler(AiModelProviderKeys.OpenAiCompatible);
+        var handler = CreateHealthyHandler(
+            "http://127.0.0.1:8080/v1/models",
+            "qwen3:8b");
+        using var services = CreateServices(
+            handler,
+            new Dictionary<string, string?>
+            {
+                ["AI:Provider"] = AiModelProviderKeys.LlamaCpp
+            }).BuildServiceProvider();
+        var runtime = services.GetRequiredService<IAiModelService>();
+
+        var result = await runtime.CheckHealthAsync();
+
+        result.IsAvailable.Should().BeTrue();
+        result.Provider.Should().Be(AiModelProviderKeys.LlamaCpp);
+        result.Model.Should().Be("qwen3:8b");
+    }
+
+    [Fact]
+    public async Task Generic_open_ai_provider_can_use_legacy_top_level_settings()
+    {
+        var handler = CreateHealthyHandler(
+            "http://localhost:1234/v1/models",
+            "local-model");
         using var services = CreateServices(
             handler,
             new Dictionary<string, string?>
             {
                 ["AI:Provider"] = AiModelProviderKeys.OpenAiCompatible,
-                ["AI:Endpoint"] = "http://localhost:11434",
-                ["AI:OfflineOnly"] = "true"
+                ["AI:Endpoint"] = "http://localhost:1234",
+                ["AI:Model"] = "local-model"
             }).BuildServiceProvider();
         var runtime = services.GetRequiredService<IAiModelService>();
 
@@ -98,13 +126,16 @@ public sealed class AiModelProviderTests
     }
 
     private static StubHttpMessageHandler CreateHealthyHandler(
-        string provider = AiModelProviderKeys.Ollama) => new(request =>
+        string expectedModelsEndpoint,
+        string model) => new(request =>
     {
-        var host = provider == AiModelProviderKeys.Ollama ? "127.0.0.1" : "localhost";
-        request.RequestUri.Should().Be($"http://{host}:11434/v1/models");
+        request.RequestUri.Should().Be(expectedModelsEndpoint);
         return new HttpResponseMessage(HttpStatusCode.OK)
         {
-            Content = new StringContent("""{"data":[{"id":"llama3.2:latest"}]}""", Encoding.UTF8, "application/json")
+            Content = new StringContent(
+                $$"""{"data":[{"id":"{{model}}"}]}""",
+                Encoding.UTF8,
+                "application/json")
         };
     });
 
@@ -117,6 +148,10 @@ public sealed class AiModelProviderTests
             ["AI:Provider"] = AiModelProviderKeys.Ollama,
             ["AI:Endpoint"] = "http://127.0.0.1:11434",
             ["AI:Model"] = "llama3.2:latest",
+            ["AI:Providers:Ollama:Endpoint"] = "http://127.0.0.1:11434",
+            ["AI:Providers:Ollama:Model"] = "llama3.2:latest",
+            ["AI:Providers:LlamaCpp:Endpoint"] = "http://127.0.0.1:8080",
+            ["AI:Providers:LlamaCpp:Model"] = "qwen3:8b",
             ["AI:OfflineOnly"] = "true",
             ["AI:TimeoutSeconds"] = "5"
         };
