@@ -180,6 +180,9 @@ body {
 .styled-table td, .styled-table th { padding: 14px 18px; vertical-align: middle; }
 .team-matrix-multiline { white-space: pre-line; overflow-wrap: anywhere; }
 .custom-team-cell-value { white-space: pre-line; overflow-wrap: anywhere; }
+.support-summary-confluence { min-width: 1200px; }
+.support-summary-confluence th { min-width: 170px; }
+.support-summary-confluence td { min-width: 220px; white-space: pre-wrap; overflow-wrap: anywhere; }
 .markdown-content { overflow-wrap: anywhere; }
 .markdown-content > :first-child { margin-top: 0; }
 .markdown-content > :last-child { margin-bottom: 0; }
