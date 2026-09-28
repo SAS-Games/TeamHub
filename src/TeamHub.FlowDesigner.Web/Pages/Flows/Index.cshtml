@@ -112,10 +112,15 @@
                             <p class="text-secondary small fd-card-description">@(string.IsNullOrWhiteSpace(flow.Description) ? "No description" : flow.Description)</p>
                             <div class="fd-card-meta"><span>@flow.NodeCount nodes</span><span>Approved @flow.PublishedAt.LocalDateTime.ToString("MMM d, yyyy")</span></div>
                             <div class="d-flex gap-2 mt-4">
-                                <a class="btn btn-outline-success flex-grow-1" asp-page="/Flows/Edit" asp-route-id="@flow.SourceFlowId" asp-route-published="true">@(Model.CanReviewPublications ? "Edit published hierarchy" : "View published hierarchy")</a>
                                 @if (Model.CanReviewPublications)
                                 {
+                                    <a class="btn btn-outline-success flex-grow-1" asp-page="/Flows/Edit" asp-route-id="@flow.SourceFlowId" asp-route-published="true" asp-route-viewOnly="true">View only</a>
+                                    <a class="btn btn-success" asp-page="/Flows/Edit" asp-route-id="@flow.SourceFlowId" asp-route-published="true">Edit</a>
                                     <button class="btn btn-outline-danger" type="button" data-bs-toggle="modal" data-bs-target="#deletePublishedModal" data-flow-id="@flow.SourceFlowId" data-flow-name="@flow.Name" aria-label="Delete published hierarchy">Delete</button>
+                                }
+                                else
+                                {
+                                    <a class="btn btn-outline-success flex-grow-1" asp-page="/Flows/Edit" asp-route-id="@flow.SourceFlowId" asp-route-published="true">View published hierarchy</a>
                                 }
                             </div>
                         </article>
