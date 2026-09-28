@@ -56,6 +56,9 @@ public sealed class SupportSummaryModelTests
         var weekStart = today.AddDays(-(((int)today.DayOfWeek + 6) % 7));
         model.StartDate.Should().Be(weekStart);
         model.EndDate.Should().Be(weekStart.AddDays(4));
+        model.ReportPeriod.Should().Be(SupportSummaryModel.WeeklyPeriod);
+        model.SelectedMonth.Should().Be(today.ToString("yyyy-MM"));
+        model.Week.Should().NotBeNull();
         model.ActiveSprintOnly.Should().BeTrue();
         model.Studios.Should().ContainSingle().Which.Id.Should().Be(activeStudio.Id);
         model.ActiveMilestones.Should().ContainSingle()
@@ -73,6 +76,65 @@ public sealed class SupportSummaryModelTests
         confluenceService.LastQuery.StartDate.Should().Be(weekStart);
         confluenceService.LastQuery.EndDate.Should().Be(weekStart.AddDays(4));
         model.ConfluenceResult.Updates.Should().ContainSingle().Which.StudioId.Should().Be(activeStudio.Id);
+    }
+
+    [Fact]
+    public async Task OnGetAsync_MonthlyPeriodUsesTheFullSelectedCalendarMonth()
+    {
+        var studio = Studio("active", "Alpha Studio", "Alpha Project", isActive: true);
+        var jiraService = new StubJiraService();
+        var confluenceService = new StubConfluenceService();
+        var model = new SupportSummaryModel(
+            new StubStudioDirectoryService([studio]),
+            new StubMilestoneService([]),
+            jiraService,
+            confluenceService)
+        {
+            ReportPeriod = SupportSummaryModel.MonthlyPeriod,
+            SelectedMonth = "2026-09",
+            Week = 3,
+            PageContext = new PageContext { HttpContext = new DefaultHttpContext() }
+        };
+
+        await model.OnGetAsync(CancellationToken.None);
+
+        model.IsMonthlyReport.Should().BeTrue();
+        model.StartDate.Should().Be(new DateOnly(2026, 9, 1));
+        model.EndDate.Should().Be(new DateOnly(2026, 9, 30));
+        jiraService.Queries.Should().ContainSingle();
+        jiraService.Queries[0].StartDate.Should().Be(new DateOnly(2026, 9, 1));
+        jiraService.Queries[0].EndDate.Should().Be(new DateOnly(2026, 9, 30));
+        confluenceService.LastQuery!.StartDate.Should().Be(new DateOnly(2026, 9, 1));
+        confluenceService.LastQuery.EndDate.Should().Be(new DateOnly(2026, 9, 30));
+    }
+
+    [Fact]
+    public async Task OnGetAsync_CustomPeriodPreservesTheExplicitDateRange()
+    {
+        var studio = Studio("active", "Alpha Studio", "Alpha Project", isActive: true);
+        var jiraService = new StubJiraService();
+        var confluenceService = new StubConfluenceService();
+        var model = new SupportSummaryModel(
+            new StubStudioDirectoryService([studio]),
+            new StubMilestoneService([]),
+            jiraService,
+            confluenceService)
+        {
+            ReportPeriod = SupportSummaryModel.CustomPeriod,
+            StartDate = new DateOnly(2026, 9, 3),
+            EndDate = new DateOnly(2026, 9, 18),
+            PageContext = new PageContext { HttpContext = new DefaultHttpContext() }
+        };
+
+        await model.OnGetAsync(CancellationToken.None);
+
+        model.ReportPeriod.Should().Be(SupportSummaryModel.CustomPeriod);
+        model.StartDate.Should().Be(new DateOnly(2026, 9, 3));
+        model.EndDate.Should().Be(new DateOnly(2026, 9, 18));
+        jiraService.Queries[0].StartDate.Should().Be(new DateOnly(2026, 9, 3));
+        jiraService.Queries[0].EndDate.Should().Be(new DateOnly(2026, 9, 18));
+        confluenceService.LastQuery!.StartDate.Should().Be(new DateOnly(2026, 9, 3));
+        confluenceService.LastQuery.EndDate.Should().Be(new DateOnly(2026, 9, 18));
     }
 
     private static StudioDetails Studio(string id, string name, string project, bool isActive) => new()

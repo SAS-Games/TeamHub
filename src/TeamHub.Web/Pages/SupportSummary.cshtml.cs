@@ -1,3 +1,4 @@
+using System.Globalization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
 using TeamHub.Milestones;
@@ -11,10 +12,19 @@ public sealed class SupportSummaryModel(
     IStudioJiraTicketService jiraTicketService,
     IStudioConfluenceUpdateService confluenceUpdateService) : PageModel
 {
+    public const string WeeklyPeriod = "Weekly";
+    public const string MonthlyPeriod = "Monthly";
+    public const string CustomPeriod = "Custom";
+
     [BindProperty(SupportsGet = true)] public string? Search { get; set; }
+    [BindProperty(SupportsGet = true)] public string ReportPeriod { get; set; } = WeeklyPeriod;
+    [BindProperty(SupportsGet = true)] public string? SelectedMonth { get; set; }
+    [BindProperty(SupportsGet = true)] public int? Week { get; set; }
     [BindProperty(SupportsGet = true)] public bool ActiveSprintOnly { get; set; } = true;
     [BindProperty(SupportsGet = true)] public DateOnly? StartDate { get; set; }
     [BindProperty(SupportsGet = true)] public DateOnly? EndDate { get; set; }
+    public IReadOnlyList<SupportSummaryWeekOption> WeekOptions { get; private set; } = [];
+    public bool IsMonthlyReport => ReportPeriod == MonthlyPeriod;
 
     public IReadOnlyList<StudioDetails> Studios { get; private set; } = [];
     public IReadOnlyList<SupportSummaryMilestone> ActiveMilestones { get; private set; } = [];
@@ -27,7 +37,7 @@ public sealed class SupportSummaryModel(
 
     public async Task OnGetAsync(CancellationToken cancellationToken)
     {
-        SetDefaultDateRange();
+        SetReportRange();
         Studios = (await studioDirectoryService.GetStudiosAsync(cancellationToken))
             .Where(studio => studio.IsActive)
             .OrderBy(studio => studio.GroupDisplayOrder ?? int.MaxValue)
@@ -179,13 +189,66 @@ public sealed class SupportSummaryModel(
     private StudioDetails? FindStudio(string studioId) =>
         Studios.FirstOrDefault(studio => string.Equals(studio.Id, studioId, StringComparison.OrdinalIgnoreCase));
 
-    private void SetDefaultDateRange()
+    private void SetReportRange()
     {
-        if (StartDate.HasValue && EndDate.HasValue) return;
         var today = DateOnly.FromDateTime(DateTime.Today);
+        ReportPeriod = string.Equals(ReportPeriod, MonthlyPeriod, StringComparison.OrdinalIgnoreCase)
+            ? MonthlyPeriod
+            : string.Equals(ReportPeriod, CustomPeriod, StringComparison.OrdinalIgnoreCase)
+                ? CustomPeriod
+                : WeeklyPeriod;
         var currentWeekStart = today.AddDays(-(((int)today.DayOfWeek + 6) % 7));
-        StartDate ??= EndDate ?? currentWeekStart;
-        EndDate ??= StartDate.Value.AddDays(4);
+        if (ReportPeriod == CustomPeriod)
+        {
+            StartDate ??= currentWeekStart;
+            EndDate ??= StartDate.Value.AddDays(4);
+            SelectedMonth ??= today.ToString("yyyy-MM", CultureInfo.InvariantCulture);
+        }
+        var monthStart = DateOnly.TryParseExact(
+            $"{SelectedMonth}-01",
+            "yyyy-MM-dd",
+            CultureInfo.InvariantCulture,
+            DateTimeStyles.None,
+            out var parsedMonth)
+                ? parsedMonth
+                : new DateOnly(today.Year, today.Month, 1);
+        SelectedMonth = monthStart.ToString("yyyy-MM", CultureInfo.InvariantCulture);
+        var monthEnd = monthStart.AddMonths(1).AddDays(-1);
+        WeekOptions = BuildWeekOptions(monthStart, monthEnd);
+
+        if (ReportPeriod == CustomPeriod) return;
+
+        if (IsMonthlyReport)
+        {
+            StartDate = monthStart;
+            EndDate = monthEnd;
+            return;
+        }
+
+        var defaultWeek = monthStart.Year == today.Year && monthStart.Month == today.Month
+            ? WeekOptions.First(option => option.StartDate == currentWeekStart)
+            : WeekOptions[0];
+        var selectedWeek = WeekOptions.FirstOrDefault(option => option.Number == Week) ?? defaultWeek;
+        Week = selectedWeek.Number;
+        StartDate = selectedWeek.StartDate;
+        EndDate = selectedWeek.EndDate;
+    }
+
+    private static IReadOnlyList<SupportSummaryWeekOption> BuildWeekOptions(DateOnly monthStart, DateOnly monthEnd)
+    {
+        var firstWeekStart = monthStart.AddDays(-(((int)monthStart.DayOfWeek + 6) % 7));
+        var options = new List<SupportSummaryWeekOption>();
+        for (var weekStart = firstWeekStart; weekStart <= monthEnd; weekStart = weekStart.AddDays(7))
+        {
+            var weekEnd = weekStart.AddDays(4);
+            var number = options.Count + 1;
+            options.Add(new SupportSummaryWeekOption(
+                number,
+                weekStart,
+                weekEnd,
+                $"Week {number}: {weekStart:dd MMM} - {weekEnd:dd MMM}"));
+        }
+        return options;
     }
 
     private static bool IsProjectMilestone(string projectName, MilestoneDto milestone) =>
@@ -196,3 +259,4 @@ public sealed class SupportSummaryModel(
 public sealed record SupportSummaryMilestone(StudioDetails Studio, MilestoneDto Milestone);
 public sealed record SupportSummaryTicket(StudioDetails Studio, string SupportType, StudioJiraTicket Ticket);
 public sealed record SupportSummaryMessage(StudioDetails Studio, string Message);
+public sealed record SupportSummaryWeekOption(int Number, DateOnly StartDate, DateOnly EndDate, string Label);
