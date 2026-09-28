@@ -17,6 +17,30 @@ namespace TeamHub.AI.FlowDesigner.Tests;
 public sealed class CreateWithAiPageTests
 {
     [Fact]
+    public void Disabled_feature_hides_the_create_with_ai_action()
+    {
+        var model = new IndexModel(
+            null!,
+            null!,
+            new AllowCreatePermissionService(),
+            Options.Create(new AiFlowDesignerOptions { Enabled = false }));
+
+        model.CanCreateWithAi.Should().BeFalse();
+    }
+
+    [Fact]
+    public void Disabled_feature_blocks_the_create_with_ai_page()
+    {
+        var model = CreatePageModel(
+            new StubGenerationWorkflow(new FlowDiagramGenerationDraft(
+                BuildFlow("Root", NodeType.Process), [], [], "test", "model")),
+            new RecordingHierarchyService(),
+            enabled: false);
+
+        model.OnGet().Should().BeOfType<NotFoundResult>();
+    }
+
+    [Fact]
     public async Task Confirmation_creates_the_complete_hierarchy_through_flow_designer()
     {
         var root = BuildFlow("Root", NodeType.Subprocess);
@@ -80,14 +104,15 @@ public sealed class CreateWithAiPageTests
 
     private static CreateWithAiModel CreatePageModel(
         IFlowDiagramGenerationWorkflow generation,
-        IFlowHierarchyService hierarchies)
+        IFlowHierarchyService hierarchies,
+        bool enabled = true)
     {
         var page = new CreateWithAiModel(
             generation,
             hierarchies,
             new SystemTextJsonFlowSerializer(),
             new AllowCreatePermissionService(),
-            Options.Create(new AiFlowDesignerOptions { Enabled = true }),
+            Options.Create(new AiFlowDesignerOptions { Enabled = enabled }),
             new EphemeralDataProtectionProvider());
         page.PageContext = new PageContext { HttpContext = new DefaultHttpContext() };
         page.TempData = new TempDataDictionary(page.HttpContext, new DictionaryTempDataProvider());
