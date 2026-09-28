@@ -60,6 +60,10 @@ File paths configured for Home content and the initial Milestone workbook use po
 
 Repository configuration files are not copied into `bin`; changes are read from the repository-level `config` directory. Database files continue to live in the application's `data` directory.
 
+## Email delivery
+
+Email delivery is configured by an administrator under **Configuration > Email Service**. The default connection matches the internal relay configuration: mrelay.noc.sony.co.jp on port 25, with SMTP authentication and STARTTLS disabled. Configure the From address with an address accepted by the relay, enable delivery, save, and use **Send a test** to verify it. Authenticated SMTP remains available by enabling SMTP authentication and entering a username and password.
+
 ## Home content and page background
 
 Home text, the banner image URL, and links are stored on the server in `config/Home/project-info.json` and `config/Home/useful-links.json`. Clearing browser storage does not remove this configuration.

@@ -178,6 +178,7 @@ body {
 .styled-table { margin: 0; }
 .styled-table th { color: #65766f; font-size: .75rem; text-transform: uppercase; letter-spacing: .05em; white-space: nowrap; }
 .styled-table td, .styled-table th { padding: 14px 18px; vertical-align: middle; }
+.team-matrix-multiline { white-space: pre-line; overflow-wrap: anywhere; }
 .custom-team-cell-value { white-space: pre-line; overflow-wrap: anywhere; }
 .markdown-content { overflow-wrap: anywhere; }
 .markdown-content > :first-child { margin-top: 0; }
