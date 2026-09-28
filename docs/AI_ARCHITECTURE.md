@@ -12,6 +12,8 @@ The distinction is based on control, not on which model API is used:
 
 Both workflows use the same Ollama or OpenAI-compatible structured-generation API through `TeamHub.AI`. There is no separate workflow API or agent API required.
 
+Ollama is the recommended local runtime, not a required dependency. Team Hub can remain fully offline by using Ollama or any compatible local model server on loopback. The application does not download models or contact a hosted AI service by itself.
+
 ## Module boundaries
 
 ```text
@@ -107,6 +109,7 @@ Shared model runtime:
 AI__Provider=Ollama
 AI__Endpoint=http://127.0.0.1:11434
 AI__Model=qwen3:8b
+AI__OfflineOnly=true
 AI__Temperature=0
 AI__TimeoutSeconds=180
 AI__CredentialEnvironmentVariable=TEAMHUB_AI_PROVIDER_API_KEY
@@ -125,6 +128,20 @@ AI__FlowDesigner__MaximumSourceBytes=10485760
 ```
 
 Changing between registered providers or models is configuration-only. A provider with an incompatible API requires one adapter in `TeamHub.AI`; feature workflows remain unchanged.
+
+`AI__OfflineOnly=true` is the safe default. It rejects any AI endpoint that is not `localhost`, `127.0.0.1`, or another loopback address, preventing accidental prompt transmission to a hosted service. Set it to `false` only as an explicit deployment decision to use an approved remote endpoint.
+
+## Fully offline deployment
+
+Team Hub still needs an inference runtime capable of loading and executing the local model. That runtime can be Ollama, llama.cpp server, LM Studio, Foundry Local, or another server that implements the required OpenAI-compatible model-list, chat-completions, and structured-output behavior.
+
+- With Ollama, use `AI__Provider=Ollama` and the default loopback endpoint.
+- With another compatible local runtime, use `AI__Provider=OpenAICompatible` and its loopback endpoint.
+- No provider credential is required unless the selected local runtime is configured to require one.
+- After the runtime and model files are installed, normal generation requires no internet connection.
+- Model installation or download is a separate deployment step. For an air-gapped host, transfer an approved runtime installer and model artifact through the organization's offline software-distribution process.
+
+The current architecture uses a separate local inference process; it does not load GGUF or ONNX weights directly inside the Team Hub web process. Keeping inference out of process isolates native model dependencies and allows the local runtime or model to change without changing the report or Flow Designer workflows.
 
 ## Rules for every AI workflow
 

@@ -3,6 +3,7 @@ using System.Text;
 using FluentAssertions;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 using TeamHub.AI.Contracts;
 using TeamHub.AI.ModelProviders;
 
@@ -56,24 +57,76 @@ public sealed class AiModelProviderTests
         result.IsModelAvailable.Should().BeTrue();
     }
 
-    private static StubHttpMessageHandler CreateHealthyHandler() => new(request =>
+    [Fact]
+    public async Task Offline_only_mode_rejects_a_remote_endpoint_before_sending_a_request()
     {
-        request.RequestUri.Should().Be("http://127.0.0.1:11434/v1/models");
+        var handler = new StubHttpMessageHandler(_ =>
+            throw new InvalidOperationException("No HTTP request should be sent."));
+        using var services = CreateServices(
+            handler,
+            new Dictionary<string, string?>
+            {
+                ["AI:Endpoint"] = "https://example.com",
+                ["AI:OfflineOnly"] = "true"
+            }).BuildServiceProvider();
+        var runtime = services.GetRequiredService<IAiModelService>();
+
+        var action = () => runtime.CheckHealthAsync();
+
+        await action.Should().ThrowAsync<OptionsValidationException>()
+            .WithMessage("*AI:OfflineOnly*");
+    }
+
+    [Fact]
+    public async Task Generic_open_ai_provider_can_run_fully_offline_on_loopback()
+    {
+        var handler = CreateHealthyHandler(AiModelProviderKeys.OpenAiCompatible);
+        using var services = CreateServices(
+            handler,
+            new Dictionary<string, string?>
+            {
+                ["AI:Provider"] = AiModelProviderKeys.OpenAiCompatible,
+                ["AI:Endpoint"] = "http://localhost:11434",
+                ["AI:OfflineOnly"] = "true"
+            }).BuildServiceProvider();
+        var runtime = services.GetRequiredService<IAiModelService>();
+
+        var result = await runtime.CheckHealthAsync();
+
+        result.IsAvailable.Should().BeTrue();
+        result.Provider.Should().Be(AiModelProviderKeys.OpenAiCompatible);
+    }
+
+    private static StubHttpMessageHandler CreateHealthyHandler(
+        string provider = AiModelProviderKeys.Ollama) => new(request =>
+    {
+        var host = provider == AiModelProviderKeys.Ollama ? "127.0.0.1" : "localhost";
+        request.RequestUri.Should().Be($"http://{host}:11434/v1/models");
         return new HttpResponseMessage(HttpStatusCode.OK)
         {
             Content = new StringContent("""{"data":[{"id":"llama3.2:latest"}]}""", Encoding.UTF8, "application/json")
         };
     });
 
-    private static ServiceCollection CreateServices(HttpMessageHandler? handler = null)
+    private static ServiceCollection CreateServices(
+        HttpMessageHandler? handler = null,
+        IReadOnlyDictionary<string, string?>? overrides = null)
     {
         var values = new Dictionary<string, string?>
         {
             ["AI:Provider"] = AiModelProviderKeys.Ollama,
             ["AI:Endpoint"] = "http://127.0.0.1:11434",
             ["AI:Model"] = "llama3.2:latest",
+            ["AI:OfflineOnly"] = "true",
             ["AI:TimeoutSeconds"] = "5"
         };
+        if (overrides is not null)
+        {
+            foreach (var (key, value) in overrides)
+            {
+                values[key] = value;
+            }
+        }
         var configuration = new ConfigurationBuilder()
             .AddInMemoryCollection(values)
             .Build();

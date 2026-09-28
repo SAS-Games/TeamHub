@@ -21,6 +21,8 @@ public static class AiServiceCollectionExtensions
             .Validate(options => Uri.TryCreate(options.Endpoint, UriKind.Absolute, out var endpoint)
                     && endpoint.Scheme is "http" or "https",
                 "AI:Endpoint must be an absolute HTTP or HTTPS URL.")
+            .Validate(options => !options.OfflineOnly || AiRuntimeOptions.IsLoopbackEndpoint(options.Endpoint),
+                "AI:Endpoint must use localhost or another loopback address when AI:OfflineOnly is enabled.")
             .Validate(options => !string.IsNullOrWhiteSpace(options.Model),
                 "AI:Model is required.")
             .Validate(options => options.Temperature is >= 0 and <= 2,

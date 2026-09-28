@@ -21,6 +21,8 @@ The existing Confluence-backed consolidated report remains the source of truth. 
 ## Confirmed product decisions
 
 - The MVP starts with local inference using Qwen3 8B served by Ollama.
+- Ollama is the recommended local runtime, not a hard application dependency; another OpenAI-compatible local runtime can be selected through configuration.
+- Offline-only mode is enabled by default and prevents AI requests to non-loopback endpoints.
 - The reporting domain and generation workflow are provider-neutral and must not reference Ollama-specific request types.
 - Administrators select the provider, endpoint, model, and generation settings through configuration.
 - Changing models within the configured provider requires configuration only.
@@ -303,6 +305,7 @@ AI__ReportGenerator__Enabled=true
 AI__Provider=Ollama
 AI__Endpoint=http://127.0.0.1:11434
 AI__Model=qwen3:8b
+AI__OfflineOnly=true
 AI__Temperature=0
 AI__TimeoutSeconds=180
 AI__ReportGenerator__MaximumConcurrentRequests=1
