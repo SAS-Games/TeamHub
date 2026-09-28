@@ -31,7 +31,7 @@ public sealed class CreateWithAiModel(
     public List<AiFlowSourceInput> Sources { get; set; } = [new()];
 
     [BindProperty]
-    public string ProtectedDraft { get; set; } = string.Empty;
+    public string? ProtectedDraft { get; set; }
 
     public FlowDiagramGenerationDraft? Preview { get; private set; }
     public bool IsEnabled => options.Value.Enabled;
