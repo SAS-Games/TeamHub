@@ -66,18 +66,25 @@ public sealed class SupportSummaryModel(
             var today = DateTime.Today;
             var milestones = await milestoneTrackerService.GetMilestonesAsync(cancellationToken);
             ActiveMilestones = Studios
-                .SelectMany(studio => milestones
-                    .Where(milestone => IsProjectMilestone(studio.ProjectName, milestone))
-                    .Where(milestone => !milestone.Milestone.StartsWith("Total MS", StringComparison.OrdinalIgnoreCase))
-                    .Where(milestone => !milestone.DeliveryDate.HasValue || milestone.DeliveryDate.Value.Date >= today)
-                    .Select(milestone => new SupportSummaryMilestone(studio, milestone)))
+                .Select(studio =>
+                {
+                    var nextMilestone = milestones
+                        .Where(milestone => IsProjectMilestone(studio.ProjectName, milestone))
+                        .Where(milestone => !milestone.Milestone.StartsWith("Total MS", StringComparison.OrdinalIgnoreCase))
+                        .Where(milestone => !milestone.DeliveryDate.HasValue || milestone.DeliveryDate.Value.Date >= today)
+                        .OrderBy(milestone => milestone.DeliveryDate ?? DateTime.MaxValue)
+                        .FirstOrDefault();
+                    return nextMilestone is null
+                        ? null
+                        : new SupportSummaryMilestone(studio, nextMilestone);
+                })
+                .OfType<SupportSummaryMilestone>()
                 .Where(item => MatchesSearch(
                     item.Studio.StudioName,
                     item.Studio.ProjectName,
                     item.Milestone.Milestone,
                     item.Milestone.Description,
                     item.Milestone.Developer))
-                .OrderBy(item => item.Milestone.DeliveryDate ?? DateTime.MaxValue)
                 .ToList();
         }
         catch (Exception exception) when (exception is FileNotFoundException or InvalidDataException or InvalidOperationException)

@@ -98,7 +98,7 @@ else
         {
             <div class="table-responsive">
                 <table class="table styled-table align-middle">
-                    <thead><tr><th>Studio</th><th>Project</th><th>Milestone</th><th>Description</th><th>Developer</th><th>Delivery</th><th>Approval</th><th>Release</th></tr></thead>
+                    <thead><tr><th>Studio</th><th>Project</th><th>Milestone</th><th>Description</th><th>Delivery</th><th>Approval</th><th>Release</th></tr></thead>
                     <tbody>
                     @foreach (var item in Model.ActiveMilestones)
                     {
@@ -107,7 +107,6 @@ else
                             <td>@item.Studio.ProjectName</td>
                             <td>@item.Milestone.Milestone</td>
                             <td>@item.Milestone.Description</td>
-                            <td>@item.Milestone.Developer</td>
                             <td>@(item.Milestone.DeliveryDate?.ToString("dd MMM yyyy") ?? "TBC")</td>
                             <td>@(item.Milestone.MsApprovalDate?.ToString("dd MMM yyyy") ?? "-")</td>
                             <td>@(item.Milestone.ReleaseDate?.ToString("dd MMM yyyy") ?? "-")</td>
@@ -145,7 +144,7 @@ else
         {
             <div class="table-responsive">
                 <table class="table styled-table align-middle">
-                    <thead><tr><th>Studio</th><th>Support Type</th><th>Ticket</th><th>Summary</th><th>Working On Ticket</th><th>Components</th><th>Status</th><th>Priority</th></tr></thead>
+                    <thead><tr><th>Studio</th><th>Support Type</th><th>Ticket</th><th>Summary</th><th>Assigned User</th><th>Status</th><th>Priority</th></tr></thead>
                     <tbody>
                     @foreach (var item in Model.JiraTickets)
                     {
@@ -155,7 +154,6 @@ else
                             <td><a href="@item.Ticket.Url" target="_blank" rel="noopener">@item.Ticket.TicketId</a></td>
                             <td><a href="@item.Ticket.Url" target="_blank" rel="noopener">@item.Ticket.Summary</a></td>
                             <td>@item.Ticket.AssignedUser</td>
-                            <td>@string.Join(", ", item.Ticket.Components)</td>
                             <td>@item.Ticket.Status</td>
                             <td>@item.Ticket.Priority</td>
                         </tr>

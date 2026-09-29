@@ -137,6 +137,46 @@ public sealed class SupportSummaryModelTests
         confluenceService.LastQuery.EndDate.Should().Be(new DateOnly(2026, 9, 18));
     }
 
+    [Fact]
+    public async Task OnGetAsync_LoadsOnlyTheNextMilestonePerStudioInConfiguredStudioOrder()
+    {
+        var secondStudio = Studio("second", "Second Studio", "Second Project", isActive: true);
+        secondStudio.GroupDisplayOrder = 1;
+        secondStudio.StudioDisplayOrder = 2;
+        var firstStudio = Studio("first", "First Studio", "First Project", isActive: true);
+        firstStudio.GroupDisplayOrder = 1;
+        firstStudio.StudioDisplayOrder = 1;
+        var thirdStudio = Studio("third", "Third Studio", "Third Project", isActive: true);
+        thirdStudio.GroupDisplayOrder = 2;
+        thirdStudio.StudioDisplayOrder = 1;
+        var milestones = new StubMilestoneService(
+        [
+            new() { Title = firstStudio.ProjectName, Milestone = "Later first milestone", DeliveryDate = DateTime.Today.AddDays(10) },
+            new() { Title = firstStudio.ProjectName, Milestone = "Next first milestone", DeliveryDate = DateTime.Today.AddDays(3) },
+            new() { Title = firstStudio.ProjectName, Milestone = "Past first milestone", DeliveryDate = DateTime.Today.AddDays(-1) },
+            new() { Title = secondStudio.ProjectName, Milestone = "Next second milestone", DeliveryDate = DateTime.Today.AddDays(1) },
+            new() { Title = secondStudio.ProjectName, Milestone = "Total MS second", DeliveryDate = DateTime.Today },
+            new() { Title = thirdStudio.ProjectName, Milestone = "Unscheduled third milestone" }
+        ]);
+        var model = new SupportSummaryModel(
+            new StubStudioDirectoryService([thirdStudio, secondStudio, firstStudio]),
+            milestones,
+            new StubJiraService(),
+            new StubConfluenceService())
+        {
+            PageContext = new PageContext { HttpContext = new DefaultHttpContext() }
+        };
+
+        await model.OnGetAsync(CancellationToken.None);
+
+        model.Studios.Select(studio => studio.Id).Should().Equal("first", "second", "third");
+        model.ActiveMilestones.Select(item => item.Studio.Id).Should().Equal("first", "second", "third");
+        model.ActiveMilestones.Select(item => item.Milestone.Milestone).Should().Equal(
+            "Next first milestone",
+            "Next second milestone",
+            "Unscheduled third milestone");
+    }
+
     private static StudioDetails Studio(string id, string name, string project, bool isActive) => new()
     {
         Id = id,
@@ -227,17 +267,16 @@ public sealed class SupportSummaryModelTests
             return Task.FromResult(new StudioConfluenceUpdateResult
             {
                 IsConfigured = true,
-                Updates =
-                [
-                    new StudioConfluenceWeeklyUpdate
+                Updates = query.StudioIds
+                    .Select(studioId => new StudioConfluenceWeeklyUpdate
                     {
-                        StudioId = query.StudioIds.Single(),
+                        StudioId = studioId,
                         WeekStart = query.StartDate!.Value,
                         WeekEnd = query.EndDate!.Value,
                         PageFound = true,
                         StudioFound = true
-                    }
-                ]
+                    })
+                    .ToList()
             });
         }
     }
