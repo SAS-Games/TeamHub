@@ -22,6 +22,7 @@ using TeamHub.Web.Options;
 using TeamHub.Web.FlowDesigner;
 using TeamHub.Web.WorkCenter;
 using TeamHub.Web.Formatting;
+using TeamHub.Web.WorklogAnalytics;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.WebHost.UseStaticWebAssets();
@@ -54,6 +55,9 @@ Directory.CreateDirectory(dataProtectionKeysPath);
 // Add services to the container.
 builder.Services.AddRazorPages();
 builder.Services.AddSingleton<ISafeMarkdownRenderer, SafeMarkdownRenderer>();
+builder.Services.Configure<WorklogAnalyticsOptions>(
+    builder.Configuration.GetSection(WorklogAnalyticsOptions.SectionName));
+builder.Services.AddScoped<IWorklogEffortService, PythonWorklogEffortService>();
 var dataProtection = builder.Services.AddDataProtection()
     .PersistKeysToFileSystem(new DirectoryInfo(dataProtectionKeysPath))
     .SetApplicationName("TeamHub");

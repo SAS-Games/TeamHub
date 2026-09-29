@@ -66,6 +66,15 @@
     </div>
 </section>
 
+@if (!string.IsNullOrWhiteSpace(Model.StatusMessage))
+{
+    <div class="alert alert-success">@Model.StatusMessage</div>
+}
+@if (!string.IsNullOrWhiteSpace(Model.ErrorMessage))
+{
+    <div class="alert alert-danger">@Model.ErrorMessage</div>
+}
+
 @if (Model.Studios.Count == 0)
 {
     <div class="alert alert-info">No active studios have been configured.</div>
@@ -118,6 +127,230 @@ else
         }
     </section>
 
+    <section class="content-section" id="expected-deliveries">
+        <div class="section-heading">
+            <div><span>@Model.ExpectedDeliveries.Count item(s)</span><h2>Expected Milestone Deliveries</h2></div>
+            @if (Model.CanManagePlanning)
+            {
+                <strong>Admin managed</strong>
+            }
+        </div>
+        @if (Model.CanManagePlanning)
+        {
+            <form id="expected-delivery-new" method="post" asp-page-handler="SaveExpectedDelivery"></form>
+            @foreach (var item in Model.ExpectedDeliveries)
+            {
+                <form id="expected-delivery-@item.Id" method="post" asp-page-handler="SaveExpectedDelivery"></form>
+                <form id="expected-delivery-delete-@item.Id" method="post" asp-page-handler="DeleteExpectedDelivery">
+                    <input type="hidden" name="id" value="@item.Id" />
+                </form>
+            }
+        }
+        @if (Model.ExpectedDeliveries.Count == 0 && !Model.CanManagePlanning)
+        {
+            <div class="section-body text-secondary">No expected milestone deliveries have been added.</div>
+        }
+        else
+        {
+            <div class="table-responsive">
+                <table class="table styled-table align-middle">
+                    <thead>
+                        <tr>
+                            <th>Project Name</th>
+                            <th>Milestone Description</th>
+                            <th>Expected Delivery Date</th>
+                            @if (Model.CanManagePlanning) { <th class="text-end">Actions</th> }
+                        </tr>
+                    </thead>
+                    <tbody>
+                    @foreach (var item in Model.ExpectedDeliveries)
+                    {
+                        if (Model.CanManagePlanning)
+                        {
+                            var formId = $"expected-delivery-{item.Id}";
+                            <tr>
+                                <td>
+                                    <input type="hidden" name="id" value="@item.Id" form="@formId" />
+                                    <select class="form-select" name="projectName" form="@formId" data-planning-project required>
+                                        @foreach (var project in Model.Studios.Select(studio => studio.ProjectName).Distinct(StringComparer.OrdinalIgnoreCase))
+                                        {
+                                            <option value="@project" selected="@(string.Equals(project, item.ProjectName, StringComparison.OrdinalIgnoreCase) ? "selected" : null)">@project</option>
+                                        }
+                                    </select>
+                                </td>
+                                <td>
+                                    <select class="form-select" name="milestoneDescription" form="@formId" data-milestone-description required>
+                                        <option value="">Select milestone description</option>
+                                        @if (!Model.MilestoneDescriptionOptions.Any(option =>
+                                            string.Equals(option.ProjectName, item.ProjectName, StringComparison.OrdinalIgnoreCase)
+                                            && string.Equals(option.Description, item.MilestoneDescription, StringComparison.OrdinalIgnoreCase)))
+                                        {
+                                            <option value="@item.MilestoneDescription" data-project="@item.ProjectName" selected>@item.MilestoneDescription</option>
+                                        }
+                                        @foreach (var option in Model.MilestoneDescriptionOptions)
+                                        {
+                                            <option value="@option.Description"
+                                                    data-project="@option.ProjectName"
+                                                    selected="@(string.Equals(option.ProjectName, item.ProjectName, StringComparison.OrdinalIgnoreCase)
+                                                        && string.Equals(option.Description, item.MilestoneDescription, StringComparison.OrdinalIgnoreCase) ? "selected" : null)">
+                                                @option.Description
+                                            </option>
+                                        }
+                                    </select>
+                                </td>
+                                <td><input class="form-control" type="date" name="expectedDeliveryDate" value="@item.ExpectedDeliveryDate.ToString("yyyy-MM-dd")" form="@formId" required /></td>
+                                <td class="text-end text-nowrap">
+                                    <button class="btn btn-sm btn-primary" type="submit" form="@formId">Save</button>
+                                    <button class="btn btn-sm btn-outline-danger" type="submit" form="expected-delivery-delete-@item.Id" onclick="return confirm('Remove this expected delivery row?');">Remove</button>
+                                </td>
+                            </tr>
+                        }
+                        else
+                        {
+                            <tr>
+                                <td>@item.ProjectName</td>
+                                <td>@item.MilestoneDescription</td>
+                                <td>@item.ExpectedDeliveryDate.ToString("dd MMM yyyy")</td>
+                            </tr>
+                        }
+                    }
+                    @if (Model.CanManagePlanning)
+                    {
+                        <tr class="table-light">
+                            <td>
+                                <select class="form-select" name="projectName" form="expected-delivery-new" data-planning-project required>
+                                    <option value="">Select project</option>
+                                    @foreach (var project in Model.Studios.Select(studio => studio.ProjectName).Distinct(StringComparer.OrdinalIgnoreCase))
+                                    {
+                                        <option value="@project">@project</option>
+                                    }
+                                </select>
+                            </td>
+                            <td>
+                                <select class="form-select" name="milestoneDescription" form="expected-delivery-new" data-milestone-description required>
+                                    <option value="">Select milestone description</option>
+                                    @foreach (var option in Model.MilestoneDescriptionOptions)
+                                    {
+                                        <option value="@option.Description" data-project="@option.ProjectName">@option.Description</option>
+                                    }
+                                </select>
+                            </td>
+                            <td><input class="form-control" type="date" name="expectedDeliveryDate" form="expected-delivery-new" required /></td>
+                            <td class="text-end"><button class="btn btn-sm btn-primary" type="submit" form="expected-delivery-new">Add</button></td>
+                        </tr>
+                    }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </section>
+
+    <section class="content-section" id="build-reviews">
+        <div class="section-heading">
+            <div><span>@Model.BuildReviews.Count item(s)</span><h2>Milestone Builds in Review</h2></div>
+            @if (Model.CanManagePlanning)
+            {
+                <strong>Admin managed</strong>
+            }
+        </div>
+        @if (Model.CanManagePlanning)
+        {
+            <form id="build-review-new" method="post" asp-page-handler="SaveBuildReview"></form>
+            @foreach (var item in Model.BuildReviews)
+            {
+                <form id="build-review-@item.Id" method="post" asp-page-handler="SaveBuildReview"></form>
+                <form id="build-review-delete-@item.Id" method="post" asp-page-handler="DeleteBuildReview">
+                    <input type="hidden" name="id" value="@item.Id" />
+                </form>
+            }
+        }
+        @if (Model.BuildReviews.Count == 0 && !Model.CanManagePlanning)
+        {
+            <div class="section-body text-secondary">No milestone builds are currently in review.</div>
+        }
+        else
+        {
+            <div class="table-responsive">
+                <table class="table styled-table align-middle">
+                    <thead>
+                        <tr>
+                            <th>Project Name</th>
+                            <th>Status</th>
+                            <th>ETA</th>
+                            @if (Model.CanManagePlanning) { <th class="text-end">Actions</th> }
+                        </tr>
+                    </thead>
+                    <tbody>
+                    @foreach (var item in Model.BuildReviews)
+                    {
+                        if (Model.CanManagePlanning)
+                        {
+                            var formId = $"build-review-{item.Id}";
+                            <tr>
+                                <td>
+                                    <input type="hidden" name="id" value="@item.Id" form="@formId" />
+                                    <select class="form-select" name="projectName" form="@formId" required>
+                                        @foreach (var project in Model.Studios.Select(studio => studio.ProjectName).Distinct(StringComparer.OrdinalIgnoreCase))
+                                        {
+                                            <option value="@project" selected="@(string.Equals(project, item.ProjectName, StringComparison.OrdinalIgnoreCase) ? "selected" : null)">@project</option>
+                                        }
+                                    </select>
+                                </td>
+                                <td>
+                                    <select class="form-select" name="status" form="@formId" required>
+                                        @foreach (var status in Model.BuildReviewStatuses)
+                                        {
+                                            <option value="@status" selected="@(string.Equals(status, item.Status, StringComparison.OrdinalIgnoreCase) ? "selected" : null)">@status</option>
+                                        }
+                                    </select>
+                                </td>
+                                <td><input class="form-control" type="date" name="eta" value="@item.Eta.ToString("yyyy-MM-dd")" form="@formId" required /></td>
+                                <td class="text-end text-nowrap">
+                                    <button class="btn btn-sm btn-primary" type="submit" form="@formId">Save</button>
+                                    <button class="btn btn-sm btn-outline-danger" type="submit" form="build-review-delete-@item.Id" onclick="return confirm('Remove this build review row?');">Remove</button>
+                                </td>
+                            </tr>
+                        }
+                        else
+                        {
+                            <tr>
+                                <td>@item.ProjectName</td>
+                                <td>@item.Status</td>
+                                <td>@item.Eta.ToString("dd MMM yyyy")</td>
+                            </tr>
+                        }
+                    }
+                    @if (Model.CanManagePlanning)
+                    {
+                        <tr class="table-light">
+                            <td>
+                                <select class="form-select" name="projectName" form="build-review-new" required>
+                                    <option value="">Select project</option>
+                                    @foreach (var project in Model.Studios.Select(studio => studio.ProjectName).Distinct(StringComparer.OrdinalIgnoreCase))
+                                    {
+                                        <option value="@project">@project</option>
+                                    }
+                                </select>
+                            </td>
+                            <td>
+                                <select class="form-select" name="status" form="build-review-new" required>
+                                    <option value="">Select status</option>
+                                    @foreach (var status in Model.BuildReviewStatuses)
+                                    {
+                                        <option value="@status">@status</option>
+                                    }
+                                </select>
+                            </td>
+                            <td><input class="form-control" type="date" name="eta" form="build-review-new" required /></td>
+                            <td class="text-end"><button class="btn btn-sm btn-primary" type="submit" form="build-review-new">Add</button></td>
+                        </tr>
+                    }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </section>
+
     <section class="content-section" id="jira">
         <div class="section-heading">
             <div><span>@Model.JiraTickets.Count ticket(s)</span><h2>Jira Support Activity</h2></div>
@@ -160,6 +393,94 @@ else
                     }
                     </tbody>
                 </table>
+            </div>
+        }
+    </section>
+
+    <section class="content-section" id="effort">
+        <div class="section-heading">
+            <div>
+                <span>@Model.StartDate?.ToString("dd MMM yyyy") &ndash; @Model.EndDate?.ToString("dd MMM yyyy")</span>
+                <h2>Total Logged Effort</h2>
+            </div>
+            <strong>Actual hours</strong>
+        </div>
+        @if (!string.IsNullOrWhiteSpace(Model.EffortErrorMessage))
+        {
+            <div class="section-body text-warning">@Model.EffortErrorMessage</div>
+        }
+        else if (Model.EffortSummary.Count == 0 && Model.StudioEffortBreakdown.Count == 0)
+        {
+            <div class="section-body text-secondary">No logged effort was found for the selected period.</div>
+        }
+        else
+        {
+            <div class="support-effort-grid section-body">
+                <article class="support-effort-card">
+                    <div>
+                        <h3>Actual Effort Summary</h3>
+                        <p>Logged hours by activity and studio-support group.</p>
+                    </div>
+                    @if (Model.EffortSummary.Count == 0)
+                    {
+                        <div class="text-secondary">No effort summary data is available.</div>
+                    }
+                    else
+                    {
+                        <div class="support-effort-chart">
+                            <div class="support-effort-pie"
+                                 style="background: @Model.BuildPieGradient(Model.EffortSummary)"
+                                 role="img"
+                                 aria-label="Actual effort summary pie chart. Total @Model.GetEffortTotal(Model.EffortSummary).ToString("0.##") hours."></div>
+                            <div class="support-effort-legend">
+                                @for (var index = 0; index < Model.EffortSummary.Count; index++)
+                                {
+                                    var slice = Model.EffortSummary[index];
+                                    <div class="support-effort-legend-item">
+                                        <span class="support-effort-swatch" style="background-color: @Model.GetEffortColor(index)"></span>
+                                        <span class="support-effort-label">@slice.Label</span>
+                                        <strong>@slice.Hours.ToString("0.##")h</strong>
+                                        <span>@Model.GetEffortShare(slice, Model.EffortSummary).ToString("0.#")%</span>
+                                    </div>
+                                }
+                            </div>
+                        </div>
+                        <div class="support-effort-total">Total <strong>@Model.GetEffortTotal(Model.EffortSummary).ToString("0.##") hours</strong></div>
+                    }
+                </article>
+
+                <article class="support-effort-card">
+                    <div>
+                        <h3>Actual Studio Support</h3>
+                        <p>Logged studio-support hours by project.</p>
+                    </div>
+                    @if (Model.StudioEffortBreakdown.Count == 0)
+                    {
+                        <div class="text-secondary">No studio-support effort is available.</div>
+                    }
+                    else
+                    {
+                        <div class="support-effort-chart">
+                            <div class="support-effort-pie"
+                                 style="background: @Model.BuildPieGradient(Model.StudioEffortBreakdown)"
+                                 role="img"
+                                 aria-label="Actual studio support pie chart. Total @Model.GetEffortTotal(Model.StudioEffortBreakdown).ToString("0.##") hours."></div>
+                            <div class="support-effort-legend">
+                                @for (var index = 0; index < Model.StudioEffortBreakdown.Count; index++)
+                                {
+                                    var slice = Model.StudioEffortBreakdown[index];
+                                    <div class="support-effort-legend-item">
+                                        <span class="support-effort-swatch" style="background-color: @Model.GetEffortColor(index)"></span>
+                                        <span class="support-effort-label">@slice.Label</span>
+                                        <strong>@slice.Hours.ToString("0.##")h</strong>
+                                        <span>@Model.GetEffortShare(slice, Model.StudioEffortBreakdown).ToString("0.#")%</span>
+                                    </div>
+                                }
+                            </div>
+                        </div>
+                        <div class="support-effort-total">Total <strong>@Model.GetEffortTotal(Model.StudioEffortBreakdown).ToString("0.##") hours</strong></div>
+                    }
+                </article>
             </div>
         }
     </section>
@@ -312,7 +633,30 @@ else
     month.addEventListener('change', () => populateWeeks(true));
     week.addEventListener('change', updatePresetDates);
     period.addEventListener('change', updatePeriod);
-    updatePeriod();
+updatePeriod();
+})();
+
+(() => {
+    const updateDescriptions = projectSelect => {
+        const formId = projectSelect.getAttribute('form');
+        const descriptionSelect = document.querySelector(`[data-milestone-description][form="${formId}"]`);
+        if (!descriptionSelect) return;
+        const project = projectSelect.value.toLocaleLowerCase();
+        let selectedIsAvailable = false;
+        for (const option of descriptionSelect.options) {
+            if (!option.dataset.project) continue;
+            const available = option.dataset.project.toLocaleLowerCase() === project;
+            option.hidden = !available;
+            option.disabled = !available;
+            if (available && option.selected) selectedIsAvailable = true;
+        }
+        if (!selectedIsAvailable) descriptionSelect.value = '';
+    };
+
+    document.querySelectorAll('[data-planning-project]').forEach(projectSelect => {
+        projectSelect.addEventListener('change', () => updateDescriptions(projectSelect));
+        updateDescriptions(projectSelect);
+    });
 })();
 </script>
 }

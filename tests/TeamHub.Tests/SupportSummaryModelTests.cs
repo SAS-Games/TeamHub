@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Mvc.RazorPages;
 using TeamHub.Milestones;
 using TeamHub.Studio;
 using TeamHub.Web.Pages;
+using TeamHub.Web.WorklogAnalytics;
 
 namespace TeamHub.Tests;
 
@@ -34,12 +35,29 @@ public sealed class SupportSummaryModelTests
         ]);
         var jiraService = new StubJiraService();
         var confluenceService = new StubConfluenceService();
+        var effortService = new StubWorklogEffortService
+        {
+            Report = new WorklogEffortReport
+            {
+                EffortSummary =
+                [
+                    new WorklogEffortSlice("IHP", 30),
+                    new WorklogEffortSlice("Internal Activities", 10)
+                ],
+                StudioBreakdown =
+                [
+                    new WorklogEffortSlice("Alpha Project", 30)
+                ]
+            }
+        };
         var identity = new ClaimsIdentity([new Claim(ClaimTypes.Name, "reader@example.com")], "Test");
         var model = new SupportSummaryModel(
             new StubStudioDirectoryService([inactiveStudio, activeStudio]),
             milestoneService,
             jiraService,
-            confluenceService)
+            confluenceService,
+            new StubPlanningService(),
+            effortService)
         {
             PageContext = new PageContext
             {
@@ -76,6 +94,12 @@ public sealed class SupportSummaryModelTests
         confluenceService.LastQuery.StartDate.Should().Be(weekStart);
         confluenceService.LastQuery.EndDate.Should().Be(weekStart.AddDays(4));
         model.ConfluenceResult.Updates.Should().ContainSingle().Which.StudioId.Should().Be(activeStudio.Id);
+        effortService.StartDate.Should().Be(weekStart);
+        effortService.EndDate.Should().Be(weekStart.AddDays(4));
+        model.EffortSummary.Sum(slice => slice.Hours).Should().Be(40);
+        model.StudioEffortBreakdown.Should().ContainSingle()
+            .Which.Label.Should().Be(activeStudio.ProjectName);
+        model.BuildPieGradient(model.EffortSummary).Should().StartWith("conic-gradient(");
     }
 
     [Fact]
@@ -88,7 +112,9 @@ public sealed class SupportSummaryModelTests
             new StubStudioDirectoryService([studio]),
             new StubMilestoneService([]),
             jiraService,
-            confluenceService)
+            confluenceService,
+            new StubPlanningService(),
+            new StubWorklogEffortService())
         {
             ReportPeriod = SupportSummaryModel.MonthlyPeriod,
             SelectedMonth = "2026-09",
@@ -118,7 +144,9 @@ public sealed class SupportSummaryModelTests
             new StubStudioDirectoryService([studio]),
             new StubMilestoneService([]),
             jiraService,
-            confluenceService)
+            confluenceService,
+            new StubPlanningService(),
+            new StubWorklogEffortService())
         {
             ReportPeriod = SupportSummaryModel.CustomPeriod,
             StartDate = new DateOnly(2026, 9, 3),
@@ -162,7 +190,9 @@ public sealed class SupportSummaryModelTests
             new StubStudioDirectoryService([thirdStudio, secondStudio, firstStudio]),
             milestones,
             new StubJiraService(),
-            new StubConfluenceService())
+            new StubConfluenceService(),
+            new StubPlanningService(),
+            new StubWorklogEffortService())
         {
             PageContext = new PageContext { HttpContext = new DefaultHttpContext() }
         };
@@ -278,6 +308,67 @@ public sealed class SupportSummaryModelTests
                     })
                     .ToList()
             });
+        }
+    }
+
+    private sealed class StubPlanningService : ISupportSummaryPlanningService
+    {
+        public List<ExpectedMilestoneDelivery> ExpectedDeliveries { get; } = [];
+        public List<MilestoneBuildReview> BuildReviews { get; } = [];
+
+        public Task<IReadOnlyList<ExpectedMilestoneDelivery>> GetExpectedDeliveriesAsync(
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult<IReadOnlyList<ExpectedMilestoneDelivery>>(ExpectedDeliveries);
+
+        public Task<ExpectedMilestoneDelivery> SaveExpectedDeliveryAsync(
+            ExpectedMilestoneDelivery delivery,
+            CancellationToken cancellationToken = default)
+        {
+            ExpectedDeliveries.RemoveAll(item => item.Id == delivery.Id);
+            ExpectedDeliveries.Add(delivery);
+            return Task.FromResult(delivery);
+        }
+
+        public Task DeleteExpectedDeliveryAsync(Guid id, CancellationToken cancellationToken = default)
+        {
+            ExpectedDeliveries.RemoveAll(item => item.Id == id);
+            return Task.CompletedTask;
+        }
+
+        public Task<IReadOnlyList<MilestoneBuildReview>> GetBuildReviewsAsync(
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult<IReadOnlyList<MilestoneBuildReview>>(BuildReviews);
+
+        public Task<MilestoneBuildReview> SaveBuildReviewAsync(
+            MilestoneBuildReview review,
+            CancellationToken cancellationToken = default)
+        {
+            BuildReviews.RemoveAll(item => item.Id == review.Id);
+            BuildReviews.Add(review);
+            return Task.FromResult(review);
+        }
+
+        public Task DeleteBuildReviewAsync(Guid id, CancellationToken cancellationToken = default)
+        {
+            BuildReviews.RemoveAll(item => item.Id == id);
+            return Task.CompletedTask;
+        }
+    }
+
+    private sealed class StubWorklogEffortService : IWorklogEffortService
+    {
+        public DateOnly? StartDate { get; private set; }
+        public DateOnly? EndDate { get; private set; }
+        public WorklogEffortReport Report { get; set; } = new();
+
+        public Task<WorklogEffortReport> GetActualEffortAsync(
+            DateOnly startDate,
+            DateOnly endDate,
+            CancellationToken cancellationToken = default)
+        {
+            StartDate = startDate;
+            EndDate = endDate;
+            return Task.FromResult(Report);
         }
     }
 }

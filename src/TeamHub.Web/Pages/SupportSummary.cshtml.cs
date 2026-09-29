@@ -1,8 +1,10 @@
 using System.Globalization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
+using TeamHub.Authentication;
 using TeamHub.Milestones;
 using TeamHub.Studio;
+using TeamHub.Web.WorklogAnalytics;
 
 namespace TeamHub.Web.Pages;
 
@@ -10,7 +12,9 @@ public sealed class SupportSummaryModel(
     IStudioDirectoryService studioDirectoryService,
     IMilestoneTrackerService milestoneTrackerService,
     IStudioJiraTicketService jiraTicketService,
-    IStudioConfluenceUpdateService confluenceUpdateService) : PageModel
+    IStudioConfluenceUpdateService confluenceUpdateService,
+    ISupportSummaryPlanningService planningService,
+    IWorklogEffortService worklogEffortService) : PageModel
 {
     public const string WeeklyPeriod = "Weekly";
     public const string MonthlyPeriod = "Monthly";
@@ -28,12 +32,26 @@ public sealed class SupportSummaryModel(
 
     public IReadOnlyList<StudioDetails> Studios { get; private set; } = [];
     public IReadOnlyList<SupportSummaryMilestone> ActiveMilestones { get; private set; } = [];
+    public IReadOnlyList<SupportSummaryMilestoneDescriptionOption> MilestoneDescriptionOptions { get; private set; } = [];
+    public IReadOnlyList<ExpectedMilestoneDelivery> ExpectedDeliveries { get; private set; } = [];
+    public IReadOnlyList<MilestoneBuildReview> BuildReviews { get; private set; } = [];
+    public IReadOnlyList<string> BuildReviewStatuses => MilestoneBuildReviewStatuses.All;
+    public IReadOnlyList<WorklogEffortSlice> EffortSummary { get; private set; } = [];
+    public IReadOnlyList<WorklogEffortSlice> StudioEffortBreakdown { get; private set; } = [];
     public IReadOnlyList<SupportSummaryTicket> JiraTickets { get; private set; } = [];
     public IReadOnlyList<SupportSummaryMessage> JiraMessages { get; private set; } = [];
     public StudioConfluenceUpdateResult ConfluenceResult { get; private set; } = new();
     public string? MilestoneErrorMessage { get; private set; }
     public string? ConfluenceErrorMessage { get; private set; }
+    public string? EffortErrorMessage { get; private set; }
     public bool IsUsingSharedJiraCredential { get; private set; }
+    public bool CanManagePlanning => User.IsInRole(TeamHubUserTypes.Admin);
+
+    [TempData]
+    public string? StatusMessage { get; set; }
+
+    [TempData]
+    public string? ErrorMessage { get; set; }
 
     public async Task OnGetAsync(CancellationToken cancellationToken)
     {
@@ -46,11 +64,84 @@ public sealed class SupportSummaryModel(
             .ThenBy(studio => studio.StudioName, StringComparer.OrdinalIgnoreCase)
             .ThenBy(studio => studio.ProjectName, StringComparer.OrdinalIgnoreCase)
             .ToList();
+        ExpectedDeliveries = await planningService.GetExpectedDeliveriesAsync(cancellationToken);
+        BuildReviews = await planningService.GetBuildReviewsAsync(cancellationToken);
+        await LoadEffortAsync(cancellationToken);
         if (Studios.Count == 0) return;
 
         await LoadMilestonesAsync(cancellationToken);
         await LoadJiraAsync(cancellationToken);
         await LoadConfluenceAsync(cancellationToken);
+    }
+
+    public async Task<IActionResult> OnPostSaveExpectedDeliveryAsync(
+        Guid? id,
+        string? projectName,
+        string? milestoneDescription,
+        DateOnly? expectedDeliveryDate,
+        CancellationToken cancellationToken)
+    {
+        if (!CanManagePlanning) return Forbid();
+        if (!expectedDeliveryDate.HasValue)
+            return PlanningError("Enter an expected delivery date.", "expected-deliveries");
+        var project = await GetConfiguredProjectAsync(projectName, cancellationToken);
+        if (project is null)
+            return PlanningError("Select a configured active project.", "expected-deliveries");
+        if (string.IsNullOrWhiteSpace(milestoneDescription))
+            return PlanningError("Select a milestone description.", "expected-deliveries");
+
+        await planningService.SaveExpectedDeliveryAsync(
+            new ExpectedMilestoneDelivery(
+                id ?? Guid.Empty,
+                project,
+                milestoneDescription,
+                expectedDeliveryDate.Value),
+            cancellationToken);
+        StatusMessage = id.HasValue ? "Expected milestone delivery updated." : "Expected milestone delivery added.";
+        return RedirectToPlanningTable("expected-deliveries");
+    }
+
+    public async Task<IActionResult> OnPostDeleteExpectedDeliveryAsync(
+        Guid id,
+        CancellationToken cancellationToken)
+    {
+        if (!CanManagePlanning) return Forbid();
+        await planningService.DeleteExpectedDeliveryAsync(id, cancellationToken);
+        StatusMessage = "Expected milestone delivery removed.";
+        return RedirectToPlanningTable("expected-deliveries");
+    }
+
+    public async Task<IActionResult> OnPostSaveBuildReviewAsync(
+        Guid? id,
+        string? projectName,
+        string? status,
+        DateOnly? eta,
+        CancellationToken cancellationToken)
+    {
+        if (!CanManagePlanning) return Forbid();
+        if (!eta.HasValue)
+            return PlanningError("Enter an ETA.", "build-reviews");
+        var project = await GetConfiguredProjectAsync(projectName, cancellationToken);
+        if (project is null)
+            return PlanningError("Select a configured active project.", "build-reviews");
+        if (!MilestoneBuildReviewStatuses.All.Contains(status, StringComparer.OrdinalIgnoreCase))
+            return PlanningError("Select a valid review status.", "build-reviews");
+
+        await planningService.SaveBuildReviewAsync(
+            new MilestoneBuildReview(id ?? Guid.Empty, project, status!, eta.Value),
+            cancellationToken);
+        StatusMessage = id.HasValue ? "Milestone build review updated." : "Milestone build review added.";
+        return RedirectToPlanningTable("build-reviews");
+    }
+
+    public async Task<IActionResult> OnPostDeleteBuildReviewAsync(
+        Guid id,
+        CancellationToken cancellationToken)
+    {
+        if (!CanManagePlanning) return Forbid();
+        await planningService.DeleteBuildReviewAsync(id, cancellationToken);
+        StatusMessage = "Milestone build review removed.";
+        return RedirectToPlanningTable("build-reviews");
     }
 
     public string GetStudioName(string studioId) =>
@@ -59,19 +150,63 @@ public sealed class SupportSummaryModel(
     public string GetStudioGroup(string studioId) =>
         FindStudio(studioId)?.StudioGroup ?? "Ungrouped";
 
+    public double GetEffortTotal(IReadOnlyList<WorklogEffortSlice> slices) =>
+        slices.Sum(slice => slice.Hours);
+
+    public double GetEffortShare(WorklogEffortSlice slice, IReadOnlyList<WorklogEffortSlice> slices)
+    {
+        var total = GetEffortTotal(slices);
+        return total <= 0 ? 0 : slice.Hours / total * 100;
+    }
+
+    public string GetEffortColor(int index) =>
+        EffortColors[index % EffortColors.Length];
+
+    public string BuildPieGradient(IReadOnlyList<WorklogEffortSlice> slices)
+    {
+        var total = GetEffortTotal(slices);
+        if (total <= 0) return "#d9e1dc";
+
+        var start = 0d;
+        var stops = new List<string>();
+        for (var index = 0; index < slices.Count; index++)
+        {
+            var end = start + slices[index].Hours / total * 100;
+            stops.Add(FormattableString.Invariant(
+                $"{GetEffortColor(index)} {start:0.####}% {end:0.####}%"));
+            start = end;
+        }
+        return $"conic-gradient({string.Join(", ", stops)})";
+    }
+
     private async Task LoadMilestonesAsync(CancellationToken cancellationToken)
     {
         try
         {
             var today = DateTime.Today;
             var milestones = await milestoneTrackerService.GetMilestonesAsync(cancellationToken);
+            var upcomingMilestones = milestones
+                .Where(milestone => !milestone.Milestone.StartsWith("Total MS", StringComparison.OrdinalIgnoreCase))
+                .Where(milestone => !milestone.DeliveryDate.HasValue || milestone.DeliveryDate.Value.Date >= today)
+                .ToList();
+            MilestoneDescriptionOptions = Studios
+                .SelectMany(studio => upcomingMilestones
+                    .Where(milestone => IsProjectMilestone(studio.ProjectName, milestone))
+                    .Where(milestone => !string.IsNullOrWhiteSpace(milestone.Description))
+                    .OrderBy(milestone => milestone.DeliveryDate ?? DateTime.MaxValue)
+                    .Select(milestone => new SupportSummaryMilestoneDescriptionOption(
+                        studio.ProjectName,
+                        milestone.Description.Trim())))
+                .GroupBy(
+                    option => $"{option.ProjectName}\0{option.Description}",
+                    StringComparer.OrdinalIgnoreCase)
+                .Select(group => group.First())
+                .ToList();
             ActiveMilestones = Studios
                 .Select(studio =>
                 {
-                    var nextMilestone = milestones
+                    var nextMilestone = upcomingMilestones
                         .Where(milestone => IsProjectMilestone(studio.ProjectName, milestone))
-                        .Where(milestone => !milestone.Milestone.StartsWith("Total MS", StringComparison.OrdinalIgnoreCase))
-                        .Where(milestone => !milestone.DeliveryDate.HasValue || milestone.DeliveryDate.Value.Date >= today)
                         .OrderBy(milestone => milestone.DeliveryDate ?? DateTime.MaxValue)
                         .FirstOrDefault();
                     return nextMilestone is null
@@ -90,6 +225,26 @@ public sealed class SupportSummaryModel(
         catch (Exception exception) when (exception is FileNotFoundException or InvalidDataException or InvalidOperationException)
         {
             MilestoneErrorMessage = exception.Message;
+        }
+    }
+
+    private async Task LoadEffortAsync(CancellationToken cancellationToken)
+    {
+        if (!StartDate.HasValue || !EndDate.HasValue) return;
+        try
+        {
+            var report = await worklogEffortService.GetActualEffortAsync(
+                StartDate.Value,
+                EndDate.Value,
+                cancellationToken);
+            EffortSummary = report.EffortSummary;
+            StudioEffortBreakdown = report.StudioBreakdown;
+        }
+        catch (Exception exception) when (exception is InvalidOperationException
+            or InvalidDataException
+            or ArgumentException)
+        {
+            EffortErrorMessage = exception.Message;
         }
     }
 
@@ -196,6 +351,27 @@ public sealed class SupportSummaryModel(
     private StudioDetails? FindStudio(string studioId) =>
         Studios.FirstOrDefault(studio => string.Equals(studio.Id, studioId, StringComparison.OrdinalIgnoreCase));
 
+    private async Task<string?> GetConfiguredProjectAsync(
+        string? projectName,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(projectName)) return null;
+        var studios = await studioDirectoryService.GetStudiosAsync(cancellationToken);
+        return studios
+            .Where(studio => studio.IsActive)
+            .Select(studio => studio.ProjectName)
+            .FirstOrDefault(project => string.Equals(project, projectName.Trim(), StringComparison.OrdinalIgnoreCase));
+    }
+
+    private IActionResult PlanningError(string message, string fragment)
+    {
+        ErrorMessage = message;
+        return RedirectToPlanningTable(fragment);
+    }
+
+    private IActionResult RedirectToPlanningTable(string fragment) =>
+        Redirect($"/SupportSummary#{fragment}");
+
     private void SetReportRange()
     {
         var today = DateOnly.FromDateTime(DateTime.Today);
@@ -261,9 +437,26 @@ public sealed class SupportSummaryModel(
     private static bool IsProjectMilestone(string projectName, MilestoneDto milestone) =>
         string.Equals(milestone.Title, projectName, StringComparison.OrdinalIgnoreCase)
         || string.Equals(milestone.Program, projectName, StringComparison.OrdinalIgnoreCase);
+
+    private static readonly string[] EffortColors =
+    [
+        "#287565",
+        "#c05a35",
+        "#d89a2b",
+        "#3d7ea6",
+        "#7a5ca3",
+        "#4d9b72",
+        "#b24d72",
+        "#687a73",
+        "#9a6b3f",
+        "#4b638c",
+        "#8b6f47",
+        "#5f8f91"
+    ];
 }
 
 public sealed record SupportSummaryMilestone(StudioDetails Studio, MilestoneDto Milestone);
+public sealed record SupportSummaryMilestoneDescriptionOption(string ProjectName, string Description);
 public sealed record SupportSummaryTicket(StudioDetails Studio, string SupportType, StudioJiraTicket Ticket);
 public sealed record SupportSummaryMessage(StudioDetails Studio, string Message);
 public sealed record SupportSummaryWeekOption(int Number, DateOnly StartDate, DateOnly EndDate, string Label);
