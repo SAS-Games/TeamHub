@@ -71,7 +71,12 @@ public sealed class SupportSummaryModel(
                     .Where(milestone => !milestone.Milestone.StartsWith("Total MS", StringComparison.OrdinalIgnoreCase))
                     .Where(milestone => !milestone.DeliveryDate.HasValue || milestone.DeliveryDate.Value.Date >= today)
                     .Select(milestone => new SupportSummaryMilestone(studio, milestone)))
-                .Where(item => MatchesSearch(
+                    .GroupBy(item => item.Studio.StudioName)
+                    .Select(group => group
+                    .OrderBy(item => item.Milestone.DeliveryDate ?? DateTime.MaxValue)
+                    .FirstOrDefault())
+                    .Where(item => item != null)
+                    .Where(item => MatchesSearch(
                     item.Studio.StudioName,
                     item.Studio.ProjectName,
                     item.Milestone.Milestone,
