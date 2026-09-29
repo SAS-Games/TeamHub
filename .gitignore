@@ -16,6 +16,9 @@ TestResults/
 *.coverage
 *.coveragexml
 
+# Local AI model weights are machine-specific and must not be committed.
+*.gguf
+
 # Local application databases, including SQLite journal/WAL files
 **/data/*.db*
 **/data/protection-keys/

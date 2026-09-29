@@ -22,6 +22,7 @@ public sealed class EditModel(
     public bool CanSaveAsTemplate { get; private set; }
     public bool IsPublishedView { get; private set; }
     public bool IsReviewPreview { get; private set; }
+    public bool IsViewOnly { get; private set; }
     public bool StartInPresentation { get; private set; }
     public string LoadUrl { get; private set; } = string.Empty;
     public string SaveUrl { get; private set; } = string.Empty;
@@ -35,6 +36,7 @@ public sealed class EditModel(
         Guid id,
         string? trail,
         bool published = false,
+        bool viewOnly = false,
         bool present = false,
         Guid? requestId = null,
         CancellationToken cancellationToken = default)
@@ -55,6 +57,7 @@ public sealed class EditModel(
                 (ancestorId, token) => publications.GetRequestDiagramAsync(requestId.Value, ancestorId, token),
                 published: false,
                 requestId: requestId,
+                viewOnly: true,
                 present: present,
                 cancellationToken: cancellationToken);
             BackPath = Breadcrumbs.Count > 0
@@ -69,7 +72,8 @@ public sealed class EditModel(
             if (publication is null) return NotFound();
             Configure(publication.Definition);
             IsPublishedView = true;
-            CanEdit = publications.CanReview;
+            CanEdit = publications.CanReview && !viewOnly;
+            IsViewOnly = !CanEdit;
             CanRequestPublication = false;
             CanSaveAsTemplate = false;
             LoadUrl = $"/api/flows/published/{id}";
@@ -82,6 +86,7 @@ public sealed class EditModel(
                     (await publications.GetPublishedBySourceAsync(ancestorId, token))?.Definition,
                 published: true,
                 requestId: null,
+                viewOnly: IsViewOnly,
                 present: present,
                 cancellationToken: cancellationToken);
             BackPath = Breadcrumbs.Count > 0
@@ -95,6 +100,7 @@ public sealed class EditModel(
 
         Configure(flow);
         CanEdit = permissions.CanEdit(flow.CreatedBy);
+        IsViewOnly = !CanEdit;
         IsShared = flow.IsShared;
         CanRequestPublication = CanEdit;
         CanSaveAsTemplate = permissions.CanManageTemplates();
@@ -111,6 +117,7 @@ public sealed class EditModel(
             (ancestorId, token) => flows.GetAsync(ancestorId, token),
             published: false,
             requestId: null,
+            viewOnly: IsViewOnly,
             present: present,
             cancellationToken: cancellationToken);
         BackPath = Breadcrumbs.Count > 0
@@ -125,6 +132,7 @@ public sealed class EditModel(
     {
         Configure(flow);
         CanEdit = false;
+        IsViewOnly = true;
         IsShared = false;
         CanRequestPublication = false;
         CanSaveAsTemplate = false;
@@ -143,6 +151,7 @@ public sealed class EditModel(
         Func<Guid, CancellationToken, Task<FlowDefinition?>> loadAncestor,
         bool published,
         Guid? requestId,
+        bool viewOnly,
         bool present,
         CancellationToken cancellationToken)
     {
@@ -165,7 +174,7 @@ public sealed class EditModel(
             var url = requestId.HasValue
                 ? Url.Page("/Flows/Edit", new { id, trail = ancestorTrail, requestId, present = presentation })
                 : published
-                    ? Url.Page("/Flows/Edit", new { id, trail = ancestorTrail, published = true, present = presentation })
+                    ? Url.Page("/Flows/Edit", new { id, trail = ancestorTrail, published = true, viewOnly = viewOnly ? true : (bool?)null, present = presentation })
                     : Url.Page("/Flows/Edit", new { id, trail = ancestorTrail, present = presentation });
             url ??= $"/flows/{id}/edit";
             breadcrumbs.Add(new FlowBreadcrumb(id, ancestor.Name, url));

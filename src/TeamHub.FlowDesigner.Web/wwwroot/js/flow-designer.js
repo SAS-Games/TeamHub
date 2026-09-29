@@ -13,6 +13,7 @@
     const zoomStorageKey = "teamhub.flowDesigner.zoom.v1";
     const canEdit = root.dataset.canEdit === "true";
     const isPublishedView = root.dataset.publishedView === "true";
+    const isViewOnly = root.dataset.viewOnly === "true";
     const currentUser = root.dataset.currentUser || "You";
     const nameInput = byId("flowName");
     const saveState = byId("saveState");
@@ -779,7 +780,10 @@
         if (!ancestors.includes(flowId)) ancestors.push(flowId);
         const nextTrail = ancestors.slice(-20).join(",");
         const parameters = new URLSearchParams({ trail: nextTrail });
-        if (root.dataset.publishedView === "true") parameters.set("published", "true");
+        if (root.dataset.publishedView === "true") {
+            parameters.set("published", "true");
+            if (isViewOnly) parameters.set("viewOnly", "true");
+        }
         else if (reviewRequestId) parameters.set("requestId", reviewRequestId);
         if (presentationMode) parameters.set("present", "true");
         window.location.assign(`/flows/${childFlowId}/edit?${parameters}`);
@@ -1244,7 +1248,10 @@
 
         const parameters = new URLSearchParams();
         if (entry.ancestorIds.length) parameters.set("trail", entry.ancestorIds.slice(-20).join(","));
-        if (isPublishedView) parameters.set("published", "true");
+        if (isPublishedView) {
+            parameters.set("published", "true");
+            if (isViewOnly) parameters.set("viewOnly", "true");
+        }
         else if (reviewRequestId) parameters.set("requestId", reviewRequestId);
         if (presentationMode) parameters.set("present", "true");
         parameters.set("focusNode", entry.nodeId);

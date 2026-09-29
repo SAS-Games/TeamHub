@@ -327,6 +327,7 @@ public sealed class AccessControlTests
     [InlineData("/Administration/Audit", "Administration")]
     [InlineData("/Studio/JiraTickets", TeamHubModules.StudioSupport)]
     [InlineData("/Studio/WeeklyUpdates", TeamHubModules.StudioSupport)]
+    [InlineData("/SupportSummary", TeamHubModules.StudioSupport)]
     [InlineData("/Team/Custom/support-metrics", "Team Tab: support-metrics")]
     [InlineData("/Register", null)]
     [InlineData("/AcceptInvitation", null)]

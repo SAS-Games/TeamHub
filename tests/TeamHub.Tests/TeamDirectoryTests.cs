@@ -83,13 +83,16 @@ public sealed class TeamDirectoryTests
             var saved = await configuration.SaveSpecializationAsync(new SpecializationDto
             {
                 Pod = "Rendering",
-                FocusAreas = "Shaders, performance",
-                Members = "Asha, Dev"
+                FocusAreas = "Shaders\nPerformance",
+                Members = "Asha\nDev"
             });
 
             var directory = await scope.ServiceProvider.GetRequiredService<ITeamDirectoryService>()
                 .GetTeamDirectoryAsync();
-            directory.Specializations.Should().ContainSingle().Which.Pod.Should().Be("Rendering");
+            var specialization = directory.Specializations.Should().ContainSingle().Subject;
+            specialization.Pod.Should().Be("Rendering");
+            specialization.FocusAreas.Should().Be("Shaders\nPerformance");
+            specialization.Members.Should().Be("Asha\nDev");
 
             await configuration.DeleteSpecializationAsync(saved.Id);
             (await scope.ServiceProvider.GetRequiredService<ITeamDirectoryService>()

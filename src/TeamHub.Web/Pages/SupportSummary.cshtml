@@ -1,0 +1,320 @@
+@page "/SupportSummary"
+@model TeamHub.Web.Pages.SupportSummaryModel
+@using TeamHub.Web.Pages.Studio
+@{
+    ViewData["Title"] = "Support Summary";
+    ViewData["PageWidth"] = "Full";
+}
+
+<div class="page-hero">
+    <div>
+        <div class="eyebrow">Consolidated report</div>
+        <h1>Support Summary</h1>
+        <p>Current milestones, active Jira support, and weekly or monthly Confluence updates across all active studios.</p>
+    </div>
+</div>
+
+<section class="content-section">
+    <div class="section-heading"><div><span>Filters</span><h2>Current Support Activity</h2></div></div>
+    <div class="section-body">
+        <form method="get" class="row g-3 align-items-end" data-support-summary-filters>
+            <div class="col-12 col-xl-3">
+                <label asp-for="Search" class="form-label">Search</label>
+                <input asp-for="Search" class="form-control" placeholder="Studio, project, ticket, assignee, milestone, or update" />
+            </div>
+            <div class="col-sm-6 col-xl-2">
+                <label asp-for="ReportPeriod" class="form-label">Summary period</label>
+                <select asp-for="ReportPeriod" class="form-select" data-report-period>
+                    <option value="@SupportSummaryModel.WeeklyPeriod">Weekly</option>
+                    <option value="@SupportSummaryModel.MonthlyPeriod">Monthly</option>
+                    <option value="@SupportSummaryModel.CustomPeriod">Custom period</option>
+                </select>
+            </div>
+            <div class="col-sm-6 col-xl-2">
+                <label asp-for="SelectedMonth" class="form-label">Month</label>
+                <input asp-for="SelectedMonth" type="month" class="form-control" data-report-month />
+            </div>
+            <div class="col-sm-6 col-xl-2" data-week-filter>
+                <label asp-for="Week" class="form-label">Week</label>
+                <select asp-for="Week" class="form-select" data-report-week>
+                    @foreach (var option in Model.WeekOptions)
+                    {
+                        <option value="@option.Number">@option.Label</option>
+                    }
+                </select>
+            </div>
+            <div class="col-sm-6 col-xl-2">
+                <label asp-for="ActiveSprintOnly" class="form-label">Jira sprint</label>
+                <select asp-for="ActiveSprintOnly" class="form-select">
+                    <option value="true">Active sprint</option>
+                    <option value="false">All matching tickets</option>
+                </select>
+            </div>
+            <div class="col-sm-6 col-xl-2">
+                <label asp-for="StartDate" class="form-label">Start date</label>
+                <input asp-for="StartDate" type="date" class="form-control" data-report-start />
+            </div>
+            <div class="col-sm-6 col-xl-2">
+                <label asp-for="EndDate" class="form-label">End date</label>
+                <input asp-for="EndDate" type="date" class="form-control" data-report-end />
+            </div>
+            <div class="col-12 col-xl-auto d-flex gap-2">
+                <button type="submit" class="btn btn-primary">Search</button>
+                <a class="btn btn-outline-secondary" asp-page="/SupportSummary">Reset</a>
+            </div>
+        </form>
+    </div>
+</section>
+
+@if (Model.Studios.Count == 0)
+{
+    <div class="alert alert-info">No active studios have been configured.</div>
+}
+else
+{
+    <section class="content-section">
+        <div class="stat-tiles">
+            <div class="stat-tile"><div class="stat-label">Active Studios</div><div class="stat-value">@Model.Studios.Count</div></div>
+            <div class="stat-tile"><div class="stat-label">Active Milestones</div><div class="stat-value">@Model.ActiveMilestones.Count</div></div>
+            <div class="stat-tile"><div class="stat-label">Jira Tickets</div><div class="stat-value">@Model.JiraTickets.Count</div></div>
+            <div class="stat-tile"><div class="stat-label">Confluence Updates</div><div class="stat-value">@Model.ConfluenceResult.Updates.Count(update => update.PageFound && update.StudioFound)</div></div>
+        </div>
+    </section>
+
+    <section class="content-section" id="milestones">
+        <div class="section-heading">
+            <div><span>@Model.ActiveMilestones.Count active item(s)</span><h2>Current Active Milestones</h2></div>
+            <a class="btn btn-sm btn-outline-secondary" asp-page="/Milestones">Open Milestone Tracker</a>
+        </div>
+        @if (!string.IsNullOrWhiteSpace(Model.MilestoneErrorMessage))
+        {
+            <div class="section-body text-warning">@Model.MilestoneErrorMessage</div>
+        }
+        else if (Model.ActiveMilestones.Count == 0)
+        {
+            <div class="section-body text-secondary">No active milestones match the selected search.</div>
+        }
+        else
+        {
+            <div class="table-responsive">
+                <table class="table styled-table align-middle">
+                    <thead><tr><th>Studio</th><th>Project</th><th>Milestone</th><th>Description</th><th>Developer</th><th>Delivery</th><th>Approval</th><th>Release</th></tr></thead>
+                    <tbody>
+                    @foreach (var item in Model.ActiveMilestones)
+                    {
+                        <tr>
+                            <td><a asp-page="/Studio/Index" asp-route-studioId="@item.Studio.Id">@item.Studio.StudioName</a></td>
+                            <td>@item.Studio.ProjectName</td>
+                            <td>@item.Milestone.Milestone</td>
+                            <td>@item.Milestone.Description</td>
+                            <td>@item.Milestone.Developer</td>
+                            <td>@(item.Milestone.DeliveryDate?.ToString("dd MMM yyyy") ?? "TBC")</td>
+                            <td>@(item.Milestone.MsApprovalDate?.ToString("dd MMM yyyy") ?? "-")</td>
+                            <td>@(item.Milestone.ReleaseDate?.ToString("dd MMM yyyy") ?? "-")</td>
+                        </tr>
+                    }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </section>
+
+    <section class="content-section" id="jira">
+        <div class="section-heading">
+            <div><span>@Model.JiraTickets.Count ticket(s)</span><h2>Jira Support Activity</h2></div>
+            <strong>@(Model.ActiveSprintOnly ? "Active sprint" : "All matching tickets")</strong>
+        </div>
+        @if (Model.JiraMessages.Count > 0)
+        {
+            <div class="section-body pb-0">
+                @foreach (var message in Model.JiraMessages)
+                {
+                    <div class="alert alert-warning py-2"><strong>@message.Studio.StudioName:</strong> @message.Message</div>
+                }
+            </div>
+        }
+        @if (Model.IsUsingSharedJiraCredential)
+        {
+            <div class="mx-4 mt-3 alert alert-secondary small">Shared Jira access is read only. Ticket changes are not permitted from TeamHub.</div>
+        }
+        @if (Model.JiraTickets.Count == 0)
+        {
+            <div class="section-body text-secondary">No Jira tickets match the selected filters.</div>
+        }
+        else
+        {
+            <div class="table-responsive">
+                <table class="table styled-table align-middle">
+                    <thead><tr><th>Studio</th><th>Support Type</th><th>Ticket</th><th>Summary</th><th>Working On Ticket</th><th>Components</th><th>Status</th><th>Priority</th></tr></thead>
+                    <tbody>
+                    @foreach (var item in Model.JiraTickets)
+                    {
+                        <tr>
+                            <td>@item.Studio.StudioName</td>
+                            <td><span class="badge @(item.SupportType.StartsWith("Direct", StringComparison.OrdinalIgnoreCase) ? "text-bg-primary" : "text-bg-secondary")">@item.SupportType</span></td>
+                            <td><a href="@item.Ticket.Url" target="_blank" rel="noopener">@item.Ticket.TicketId</a></td>
+                            <td><a href="@item.Ticket.Url" target="_blank" rel="noopener">@item.Ticket.Summary</a></td>
+                            <td>@item.Ticket.AssignedUser</td>
+                            <td>@string.Join(", ", item.Ticket.Components)</td>
+                            <td>@item.Ticket.Status</td>
+                            <td>@item.Ticket.Priority</td>
+                        </tr>
+                    }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </section>
+
+    <section class="content-section" id="confluence">
+        <div class="section-heading">
+            <div><span>@Model.StartDate?.ToString("dd MMM yyyy") &ndash; @Model.EndDate?.ToString("dd MMM yyyy")</span><h2>@(Model.IsMonthlyReport ? "Monthly Confluence Updates" : Model.ReportPeriod == SupportSummaryModel.CustomPeriod ? "Confluence Updates" : "Weekly Confluence Updates")</h2></div>
+            <strong>All active studios</strong>
+        </div>
+        @if (!string.IsNullOrWhiteSpace(Model.ConfluenceErrorMessage))
+        {
+            <div class="section-body text-warning">@Model.ConfluenceErrorMessage</div>
+        }
+        else
+        {
+            @if (!string.IsNullOrWhiteSpace(Model.ConfluenceResult.Message))
+            {
+                <div class="mx-4 mt-3 alert @(Model.ConfluenceResult.IsConfigured ? "alert-warning" : "alert-info")">@Model.ConfluenceResult.Message</div>
+            }
+            @if (Model.ConfluenceResult.IsUsingSharedCredential)
+            {
+                <div class="mx-4 mt-3 alert alert-secondary small">Shared Confluence access is read only. Weekly pages are not changed by this report.</div>
+            }
+            @if (Model.ConfluenceResult.Updates.Count == 0)
+            {
+                <div class="section-body text-secondary">No Confluence updates match the selected filters.</div>
+            }
+            else
+            {
+                @foreach (var week in Model.ConfluenceResult.Updates.GroupBy(update => new { update.WeekStart, update.WeekEnd }).OrderByDescending(group => group.Key.WeekStart))
+                {
+                    <div class="section-body border-top">
+                        <div class="d-flex align-items-center justify-content-between gap-3 mb-3">
+                            <h3 class="h5 mb-0">@week.Key.WeekStart.ToString("dd MMM yyyy") &ndash; @week.Key.WeekEnd.ToString("dd MMM yyyy")</h3>
+                            @{
+                                var pageUrl = week.Select(update => update.PageUrl).FirstOrDefault(url => !string.IsNullOrWhiteSpace(url));
+                            }
+                            @if (!string.IsNullOrWhiteSpace(pageUrl))
+                            {
+                                <a class="btn btn-sm btn-outline-secondary" href="@pageUrl" target="_blank" rel="noopener">Open in Confluence</a>
+                            }
+                        </div>
+                        <div class="table-responsive">
+                            <table class="table table-hover align-top mb-0 support-summary-confluence">
+                                <thead class="table-light"><tr><th>Studio</th><th>Studio Work</th><th>HPGDS Support</th><th>WMD Support</th><th>Action Items</th><th>Notes</th></tr></thead>
+                                <tbody>
+                                @foreach (var update in week)
+                                {
+                                    <tr>
+                                        <th scope="row">@Model.GetStudioName(update.StudioId)<div class="small fw-normal text-secondary">@Model.GetStudioGroup(update.StudioId)</div></th>
+                                        @if (!update.PageFound || !update.StudioFound)
+                                        {
+                                            <td colspan="5" class="text-secondary">@update.Message</td>
+                                        }
+                                        else
+                                        {
+                                            <td>@ConfluenceUpdateHtml.Render(update.StudioWork, "No information provided.")</td>
+                                            <td>@ConfluenceUpdateHtml.Render(update.HpgdsSupport, "No information provided.")</td>
+                                            <td>@ConfluenceUpdateHtml.Render(update.WmdSupport, "No information provided.")</td>
+                                            <td>@ConfluenceUpdateHtml.Render(update.ActionItems, "No information provided.")</td>
+                                            <td>@ConfluenceUpdateHtml.Render(update.Notes, "No notes provided.")</td>
+                                        }
+                                    </tr>
+                                }
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                }
+            }
+        }
+    </section>
+}
+
+@section Scripts {
+<script>
+(() => {
+    const form = document.querySelector('[data-support-summary-filters]');
+    if (!form) return;
+    const period = form.querySelector('[data-report-period]');
+    const month = form.querySelector('[data-report-month]');
+    const weekField = form.querySelector('[data-week-filter]');
+    const week = form.querySelector('[data-report-week]');
+    const start = form.querySelector('[data-report-start]');
+    const end = form.querySelector('[data-report-end]');
+    const isoDate = date => date.toISOString().slice(0, 10);
+    const formatDate = date => new Intl.DateTimeFormat(undefined, {
+        day: '2-digit',
+        month: 'short',
+        timeZone: 'UTC'
+    }).format(date);
+    const selectedMonth = () => {
+        const match = /^(\d{4})-(\d{2})$/.exec(month.value);
+        return match ? { year: Number(match[1]), monthIndex: Number(match[2]) - 1 } : null;
+    };
+    const firstWeekStart = value => {
+        const date = new Date(Date.UTC(value.year, value.monthIndex, 1));
+        date.setUTCDate(date.getUTCDate() - ((date.getUTCDay() + 6) % 7));
+        return date;
+    };
+    const updatePresetDates = () => {
+        const value = selectedMonth();
+        if (!value || period.value === '@SupportSummaryModel.CustomPeriod') return;
+        if (period.value === '@SupportSummaryModel.MonthlyPeriod') {
+            start.value = isoDate(new Date(Date.UTC(value.year, value.monthIndex, 1)));
+            end.value = isoDate(new Date(Date.UTC(value.year, value.monthIndex + 1, 0)));
+            return;
+        }
+        const weekStart = firstWeekStart(value);
+        weekStart.setUTCDate(weekStart.getUTCDate() + (Number(week.value || 1) - 1) * 7);
+        const weekEnd = new Date(weekStart);
+        weekEnd.setUTCDate(weekEnd.getUTCDate() + 4);
+        start.value = isoDate(weekStart);
+        end.value = isoDate(weekEnd);
+    };
+
+    const populateWeeks = resetSelection => {
+        const value = selectedMonth();
+        if (!value) return;
+        const last = new Date(Date.UTC(value.year, value.monthIndex + 1, 0));
+        const cursor = firstWeekStart(value);
+        const previous = resetSelection ? '' : week.value;
+        week.replaceChildren();
+        let number = 1;
+        while (cursor <= last) {
+            const end = new Date(cursor);
+            end.setUTCDate(end.getUTCDate() + 4);
+            const option = document.createElement('option');
+            option.value = String(number);
+            option.textContent = `Week ${number}: ${formatDate(cursor)} - ${formatDate(end)}`;
+            week.appendChild(option);
+            cursor.setUTCDate(cursor.getUTCDate() + 7);
+            number++;
+        }
+        if (previous && [...week.options].some(option => option.value === previous)) week.value = previous;
+        updatePresetDates();
+    };
+
+    const updatePeriod = () => {
+        const monthly = period.value === '@SupportSummaryModel.MonthlyPeriod';
+        const custom = period.value === '@SupportSummaryModel.CustomPeriod';
+        month.disabled = custom;
+        week.disabled = monthly || custom;
+        start.disabled = !custom;
+        end.disabled = !custom;
+        weekField.classList.toggle('opacity-50', monthly || custom);
+        updatePresetDates();
+    };
+
+    month.addEventListener('change', () => populateWeeks(true));
+    week.addEventListener('change', updatePresetDates);
+    period.addEventListener('change', updatePeriod);
+    updatePeriod();
+})();
+</script>
+}

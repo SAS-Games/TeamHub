@@ -155,6 +155,8 @@ public static class TeamHubAccessRoutes
         if (path.StartsWithSegments("/WorkCenter") || path.StartsWithSegments("/Workflows")) return TeamHubModules.WorkCenter;
         if (path.StartsWithSegments("/Milestones")) return TeamHubModules.Milestones;
         if (path.StartsWithSegments("/Flows") || path.StartsWithSegments("/api/flows")) return TeamHubModules.FlowDesigner;
+        if (path.StartsWithSegments("/SupportSummary")) return TeamHubModules.StudioSupport;
+        if (path.StartsWithSegments("/AIReports") || path.StartsWithSegments("/api/ai-reports")) return TeamHubModules.AiReports;
         if (path.StartsWithSegments("/Studio/JiraTickets") || path.StartsWithSegments("/Studio/WeeklyUpdates")) return TeamHubModules.StudioSupport;
         if (path.StartsWithSegments("/Studio")) return TeamHubModules.StudioConfiguration;
         var customTeamTab = CustomTeamTabAccess.ResolveModule(path);

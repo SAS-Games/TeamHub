@@ -28,11 +28,13 @@ public static class ServiceCollectionExtensions
         services.AddScoped<FlowLibraryDatabaseInitializer>();
         services.AddSingleton<IFlowSerializer, SystemTextJsonFlowSerializer>();
         services.AddSingleton<IFlowValidator, FlowValidator>();
+        services.AddSingleton<IFlowHierarchyValidator, FlowHierarchyValidator>();
         services.AddScoped<IFlowRepository, SqliteFlowRepository>();
         services.AddScoped<ITemplateCatalogRepository, SqliteTemplateCatalogRepository>();
         services.AddScoped<IFlowTemplateCatalogService, FlowTemplateCatalogService>();
         services.AddScoped<TemplateCatalogSeeder>();
         services.AddScoped<IFlowService, FlowService>();
+        services.AddScoped<IFlowHierarchyService, FlowHierarchyService>();
         services.AddScoped<IFlowPublicationWorkflowService, FlowPublicationWorkflowService>();
         services.AddScoped<PublishedFlowRecoveryService>();
         services.TryAddSingleton<ICurrentUserProvider, AnonymousCurrentUserProvider>();

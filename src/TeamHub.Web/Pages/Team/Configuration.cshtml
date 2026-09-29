@@ -184,7 +184,7 @@ else if (Model.ActiveSection == "specializations")
                             @foreach (var specialization in Model.Directory.Specializations)
                             {
                                 <tr>
-                                    <td><strong>@specialization.Pod</strong></td><td>@specialization.FocusAreas</td><td>@specialization.Members</td>
+                                    <td><strong>@specialization.Pod</strong></td><td class="team-matrix-multiline">@specialization.FocusAreas</td><td class="team-matrix-multiline">@specialization.Members</td>
                                     <td class="studio-actions">
                                         <a class="btn btn-sm btn-outline-primary" asp-page="/Team/Configuration" asp-route-section="specializations" asp-route-specializationId="@specialization.Id">Edit</a>
                                         <form method="post" asp-page-handler="DeleteSpecialization" asp-route-specializationId="@specialization.Id" class="d-inline">
