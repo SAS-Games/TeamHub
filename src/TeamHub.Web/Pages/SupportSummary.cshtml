@@ -480,7 +480,10 @@ else
         }
     </section>
 
-    <section class="content-section" id="effort">
+    <section class="content-section"
+             id="effort"
+             data-effort-report
+             data-effort-url="@Url.Page("/SupportSummary", "Effort", new { Model.ReportPeriod, Model.SelectedMonth, Model.Week, Model.StartDate, Model.EndDate })">
         <div class="section-heading">
             <div>
                 <span>@Model.StartDate?.ToString("dd MMM yyyy") &ndash; @Model.EndDate?.ToString("dd MMM yyyy")</span>
@@ -488,84 +491,39 @@ else
             </div>
             <strong>Actual hours</strong>
         </div>
-        @if (!string.IsNullOrWhiteSpace(Model.EffortErrorDisplayMessage))
-        {
-            <div class="section-body text-warning">@Model.EffortErrorDisplayMessage</div>
-        }
-        else if (Model.EffortSummary.Count == 0 && Model.StudioEffortBreakdown.Count == 0)
-        {
-            <div class="section-body text-secondary">No logged effort was found for the selected period.</div>
-        }
-        else
-        {
-            <div class="support-effort-grid section-body">
-                <article class="support-effort-card">
-                    <div>
-                        <h3>Total Effort Distribution</h3>
-                        <p>Logged hours by activity and studio-support group.</p>
-                    </div>
-                    @if (Model.EffortSummary.Count == 0)
-                    {
-                        <div class="text-secondary">No effort summary data is available.</div>
-                    }
-                    else
-                    {
-                        <div class="support-effort-chart">
-                            <div class="support-effort-pie"
-                                 style="background: @Model.BuildPieGradient(Model.EffortSummary)"
-                                 role="img"
-                                 aria-label="Actual effort summary pie chart. Total @Model.GetEffortTotal(Model.EffortSummary).ToString("0.##") hours."></div>
-                            <div class="support-effort-legend">
-                                @for (var index = 0; index < Model.EffortSummary.Count; index++)
-                                {
-                                    var slice = Model.EffortSummary[index];
-                                    <div class="support-effort-legend-item">
-                                        <span class="support-effort-swatch" style="background-color: @Model.GetEffortColor(index)"></span>
-                                        <span class="support-effort-label">@slice.Label</span>
-                                        <strong>@slice.Hours.ToString("0.##")h</strong>
-                                        <span>@Model.GetEffortShare(slice, Model.EffortSummary).ToString("0.#")%</span>
-                                    </div>
-                                }
-                            </div>
-                        </div>
-                        <div class="support-effort-total">Total <strong>@Model.GetEffortTotal(Model.EffortSummary).ToString("0.##") hours</strong></div>
-                    }
-                </article>
+        <div class="section-body text-secondary" data-effort-loading>
+            <span class="spinner-border spinner-border-sm me-2" aria-hidden="true"></span>
+            Loading logged effort in the background. You can continue using the report.
+        </div>
+        <div class="section-body text-warning" data-effort-error hidden></div>
+        <div class="section-body text-secondary" data-effort-empty hidden>No logged effort was found for the selected period.</div>
+        <div class="support-effort-grid section-body" data-effort-content hidden>
+            <article class="support-effort-card" data-effort-chart-card="summary">
+                <div>
+                    <h3>Total Effort Distribution</h3>
+                    <p>Logged hours by activity and studio-support group.</p>
+                </div>
+                <div class="text-secondary" data-effort-chart-empty hidden>No effort summary data is available.</div>
+                <div class="support-effort-chart" data-effort-chart>
+                    <div class="support-effort-pie" role="img" data-effort-pie></div>
+                    <div class="support-effort-legend" data-effort-legend></div>
+                </div>
+                <div class="support-effort-total" data-effort-total-row>Total <strong data-effort-total></strong></div>
+            </article>
 
-                <article class="support-effort-card">
-                    <div>
-                        <h3>Studio Effort Distribution</h3>
-                        <p>Logged studio-support hours by project.</p>
-                    </div>
-                    @if (Model.StudioEffortBreakdown.Count == 0)
-                    {
-                        <div class="text-secondary">No studio-support effort is available.</div>
-                    }
-                    else
-                    {
-                        <div class="support-effort-chart">
-                            <div class="support-effort-pie"
-                                 style="background: @Model.BuildPieGradient(Model.StudioEffortBreakdown)"
-                                 role="img"
-                                 aria-label="Actual studio support pie chart. Total @Model.GetEffortTotal(Model.StudioEffortBreakdown).ToString("0.##") hours."></div>
-                            <div class="support-effort-legend">
-                                @for (var index = 0; index < Model.StudioEffortBreakdown.Count; index++)
-                                {
-                                    var slice = Model.StudioEffortBreakdown[index];
-                                    <div class="support-effort-legend-item">
-                                        <span class="support-effort-swatch" style="background-color: @Model.GetEffortColor(index)"></span>
-                                        <span class="support-effort-label">@slice.Label</span>
-                                        <strong>@slice.Hours.ToString("0.##")h</strong>
-                                        <span>@Model.GetEffortShare(slice, Model.StudioEffortBreakdown).ToString("0.#")%</span>
-                                    </div>
-                                }
-                            </div>
-                        </div>
-                        <div class="support-effort-total">Total <strong>@Model.GetEffortTotal(Model.StudioEffortBreakdown).ToString("0.##") hours</strong></div>
-                    }
-                </article>
-            </div>
-        }
+            <article class="support-effort-card" data-effort-chart-card="studio">
+                <div>
+                    <h3>Studio Effort Distribution</h3>
+                    <p>Logged studio-support hours by project.</p>
+                </div>
+                <div class="text-secondary" data-effort-chart-empty hidden>No studio-support effort is available.</div>
+                <div class="support-effort-chart" data-effort-chart>
+                    <div class="support-effort-pie" role="img" data-effort-pie></div>
+                    <div class="support-effort-legend" data-effort-legend></div>
+                </div>
+                <div class="support-effort-total" data-effort-total-row>Total <strong data-effort-total></strong></div>
+            </article>
+        </div>
     </section>
 
     <section class="content-section" id="confluence">
@@ -645,55 +603,27 @@ else
             </div>
             <strong>Actual logged hours</strong>
         </div>
-        @if (!string.IsNullOrWhiteSpace(Model.EffortErrorDisplayMessage))
-        {
-            <div class="section-body text-warning">Employee effort is unavailable because the logged-effort report could not be loaded.</div>
-        }
-        else if (Model.EmployeeEffortBreakdowns.Count == 0)
-        {
-            <div class="section-body text-secondary">No employee effort was found for the selected period.</div>
-        }
-        else
-        {
-            var initialEmployee = Model.EmployeeEffortBreakdowns[0];
-            <div class="section-body">
-                <div class="support-effort-user-controls">
-                    <label for="employee-effort-select" class="form-label">Employee</label>
-                    <select id="employee-effort-select" class="form-select" data-employee-effort-select>
-                        @for (var index = 0; index < Model.EmployeeEffortBreakdowns.Count; index++)
-                        {
-                            <option value="@index">@Model.EmployeeEffortBreakdowns[index].Employee</option>
-                        }
-                    </select>
-                    <div class="form-text">Changing the employee redraws this chart from the already loaded report data.</div>
-                </div>
-
-                <article class="support-effort-card support-effort-user-card">
-                    <div class="support-effort-chart">
-                        <div class="support-effort-pie"
-                             style="background: @Model.BuildPieGradient(initialEmployee.Slices)"
-                             role="img"
-                             aria-label="Actual effort for @initialEmployee.Employee. Total @Model.GetEffortTotal(initialEmployee.Slices).ToString("0.##") hours."
-                             data-employee-effort-pie></div>
-                        <div class="support-effort-legend" data-employee-effort-legend>
-                            @for (var index = 0; index < initialEmployee.Slices.Count; index++)
-                            {
-                                var slice = initialEmployee.Slices[index];
-                                <div class="support-effort-legend-item">
-                                    <span class="support-effort-swatch" style="background-color: @Model.GetEffortColor(index)"></span>
-                                    <span class="support-effort-label">@slice.Label</span>
-                                    <strong>@slice.Hours.ToString("0.##")h</strong>
-                                    <span>@Model.GetEffortShare(slice, initialEmployee.Slices).ToString("0.#")%</span>
-                                </div>
-                            }
-                        </div>
-                    </div>
-                    <div class="support-effort-total">Total <strong data-employee-effort-total>@Model.GetEffortTotal(initialEmployee.Slices).ToString("0.##") hours</strong></div>
-                </article>
+        <div class="section-body text-secondary" data-employee-effort-loading>
+            <span class="spinner-border spinner-border-sm me-2" aria-hidden="true"></span>
+            Loading employee effort from the same report.
+        </div>
+        <div class="section-body text-warning" data-employee-effort-error hidden></div>
+        <div class="section-body text-secondary" data-employee-effort-empty hidden>No employee effort was found for the selected period.</div>
+        <div class="section-body" data-employee-effort-content hidden>
+            <div class="support-effort-user-controls">
+                <label for="employee-effort-select" class="form-label">Employee</label>
+                <select id="employee-effort-select" class="form-select" data-employee-effort-select></select>
+                <div class="form-text">Changing the employee redraws this chart from the already loaded report data.</div>
             </div>
-            <script type="application/json" data-employee-effort-json>@Json.Serialize(Model.EmployeeEffortBreakdowns)</script>
-            <script type="application/json" data-effort-colors-json>@Json.Serialize(Model.EffortChartColors)</script>
-        }
+
+            <article class="support-effort-card support-effort-user-card">
+                <div class="support-effort-chart">
+                    <div class="support-effort-pie" role="img" data-employee-effort-pie></div>
+                    <div class="support-effort-legend" data-employee-effort-legend></div>
+                </div>
+                <div class="support-effort-total">Total <strong data-employee-effort-total></strong></div>
+            </article>
+        </div>
     </section>
 }
 
@@ -847,32 +777,32 @@ updatePeriod();
 })();
 
 (() => {
-    const root = document.querySelector('[data-employee-effort]');
-    if (!root) return;
-    const select = root.querySelector('[data-employee-effort-select]');
-    const dataElement = root.querySelector('[data-employee-effort-json]');
-    const colorsElement = root.querySelector('[data-effort-colors-json]');
-    const pie = root.querySelector('[data-employee-effort-pie]');
-    const legend = root.querySelector('[data-employee-effort-legend]');
-    const totalElement = root.querySelector('[data-employee-effort-total]');
-    if (!select || !dataElement || !colorsElement || !pie || !legend || !totalElement) return;
+    const reportRoot = document.querySelector('[data-effort-report]');
+    const employeeRoot = document.querySelector('[data-employee-effort]');
+    if (!reportRoot || !employeeRoot || !reportRoot.dataset.effortUrl) return;
 
-    const employees = JSON.parse(dataElement.textContent || '[]');
-    const colors = JSON.parse(colorsElement.textContent || '[]');
     const formatNumber = value => value.toLocaleString(undefined, { maximumFractionDigits: 2 });
+    const normalizeSlices = values => (values || [])
+        .map(slice => ({
+            label: slice.label ?? slice.Label ?? '',
+            hours: Number(slice.hours ?? slice.Hours ?? 0)
+        }))
+        .filter(slice => slice.label && slice.hours > 0);
 
-    const render = () => {
-        const employee = employees[Number(select.value)] || employees[0];
-        if (!employee) return;
-        const employeeName = employee.employee ?? employee.Employee ?? '';
-        const rawSlices = employee.slices ?? employee.Slices ?? [];
-        const slices = rawSlices
-            .map(slice => ({
-                label: slice.label ?? slice.Label ?? '',
-                hours: Number(slice.hours ?? slice.Hours ?? 0)
-            }))
-            .filter(slice => slice.label && slice.hours > 0);
+    const renderChart = (root, slices, ariaLabel, colors) => {
+        const chart = root.querySelector('[data-effort-chart]') || root.querySelector('.support-effort-chart');
+        const empty = root.querySelector('[data-effort-chart-empty]');
+        const pie = root.querySelector('[data-effort-pie], [data-employee-effort-pie]');
+        const legend = root.querySelector('[data-effort-legend], [data-employee-effort-legend]');
+        const totalElement = root.querySelector('[data-effort-total], [data-employee-effort-total]');
+        const totalRow = root.querySelector('[data-effort-total-row]');
         const total = slices.reduce((sum, slice) => sum + slice.hours, 0);
+
+        if (empty) empty.hidden = total > 0;
+        if (chart) chart.hidden = total <= 0;
+        if (totalRow) totalRow.hidden = total <= 0;
+        if (!pie || !legend || !totalElement || total <= 0) return;
+
         let start = 0;
         const stops = slices.map((slice, index) => {
             const end = start + slice.hours / total * 100;
@@ -884,7 +814,7 @@ updatePeriod();
         pie.style.background = total > 0 && colors.length > 0
             ? `conic-gradient(${stops.join(', ')})`
             : '#d9e1dc';
-        pie.setAttribute('aria-label', `Actual effort for ${employeeName}. Total ${formatNumber(total)} hours.`);
+        pie.setAttribute('aria-label', `${ariaLabel}. Total ${formatNumber(total)} hours.`);
         legend.replaceChildren();
 
         slices.forEach((slice, index) => {
@@ -912,8 +842,90 @@ updatePeriod();
         totalElement.textContent = `${formatNumber(total)} hours`;
     };
 
-    select.addEventListener('change', render);
-    render();
+    const showError = message => {
+        const reportError = reportRoot.querySelector('[data-effort-error]');
+        const employeeError = employeeRoot.querySelector('[data-employee-effort-error]');
+        if (reportError) {
+            reportError.textContent = message;
+            reportError.hidden = false;
+        }
+        if (employeeError) {
+            employeeError.textContent = message;
+            employeeError.hidden = false;
+        }
+    };
+
+    fetch(reportRoot.dataset.effortUrl, {
+        headers: { 'X-Requested-With': 'XMLHttpRequest' }
+    })
+        .then(response => {
+            if (!response.ok) throw new Error(`Effort request failed with status ${response.status}.`);
+            return response.json();
+        })
+        .then(data => {
+            if (data.error) {
+                showError(data.error);
+                return;
+            }
+
+            const colors = data.colors || [];
+            const summary = normalizeSlices(data.effortSummary);
+            const studio = normalizeSlices(data.studioEffortBreakdown);
+            const reportEmpty = reportRoot.querySelector('[data-effort-empty]');
+            const reportContent = reportRoot.querySelector('[data-effort-content]');
+            if (summary.length === 0 && studio.length === 0) {
+                if (reportEmpty) reportEmpty.hidden = false;
+            } else {
+                if (reportContent) reportContent.hidden = false;
+                renderChart(
+                    reportRoot.querySelector('[data-effort-chart-card="summary"]'),
+                    summary,
+                    'Actual effort summary pie chart',
+                    colors);
+                renderChart(
+                    reportRoot.querySelector('[data-effort-chart-card="studio"]'),
+                    studio,
+                    'Actual studio support pie chart',
+                    colors);
+            }
+
+            const employees = (data.employeeEffortBreakdowns || []).map(employee => ({
+                employee: employee.employee ?? employee.Employee ?? '',
+                slices: normalizeSlices(employee.slices ?? employee.Slices)
+            })).filter(employee => employee.employee && employee.slices.length > 0);
+            const employeeEmpty = employeeRoot.querySelector('[data-employee-effort-empty]');
+            const employeeContent = employeeRoot.querySelector('[data-employee-effort-content]');
+            const select = employeeRoot.querySelector('[data-employee-effort-select]');
+            if (employees.length === 0) {
+                if (employeeEmpty) employeeEmpty.hidden = false;
+                return;
+            }
+
+            employeeContent.hidden = false;
+            select.replaceChildren(...employees.map((employee, index) => {
+                const option = document.createElement('option');
+                option.value = String(index);
+                option.textContent = employee.employee;
+                return option;
+            }));
+            const renderEmployee = () => {
+                const employee = employees[Number(select.value)] || employees[0];
+                renderChart(
+                    employeeRoot.querySelector('.support-effort-user-card'),
+                    employee.slices,
+                    `Actual effort for ${employee.employee}`,
+                    colors);
+            };
+            select.addEventListener('change', renderEmployee);
+            renderEmployee();
+        })
+        .catch(() => showError('Something went wrong while loading logged effort. Please try again.'))
+        .finally(() => {
+            const reportLoading = reportRoot.querySelector('[data-effort-loading]');
+            const employeeLoading = employeeRoot.querySelector('[data-employee-effort-loading]');
+            if (reportLoading) reportLoading.hidden = true;
+            if (employeeLoading) employeeLoading.hidden = true;
+        });
 })();
 </script>
 }

@@ -1226,6 +1226,7 @@ public static class StudioDirectoryServiceCollectionExtensions
     public static IServiceCollection AddStudioDirectory(this IServiceCollection services, IConfiguration configuration)
     {
         services.AddSingleton(configuration);
+        services.AddMemoryCache();
         services.AddDbContext<StudioDbContext>(options =>
         {
             var connectionString = configuration.GetConnectionString("StudioDb") ?? "Data Source=data/studio.db";
