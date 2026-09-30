@@ -207,12 +207,14 @@ public sealed class SupportSummaryModel(
         {
             var today = DateTime.Today;
             var milestones = await milestoneTrackerService.GetMilestonesAsync(cancellationToken);
-            var upcomingMilestones = milestones
+            var selectableMilestones = milestones
                 .Where(milestone => !milestone.Milestone.StartsWith("Total MS", StringComparison.OrdinalIgnoreCase))
+                .ToList();
+            var upcomingMilestones = selectableMilestones
                 .Where(milestone => !milestone.DeliveryDate.HasValue || milestone.DeliveryDate.Value.Date >= today)
                 .ToList();
             MilestoneDescriptionOptions = Studios
-                .SelectMany(studio => upcomingMilestones
+                .SelectMany(studio => selectableMilestones
                     .Where(milestone => IsProjectMilestone(studio.ProjectName, milestone))
                     .Where(milestone => !string.IsNullOrWhiteSpace(milestone.Description))
                     .OrderBy(milestone => milestone.DeliveryDate ?? DateTime.MaxValue)
@@ -283,9 +285,7 @@ public sealed class SupportSummaryModel(
                     StudioId = studio.Id,
                     RequestingUserId = User.Identity?.Name ?? string.Empty,
                     AllowPrivilegedDefaultCredential = User.IsInRole("Privileged"),
-                    ActiveSprintOnly = ActiveSprintOnly,
-                    StartDate = StartDate,
-                    EndDate = EndDate
+                    ActiveSprintOnly = ActiveSprintOnly
                 }, cancellationToken);
                 IsUsingSharedJiraCredential |= result.IsUsingSharedCredential;
                 if (!string.IsNullOrWhiteSpace(result.Message))
