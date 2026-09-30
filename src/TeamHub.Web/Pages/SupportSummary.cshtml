@@ -586,6 +586,65 @@ else
             }
         }
     </section>
+
+    <section class="content-section" id="employee-effort" data-employee-effort>
+        <div class="section-heading">
+            <div>
+                <span>@Model.StartDate?.ToString("dd MMM yyyy") &ndash; @Model.EndDate?.ToString("dd MMM yyyy")</span>
+                <h2>Employee Effort Distribution</h2>
+            </div>
+            <strong>Actual logged hours</strong>
+        </div>
+        @if (!string.IsNullOrWhiteSpace(Model.EffortErrorDisplayMessage))
+        {
+            <div class="section-body text-warning">Employee effort is unavailable because the logged-effort report could not be loaded.</div>
+        }
+        else if (Model.EmployeeEffortBreakdowns.Count == 0)
+        {
+            <div class="section-body text-secondary">No employee effort was found for the selected period.</div>
+        }
+        else
+        {
+            var initialEmployee = Model.EmployeeEffortBreakdowns[0];
+            <div class="section-body">
+                <div class="support-effort-user-controls">
+                    <label for="employee-effort-select" class="form-label">Employee</label>
+                    <select id="employee-effort-select" class="form-select" data-employee-effort-select>
+                        @for (var index = 0; index < Model.EmployeeEffortBreakdowns.Count; index++)
+                        {
+                            <option value="@index">@Model.EmployeeEffortBreakdowns[index].Employee</option>
+                        }
+                    </select>
+                    <div class="form-text">Changing the employee redraws this chart from the already loaded report data.</div>
+                </div>
+
+                <article class="support-effort-card support-effort-user-card">
+                    <div class="support-effort-chart">
+                        <div class="support-effort-pie"
+                             style="background: @Model.BuildPieGradient(initialEmployee.Slices)"
+                             role="img"
+                             aria-label="Actual effort for @initialEmployee.Employee. Total @Model.GetEffortTotal(initialEmployee.Slices).ToString("0.##") hours."
+                             data-employee-effort-pie></div>
+                        <div class="support-effort-legend" data-employee-effort-legend>
+                            @for (var index = 0; index < initialEmployee.Slices.Count; index++)
+                            {
+                                var slice = initialEmployee.Slices[index];
+                                <div class="support-effort-legend-item">
+                                    <span class="support-effort-swatch" style="background-color: @Model.GetEffortColor(index)"></span>
+                                    <span class="support-effort-label">@slice.Label</span>
+                                    <strong>@slice.Hours.ToString("0.##")h</strong>
+                                    <span>@Model.GetEffortShare(slice, initialEmployee.Slices).ToString("0.#")%</span>
+                                </div>
+                            }
+                        </div>
+                    </div>
+                    <div class="support-effort-total">Total <strong data-employee-effort-total>@Model.GetEffortTotal(initialEmployee.Slices).ToString("0.##") hours</strong></div>
+                </article>
+            </div>
+            <script type="application/json" data-employee-effort-json>@Json.Serialize(Model.EmployeeEffortBreakdowns)</script>
+            <script type="application/json" data-effort-colors-json>@Json.Serialize(Model.EffortChartColors)</script>
+        }
+    </section>
 }
 
 @section Scripts {
@@ -690,6 +749,76 @@ updatePeriod();
         projectSelect.addEventListener('change', () => updateDescriptions(projectSelect));
         updateDescriptions(projectSelect);
     });
+})();
+
+(() => {
+    const root = document.querySelector('[data-employee-effort]');
+    if (!root) return;
+    const select = root.querySelector('[data-employee-effort-select]');
+    const dataElement = root.querySelector('[data-employee-effort-json]');
+    const colorsElement = root.querySelector('[data-effort-colors-json]');
+    const pie = root.querySelector('[data-employee-effort-pie]');
+    const legend = root.querySelector('[data-employee-effort-legend]');
+    const totalElement = root.querySelector('[data-employee-effort-total]');
+    if (!select || !dataElement || !colorsElement || !pie || !legend || !totalElement) return;
+
+    const employees = JSON.parse(dataElement.textContent || '[]');
+    const colors = JSON.parse(colorsElement.textContent || '[]');
+    const formatNumber = value => value.toLocaleString(undefined, { maximumFractionDigits: 2 });
+
+    const render = () => {
+        const employee = employees[Number(select.value)] || employees[0];
+        if (!employee) return;
+        const employeeName = employee.employee ?? employee.Employee ?? '';
+        const rawSlices = employee.slices ?? employee.Slices ?? [];
+        const slices = rawSlices
+            .map(slice => ({
+                label: slice.label ?? slice.Label ?? '',
+                hours: Number(slice.hours ?? slice.Hours ?? 0)
+            }))
+            .filter(slice => slice.label && slice.hours > 0);
+        const total = slices.reduce((sum, slice) => sum + slice.hours, 0);
+        let start = 0;
+        const stops = slices.map((slice, index) => {
+            const end = start + slice.hours / total * 100;
+            const stop = `${colors[index % colors.length]} ${start}% ${end}%`;
+            start = end;
+            return stop;
+        });
+
+        pie.style.background = total > 0 && colors.length > 0
+            ? `conic-gradient(${stops.join(', ')})`
+            : '#d9e1dc';
+        pie.setAttribute('aria-label', `Actual effort for ${employeeName}. Total ${formatNumber(total)} hours.`);
+        legend.replaceChildren();
+
+        slices.forEach((slice, index) => {
+            const row = document.createElement('div');
+            row.className = 'support-effort-legend-item';
+
+            const swatch = document.createElement('span');
+            swatch.className = 'support-effort-swatch';
+            swatch.style.backgroundColor = colors[index % colors.length];
+
+            const label = document.createElement('span');
+            label.className = 'support-effort-label';
+            label.textContent = slice.label;
+
+            const hours = document.createElement('strong');
+            hours.textContent = `${formatNumber(slice.hours)}h`;
+
+            const share = document.createElement('span');
+            share.textContent = `${(slice.hours / total * 100).toLocaleString(undefined, { maximumFractionDigits: 1 })}%`;
+
+            row.append(swatch, label, hours, share);
+            legend.appendChild(row);
+        });
+
+        totalElement.textContent = `${formatNumber(total)} hours`;
+    };
+
+    select.addEventListener('change', render);
+    render();
 })();
 </script>
 }

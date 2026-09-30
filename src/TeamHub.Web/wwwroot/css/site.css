@@ -197,6 +197,8 @@ body {
 .support-effort-label { overflow-wrap: anywhere; }
 .support-effort-total { margin-top: 18px; padding-top: 12px; color: #65766f; border-top: 1px solid #d9e1dc; text-align: right; }
 .support-effort-total strong { color: #18322d; }
+.support-effort-user-controls { max-width: 440px; margin-bottom: 20px; }
+.support-effort-user-card { max-width: 980px; }
 .markdown-content { overflow-wrap: anywhere; }
 .markdown-content > :first-child { margin-top: 0; }
 .markdown-content > :last-child { margin-bottom: 0; }

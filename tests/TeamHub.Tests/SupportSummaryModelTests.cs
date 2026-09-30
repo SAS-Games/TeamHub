@@ -49,6 +49,15 @@ public sealed class SupportSummaryModelTests
                 StudioBreakdown =
                 [
                     new WorklogEffortSlice("Alpha Project", 30)
+                ],
+                EmployeeEffortBreakdowns =
+                [
+                    new WorklogEmployeeEffort(
+                        "Asha",
+                        [
+                            new WorklogEffortSlice("Studio Support", 24),
+                            new WorklogEffortSlice("Project Activities", 6)
+                        ])
                 ]
             }
         };
@@ -105,6 +114,9 @@ public sealed class SupportSummaryModelTests
         model.EffortSummary.Sum(slice => slice.Hours).Should().Be(40);
         model.StudioEffortBreakdown.Should().ContainSingle()
             .Which.Label.Should().Be(activeStudio.ProjectName);
+        model.EmployeeEffortBreakdowns.Should().ContainSingle()
+            .Which.Employee.Should().Be("Asha");
+        model.EmployeeEffortBreakdowns[0].Slices.Sum(slice => slice.Hours).Should().Be(30);
         model.BuildPieGradient(model.EffortSummary).Should().StartWith("conic-gradient(");
     }
 

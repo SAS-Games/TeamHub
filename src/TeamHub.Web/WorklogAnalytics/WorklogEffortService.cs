@@ -15,11 +15,13 @@ public sealed class WorklogAnalyticsOptions
 }
 
 public sealed record WorklogEffortSlice(string Label, double Hours);
+public sealed record WorklogEmployeeEffort(string Employee, IReadOnlyList<WorklogEffortSlice> Slices);
 
 public sealed class WorklogEffortReport
 {
     public IReadOnlyList<WorklogEffortSlice> EffortSummary { get; init; } = [];
     public IReadOnlyList<WorklogEffortSlice> StudioBreakdown { get; init; } = [];
+    public IReadOnlyList<WorklogEmployeeEffort> EmployeeEffortBreakdowns { get; init; } = [];
 }
 
 public interface IWorklogEffortService
@@ -117,7 +119,15 @@ internal sealed class PythonWorklogEffortService(
         return new WorklogEffortReport
         {
             EffortSummary = Normalize(report.EffortSummary),
-            StudioBreakdown = Normalize(report.StudioBreakdown)
+            StudioBreakdown = Normalize(report.StudioBreakdown),
+            EmployeeEffortBreakdowns = (report.EmployeeEffortBreakdowns ?? [])
+                .Where(employee => !string.IsNullOrWhiteSpace(employee.Employee))
+                .Select(employee => new WorklogEmployeeEffort(
+                    employee.Employee.Trim(),
+                    Normalize(employee.Slices)))
+                .Where(employee => employee.Slices.Count > 0)
+                .OrderBy(employee => employee.Employee, StringComparer.OrdinalIgnoreCase)
+                .ToList()
         };
     }
 

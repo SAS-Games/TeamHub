@@ -28,6 +28,7 @@ def main():
     from worklog_analytics.app import build_context
     from worklog_analytics.loaders.config_loader import load_json
     from worklog_analytics.models.date_range import DateRange
+    from worklog_analytics.reports.matrix_builder import build_matrix
     from worklog_analytics.sources.jira_downloader import download_jira_timesheet
 
     start_date = date.fromisoformat(args.start)
@@ -52,6 +53,11 @@ def main():
         )
         effort_summary = build_executive_summary(worklogs, studio_groups)
         studio_breakdown = build_studio_support_breakdown(worklogs, studio_groups)
+        employee_activity_matrix, _ = build_matrix(
+            worklogs,
+            "employee",
+            "activity_group",
+        )
 
     print(json.dumps({
         "effortSummary": [
@@ -61,6 +67,19 @@ def main():
         "studioBreakdown": [
             {"label": label, "hours": float(hours)}
             for label, hours in studio_breakdown.items()
+        ],
+        "employeeEffortBreakdowns": [
+            {
+                "employee": employee,
+                "slices": [
+                    {"label": label, "hours": float(hours)}
+                    for label, hours in activities.items()
+                ],
+            }
+            for employee, activities in sorted(
+                employee_activity_matrix.items(),
+                key=lambda item: item[0].casefold(),
+            )
         ],
     }))
 
