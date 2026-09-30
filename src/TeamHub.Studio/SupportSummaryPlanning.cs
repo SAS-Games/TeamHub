@@ -24,6 +24,7 @@ public sealed record MilestoneBuildReview(
     Guid Id,
     string ProjectName,
     string Status,
+    DateOnly BuildReceiveDate,
     DateOnly Eta);
 
 public interface ISupportSummaryPlanningService
@@ -115,7 +116,7 @@ internal sealed class SqliteSupportSummaryPlanningService(IConfiguration configu
         await using var connection = await OpenConnectionAsync(cancellationToken);
         await using var command = connection.CreateCommand();
         command.CommandText = """
-            SELECT Id, ProjectName, Status, Eta
+            SELECT Id, ProjectName, Status, BuildReceiveDate, Eta
             FROM SupportSummaryBuildReviews
             ORDER BY Eta, CreatedAtUtc, ProjectName;
             """;
@@ -127,7 +128,8 @@ internal sealed class SqliteSupportSummaryPlanningService(IConfiguration configu
                 Guid.Parse(reader.GetString(0)),
                 reader.GetString(1),
                 reader.GetString(2),
-                ParseDate(reader.GetString(3))));
+                ParseDate(reader.GetString(3)),
+                ParseDate(reader.GetString(4))));
         }
         return reviews;
     }
@@ -149,12 +151,13 @@ internal sealed class SqliteSupportSummaryPlanningService(IConfiguration configu
         await using var command = connection.CreateCommand();
         command.CommandText = """
             INSERT INTO SupportSummaryBuildReviews
-                (Id, ProjectName, Status, Eta, CreatedAtUtc, UpdatedAtUtc)
+                (Id, ProjectName, Status, BuildReceiveDate, Eta, CreatedAtUtc, UpdatedAtUtc)
             VALUES
-                ($id, $projectName, $status, $eta, $now, $now)
+                ($id, $projectName, $status, $buildReceiveDate, $eta, $now, $now)
             ON CONFLICT(Id) DO UPDATE SET
                 ProjectName = excluded.ProjectName,
                 Status = excluded.Status,
+                BuildReceiveDate = excluded.BuildReceiveDate,
                 Eta = excluded.Eta,
                 UpdatedAtUtc = excluded.UpdatedAtUtc;
             """;
@@ -162,6 +165,7 @@ internal sealed class SqliteSupportSummaryPlanningService(IConfiguration configu
         command.Parameters.AddWithValue("$id", normalized.Id.ToString());
         command.Parameters.AddWithValue("$projectName", normalized.ProjectName);
         command.Parameters.AddWithValue("$status", normalized.Status);
+        command.Parameters.AddWithValue("$buildReceiveDate", FormatDate(normalized.BuildReceiveDate));
         command.Parameters.AddWithValue("$eta", FormatDate(normalized.Eta));
         command.Parameters.AddWithValue("$now", now);
         await command.ExecuteNonQueryAsync(cancellationToken);
@@ -199,12 +203,32 @@ internal sealed class SqliteSupportSummaryPlanningService(IConfiguration configu
                 Id TEXT NOT NULL CONSTRAINT PK_SupportSummaryBuildReviews PRIMARY KEY,
                 ProjectName TEXT NOT NULL,
                 Status TEXT NOT NULL,
+                BuildReceiveDate TEXT NOT NULL,
                 Eta TEXT NOT NULL,
                 CreatedAtUtc TEXT NOT NULL,
                 UpdatedAtUtc TEXT NOT NULL
             );
             """;
         await command.ExecuteNonQueryAsync(cancellationToken);
+
+        await using var migration = connection.CreateCommand();
+        migration.CommandText = """
+            SELECT COUNT(*)
+            FROM pragma_table_info('SupportSummaryBuildReviews')
+            WHERE name = 'BuildReceiveDate';
+            """;
+        var hasBuildReceiveDate = Convert.ToInt32(
+            await migration.ExecuteScalarAsync(cancellationToken),
+            CultureInfo.InvariantCulture) > 0;
+        if (hasBuildReceiveDate) return;
+
+        migration.CommandText = """
+            ALTER TABLE SupportSummaryBuildReviews ADD COLUMN BuildReceiveDate TEXT;
+            UPDATE SupportSummaryBuildReviews
+            SET BuildReceiveDate = substr(CreatedAtUtc, 1, 10)
+            WHERE BuildReceiveDate IS NULL OR BuildReceiveDate = '';
+            """;
+        await migration.ExecuteNonQueryAsync(cancellationToken);
     }
 
     private async Task DeleteAsync(

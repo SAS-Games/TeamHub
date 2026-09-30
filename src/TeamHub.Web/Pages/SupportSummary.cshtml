@@ -276,6 +276,8 @@ else
                         <tr>
                             <th>Project Name</th>
                             <th>Status</th>
+                            <th>Build Receive Date</th>
+                            <th>Ageing</th>
                             <th>ETA</th>
                             @if (Model.CanManagePlanning) { <th class="text-end">Actions</th> }
                         </tr>
@@ -304,6 +306,8 @@ else
                                         }
                                     </select>
                                 </td>
+                                <td><input class="form-control" type="date" name="buildReceiveDate" value="@item.BuildReceiveDate.ToString("yyyy-MM-dd")" form="@formId" required /></td>
+                                <td class="text-nowrap">@Model.GetBuildAgeingDays(item.BuildReceiveDate) day(s)</td>
                                 <td><input class="form-control" type="date" name="eta" value="@item.Eta.ToString("yyyy-MM-dd")" form="@formId" required /></td>
                                 <td class="text-end text-nowrap">
                                     <button class="btn btn-sm btn-primary" type="submit" form="@formId">Save</button>
@@ -316,6 +320,8 @@ else
                             <tr>
                                 <td>@item.ProjectName</td>
                                 <td>@item.Status</td>
+                                <td>@item.BuildReceiveDate.ToString("dd MMM yyyy")</td>
+                                <td class="text-nowrap">@Model.GetBuildAgeingDays(item.BuildReceiveDate) day(s)</td>
                                 <td>@item.Eta.ToString("dd MMM yyyy")</td>
                             </tr>
                         }
@@ -341,6 +347,8 @@ else
                                     }
                                 </select>
                             </td>
+                            <td><input class="form-control" type="date" name="buildReceiveDate" form="build-review-new" required /></td>
+                            <td class="text-secondary text-nowrap">Calculated on save</td>
                             <td><input class="form-control" type="date" name="eta" form="build-review-new" required /></td>
                             <td class="text-end"><button class="btn btn-sm btn-primary" type="submit" form="build-review-new">Add</button></td>
                         </tr>

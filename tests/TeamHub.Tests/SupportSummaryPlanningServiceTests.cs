@@ -27,6 +27,7 @@ public sealed class SupportSummaryPlanningServiceTests
                 Guid.Empty,
                 "Project Beta",
                 MilestoneBuildReviewStatuses.InReview,
+                new DateOnly(2026, 10, 10),
                 new DateOnly(2026, 10, 15)));
 
             await service.SaveExpectedDeliveryAsync(delivery with
@@ -37,6 +38,7 @@ public sealed class SupportSummaryPlanningServiceTests
             await service.SaveBuildReviewAsync(review with
             {
                 Status = MilestoneBuildReviewStatuses.ReviewMeeting,
+                BuildReceiveDate = new DateOnly(2026, 10, 12),
                 Eta = new DateOnly(2026, 10, 18)
             });
 
@@ -50,6 +52,7 @@ public sealed class SupportSummaryPlanningServiceTests
                 review with
                 {
                     Status = MilestoneBuildReviewStatuses.ReviewMeeting,
+                    BuildReceiveDate = new DateOnly(2026, 10, 12),
                     Eta = new DateOnly(2026, 10, 18)
                 });
 
@@ -78,10 +81,57 @@ public sealed class SupportSummaryPlanningServiceTests
                 Guid.Empty,
                 "Project Alpha",
                 "Unknown",
+                new DateOnly(2026, 10, 10),
                 new DateOnly(2026, 10, 15)));
 
             await action.Should().ThrowAsync<ArgumentException>()
                 .WithMessage("Select a valid review status.");
+        }
+        finally
+        {
+            SqliteConnection.ClearAllPools();
+            if (File.Exists(databasePath)) File.Delete(databasePath);
+        }
+    }
+
+    [Fact]
+    public async Task GetBuildReviewsAsync_MigratesExistingRowsWithTheirCreationDate()
+    {
+        var databasePath = Path.Combine(Path.GetTempPath(), $"teamhub-support-summary-{Guid.NewGuid():N}.db");
+        var reviewId = Guid.NewGuid();
+        try
+        {
+            await using (var connection = new SqliteConnection($"Data Source={databasePath}"))
+            {
+                await connection.OpenAsync();
+                await using var command = connection.CreateCommand();
+                command.CommandText = """
+                    CREATE TABLE SupportSummaryBuildReviews (
+                        Id TEXT NOT NULL CONSTRAINT PK_SupportSummaryBuildReviews PRIMARY KEY,
+                        ProjectName TEXT NOT NULL,
+                        Status TEXT NOT NULL,
+                        Eta TEXT NOT NULL,
+                        CreatedAtUtc TEXT NOT NULL,
+                        UpdatedAtUtc TEXT NOT NULL
+                    );
+                    INSERT INTO SupportSummaryBuildReviews
+                        (Id, ProjectName, Status, Eta, CreatedAtUtc, UpdatedAtUtc)
+                    VALUES
+                        ($id, 'Project Alpha', 'In Review', '2026-10-15',
+                         '2026-09-20T10:30:00.0000000Z', '2026-09-20T10:30:00.0000000Z');
+                    """;
+                command.Parameters.AddWithValue("$id", reviewId.ToString());
+                await command.ExecuteNonQueryAsync();
+            }
+
+            var reviews = await CreateService(databasePath).GetBuildReviewsAsync();
+
+            reviews.Should().ContainSingle().Which.Should().Be(new MilestoneBuildReview(
+                reviewId,
+                "Project Alpha",
+                MilestoneBuildReviewStatuses.InReview,
+                new DateOnly(2026, 9, 20),
+                new DateOnly(2026, 10, 15)));
         }
         finally
         {

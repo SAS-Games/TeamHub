@@ -115,12 +115,15 @@ public sealed class SupportSummaryModel(
         Guid? id,
         string? projectName,
         string? status,
+        DateOnly? buildReceiveDate,
         DateOnly? eta,
         CancellationToken cancellationToken)
     {
         if (!CanManagePlanning) return Forbid();
         if (!eta.HasValue)
             return PlanningError("Enter an ETA.", "build-reviews");
+        if (!buildReceiveDate.HasValue)
+            return PlanningError("Enter the build receive date.", "build-reviews");
         var project = await GetConfiguredProjectAsync(projectName, cancellationToken);
         if (project is null)
             return PlanningError("Select a configured active project.", "build-reviews");
@@ -128,7 +131,7 @@ public sealed class SupportSummaryModel(
             return PlanningError("Select a valid review status.", "build-reviews");
 
         await planningService.SaveBuildReviewAsync(
-            new MilestoneBuildReview(id ?? Guid.Empty, project, status!, eta.Value),
+            new MilestoneBuildReview(id ?? Guid.Empty, project, status!, buildReceiveDate.Value, eta.Value),
             cancellationToken);
         StatusMessage = id.HasValue ? "Milestone build review updated." : "Milestone build review added.";
         return RedirectToPlanningTable("build-reviews");
@@ -161,6 +164,9 @@ public sealed class SupportSummaryModel(
 
     public string GetEffortColor(int index) =>
         EffortColors[index % EffortColors.Length];
+
+    public int GetBuildAgeingDays(DateOnly buildReceiveDate) =>
+        Math.Max(0, DateOnly.FromDateTime(DateTime.Today).DayNumber - buildReceiveDate.DayNumber);
 
     public string BuildPieGradient(IReadOnlyList<WorklogEffortSlice> slices)
     {

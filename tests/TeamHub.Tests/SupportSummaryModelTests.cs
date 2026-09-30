@@ -71,6 +71,7 @@ public sealed class SupportSummaryModelTests
         await model.OnGetAsync(CancellationToken.None);
 
         var today = DateOnly.FromDateTime(DateTime.Today);
+        model.GetBuildAgeingDays(today.AddDays(-3)).Should().Be(3);
         var weekStart = today.AddDays(-(((int)today.DayOfWeek + 6) % 7));
         model.StartDate.Should().Be(weekStart);
         model.EndDate.Should().Be(weekStart.AddDays(4));
