@@ -63,6 +63,62 @@ public sealed class StudioConfluenceUpdateTests
     }
 
     [Fact]
+    public void TableParser_SeparatesEmptyAdjacentSectionsAndPreservesConfluenceLineBreaks()
+    {
+        const string body = """
+            <table><tbody><tr>
+              <td>HDC</td>
+              <td>
+                <strong>Studio Work:</strong>
+                Fixing the TRC issues<br data-layout-break="true"/>Implementing activities
+                <strong>HPGDS Support:</strong>
+                <strong>WMD Support:</strong>Reviewing the milestone
+                <strong>Action Item:</strong>
+              </td>
+              <td>No notes provided.</td>
+            </tr></tbody></table>
+            """;
+
+        StudioConfluenceTableParser.TryParse(body, "HDC", out var update).Should().BeTrue();
+
+        update.StudioWork.Should().Be(
+            $"Fixing the TRC issues{Environment.NewLine}Implementing activities");
+        update.HpgdsSupport.Should().BeEmpty();
+        update.WmdSupport.Should().Be("Reviewing the milestone");
+        update.ActionItems.Should().BeEmpty();
+        update.Notes.Should().Be("No notes provided.");
+    }
+
+    [Fact]
+    public void TableParser_PreservesParagraphListAndConfluenceTaskBoundaries()
+    {
+        const string body = """
+            <table><tbody><tr>
+              <td>HDC</td>
+              <td>
+                <p><strong>Studio Work:</strong></p>
+                <p>Level design</p>
+                <ul><li>Gameplay fixes</li><li>Animation setup</li></ul>
+                <p><strong>HPGDS Support:</strong></p>
+                <ac:task-list>
+                  <ac:task><ac:task-body>Investigate build</ac:task-body></ac:task>
+                </ac:task-list>
+                <p><strong>WMD Support:</strong></p>
+                <p><strong>Action Items:</strong></p>
+              </td>
+            </tr></tbody></table>
+            """;
+
+        StudioConfluenceTableParser.TryParse(body, "HDC", out var update).Should().BeTrue();
+
+        update.StudioWork.Should().Be(
+            string.Join(Environment.NewLine, "Level design", "Gameplay fixes", "Animation setup"));
+        update.HpgdsSupport.Should().Be("Investigate build");
+        update.WmdSupport.Should().BeEmpty();
+        update.ActionItems.Should().BeEmpty();
+    }
+
+    [Fact]
     public void PageNaming_UsesBusinessWeekAndConfiguredHierarchyPatterns()
     {
         var selectedDate = new DateOnly(2026, 9, 16);
