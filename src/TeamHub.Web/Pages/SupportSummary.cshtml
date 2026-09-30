@@ -409,7 +409,7 @@ else
         <div class="section-heading">
             <div>
                 <span>@Model.StartDate?.ToString("dd MMM yyyy") &ndash; @Model.EndDate?.ToString("dd MMM yyyy")</span>
-                <h2>Total Logged Effort</h2>
+                <h2>Effort Distribution</h2>
             </div>
             <strong>Actual hours</strong>
         </div>
@@ -426,7 +426,7 @@ else
             <div class="support-effort-grid section-body">
                 <article class="support-effort-card">
                     <div>
-                        <h3>Actual Effort Summary</h3>
+                        <h3>Total Effort Distribution</h3>
                         <p>Logged hours by activity and studio-support group.</p>
                     </div>
                     @if (Model.EffortSummary.Count == 0)
@@ -459,7 +459,7 @@ else
 
                 <article class="support-effort-card">
                     <div>
-                        <h3>Actual Studio Support</h3>
+                        <h3>Studio Effort Distribution</h3>
                         <p>Logged studio-support hours by project.</p>
                     </div>
                     @if (Model.StudioEffortBreakdown.Count == 0)
@@ -495,7 +495,7 @@ else
 
     <section class="content-section" id="confluence">
         <div class="section-heading">
-            <div><span>@Model.StartDate?.ToString("dd MMM yyyy") &ndash; @Model.EndDate?.ToString("dd MMM yyyy")</span><h2>@(Model.IsMonthlyReport ? "Monthly Confluence Updates" : Model.ReportPeriod == SupportSummaryModel.CustomPeriod ? "Confluence Updates" : "Weekly Confluence Updates")</h2></div>
+            <div><span>@Model.StartDate?.ToString("dd MMM yyyy") &ndash; @Model.EndDate?.ToString("dd MMM yyyy")</span><h2>Confluence Update</h2></div>
             <strong>All active studios</strong>
         </div>
         @if (!string.IsNullOrWhiteSpace(Model.ConfluenceErrorMessage))

@@ -643,7 +643,7 @@ internal static partial class StudioConfluenceTableParser
     {
         var text = AnchorRegex().Replace(html, match => ToLinkText(match, confluenceBaseUrl));
         text = BreakRegex().Replace(text, "\n");
-        text = BlockEndRegex().Replace(text, "\n");
+        text = BlockBoundaryRegex().Replace(text, "\n");
         text = TagRegex().Replace(text, string.Empty);
         text = WebUtility.HtmlDecode(text).Replace('\u00a0', ' ');
         var lines = text.Replace("\r", string.Empty, StringComparison.Ordinal)
@@ -686,18 +686,18 @@ internal static partial class StudioConfluenceTableParser
     [GeneratedRegex(@"<t[hd]\b[^>]*>(.*?)</t[hd]>", RegexOptions.IgnoreCase | RegexOptions.Singleline, 2000)]
     private static partial Regex CellRegex();
 
-    [GeneratedRegex(@"<br\s*/?>", RegexOptions.IgnoreCase, 2000)]
+    [GeneratedRegex(@"<br\b[^>]*?/?>", RegexOptions.IgnoreCase, 2000)]
     private static partial Regex BreakRegex();
 
     [GeneratedRegex("<a\\b[^>]*\\bhref\\s*=\\s*(?:\"([^\"]*)\"|'([^']*)')[^>]*>(.*?)</a>", RegexOptions.IgnoreCase | RegexOptions.Singleline, 2000)]
     private static partial Regex AnchorRegex();
 
-    [GeneratedRegex(@"</(?:p|div|li|h[1-6])\s*>", RegexOptions.IgnoreCase, 2000)]
-    private static partial Regex BlockEndRegex();
+    [GeneratedRegex(@"</?(?:p|div|li|h[1-6]|ul|ol|blockquote|pre|ac:task(?:-body|-list)?)(?:\s[^>]*)?/?>", RegexOptions.IgnoreCase, 2000)]
+    private static partial Regex BlockBoundaryRegex();
 
     [GeneratedRegex(@"<[^>]+>", RegexOptions.Singleline, 2000)]
     private static partial Regex TagRegex();
 
-    [GeneratedRegex(@"(?:^|\n)\s*(Studio Work|HPGDS Support|WMD Support|Action Items?)\s*:\s*", RegexOptions.IgnoreCase, 2000)]
+    [GeneratedRegex(@"(Studio Work|HPGDS Support|WMD Support|Action Items?)\s*:\s*", RegexOptions.IgnoreCase, 2000)]
     private static partial Regex SectionLabelRegex();
 }
