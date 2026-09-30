@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Text.Json;
@@ -12,6 +13,7 @@ public sealed class StudioJiraTicketQuery
     public bool ActiveSprintOnly { get; set; } = true;
     public DateOnly? StartDate { get; set; }
     public DateOnly? EndDate { get; set; }
+    public bool UseSprintDateRange { get; set; }
 }
 
 public sealed class StudioJiraTicketResult
@@ -107,7 +109,50 @@ internal sealed class JiraStudioTicketService(
         AtlassianResolvedCredential credential,
         CancellationToken cancellationToken)
     {
-        var requestUri = BuildSearchUri(settings, mapping, query);
+        IReadOnlyList<long>? sprintIds = null;
+        if (query.UseSprintDateRange)
+        {
+            if (!query.StartDate.HasValue || !query.EndDate.HasValue)
+            {
+                return new StudioJiraTicketResult
+                {
+                    IsConfigured = true,
+                    IsReadOnly = credential.IsReadOnly,
+                    IsUsingSharedCredential = credential.IsShared,
+                    Message = "Select both a start date and an end date to load Jira sprints."
+                };
+            }
+
+            var sprintLookup = await FindOverlappingSprintIdsAsync(
+                settings,
+                mapping,
+                query.StartDate.Value,
+                query.EndDate.Value,
+                credential,
+                cancellationToken);
+            if (!string.IsNullOrWhiteSpace(sprintLookup.ErrorMessage))
+            {
+                return new StudioJiraTicketResult
+                {
+                    IsConfigured = true,
+                    IsReadOnly = credential.IsReadOnly,
+                    IsUsingSharedCredential = credential.IsShared,
+                    Message = sprintLookup.ErrorMessage
+                };
+            }
+            if (sprintLookup.Ids.Count == 0)
+            {
+                return new StudioJiraTicketResult
+                {
+                    IsConfigured = true,
+                    IsReadOnly = credential.IsReadOnly,
+                    IsUsingSharedCredential = credential.IsShared
+                };
+            }
+            sprintIds = sprintLookup.Ids;
+        }
+
+        var requestUri = BuildSearchUri(settings, mapping, query, sprintIds);
         using var request = new HttpRequestMessage(HttpMethod.Get, requestUri);
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", credential.Token);
         request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
@@ -145,17 +190,195 @@ internal sealed class JiraStudioTicketService(
         };
     }
 
+    private async Task<JiraIdLookupResult> FindOverlappingSprintIdsAsync(
+        AtlassianIntegrationSettings settings,
+        StudioAtlassianMapping mapping,
+        DateOnly startDate,
+        DateOnly endDate,
+        AtlassianResolvedCredential credential,
+        CancellationToken cancellationToken)
+    {
+        var boardLookup = await FindScrumBoardIdsAsync(settings, mapping, credential, cancellationToken);
+        if (!string.IsNullOrWhiteSpace(boardLookup.ErrorMessage)) return boardLookup;
+
+        var sprintIds = new HashSet<long>();
+        foreach (var boardId in boardLookup.Ids)
+        {
+            var startAt = 0;
+            for (var page = 0; page < 100; page++)
+            {
+                var requestUri = $"{settings.JiraBaseUrl.TrimEnd('/')}/rest/agile/1.0/board/{boardId}/sprint?state=active%2Cclosed%2Cfuture&startAt={startAt}&maxResults=50";
+                using var request = CreateJiraRequest(requestUri, credential);
+                using var response = await httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+                if (response.StatusCode is HttpStatusCode.BadRequest or HttpStatusCode.NotFound) break;
+                if (!response.IsSuccessStatusCode)
+                    return new JiraIdLookupResult([], BuildSprintLookupError(response, credential));
+
+                await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
+                using var document = await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken);
+                var root = document.RootElement;
+                var values = root.TryGetProperty("values", out var valuesElement)
+                    && valuesElement.ValueKind == JsonValueKind.Array
+                    ? valuesElement
+                    : default;
+                var valueCount = 0;
+                if (values.ValueKind == JsonValueKind.Array)
+                {
+                    foreach (var sprint in values.EnumerateArray())
+                    {
+                        valueCount++;
+                        if (TryGetLong(sprint, "id", out var sprintId)
+                            && TryGetDate(sprint, "startDate", out var sprintStart)
+                            && TryGetDate(sprint, "endDate", out var sprintEnd)
+                            && sprintStart <= endDate
+                            && sprintEnd >= startDate)
+                        {
+                            sprintIds.Add(sprintId);
+                        }
+                    }
+                }
+
+                var nextStartAt = GetNextStartAt(root, startAt, valueCount);
+                if (!nextStartAt.HasValue) break;
+                startAt = nextStartAt.Value;
+            }
+        }
+
+        return new JiraIdLookupResult(sprintIds.Order().ToList());
+    }
+
+    private async Task<JiraIdLookupResult> FindScrumBoardIdsAsync(
+        AtlassianIntegrationSettings settings,
+        StudioAtlassianMapping mapping,
+        AtlassianResolvedCredential credential,
+        CancellationToken cancellationToken)
+    {
+        var boardIds = new HashSet<long>();
+        foreach (var projectKey in mapping.JiraProjectKeys)
+        {
+            var startAt = 0;
+            for (var page = 0; page < 100; page++)
+            {
+                var requestUri = $"{settings.JiraBaseUrl.TrimEnd('/')}/rest/agile/1.0/board?projectKeyOrId={Uri.EscapeDataString(projectKey)}&type=scrum&startAt={startAt}&maxResults=50";
+                using var request = CreateJiraRequest(requestUri, credential);
+                using var response = await httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+                if (!response.IsSuccessStatusCode)
+                    return new JiraIdLookupResult([], BuildSprintLookupError(response, credential));
+
+                await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
+                using var document = await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken);
+                var root = document.RootElement;
+                var values = root.TryGetProperty("values", out var valuesElement)
+                    && valuesElement.ValueKind == JsonValueKind.Array
+                    ? valuesElement
+                    : default;
+                var valueCount = 0;
+                if (values.ValueKind == JsonValueKind.Array)
+                {
+                    foreach (var board in values.EnumerateArray())
+                    {
+                        valueCount++;
+                        if (TryGetLong(board, "id", out var boardId)) boardIds.Add(boardId);
+                    }
+                }
+
+                var nextStartAt = GetNextStartAt(root, startAt, valueCount);
+                if (!nextStartAt.HasValue) break;
+                startAt = nextStartAt.Value;
+            }
+        }
+
+        return new JiraIdLookupResult(boardIds.Order().ToList());
+    }
+
+    private static HttpRequestMessage CreateJiraRequest(string requestUri, AtlassianResolvedCredential credential)
+    {
+        var request = new HttpRequestMessage(HttpMethod.Get, requestUri);
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", credential.Token);
+        request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+        request.Headers.TryAddWithoutValidation("X-Atlassian-Token", "no-check");
+        return request;
+    }
+
+    private static string BuildSprintLookupError(HttpResponseMessage response, AtlassianResolvedCredential credential) =>
+        response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden
+            ? credential.IsShared
+                ? "Jira rejected the shared read-only token while loading sprint dates. Ask an administrator to update the default Jira credential."
+                : "Jira rejected your personal token while loading sprint dates. Update it from My Atlassian Connection."
+            : $"Jira returned {(int)response.StatusCode} {response.ReasonPhrase} while loading sprint dates. Confirm that the Jira Software Agile API is available.";
+
+    private static int? GetNextStartAt(JsonElement root, int currentStartAt, int valueCount)
+    {
+        if (root.TryGetProperty("isLast", out var isLast)
+            && isLast.ValueKind is JsonValueKind.True or JsonValueKind.False
+            && isLast.GetBoolean())
+        {
+            return null;
+        }
+        if (valueCount == 0) return null;
+
+        var pageSize = root.TryGetProperty("maxResults", out var maxResults)
+            && maxResults.TryGetInt32(out var parsedPageSize)
+            && parsedPageSize > 0
+            ? parsedPageSize
+            : valueCount;
+        var nextStartAt = currentStartAt + pageSize;
+        if (root.TryGetProperty("total", out var total)
+            && total.TryGetInt32(out var parsedTotal)
+            && nextStartAt >= parsedTotal)
+        {
+            return null;
+        }
+        return nextStartAt;
+    }
+
+    private static bool TryGetLong(JsonElement element, string propertyName, out long value)
+    {
+        value = 0;
+        if (!element.TryGetProperty(propertyName, out var property)) return false;
+        return property.ValueKind == JsonValueKind.Number
+            ? property.TryGetInt64(out value)
+            : property.ValueKind == JsonValueKind.String
+              && long.TryParse(property.GetString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out value);
+    }
+
+    private static bool TryGetDate(JsonElement element, string propertyName, out DateOnly value)
+    {
+        value = default;
+        if (!element.TryGetProperty(propertyName, out var property)
+            || property.ValueKind != JsonValueKind.String
+            || !DateTimeOffset.TryParse(
+                property.GetString(),
+                CultureInfo.InvariantCulture,
+                DateTimeStyles.AllowWhiteSpaces,
+                out var timestamp))
+        {
+            return false;
+        }
+        value = DateOnly.FromDateTime(timestamp.DateTime);
+        return true;
+    }
+
+    private sealed record JiraIdLookupResult(IReadOnlyList<long> Ids, string? ErrorMessage = null);
+
     private static StudioJiraTicketResult NotConfigured(string message) =>
         new() { IsConfigured = false, Message = message };
 
-    private static string BuildSearchUri(AtlassianIntegrationSettings settings, StudioAtlassianMapping mapping, StudioJiraTicketQuery query)
+    private static string BuildSearchUri(
+        AtlassianIntegrationSettings settings,
+        StudioAtlassianMapping mapping,
+        StudioJiraTicketQuery query,
+        IReadOnlyList<long>? sprintIds = null)
     {
-        var jql = BuildJql(mapping, query);
+        var jql = BuildJql(mapping, query, sprintIds);
         var fields = Uri.EscapeDataString("summary,assignee,status,priority,components");
         return $"{settings.JiraBaseUrl.TrimEnd('/')}{settings.JiraSearchApiPath}?jql={Uri.EscapeDataString(jql)}&fields={fields}&maxResults={settings.JiraMaxResults}";
     }
 
-    internal static string BuildJql(StudioAtlassianMapping mapping, StudioJiraTicketQuery query)
+    internal static string BuildJql(
+        StudioAtlassianMapping mapping,
+        StudioJiraTicketQuery query,
+        IReadOnlyList<long>? sprintIds = null)
     {
         var projectClause = mapping.JiraProjectKeys.Count == 1
             ? $"project = {QuoteJql(mapping.JiraProjectKeys[0])}"
@@ -166,9 +389,18 @@ internal sealed class JiraStudioTicketService(
             $"component = {QuoteJql(mapping.JiraStudioComponent)}",
             $"issuetype in ({QuoteJql("Task")}, {QuoteJql("Story")})"
         };
-        if (query.ActiveSprintOnly) clauses.Add("sprint in openSprints()");
-        if (query.StartDate.HasValue) clauses.Add($"created >= {QuoteJql(query.StartDate.Value.ToString("yyyy-MM-dd"))}");
-        if (query.EndDate.HasValue) clauses.Add($"created <= {QuoteJql(query.EndDate.Value.ToString("yyyy-MM-dd"))}");
+        if (query.UseSprintDateRange)
+        {
+            if (sprintIds is null || sprintIds.Count == 0)
+                throw new InvalidOperationException("Sprint IDs are required for sprint date-range filtering.");
+            clauses.Add($"sprint in ({string.Join(", ", sprintIds.Distinct().Order())})");
+        }
+        else
+        {
+            if (query.ActiveSprintOnly) clauses.Add("sprint in openSprints()");
+            if (query.StartDate.HasValue) clauses.Add($"created >= {QuoteJql(query.StartDate.Value.ToString("yyyy-MM-dd"))}");
+            if (query.EndDate.HasValue) clauses.Add($"created <= {QuoteJql(query.EndDate.Value.ToString("yyyy-MM-dd"))}");
+        }
         return string.Join(" AND ", clauses) + " ORDER BY priority DESC, updated DESC";
     }
 

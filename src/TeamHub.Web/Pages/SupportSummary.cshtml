@@ -44,13 +44,6 @@
                 </select>
             </div>
             <div class="col-sm-6 col-xl-2">
-                <label asp-for="ActiveSprintOnly" class="form-label">Support sprint</label>
-                <select asp-for="ActiveSprintOnly" class="form-select">
-                    <option value="true">Active sprint</option>
-                    <option value="false">All matching tickets</option>
-                </select>
-            </div>
-            <div class="col-sm-6 col-xl-2">
                 <label asp-for="StartDate" class="form-label">Start date</label>
                 <input asp-for="StartDate" type="date" class="form-control" data-report-start />
             </div>
@@ -394,7 +387,7 @@ else
     <section class="content-section" id="jira">
         <div class="section-heading">
             <div><span>@Model.JiraTickets.Count ticket(s)</span><h2>Support Activity Tickets</h2></div>
-            <strong>@(Model.ActiveSprintOnly ? "Active sprint" : "All matching tickets")</strong>
+            <strong>Sprints overlapping selected period</strong>
         </div>
         @if (Model.JiraMessages.Count > 0)
         {
@@ -411,7 +404,7 @@ else
         }
         @if (Model.JiraTickets.Count == 0)
         {
-            <div class="section-body text-secondary">No support tickets match the selected filters.</div>
+            <div class="section-body text-secondary">No support tickets were found in sprints overlapping the selected period.</div>
         }
         else
         {

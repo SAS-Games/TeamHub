@@ -27,6 +27,30 @@ public sealed class StudioDirectoryTests
     }
 
     [Fact]
+    public void JiraTicketQuery_UsesOverlappingSprintIdsWithoutCreatedDateFiltering()
+    {
+        var jql = JiraStudioTicketService.BuildJql(
+            new StudioAtlassianMapping
+            {
+                JiraProjectKeys = ["SUP"],
+                JiraStudioComponent = "HDC"
+            },
+            new StudioJiraTicketQuery
+            {
+                ActiveSprintOnly = false,
+                UseSprintDateRange = true,
+                StartDate = new DateOnly(2026, 9, 1),
+                EndDate = new DateOnly(2026, 9, 30)
+            },
+            [101, 202]);
+
+        jql.Should().Contain("sprint in (101, 202)");
+        jql.Should().NotContain("created >=");
+        jql.Should().NotContain("created <=");
+        jql.Should().NotContain("openSprints()");
+    }
+
+    [Fact]
     public async Task AtlassianTokens_AreEncryptedInDatabase_AndConnectionStatusDoesNotExposeThem()
     {
         var dbPath = Path.Combine(Path.GetTempPath(), $"teamhub-studio-{Guid.NewGuid():N}.db");
@@ -375,6 +399,134 @@ public sealed class StudioDirectoryTests
             {
                 File.Delete(dbPath);
             }
+        }
+    }
+
+    [Fact]
+    public async Task GetTicketsAsync_FindsTicketsFromSprintsOverlappingTheSelectedDateRange()
+    {
+        var dbPath = Path.Combine(Path.GetTempPath(), $"teamhub-studio-{Guid.NewGuid():N}.db");
+        var requestUris = new List<Uri>();
+        string? capturedJql = null;
+        var handler = new StubHttpMessageHandler(request =>
+        {
+            requestUris.Add(request.RequestUri!);
+            request.Headers.Authorization!.Scheme.Should().Be("Bearer");
+            request.Headers.Authorization.Parameter.Should().Be("personal-jira-token");
+
+            object responseBody;
+            if (request.RequestUri!.AbsolutePath.EndsWith("/rest/agile/1.0/board", StringComparison.Ordinal))
+            {
+                responseBody = new
+                {
+                    startAt = 0,
+                    maxResults = 50,
+                    isLast = true,
+                    values = new[] { new { id = 10, name = "SUP Scrum Board" } }
+                };
+            }
+            else if (request.RequestUri.AbsolutePath.EndsWith("/rest/agile/1.0/board/10/sprint", StringComparison.Ordinal))
+            {
+                responseBody = new
+                {
+                    startAt = 0,
+                    maxResults = 50,
+                    isLast = true,
+                    values = new[]
+                    {
+                        new { id = 101, startDate = "2026-08-25T09:00:00.000+05:30", endDate = "2026-09-07T18:00:00.000+05:30" },
+                        new { id = 102, startDate = "2026-08-01T09:00:00.000+05:30", endDate = "2026-08-14T18:00:00.000+05:30" },
+                        new { id = 103, startDate = "2026-10-05T09:00:00.000+05:30", endDate = "2026-10-16T18:00:00.000+05:30" },
+                        new { id = 104, startDate = "2026-09-30T09:00:00.000+05:30", endDate = "2026-10-13T18:00:00.000+05:30" }
+                    }
+                };
+            }
+            else
+            {
+                var jqlParameter = request.RequestUri.Query.TrimStart('?')
+                    .Split('&', StringSplitOptions.RemoveEmptyEntries)
+                    .Single(parameter => parameter.StartsWith("jql=", StringComparison.Ordinal));
+                capturedJql = Uri.UnescapeDataString(jqlParameter[4..]);
+                responseBody = new
+                {
+                    issues = new[]
+                    {
+                        new
+                        {
+                            key = "SUP-1",
+                            fields = new
+                            {
+                                summary = "Carry-over support work",
+                                assignee = new { displayName = "Asha" },
+                                status = new { name = "In Progress" },
+                                priority = new { name = "High" },
+                                components = new[] { new { name = "HDC" }, new { name = "StudioSupport" } }
+                            }
+                        }
+                    }
+                };
+            }
+
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(JsonSerializer.Serialize(responseBody), Encoding.UTF8, "application/json")
+            };
+        });
+
+        try
+        {
+            await using var provider = CreateServices(dbPath, jiraHandler: handler);
+            await using var scope = provider.CreateAsyncScope();
+            await scope.ServiceProvider.GetRequiredService<IStudioDatabaseInitializer>().InitializeAsync();
+            var directory = scope.ServiceProvider.GetRequiredService<IStudioDirectoryService>();
+            var configuration = scope.ServiceProvider.GetRequiredService<IAtlassianConfigurationService>();
+            var studio = await directory.SaveStudioAsync(new StudioDetails
+            {
+                StudioName = "HDC Studio",
+                ProjectName = "Support Project"
+            });
+            await configuration.SaveSettingsAsync(new AtlassianIntegrationSettings
+            {
+                JiraEnabled = true,
+                JiraBaseUrl = "https://jira.example.test",
+                JiraSearchApiPath = "/rest/api/2/search",
+                JiraMaxResults = 100,
+                JiraDefaultSupportComponent = "StudioSupport"
+            });
+            await configuration.SaveStudioMappingsAsync([
+                new StudioAtlassianMapping
+                {
+                    StudioId = studio.Id,
+                    JiraProjectKeys = ["SUP"],
+                    JiraStudioComponent = "HDC"
+                }
+            ]);
+            await configuration.SaveUserTokensAsync("person@example.com", "personal-jira-token", null);
+
+            var result = await scope.ServiceProvider.GetRequiredService<IStudioJiraTicketService>().GetTicketsAsync(
+                new StudioJiraTicketQuery
+                {
+                    StudioId = studio.Id,
+                    RequestingUserId = "person@example.com",
+                    ActiveSprintOnly = false,
+                    UseSprintDateRange = true,
+                    StartDate = new DateOnly(2026, 9, 1),
+                    EndDate = new DateOnly(2026, 9, 30)
+                });
+
+            requestUris.Should().HaveCount(3);
+            requestUris[0].Query.Should().Contain("projectKeyOrId=SUP").And.Contain("type=scrum");
+            capturedJql.Should().Contain("sprint in (101, 104)");
+            capturedJql.Should().NotContain("102").And.NotContain("103");
+            capturedJql.Should().NotContain("created >=").And.NotContain("updated >=");
+            result.Message.Should().BeNull();
+            result.Groups.Single(group => group.Name == "Direct Support").Tickets
+                .Should().ContainSingle().Which.TicketId.Should().Be("SUP-1");
+        }
+        finally
+        {
+            SqliteConnection.ClearAllPools();
+            if (File.Exists(dbPath)) File.Delete(dbPath);
         }
     }
 
@@ -762,7 +914,8 @@ public sealed class StudioDirectoryTests
     private static ServiceProvider CreateServices(
         string dbPath,
         string? workflowDbPath = null,
-        HttpMessageHandler? confluenceHandler = null)
+        HttpMessageHandler? confluenceHandler = null,
+        HttpMessageHandler? jiraHandler = null)
     {
         var configuration = new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?>
@@ -779,6 +932,11 @@ public sealed class StudioDirectoryTests
         {
             services.AddHttpClient<IStudioConfluenceUpdateService, ConfluenceStudioUpdateService>()
                 .ConfigurePrimaryHttpMessageHandler(() => confluenceHandler);
+        }
+        if (jiraHandler is not null)
+        {
+            services.AddHttpClient<IStudioJiraTicketService, JiraStudioTicketService>()
+                .ConfigurePrimaryHttpMessageHandler(() => jiraHandler);
         }
         return services.BuildServiceProvider();
     }
