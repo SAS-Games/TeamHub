@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Mvc.RazorPages;
 using TeamHub.Milestones;
 using TeamHub.Studio;
 using TeamHub.Web.Pages;
+using TeamHub.Web.WorklogAnalytics;
 
 namespace TeamHub.Tests;
 
@@ -34,12 +35,29 @@ public sealed class SupportSummaryModelTests
         ]);
         var jiraService = new StubJiraService();
         var confluenceService = new StubConfluenceService();
+        var effortService = new StubWorklogEffortService
+        {
+            Report = new WorklogEffortReport
+            {
+                EffortSummary =
+                [
+                    new WorklogEffortSlice("IHP", 30),
+                    new WorklogEffortSlice("Internal Activities", 10)
+                ],
+                StudioBreakdown =
+                [
+                    new WorklogEffortSlice("Alpha Project", 30)
+                ]
+            }
+        };
         var identity = new ClaimsIdentity([new Claim(ClaimTypes.Name, "reader@example.com")], "Test");
         var model = new SupportSummaryModel(
             new StubStudioDirectoryService([inactiveStudio, activeStudio]),
             milestoneService,
             jiraService,
-            confluenceService)
+            confluenceService,
+            new StubPlanningService(),
+            effortService)
         {
             PageContext = new PageContext
             {
@@ -53,6 +71,7 @@ public sealed class SupportSummaryModelTests
         await model.OnGetAsync(CancellationToken.None);
 
         var today = DateOnly.FromDateTime(DateTime.Today);
+        model.GetBuildAgeingDays(today.AddDays(-3)).Should().Be(3);
         var weekStart = today.AddDays(-(((int)today.DayOfWeek + 6) % 7));
         model.StartDate.Should().Be(weekStart);
         model.EndDate.Should().Be(weekStart.AddDays(4));
@@ -76,6 +95,12 @@ public sealed class SupportSummaryModelTests
         confluenceService.LastQuery.StartDate.Should().Be(weekStart);
         confluenceService.LastQuery.EndDate.Should().Be(weekStart.AddDays(4));
         model.ConfluenceResult.Updates.Should().ContainSingle().Which.StudioId.Should().Be(activeStudio.Id);
+        effortService.StartDate.Should().Be(weekStart);
+        effortService.EndDate.Should().Be(weekStart.AddDays(4));
+        model.EffortSummary.Sum(slice => slice.Hours).Should().Be(40);
+        model.StudioEffortBreakdown.Should().ContainSingle()
+            .Which.Label.Should().Be(activeStudio.ProjectName);
+        model.BuildPieGradient(model.EffortSummary).Should().StartWith("conic-gradient(");
     }
 
     [Fact]
@@ -88,7 +113,9 @@ public sealed class SupportSummaryModelTests
             new StubStudioDirectoryService([studio]),
             new StubMilestoneService([]),
             jiraService,
-            confluenceService)
+            confluenceService,
+            new StubPlanningService(),
+            new StubWorklogEffortService())
         {
             ReportPeriod = SupportSummaryModel.MonthlyPeriod,
             SelectedMonth = "2026-09",
@@ -118,7 +145,9 @@ public sealed class SupportSummaryModelTests
             new StubStudioDirectoryService([studio]),
             new StubMilestoneService([]),
             jiraService,
-            confluenceService)
+            confluenceService,
+            new StubPlanningService(),
+            new StubWorklogEffortService())
         {
             ReportPeriod = SupportSummaryModel.CustomPeriod,
             StartDate = new DateOnly(2026, 9, 3),
@@ -135,6 +164,48 @@ public sealed class SupportSummaryModelTests
         jiraService.Queries[0].EndDate.Should().Be(new DateOnly(2026, 9, 18));
         confluenceService.LastQuery!.StartDate.Should().Be(new DateOnly(2026, 9, 3));
         confluenceService.LastQuery.EndDate.Should().Be(new DateOnly(2026, 9, 18));
+    }
+
+    [Fact]
+    public async Task OnGetAsync_LoadsOnlyTheNextMilestonePerStudioInConfiguredStudioOrder()
+    {
+        var secondStudio = Studio("second", "Second Studio", "Second Project", isActive: true);
+        secondStudio.GroupDisplayOrder = 1;
+        secondStudio.StudioDisplayOrder = 2;
+        var firstStudio = Studio("first", "First Studio", "First Project", isActive: true);
+        firstStudio.GroupDisplayOrder = 1;
+        firstStudio.StudioDisplayOrder = 1;
+        var thirdStudio = Studio("third", "Third Studio", "Third Project", isActive: true);
+        thirdStudio.GroupDisplayOrder = 2;
+        thirdStudio.StudioDisplayOrder = 1;
+        var milestones = new StubMilestoneService(
+        [
+            new() { Title = firstStudio.ProjectName, Milestone = "Later first milestone", DeliveryDate = DateTime.Today.AddDays(10) },
+            new() { Title = firstStudio.ProjectName, Milestone = "Next first milestone", DeliveryDate = DateTime.Today.AddDays(3) },
+            new() { Title = firstStudio.ProjectName, Milestone = "Past first milestone", DeliveryDate = DateTime.Today.AddDays(-1) },
+            new() { Title = secondStudio.ProjectName, Milestone = "Next second milestone", DeliveryDate = DateTime.Today.AddDays(1) },
+            new() { Title = secondStudio.ProjectName, Milestone = "Total MS second", DeliveryDate = DateTime.Today },
+            new() { Title = thirdStudio.ProjectName, Milestone = "Unscheduled third milestone" }
+        ]);
+        var model = new SupportSummaryModel(
+            new StubStudioDirectoryService([thirdStudio, secondStudio, firstStudio]),
+            milestones,
+            new StubJiraService(),
+            new StubConfluenceService(),
+            new StubPlanningService(),
+            new StubWorklogEffortService())
+        {
+            PageContext = new PageContext { HttpContext = new DefaultHttpContext() }
+        };
+
+        await model.OnGetAsync(CancellationToken.None);
+
+        model.Studios.Select(studio => studio.Id).Should().Equal("first", "second", "third");
+        model.ActiveMilestones.Select(item => item.Studio.Id).Should().Equal("first", "second", "third");
+        model.ActiveMilestones.Select(item => item.Milestone.Milestone).Should().Equal(
+            "Next first milestone",
+            "Next second milestone",
+            "Unscheduled third milestone");
     }
 
     private static StudioDetails Studio(string id, string name, string project, bool isActive) => new()
@@ -227,18 +298,78 @@ public sealed class SupportSummaryModelTests
             return Task.FromResult(new StudioConfluenceUpdateResult
             {
                 IsConfigured = true,
-                Updates =
-                [
-                    new StudioConfluenceWeeklyUpdate
+                Updates = query.StudioIds
+                    .Select(studioId => new StudioConfluenceWeeklyUpdate
                     {
-                        StudioId = query.StudioIds.Single(),
+                        StudioId = studioId,
                         WeekStart = query.StartDate!.Value,
                         WeekEnd = query.EndDate!.Value,
                         PageFound = true,
                         StudioFound = true
-                    }
-                ]
+                    })
+                    .ToList()
             });
+        }
+    }
+
+    private sealed class StubPlanningService : ISupportSummaryPlanningService
+    {
+        public List<ExpectedMilestoneDelivery> ExpectedDeliveries { get; } = [];
+        public List<MilestoneBuildReview> BuildReviews { get; } = [];
+
+        public Task<IReadOnlyList<ExpectedMilestoneDelivery>> GetExpectedDeliveriesAsync(
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult<IReadOnlyList<ExpectedMilestoneDelivery>>(ExpectedDeliveries);
+
+        public Task<ExpectedMilestoneDelivery> SaveExpectedDeliveryAsync(
+            ExpectedMilestoneDelivery delivery,
+            CancellationToken cancellationToken = default)
+        {
+            ExpectedDeliveries.RemoveAll(item => item.Id == delivery.Id);
+            ExpectedDeliveries.Add(delivery);
+            return Task.FromResult(delivery);
+        }
+
+        public Task DeleteExpectedDeliveryAsync(Guid id, CancellationToken cancellationToken = default)
+        {
+            ExpectedDeliveries.RemoveAll(item => item.Id == id);
+            return Task.CompletedTask;
+        }
+
+        public Task<IReadOnlyList<MilestoneBuildReview>> GetBuildReviewsAsync(
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult<IReadOnlyList<MilestoneBuildReview>>(BuildReviews);
+
+        public Task<MilestoneBuildReview> SaveBuildReviewAsync(
+            MilestoneBuildReview review,
+            CancellationToken cancellationToken = default)
+        {
+            BuildReviews.RemoveAll(item => item.Id == review.Id);
+            BuildReviews.Add(review);
+            return Task.FromResult(review);
+        }
+
+        public Task DeleteBuildReviewAsync(Guid id, CancellationToken cancellationToken = default)
+        {
+            BuildReviews.RemoveAll(item => item.Id == id);
+            return Task.CompletedTask;
+        }
+    }
+
+    private sealed class StubWorklogEffortService : IWorklogEffortService
+    {
+        public DateOnly? StartDate { get; private set; }
+        public DateOnly? EndDate { get; private set; }
+        public WorklogEffortReport Report { get; set; } = new();
+
+        public Task<WorklogEffortReport> GetActualEffortAsync(
+            DateOnly startDate,
+            DateOnly endDate,
+            CancellationToken cancellationToken = default)
+        {
+            StartDate = startDate;
+            EndDate = endDate;
+            return Task.FromResult(Report);
         }
     }
 }

@@ -1233,6 +1233,7 @@ public static class StudioDirectoryServiceCollectionExtensions
         });
         services.AddScoped<IStudioDatabaseInitializer, SqliteStudioDatabaseInitializer>();
         services.AddScoped<IStudioDirectoryService, SqliteStudioDirectoryService>();
+        services.AddScoped<ISupportSummaryPlanningService, SqliteSupportSummaryPlanningService>();
         services.AddScoped<SqliteAtlassianConfigurationService>();
         services.AddScoped<IAtlassianConfigurationService>(provider => provider.GetRequiredService<SqliteAtlassianConfigurationService>());
         services.AddScoped<IAtlassianCredentialAccessor>(provider => provider.GetRequiredService<SqliteAtlassianConfigurationService>());
