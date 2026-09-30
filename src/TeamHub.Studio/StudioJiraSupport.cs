@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Text.Json;
+using Microsoft.Extensions.Caching.Memory;
 
 namespace TeamHub.Studio;
 
@@ -50,9 +51,37 @@ public interface IStudioJiraTicketService
 internal sealed class JiraStudioTicketService(
     HttpClient httpClient,
     IAtlassianConfigurationService configurationService,
-    IAtlassianCredentialAccessor credentialAccessor) : IStudioJiraTicketService
+    IAtlassianCredentialAccessor credentialAccessor,
+    IMemoryCache memoryCache) : IStudioJiraTicketService
 {
     public async Task<StudioJiraTicketResult> GetTicketsAsync(StudioJiraTicketQuery query, CancellationToken cancellationToken = default)
+    {
+        var cacheKey = string.Join(
+            '|',
+            "studio-jira-v1",
+            query.RequestingUserId.Trim().ToUpperInvariant(),
+            query.AllowPrivilegedDefaultCredential,
+            query.StudioId.Trim().ToUpperInvariant(),
+            query.ActiveSprintOnly,
+            query.UseSprintDateRange,
+            query.StartDate?.ToString("yyyy-MM-dd") ?? string.Empty,
+            query.EndDate?.ToString("yyyy-MM-dd") ?? string.Empty);
+        if (memoryCache.TryGetValue<StudioJiraTicketResult>(cacheKey, out var cached) && cached is not null)
+        {
+            return cached;
+        }
+
+        var result = await LoadTicketsAsync(query, cancellationToken);
+        if (result.IsConfigured && string.IsNullOrWhiteSpace(result.Message))
+        {
+            memoryCache.Set(cacheKey, result, TimeSpan.FromMinutes(2));
+        }
+        return result;
+    }
+
+    private async Task<StudioJiraTicketResult> LoadTicketsAsync(
+        StudioJiraTicketQuery query,
+        CancellationToken cancellationToken)
     {
         var settings = await configurationService.GetSettingsAsync(cancellationToken);
         if (!settings.JiraEnabled)

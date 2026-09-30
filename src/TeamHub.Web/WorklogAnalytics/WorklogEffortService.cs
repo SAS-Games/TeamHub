@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Text.Json;
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Options;
 using TeamHub.Studio;
 
@@ -38,7 +39,8 @@ public interface IWorklogEffortService
 internal sealed class PythonWorklogEffortService(
     IOptions<WorklogAnalyticsOptions> options,
     IWebHostEnvironment environment,
-    IAtlassianCredentialAccessor credentialAccessor) : IWorklogEffortService
+    IAtlassianCredentialAccessor credentialAccessor,
+    IMemoryCache memoryCache) : IWorklogEffortService
 {
     private static readonly JsonSerializerOptions SerializerOptions = new()
     {
@@ -51,6 +53,35 @@ internal sealed class PythonWorklogEffortService(
         string requestingUserId,
         bool allowPrivilegedDefaultCredential,
         CancellationToken cancellationToken = default)
+    {
+        var cacheKey = string.Join(
+            '|',
+            "worklog-effort-v1",
+            requestingUserId.Trim().ToUpperInvariant(),
+            allowPrivilegedDefaultCredential,
+            startDate.ToString("yyyy-MM-dd"),
+            endDate.ToString("yyyy-MM-dd"));
+        var cached = await memoryCache.GetOrCreateAsync(
+            cacheKey,
+            async entry =>
+            {
+                entry.AbsoluteExpirationRelativeToNow = TimeSpan.FromMinutes(5);
+                return await LoadActualEffortAsync(
+                    startDate,
+                    endDate,
+                    requestingUserId,
+                    allowPrivilegedDefaultCredential,
+                    cancellationToken);
+            });
+        return cached ?? throw new InvalidDataException("Worklog analytics returned an empty effort report.");
+    }
+
+    private async Task<WorklogEffortReport> LoadActualEffortAsync(
+        DateOnly startDate,
+        DateOnly endDate,
+        string requestingUserId,
+        bool allowPrivilegedDefaultCredential,
+        CancellationToken cancellationToken)
     {
         var settings = options.Value;
         if (!settings.Enabled)

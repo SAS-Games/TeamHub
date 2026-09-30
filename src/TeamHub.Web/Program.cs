@@ -54,6 +54,7 @@ Directory.CreateDirectory(dataProtectionKeysPath);
 
 // Add services to the container.
 builder.Services.AddRazorPages();
+builder.Services.AddMemoryCache();
 builder.Services.AddSingleton<ISafeMarkdownRenderer, SafeMarkdownRenderer>();
 builder.Services.Configure<WorklogAnalyticsOptions>(
     builder.Configuration.GetSection(WorklogAnalyticsOptions.SectionName));

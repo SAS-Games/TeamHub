@@ -80,6 +80,7 @@ public sealed class SupportSummaryModelTests
         };
 
         await model.OnGetAsync(CancellationToken.None);
+        await model.OnGetEffortAsync(CancellationToken.None);
 
         var today = DateOnly.FromDateTime(DateTime.Today);
         model.GetBuildAgeingDays(today.AddDays(-3)).Should().Be(3);
@@ -220,6 +221,7 @@ public sealed class SupportSummaryModelTests
         };
 
         await model.OnGetAsync(CancellationToken.None);
+        await model.OnGetEffortAsync(CancellationToken.None);
 
         model.EffortErrorMessage.Should().Be(diagnostic);
         model.EffortErrorDisplayMessage.Should().Be(expectedDisplayMessage);

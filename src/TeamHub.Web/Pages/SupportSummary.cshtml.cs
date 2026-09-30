@@ -1,6 +1,7 @@
 using System.Globalization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
+using Microsoft.Extensions.DependencyInjection;
 using TeamHub.Authentication;
 using TeamHub.Milestones;
 using TeamHub.Studio;
@@ -14,7 +15,8 @@ public sealed class SupportSummaryModel(
     IStudioJiraTicketService jiraTicketService,
     IStudioConfluenceUpdateService confluenceUpdateService,
     ISupportSummaryPlanningService planningService,
-    IWorklogEffortService worklogEffortService) : PageModel
+    IWorklogEffortService worklogEffortService,
+    IServiceScopeFactory? serviceScopeFactory = null) : PageModel
 {
     public const string WeeklyPeriod = "Weekly";
     public const string MonthlyPeriod = "Monthly";
@@ -71,12 +73,27 @@ public sealed class SupportSummaryModel(
             .ToList();
         ExpectedDeliveries = await planningService.GetExpectedDeliveriesAsync(cancellationToken);
         BuildReviews = await planningService.GetBuildReviewsAsync(cancellationToken);
-        await LoadEffortAsync(cancellationToken);
         if (Studios.Count == 0) return;
 
-        await LoadMilestonesAsync(cancellationToken);
-        await LoadJiraAsync(cancellationToken);
-        await LoadConfluenceAsync(cancellationToken);
+        await Task.WhenAll(
+            LoadMilestonesFromIndependentScopeAsync(cancellationToken),
+            LoadJiraAsync(cancellationToken),
+            LoadConfluenceFromIndependentScopeAsync(cancellationToken));
+    }
+
+    public async Task<IActionResult> OnGetEffortAsync(CancellationToken cancellationToken)
+    {
+        SetReportRange();
+        await LoadEffortAsync(worklogEffortService, cancellationToken);
+        Response.Headers.CacheControl = "no-store";
+        return new JsonResult(new
+        {
+            error = EffortErrorDisplayMessage,
+            effortSummary = EffortSummary,
+            studioEffortBreakdown = StudioEffortBreakdown,
+            employeeEffortBreakdowns = EmployeeEffortBreakdowns,
+            colors = EffortColors
+        });
     }
 
     public async Task<IActionResult> OnPostSaveExpectedDeliveryAsync(
@@ -203,12 +220,28 @@ public sealed class SupportSummaryModel(
         return $"conic-gradient({string.Join(", ", stops)})";
     }
 
-    private async Task LoadMilestonesAsync(CancellationToken cancellationToken)
+    private async Task LoadMilestonesFromIndependentScopeAsync(CancellationToken cancellationToken)
+    {
+        if (serviceScopeFactory is null)
+        {
+            await LoadMilestonesAsync(milestoneTrackerService, cancellationToken);
+            return;
+        }
+
+        await using var scope = serviceScopeFactory.CreateAsyncScope();
+        await LoadMilestonesAsync(
+            scope.ServiceProvider.GetRequiredService<IMilestoneTrackerService>(),
+            cancellationToken);
+    }
+
+    private async Task LoadMilestonesAsync(
+        IMilestoneTrackerService service,
+        CancellationToken cancellationToken)
     {
         try
         {
             var today = DateTime.Today;
-            var milestones = await milestoneTrackerService.GetMilestonesAsync(cancellationToken);
+            var milestones = await service.GetMilestonesAsync(cancellationToken);
             var selectableMilestones = milestones
                 .Where(milestone => !milestone.Milestone.StartsWith("Total MS", StringComparison.OrdinalIgnoreCase))
                 .ToList();
@@ -254,12 +287,14 @@ public sealed class SupportSummaryModel(
         }
     }
 
-    private async Task LoadEffortAsync(CancellationToken cancellationToken)
+    private async Task LoadEffortAsync(
+        IWorklogEffortService service,
+        CancellationToken cancellationToken)
     {
         if (!StartDate.HasValue || !EndDate.HasValue) return;
         try
         {
-            var report = await worklogEffortService.GetActualEffortAsync(
+            var report = await service.GetActualEffortAsync(
                 StartDate.Value,
                 EndDate.Value,
                 User.Identity?.Name ?? string.Empty,
@@ -281,34 +316,55 @@ public sealed class SupportSummaryModel(
     {
         var tickets = new List<SupportSummaryTicket>();
         var messages = new List<SupportSummaryMessage>();
-        foreach (var studio in Studios)
+        IReadOnlyList<StudioJiraLoadResult> studioResults;
+        if (serviceScopeFactory is null)
         {
-            try
+            var sequentialResults = new List<StudioJiraLoadResult>();
+            foreach (var studio in Studios)
             {
-                var result = await jiraTicketService.GetTicketsAsync(new StudioJiraTicketQuery
-                {
-                    StudioId = studio.Id,
-                    RequestingUserId = User.Identity?.Name ?? string.Empty,
-                    AllowPrivilegedDefaultCredential = User.IsInRole("Privileged"),
-                    ActiveSprintOnly = false,
-                    StartDate = StartDate,
-                    EndDate = EndDate,
-                    UseSprintDateRange = true
-                }, cancellationToken);
-                IsUsingSharedJiraCredential |= result.IsUsingSharedCredential;
-                if (!string.IsNullOrWhiteSpace(result.Message))
-                {
-                    messages.Add(new SupportSummaryMessage(studio, result.Message));
-                }
-                foreach (var group in result.Groups)
-                {
-                    tickets.AddRange(group.Tickets.Select(ticket =>
-                        new SupportSummaryTicket(studio, group.Name, ticket)));
-                }
+                sequentialResults.Add(await LoadStudioJiraAsync(studio, jiraTicketService, cancellationToken));
             }
-            catch (HttpRequestException exception)
+            studioResults = sequentialResults;
+        }
+        else
+        {
+            using var concurrency = new SemaphoreSlim(4);
+            studioResults = await Task.WhenAll(Studios.Select(async studio =>
             {
-                messages.Add(new SupportSummaryMessage(studio, exception.Message));
+                await concurrency.WaitAsync(cancellationToken);
+                try
+                {
+                    await using var scope = serviceScopeFactory.CreateAsyncScope();
+                    return await LoadStudioJiraAsync(
+                        studio,
+                        scope.ServiceProvider.GetRequiredService<IStudioJiraTicketService>(),
+                        cancellationToken);
+                }
+                finally
+                {
+                    concurrency.Release();
+                }
+            }));
+        }
+
+        foreach (var studioResult in studioResults)
+        {
+            if (!string.IsNullOrWhiteSpace(studioResult.ErrorMessage))
+            {
+                messages.Add(new SupportSummaryMessage(studioResult.Studio, studioResult.ErrorMessage));
+                continue;
+            }
+
+            var result = studioResult.Result!;
+            IsUsingSharedJiraCredential |= result.IsUsingSharedCredential;
+            if (!string.IsNullOrWhiteSpace(result.Message))
+            {
+                messages.Add(new SupportSummaryMessage(studioResult.Studio, result.Message));
+            }
+            foreach (var group in result.Groups)
+            {
+                tickets.AddRange(group.Tickets.Select(ticket =>
+                    new SupportSummaryTicket(studioResult.Studio, group.Name, ticket)));
             }
         }
 
@@ -333,11 +389,52 @@ public sealed class SupportSummaryModel(
             .ToList();
     }
 
-    private async Task LoadConfluenceAsync(CancellationToken cancellationToken)
+    private async Task<StudioJiraLoadResult> LoadStudioJiraAsync(
+        StudioDetails studio,
+        IStudioJiraTicketService service,
+        CancellationToken cancellationToken)
     {
         try
         {
-            ConfluenceResult = await confluenceUpdateService.GetConsolidatedUpdatesAsync(
+            var result = await service.GetTicketsAsync(new StudioJiraTicketQuery
+            {
+                StudioId = studio.Id,
+                RequestingUserId = User.Identity?.Name ?? string.Empty,
+                AllowPrivilegedDefaultCredential = User.IsInRole("Privileged"),
+                ActiveSprintOnly = false,
+                StartDate = StartDate,
+                EndDate = EndDate,
+                UseSprintDateRange = true
+            }, cancellationToken);
+            return new StudioJiraLoadResult(studio, result, null);
+        }
+        catch (HttpRequestException exception)
+        {
+            return new StudioJiraLoadResult(studio, null, exception.Message);
+        }
+    }
+
+    private async Task LoadConfluenceFromIndependentScopeAsync(CancellationToken cancellationToken)
+    {
+        if (serviceScopeFactory is null)
+        {
+            await LoadConfluenceAsync(confluenceUpdateService, cancellationToken);
+            return;
+        }
+
+        await using var scope = serviceScopeFactory.CreateAsyncScope();
+        await LoadConfluenceAsync(
+            scope.ServiceProvider.GetRequiredService<IStudioConfluenceUpdateService>(),
+            cancellationToken);
+    }
+
+    private async Task LoadConfluenceAsync(
+        IStudioConfluenceUpdateService service,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            ConfluenceResult = await service.GetConsolidatedUpdatesAsync(
                 new ConsolidatedStudioConfluenceUpdateQuery
                 {
                     StudioIds = Studios.Select(studio => studio.Id).ToList(),
@@ -490,3 +587,7 @@ public sealed record SupportSummaryMilestoneDescriptionOption(string ProjectName
 public sealed record SupportSummaryTicket(StudioDetails Studio, string SupportType, StudioJiraTicket Ticket);
 public sealed record SupportSummaryMessage(StudioDetails Studio, string Message);
 public sealed record SupportSummaryWeekOption(int Number, DateOnly StartDate, DateOnly EndDate, string Label);
+internal sealed record StudioJiraLoadResult(
+    StudioDetails Studio,
+    StudioJiraTicketResult? Result,
+    string? ErrorMessage);
