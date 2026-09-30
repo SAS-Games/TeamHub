@@ -35,3 +35,54 @@
     }
     window.addEventListener('pageshow', positionRoadmaps);
 })();
+
+(() => {
+    const loader = document.querySelector('[data-support-summary-loader]');
+    if (!loader) return;
+
+    const isSupportSummaryUrl = value => {
+        const url = new URL(value, window.location.href);
+        if (url.origin !== window.location.origin) return false;
+        const segments = url.pathname.split('/').filter(Boolean);
+        return segments.at(-1)?.toLocaleLowerCase() === 'supportsummary';
+    };
+    const showLoader = () => {
+        loader.hidden = false;
+        document.body.classList.add('teamhub-page-loading');
+    };
+    const hideLoader = () => {
+        loader.hidden = true;
+        document.body.classList.remove('teamhub-page-loading');
+    };
+
+    document.addEventListener('click', event => {
+        if (event.defaultPrevented
+            || event.button !== 0
+            || event.metaKey
+            || event.ctrlKey
+            || event.shiftKey
+            || event.altKey
+            || !(event.target instanceof Element)) return;
+
+        const link = event.target.closest('a[href]');
+        if (!link
+            || link.target === '_blank'
+            || link.hasAttribute('download')
+            || link.getAttribute('aria-disabled') === 'true'
+            || !isSupportSummaryUrl(link.href)) return;
+
+        const target = new URL(link.href, window.location.href);
+        if (target.pathname === window.location.pathname
+            && target.search === window.location.search
+            && target.hash
+            && target.hash !== window.location.hash) return;
+        showLoader();
+    });
+
+    document.addEventListener('submit', event => {
+        if (event.defaultPrevented || !(event.target instanceof HTMLFormElement)) return;
+        if (isSupportSummaryUrl(event.target.action || window.location.href)) showLoader();
+    });
+
+    window.addEventListener('pageshow', hideLoader);
+})();

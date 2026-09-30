@@ -201,6 +201,13 @@ body {
 .support-effort-user-card { max-width: 980px; }
 .support-ticket-status-filter { max-width: 440px; }
 .support-ticket-status-menu { min-width: 250px; max-height: 320px; overflow-y: auto; }
+.teamhub-page-loading { overflow: hidden; }
+.teamhub-page-loader { position: fixed; inset: 0; z-index: 2000; display: grid; place-items: center; padding: 24px; background: rgba(242, 246, 243, .88); backdrop-filter: blur(3px); }
+.teamhub-page-loader[hidden] { display: none; }
+.teamhub-page-loader-card { display: flex; align-items: center; gap: 18px; width: min(100%, 520px); padding: 24px 26px; color: #18322d; background: #fff; border: 1px solid #d9e1dc; border-radius: 12px; box-shadow: 0 18px 50px rgba(24, 50, 45, .2); }
+.teamhub-page-loader-card .spinner-border { flex: 0 0 auto; width: 2.5rem; height: 2.5rem; }
+.teamhub-page-loader-card strong { display: block; margin-bottom: 4px; font-size: 1.05rem; }
+.teamhub-page-loader-card span { display: block; color: #65766f; font-size: .9rem; line-height: 1.45; }
 .markdown-content { overflow-wrap: anywhere; }
 .markdown-content > :first-child { margin-top: 0; }
 .markdown-content > :last-child { margin-bottom: 0; }
