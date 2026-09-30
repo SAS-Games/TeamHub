@@ -15,6 +15,22 @@ def parse_args():
     return parser.parse_args()
 
 
+def apply_teamhub_jira_pat(jira_downloader):
+    pat = os.environ.pop("TEAMHUB_JIRA_PAT", None)
+    original_load_json = getattr(jira_downloader, "load_json", None)
+    if not pat or original_load_json is None:
+        return
+
+    def load_json_with_teamhub_pat(path, *args, **kwargs):
+        config = original_load_json(path, *args, **kwargs)
+        if Path(path).name.casefold() == "jira_timesheet_api_config.json":
+            config = dict(config)
+            config["api_token"] = pat
+        return config
+
+    jira_downloader.load_json = load_json_with_teamhub_pat
+
+
 def main():
     args = parse_args()
     root = Path(args.root).resolve()
@@ -28,12 +44,15 @@ def main():
     from worklog_analytics.app import build_context
     from worklog_analytics.loaders.config_loader import load_json
     from worklog_analytics.models.date_range import DateRange
-    from worklog_analytics.sources.jira_downloader import download_jira_timesheet
+    from worklog_analytics.reports.matrix_builder import build_matrix
+    from worklog_analytics.sources import jira_downloader
+
+    apply_teamhub_jira_pat(jira_downloader)
 
     start_date = date.fromisoformat(args.start)
     end_date = date.fromisoformat(args.end)
     with contextlib.redirect_stdout(sys.stderr):
-        worklog_file = download_jira_timesheet(DateRange(start_date, end_date))
+        worklog_file = jira_downloader.download_jira_timesheet(DateRange(start_date, end_date))
         context = build_context(worklog_file)
         worklogs = [
             worklog
@@ -52,6 +71,11 @@ def main():
         )
         effort_summary = build_executive_summary(worklogs, studio_groups)
         studio_breakdown = build_studio_support_breakdown(worklogs, studio_groups)
+        employee_activity_matrix, _ = build_matrix(
+            worklogs,
+            "employee",
+            "activity_group",
+        )
 
     print(json.dumps({
         "effortSummary": [
@@ -61,6 +85,19 @@ def main():
         "studioBreakdown": [
             {"label": label, "hours": float(hours)}
             for label, hours in studio_breakdown.items()
+        ],
+        "employeeEffortBreakdowns": [
+            {
+                "employee": employee,
+                "slices": [
+                    {"label": label, "hours": float(hours)}
+                    for label, hours in activities.items()
+                ],
+            }
+            for employee, activities in sorted(
+                employee_activity_matrix.items(),
+                key=lambda item: item[0].casefold(),
+            )
         ],
     }))
 

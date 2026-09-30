@@ -37,6 +37,7 @@ public sealed class SupportSummaryModel(
     public IReadOnlyList<string> BuildReviewStatuses => MilestoneBuildReviewStatuses.All;
     public IReadOnlyList<WorklogEffortSlice> EffortSummary { get; private set; } = [];
     public IReadOnlyList<WorklogEffortSlice> StudioEffortBreakdown { get; private set; } = [];
+    public IReadOnlyList<WorklogEmployeeEffort> EmployeeEffortBreakdowns { get; private set; } = [];
     public IReadOnlyList<SupportSummaryTicket> JiraTickets { get; private set; } = [];
     public IReadOnlyList<SupportSummaryMessage> JiraMessages { get; private set; } = [];
     public StudioConfluenceUpdateResult ConfluenceResult { get; private set; } = new();
@@ -180,6 +181,8 @@ public sealed class SupportSummaryModel(
     public string GetEffortColor(int index) =>
         EffortColors[index % EffortColors.Length];
 
+    public IReadOnlyList<string> EffortChartColors => EffortColors;
+
     public int GetBuildAgeingDays(DateOnly buildReceiveDate) =>
         Math.Max(0, DateOnly.FromDateTime(DateTime.Today).DayNumber - buildReceiveDate.DayNumber);
 
@@ -259,9 +262,12 @@ public sealed class SupportSummaryModel(
             var report = await worklogEffortService.GetActualEffortAsync(
                 StartDate.Value,
                 EndDate.Value,
+                User.Identity?.Name ?? string.Empty,
+                User.IsInRole("Privileged"),
                 cancellationToken);
             EffortSummary = report.EffortSummary;
             StudioEffortBreakdown = report.StudioBreakdown;
+            EmployeeEffortBreakdowns = report.EmployeeEffortBreakdowns;
         }
         catch (Exception exception) when (exception is InvalidOperationException
             or InvalidDataException

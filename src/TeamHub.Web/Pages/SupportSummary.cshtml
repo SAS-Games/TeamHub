@@ -385,8 +385,19 @@ else
     </section>
 
     <section class="content-section" id="jira">
+        @{
+            const string defaultTicketStatus = "In Progress";
+            var ticketStatuses = Model.JiraTickets
+                .Select(item => string.IsNullOrWhiteSpace(item.Ticket.Status) ? "No status" : item.Ticket.Status.Trim())
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .OrderBy(status => status, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+            var defaultTicketCount = Model.JiraTickets.Count(item =>
+                string.Equals(item.Ticket.Status?.Trim(), defaultTicketStatus, StringComparison.OrdinalIgnoreCase));
+            var hasDefaultTicketStatus = ticketStatuses.Contains(defaultTicketStatus, StringComparer.OrdinalIgnoreCase);
+        }
         <div class="section-heading">
-            <div><span>@Model.JiraTickets.Count ticket(s)</span><h2>Support Activity Tickets</h2></div>
+            <div><span><span data-ticket-visible-count>@defaultTicketCount</span> of @Model.JiraTickets.Count ticket(s)</span><h2>Support Activity Tickets</h2></div>
             <strong>Sprints overlapping selected period</strong>
         </div>
         @if (Model.JiraMessages.Count > 0)
@@ -408,13 +419,52 @@ else
         }
         else
         {
-            <div class="table-responsive">
+            <div class="section-body pb-3 border-bottom">
+                <div class="support-ticket-status-filter" data-ticket-status-filter>
+                    <label class="form-label" for="ticket-status-filter-button">Status</label>
+                    <div class="dropdown">
+                        <button id="ticket-status-filter-button"
+                                class="btn btn-outline-secondary dropdown-toggle"
+                                type="button"
+                                data-bs-toggle="dropdown"
+                                data-bs-auto-close="outside"
+                                aria-expanded="false">
+                            <span data-ticket-status-summary>@(hasDefaultTicketStatus ? defaultTicketStatus : "No status selected")</span>
+                        </button>
+                        <div class="dropdown-menu support-ticket-status-menu p-3">
+                            <div class="d-flex gap-2 mb-2">
+                                <button class="btn btn-sm btn-link p-0" type="button" data-ticket-status-all>Select all</button>
+                                <span class="text-secondary">&middot;</span>
+                                <button class="btn btn-sm btn-link p-0" type="button" data-ticket-status-clear>Clear</button>
+                            </div>
+                            @foreach (var status in ticketStatuses)
+                            {
+                                var isDefaultStatus = string.Equals(status, defaultTicketStatus, StringComparison.OrdinalIgnoreCase);
+                                <div class="form-check">
+                                    <input class="form-check-input"
+                                           type="checkbox"
+                                           value="@status"
+                                           id="ticket-status-@ticketStatuses.IndexOf(status)"
+                                           data-ticket-status-option
+                                           checked="@isDefaultStatus" />
+                                    <label class="form-check-label" for="ticket-status-@ticketStatuses.IndexOf(status)">@status</label>
+                                </div>
+                            }
+                        </div>
+                    </div>
+                    <div class="form-text">Select one or more statuses. Filtering uses the tickets already loaded on this page.</div>
+                </div>
+            </div>
+            <div class="section-body text-secondary @(defaultTicketCount == 0 ? "" : "d-none")" data-ticket-status-empty>No tickets match the selected statuses.</div>
+            <div class="table-responsive @(defaultTicketCount == 0 ? "d-none" : "")" data-ticket-table>
                 <table class="table styled-table align-middle">
                     <thead><tr><th>Studio</th><th>Support Type</th><th>Ticket</th><th>Summary</th><th>Assigned User</th><th>Status</th><th>Priority</th></tr></thead>
                     <tbody>
                     @foreach (var item in Model.JiraTickets)
                     {
-                        <tr>
+                        var ticketStatus = string.IsNullOrWhiteSpace(item.Ticket.Status) ? "No status" : item.Ticket.Status.Trim();
+                        var showByDefault = string.Equals(ticketStatus, defaultTicketStatus, StringComparison.OrdinalIgnoreCase);
+                        <tr class="@(showByDefault ? "" : "d-none")" data-ticket-row data-ticket-status="@ticketStatus">
                             <td>@item.Studio.StudioName</td>
                             <td><span class="badge @(item.SupportType.StartsWith("Direct", StringComparison.OrdinalIgnoreCase) ? "text-bg-primary" : "text-bg-secondary")">@item.SupportType</span></td>
                             <td><a href="@item.Ticket.Url" target="_blank" rel="noopener">@item.Ticket.TicketId</a></td>
@@ -586,6 +636,65 @@ else
             }
         }
     </section>
+
+    <section class="content-section" id="employee-effort" data-employee-effort>
+        <div class="section-heading">
+            <div>
+                <span>@Model.StartDate?.ToString("dd MMM yyyy") &ndash; @Model.EndDate?.ToString("dd MMM yyyy")</span>
+                <h2>Employee Effort Distribution</h2>
+            </div>
+            <strong>Actual logged hours</strong>
+        </div>
+        @if (!string.IsNullOrWhiteSpace(Model.EffortErrorDisplayMessage))
+        {
+            <div class="section-body text-warning">Employee effort is unavailable because the logged-effort report could not be loaded.</div>
+        }
+        else if (Model.EmployeeEffortBreakdowns.Count == 0)
+        {
+            <div class="section-body text-secondary">No employee effort was found for the selected period.</div>
+        }
+        else
+        {
+            var initialEmployee = Model.EmployeeEffortBreakdowns[0];
+            <div class="section-body">
+                <div class="support-effort-user-controls">
+                    <label for="employee-effort-select" class="form-label">Employee</label>
+                    <select id="employee-effort-select" class="form-select" data-employee-effort-select>
+                        @for (var index = 0; index < Model.EmployeeEffortBreakdowns.Count; index++)
+                        {
+                            <option value="@index">@Model.EmployeeEffortBreakdowns[index].Employee</option>
+                        }
+                    </select>
+                    <div class="form-text">Changing the employee redraws this chart from the already loaded report data.</div>
+                </div>
+
+                <article class="support-effort-card support-effort-user-card">
+                    <div class="support-effort-chart">
+                        <div class="support-effort-pie"
+                             style="background: @Model.BuildPieGradient(initialEmployee.Slices)"
+                             role="img"
+                             aria-label="Actual effort for @initialEmployee.Employee. Total @Model.GetEffortTotal(initialEmployee.Slices).ToString("0.##") hours."
+                             data-employee-effort-pie></div>
+                        <div class="support-effort-legend" data-employee-effort-legend>
+                            @for (var index = 0; index < initialEmployee.Slices.Count; index++)
+                            {
+                                var slice = initialEmployee.Slices[index];
+                                <div class="support-effort-legend-item">
+                                    <span class="support-effort-swatch" style="background-color: @Model.GetEffortColor(index)"></span>
+                                    <span class="support-effort-label">@slice.Label</span>
+                                    <strong>@slice.Hours.ToString("0.##")h</strong>
+                                    <span>@Model.GetEffortShare(slice, initialEmployee.Slices).ToString("0.#")%</span>
+                                </div>
+                            }
+                        </div>
+                    </div>
+                    <div class="support-effort-total">Total <strong data-employee-effort-total>@Model.GetEffortTotal(initialEmployee.Slices).ToString("0.##") hours</strong></div>
+                </article>
+            </div>
+            <script type="application/json" data-employee-effort-json>@Json.Serialize(Model.EmployeeEffortBreakdowns)</script>
+            <script type="application/json" data-effort-colors-json>@Json.Serialize(Model.EffortChartColors)</script>
+        }
+    </section>
 }
 
 @section Scripts {
@@ -690,6 +799,121 @@ updatePeriod();
         projectSelect.addEventListener('change', () => updateDescriptions(projectSelect));
         updateDescriptions(projectSelect);
     });
+})();
+
+(() => {
+    const root = document.querySelector('[data-ticket-status-filter]');
+    if (!root) return;
+    const options = [...root.querySelectorAll('[data-ticket-status-option]')];
+    const rows = [...document.querySelectorAll('[data-ticket-row]')];
+    const visibleCount = document.querySelector('[data-ticket-visible-count]');
+    const summary = root.querySelector('[data-ticket-status-summary]');
+    const table = document.querySelector('[data-ticket-table]');
+    const empty = document.querySelector('[data-ticket-status-empty]');
+    const normalize = value => value.trim().toLocaleLowerCase();
+
+    const applyFilter = () => {
+        const selectedOptions = options.filter(option => option.checked);
+        const selected = new Set(selectedOptions.map(option => normalize(option.value)));
+        let count = 0;
+        rows.forEach(row => {
+            const visible = selected.has(normalize(row.dataset.ticketStatus || ''));
+            row.classList.toggle('d-none', !visible);
+            if (visible) count++;
+        });
+
+        if (visibleCount) visibleCount.textContent = String(count);
+        if (table) table.classList.toggle('d-none', count === 0);
+        if (empty) empty.classList.toggle('d-none', count !== 0);
+        if (summary) {
+            summary.textContent = selectedOptions.length === 0
+                ? 'No status selected'
+                : selectedOptions.length === 1
+                    ? selectedOptions[0].value
+                    : `${selectedOptions.length} statuses selected`;
+        }
+    };
+
+    options.forEach(option => option.addEventListener('change', applyFilter));
+    root.querySelector('[data-ticket-status-all]')?.addEventListener('click', () => {
+        options.forEach(option => option.checked = true);
+        applyFilter();
+    });
+    root.querySelector('[data-ticket-status-clear]')?.addEventListener('click', () => {
+        options.forEach(option => option.checked = false);
+        applyFilter();
+    });
+    applyFilter();
+})();
+
+(() => {
+    const root = document.querySelector('[data-employee-effort]');
+    if (!root) return;
+    const select = root.querySelector('[data-employee-effort-select]');
+    const dataElement = root.querySelector('[data-employee-effort-json]');
+    const colorsElement = root.querySelector('[data-effort-colors-json]');
+    const pie = root.querySelector('[data-employee-effort-pie]');
+    const legend = root.querySelector('[data-employee-effort-legend]');
+    const totalElement = root.querySelector('[data-employee-effort-total]');
+    if (!select || !dataElement || !colorsElement || !pie || !legend || !totalElement) return;
+
+    const employees = JSON.parse(dataElement.textContent || '[]');
+    const colors = JSON.parse(colorsElement.textContent || '[]');
+    const formatNumber = value => value.toLocaleString(undefined, { maximumFractionDigits: 2 });
+
+    const render = () => {
+        const employee = employees[Number(select.value)] || employees[0];
+        if (!employee) return;
+        const employeeName = employee.employee ?? employee.Employee ?? '';
+        const rawSlices = employee.slices ?? employee.Slices ?? [];
+        const slices = rawSlices
+            .map(slice => ({
+                label: slice.label ?? slice.Label ?? '',
+                hours: Number(slice.hours ?? slice.Hours ?? 0)
+            }))
+            .filter(slice => slice.label && slice.hours > 0);
+        const total = slices.reduce((sum, slice) => sum + slice.hours, 0);
+        let start = 0;
+        const stops = slices.map((slice, index) => {
+            const end = start + slice.hours / total * 100;
+            const stop = `${colors[index % colors.length]} ${start}% ${end}%`;
+            start = end;
+            return stop;
+        });
+
+        pie.style.background = total > 0 && colors.length > 0
+            ? `conic-gradient(${stops.join(', ')})`
+            : '#d9e1dc';
+        pie.setAttribute('aria-label', `Actual effort for ${employeeName}. Total ${formatNumber(total)} hours.`);
+        legend.replaceChildren();
+
+        slices.forEach((slice, index) => {
+            const row = document.createElement('div');
+            row.className = 'support-effort-legend-item';
+
+            const swatch = document.createElement('span');
+            swatch.className = 'support-effort-swatch';
+            swatch.style.backgroundColor = colors[index % colors.length];
+
+            const label = document.createElement('span');
+            label.className = 'support-effort-label';
+            label.textContent = slice.label;
+
+            const hours = document.createElement('strong');
+            hours.textContent = `${formatNumber(slice.hours)}h`;
+
+            const share = document.createElement('span');
+            share.textContent = `${(slice.hours / total * 100).toLocaleString(undefined, { maximumFractionDigits: 1 })}%`;
+
+            row.append(swatch, label, hours, share);
+            legend.appendChild(row);
+        });
+
+        totalElement.textContent = `${formatNumber(total)} hours`;
+    };
+
+    select.addEventListener('change', render);
+    render();
 })();
 </script>
 }

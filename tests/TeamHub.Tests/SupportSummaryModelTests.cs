@@ -49,6 +49,15 @@ public sealed class SupportSummaryModelTests
                 StudioBreakdown =
                 [
                     new WorklogEffortSlice("Alpha Project", 30)
+                ],
+                EmployeeEffortBreakdowns =
+                [
+                    new WorklogEmployeeEffort(
+                        "Asha",
+                        [
+                            new WorklogEffortSlice("Studio Support", 24),
+                            new WorklogEffortSlice("Project Activities", 6)
+                        ])
                 ]
             }
         };
@@ -102,9 +111,14 @@ public sealed class SupportSummaryModelTests
         model.ConfluenceResult.Updates.Should().ContainSingle().Which.StudioId.Should().Be(activeStudio.Id);
         effortService.StartDate.Should().Be(weekStart);
         effortService.EndDate.Should().Be(weekStart.AddDays(4));
+        effortService.RequestingUserId.Should().Be("reader@example.com");
+        effortService.AllowPrivilegedDefaultCredential.Should().BeFalse();
         model.EffortSummary.Sum(slice => slice.Hours).Should().Be(40);
         model.StudioEffortBreakdown.Should().ContainSingle()
             .Which.Label.Should().Be(activeStudio.ProjectName);
+        model.EmployeeEffortBreakdowns.Should().ContainSingle()
+            .Which.Employee.Should().Be("Asha");
+        model.EmployeeEffortBreakdowns[0].Slices.Sum(slice => slice.Hours).Should().Be(30);
         model.BuildPieGradient(model.EffortSummary).Should().StartWith("conic-gradient(");
     }
 
@@ -405,16 +419,22 @@ public sealed class SupportSummaryModelTests
     {
         public DateOnly? StartDate { get; private set; }
         public DateOnly? EndDate { get; private set; }
+        public string? RequestingUserId { get; private set; }
+        public bool? AllowPrivilegedDefaultCredential { get; private set; }
         public WorklogEffortReport Report { get; set; } = new();
         public Exception? Error { get; set; }
 
         public Task<WorklogEffortReport> GetActualEffortAsync(
             DateOnly startDate,
             DateOnly endDate,
+            string requestingUserId,
+            bool allowPrivilegedDefaultCredential,
             CancellationToken cancellationToken = default)
         {
             StartDate = startDate;
             EndDate = endDate;
+            RequestingUserId = requestingUserId;
+            AllowPrivilegedDefaultCredential = allowPrivilegedDefaultCredential;
             if (Error is not null) throw Error;
             return Task.FromResult(Report);
         }
