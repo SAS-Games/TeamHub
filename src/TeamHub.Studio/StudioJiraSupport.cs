@@ -155,7 +155,7 @@ internal sealed class JiraStudioTicketService(
         return $"{settings.JiraBaseUrl.TrimEnd('/')}{settings.JiraSearchApiPath}?jql={Uri.EscapeDataString(jql)}&fields={fields}&maxResults={settings.JiraMaxResults}";
     }
 
-    private static string BuildJql(StudioAtlassianMapping mapping, StudioJiraTicketQuery query)
+    internal static string BuildJql(StudioAtlassianMapping mapping, StudioJiraTicketQuery query)
     {
         var projectClause = mapping.JiraProjectKeys.Count == 1
             ? $"project = {QuoteJql(mapping.JiraProjectKeys[0])}"
@@ -163,7 +163,8 @@ internal sealed class JiraStudioTicketService(
         var clauses = new List<string>
         {
             projectClause,
-            $"component = {QuoteJql(mapping.JiraStudioComponent)}"
+            $"component = {QuoteJql(mapping.JiraStudioComponent)}",
+            $"issuetype in ({QuoteJql("Task")}, {QuoteJql("Story")})"
         };
         if (query.ActiveSprintOnly) clauses.Add("sprint in openSprints()");
         if (query.StartDate.HasValue) clauses.Add($"created >= {QuoteJql(query.StartDate.Value.ToString("yyyy-MM-dd"))}");
