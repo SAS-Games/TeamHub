@@ -199,6 +199,8 @@ body {
 .support-effort-total strong { color: #18322d; }
 .support-effort-user-controls { max-width: 440px; margin-bottom: 20px; }
 .support-effort-user-card { max-width: 980px; }
+.support-ticket-status-filter { max-width: 440px; }
+.support-ticket-status-menu { min-width: 250px; max-height: 320px; overflow-y: auto; }
 .markdown-content { overflow-wrap: anywhere; }
 .markdown-content > :first-child { margin-top: 0; }
 .markdown-content > :last-child { margin-bottom: 0; }

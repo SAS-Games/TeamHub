@@ -385,8 +385,19 @@ else
     </section>
 
     <section class="content-section" id="jira">
+        @{
+            const string defaultTicketStatus = "In Progress";
+            var ticketStatuses = Model.JiraTickets
+                .Select(item => string.IsNullOrWhiteSpace(item.Ticket.Status) ? "No status" : item.Ticket.Status.Trim())
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .OrderBy(status => status, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+            var defaultTicketCount = Model.JiraTickets.Count(item =>
+                string.Equals(item.Ticket.Status?.Trim(), defaultTicketStatus, StringComparison.OrdinalIgnoreCase));
+            var hasDefaultTicketStatus = ticketStatuses.Contains(defaultTicketStatus, StringComparer.OrdinalIgnoreCase);
+        }
         <div class="section-heading">
-            <div><span>@Model.JiraTickets.Count ticket(s)</span><h2>Support Activity Tickets</h2></div>
+            <div><span><span data-ticket-visible-count>@defaultTicketCount</span> of @Model.JiraTickets.Count ticket(s)</span><h2>Support Activity Tickets</h2></div>
             <strong>Sprints overlapping selected period</strong>
         </div>
         @if (Model.JiraMessages.Count > 0)
@@ -408,13 +419,52 @@ else
         }
         else
         {
-            <div class="table-responsive">
+            <div class="section-body pb-3 border-bottom">
+                <div class="support-ticket-status-filter" data-ticket-status-filter>
+                    <label class="form-label" for="ticket-status-filter-button">Status</label>
+                    <div class="dropdown">
+                        <button id="ticket-status-filter-button"
+                                class="btn btn-outline-secondary dropdown-toggle"
+                                type="button"
+                                data-bs-toggle="dropdown"
+                                data-bs-auto-close="outside"
+                                aria-expanded="false">
+                            <span data-ticket-status-summary>@(hasDefaultTicketStatus ? defaultTicketStatus : "No status selected")</span>
+                        </button>
+                        <div class="dropdown-menu support-ticket-status-menu p-3">
+                            <div class="d-flex gap-2 mb-2">
+                                <button class="btn btn-sm btn-link p-0" type="button" data-ticket-status-all>Select all</button>
+                                <span class="text-secondary">&middot;</span>
+                                <button class="btn btn-sm btn-link p-0" type="button" data-ticket-status-clear>Clear</button>
+                            </div>
+                            @foreach (var status in ticketStatuses)
+                            {
+                                var isDefaultStatus = string.Equals(status, defaultTicketStatus, StringComparison.OrdinalIgnoreCase);
+                                <div class="form-check">
+                                    <input class="form-check-input"
+                                           type="checkbox"
+                                           value="@status"
+                                           id="ticket-status-@ticketStatuses.IndexOf(status)"
+                                           data-ticket-status-option
+                                           checked="@isDefaultStatus" />
+                                    <label class="form-check-label" for="ticket-status-@ticketStatuses.IndexOf(status)">@status</label>
+                                </div>
+                            }
+                        </div>
+                    </div>
+                    <div class="form-text">Select one or more statuses. Filtering uses the tickets already loaded on this page.</div>
+                </div>
+            </div>
+            <div class="section-body text-secondary @(defaultTicketCount == 0 ? "" : "d-none")" data-ticket-status-empty>No tickets match the selected statuses.</div>
+            <div class="table-responsive @(defaultTicketCount == 0 ? "d-none" : "")" data-ticket-table>
                 <table class="table styled-table align-middle">
                     <thead><tr><th>Studio</th><th>Support Type</th><th>Ticket</th><th>Summary</th><th>Assigned User</th><th>Status</th><th>Priority</th></tr></thead>
                     <tbody>
                     @foreach (var item in Model.JiraTickets)
                     {
-                        <tr>
+                        var ticketStatus = string.IsNullOrWhiteSpace(item.Ticket.Status) ? "No status" : item.Ticket.Status.Trim();
+                        var showByDefault = string.Equals(ticketStatus, defaultTicketStatus, StringComparison.OrdinalIgnoreCase);
+                        <tr class="@(showByDefault ? "" : "d-none")" data-ticket-row data-ticket-status="@ticketStatus">
                             <td>@item.Studio.StudioName</td>
                             <td><span class="badge @(item.SupportType.StartsWith("Direct", StringComparison.OrdinalIgnoreCase) ? "text-bg-primary" : "text-bg-secondary")">@item.SupportType</span></td>
                             <td><a href="@item.Ticket.Url" target="_blank" rel="noopener">@item.Ticket.TicketId</a></td>
@@ -749,6 +799,51 @@ updatePeriod();
         projectSelect.addEventListener('change', () => updateDescriptions(projectSelect));
         updateDescriptions(projectSelect);
     });
+})();
+
+(() => {
+    const root = document.querySelector('[data-ticket-status-filter]');
+    if (!root) return;
+    const options = [...root.querySelectorAll('[data-ticket-status-option]')];
+    const rows = [...document.querySelectorAll('[data-ticket-row]')];
+    const visibleCount = document.querySelector('[data-ticket-visible-count]');
+    const summary = root.querySelector('[data-ticket-status-summary]');
+    const table = document.querySelector('[data-ticket-table]');
+    const empty = document.querySelector('[data-ticket-status-empty]');
+    const normalize = value => value.trim().toLocaleLowerCase();
+
+    const applyFilter = () => {
+        const selectedOptions = options.filter(option => option.checked);
+        const selected = new Set(selectedOptions.map(option => normalize(option.value)));
+        let count = 0;
+        rows.forEach(row => {
+            const visible = selected.has(normalize(row.dataset.ticketStatus || ''));
+            row.classList.toggle('d-none', !visible);
+            if (visible) count++;
+        });
+
+        if (visibleCount) visibleCount.textContent = String(count);
+        if (table) table.classList.toggle('d-none', count === 0);
+        if (empty) empty.classList.toggle('d-none', count !== 0);
+        if (summary) {
+            summary.textContent = selectedOptions.length === 0
+                ? 'No status selected'
+                : selectedOptions.length === 1
+                    ? selectedOptions[0].value
+                    : `${selectedOptions.length} statuses selected`;
+        }
+    };
+
+    options.forEach(option => option.addEventListener('change', applyFilter));
+    root.querySelector('[data-ticket-status-all]')?.addEventListener('click', () => {
+        options.forEach(option => option.checked = true);
+        applyFilter();
+    });
+    root.querySelector('[data-ticket-status-clear]')?.addEventListener('click', () => {
+        options.forEach(option => option.checked = false);
+        applyFilter();
+    });
+    applyFilter();
 })();
 
 (() => {
