@@ -26,6 +26,7 @@ public sealed class SupportSummaryPlanningServiceTests
             var review = await service.SaveBuildReviewAsync(new MilestoneBuildReview(
                 Guid.Empty,
                 "Project Beta",
+                "Feature complete",
                 MilestoneBuildReviewStatuses.InReview,
                 new DateOnly(2026, 10, 10),
                 new DateOnly(2026, 10, 15)));
@@ -37,6 +38,7 @@ public sealed class SupportSummaryPlanningServiceTests
             });
             await service.SaveBuildReviewAsync(review with
             {
+                MilestoneDescription = "Release candidate",
                 Status = MilestoneBuildReviewStatuses.ReviewMeeting,
                 BuildReceiveDate = new DateOnly(2026, 10, 12),
                 Eta = new DateOnly(2026, 10, 18)
@@ -51,6 +53,7 @@ public sealed class SupportSummaryPlanningServiceTests
             (await service.GetBuildReviewsAsync()).Should().ContainSingle().Which.Should().Be(
                 review with
                 {
+                    MilestoneDescription = "Release candidate",
                     Status = MilestoneBuildReviewStatuses.ReviewMeeting,
                     BuildReceiveDate = new DateOnly(2026, 10, 12),
                     Eta = new DateOnly(2026, 10, 18)
@@ -80,6 +83,7 @@ public sealed class SupportSummaryPlanningServiceTests
             var action = () => service.SaveBuildReviewAsync(new MilestoneBuildReview(
                 Guid.Empty,
                 "Project Alpha",
+                "Feature complete",
                 "Unknown",
                 new DateOnly(2026, 10, 10),
                 new DateOnly(2026, 10, 15)));
@@ -129,6 +133,7 @@ public sealed class SupportSummaryPlanningServiceTests
             reviews.Should().ContainSingle().Which.Should().Be(new MilestoneBuildReview(
                 reviewId,
                 "Project Alpha",
+                string.Empty,
                 MilestoneBuildReviewStatuses.InReview,
                 new DateOnly(2026, 9, 20),
                 new DateOnly(2026, 10, 15)));
