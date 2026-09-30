@@ -262,6 +262,8 @@ public sealed class SupportSummaryModel(
             var report = await worklogEffortService.GetActualEffortAsync(
                 StartDate.Value,
                 EndDate.Value,
+                User.Identity?.Name ?? string.Empty,
+                User.IsInRole("Privileged"),
                 cancellationToken);
             EffortSummary = report.EffortSummary;
             StudioEffortBreakdown = report.StudioBreakdown;

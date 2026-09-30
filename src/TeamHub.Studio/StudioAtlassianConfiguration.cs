@@ -71,13 +71,13 @@ public interface IAtlassianConfigurationService
     Task DeleteUserTokensAsync(string userId, CancellationToken cancellationToken = default);
 }
 
-internal interface IAtlassianCredentialAccessor
+public interface IAtlassianCredentialAccessor
 {
     Task<AtlassianResolvedCredential?> ResolveJiraCredentialAsync(string userId, bool allowPrivilegedDefault, CancellationToken cancellationToken = default);
     Task<AtlassianResolvedCredential?> ResolveConfluenceCredentialAsync(string userId, bool allowPrivilegedDefault, CancellationToken cancellationToken = default);
 }
 
-internal sealed record AtlassianResolvedCredential(string Token, bool IsShared, bool IsReadOnly);
+public sealed record AtlassianResolvedCredential(string Token, bool IsShared, bool IsReadOnly);
 
 internal sealed class SqliteAtlassianConfigurationService : IAtlassianConfigurationService, IAtlassianCredentialAccessor
 {

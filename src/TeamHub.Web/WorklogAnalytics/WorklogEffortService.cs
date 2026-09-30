@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Text.Json;
 using Microsoft.Extensions.Options;
+using TeamHub.Studio;
 
 namespace TeamHub.Web.WorklogAnalytics;
 
@@ -29,12 +30,15 @@ public interface IWorklogEffortService
     Task<WorklogEffortReport> GetActualEffortAsync(
         DateOnly startDate,
         DateOnly endDate,
+        string requestingUserId,
+        bool allowPrivilegedDefaultCredential,
         CancellationToken cancellationToken = default);
 }
 
 internal sealed class PythonWorklogEffortService(
     IOptions<WorklogAnalyticsOptions> options,
-    IWebHostEnvironment environment) : IWorklogEffortService
+    IWebHostEnvironment environment,
+    IAtlassianCredentialAccessor credentialAccessor) : IWorklogEffortService
 {
     private static readonly JsonSerializerOptions SerializerOptions = new()
     {
@@ -44,6 +48,8 @@ internal sealed class PythonWorklogEffortService(
     public async Task<WorklogEffortReport> GetActualEffortAsync(
         DateOnly startDate,
         DateOnly endDate,
+        string requestingUserId,
+        bool allowPrivilegedDefaultCredential,
         CancellationToken cancellationToken = default)
     {
         var settings = options.Value;
@@ -51,6 +57,19 @@ internal sealed class PythonWorklogEffortService(
             throw new InvalidOperationException("Worklog analytics is not enabled.");
         if (startDate > endDate)
             throw new ArgumentException("The effort report start date must be on or before the end date.");
+        if (string.IsNullOrWhiteSpace(requestingUserId))
+            throw new InvalidOperationException("Sign in and connect your Jira account to load logged effort.");
+
+        var credential = await credentialAccessor.ResolveJiraCredentialAsync(
+            requestingUserId,
+            allowPrivilegedDefaultCredential,
+            cancellationToken);
+        if (credential is null)
+        {
+            throw new InvalidOperationException(allowPrivilegedDefaultCredential
+                ? "No Jira credential is available. Ask an administrator to grant your privileged account read-only Jira access, or add a personal token."
+                : "Your Jira token is not connected. Open My Atlassian Connection and add your Bearer API token.");
+        }
 
         var rootPath = Path.GetFullPath(settings.RootPath);
         var pythonExecutable = string.IsNullOrWhiteSpace(settings.PythonExecutable)
@@ -83,6 +102,7 @@ internal sealed class PythonWorklogEffortService(
         startInfo.ArgumentList.Add(startDate.ToString("yyyy-MM-dd"));
         startInfo.ArgumentList.Add("--end");
         startInfo.ArgumentList.Add(endDate.ToString("yyyy-MM-dd"));
+        startInfo.Environment["TEAMHUB_JIRA_PAT"] = credential.Token;
 
         using var process = new Process { StartInfo = startInfo };
         if (!process.Start())
