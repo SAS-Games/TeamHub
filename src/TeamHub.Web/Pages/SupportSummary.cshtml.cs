@@ -102,7 +102,9 @@ public sealed class SupportSummaryModel(
                 milestoneDescription,
                 expectedDeliveryDate.Value),
             cancellationToken);
-        StatusMessage = id.HasValue ? "Expected milestone delivery updated." : "Expected milestone delivery added.";
+        StatusMessage = id.HasValue
+            ? "Expected milestone build delivery updated."
+            : "Expected milestone build delivery added.";
         return RedirectToPlanningTable("expected-deliveries");
     }
 
@@ -112,13 +114,14 @@ public sealed class SupportSummaryModel(
     {
         if (!CanManagePlanning) return Forbid();
         await planningService.DeleteExpectedDeliveryAsync(id, cancellationToken);
-        StatusMessage = "Expected milestone delivery removed.";
+        StatusMessage = "Expected milestone build delivery removed.";
         return RedirectToPlanningTable("expected-deliveries");
     }
 
     public async Task<IActionResult> OnPostSaveBuildReviewAsync(
         Guid? id,
         string? projectName,
+        string? milestoneDescription,
         string? status,
         DateOnly? buildReceiveDate,
         DateOnly? eta,
@@ -132,11 +135,19 @@ public sealed class SupportSummaryModel(
         var project = await GetConfiguredProjectAsync(projectName, cancellationToken);
         if (project is null)
             return PlanningError("Select a configured active project.", "build-reviews");
+        if (string.IsNullOrWhiteSpace(milestoneDescription))
+            return PlanningError("Select a milestone description.", "build-reviews");
         if (!MilestoneBuildReviewStatuses.All.Contains(status, StringComparer.OrdinalIgnoreCase))
             return PlanningError("Select a valid review status.", "build-reviews");
 
         await planningService.SaveBuildReviewAsync(
-            new MilestoneBuildReview(id ?? Guid.Empty, project, status!, buildReceiveDate.Value, eta.Value),
+            new MilestoneBuildReview(
+                id ?? Guid.Empty,
+                project,
+                milestoneDescription,
+                status!,
+                buildReceiveDate.Value,
+                eta.Value),
             cancellationToken);
         StatusMessage = id.HasValue ? "Milestone build review updated." : "Milestone build review added.";
         return RedirectToPlanningTable("build-reviews");

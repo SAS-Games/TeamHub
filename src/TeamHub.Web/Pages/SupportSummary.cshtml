@@ -10,7 +10,7 @@
     <div>
         <div class="eyebrow">Consolidated report</div>
         <h1>Support Summary</h1>
-        <p>Current milestones, active Jira support, and weekly or monthly Confluence updates across all active studios.</p>
+        <p>Current milestones, active support tickets, and weekly or monthly Confluence updates across all active studios.</p>
     </div>
 </div>
 
@@ -44,7 +44,7 @@
                 </select>
             </div>
             <div class="col-sm-6 col-xl-2">
-                <label asp-for="ActiveSprintOnly" class="form-label">Jira sprint</label>
+                <label asp-for="ActiveSprintOnly" class="form-label">Support sprint</label>
                 <select asp-for="ActiveSprintOnly" class="form-select">
                     <option value="true">Active sprint</option>
                     <option value="false">All matching tickets</option>
@@ -85,7 +85,7 @@ else
         <div class="stat-tiles">
             <div class="stat-tile"><div class="stat-label">Active Studios</div><div class="stat-value">@Model.Studios.Count</div></div>
             <div class="stat-tile"><div class="stat-label">Active Milestones</div><div class="stat-value">@Model.ActiveMilestones.Count</div></div>
-            <div class="stat-tile"><div class="stat-label">Jira Tickets</div><div class="stat-value">@Model.JiraTickets.Count</div></div>
+            <div class="stat-tile"><div class="stat-label">Support Tickets</div><div class="stat-value">@Model.JiraTickets.Count</div></div>
             <div class="stat-tile"><div class="stat-label">Confluence Updates</div><div class="stat-value">@Model.ConfluenceResult.Updates.Count(update => update.PageFound && update.StudioFound)</div></div>
         </div>
     </section>
@@ -129,7 +129,7 @@ else
 
     <section class="content-section" id="expected-deliveries">
         <div class="section-heading">
-            <div><span>@Model.ExpectedDeliveries.Count item(s)</span><h2>Expected Milestone Deliveries</h2></div>
+            <div><span>@Model.ExpectedDeliveries.Count item(s)</span><h2>Expected Milestone Build Deliveries</h2></div>
             @if (Model.CanManagePlanning)
             {
                 <strong>Admin managed</strong>
@@ -148,7 +148,7 @@ else
         }
         @if (Model.ExpectedDeliveries.Count == 0 && !Model.CanManagePlanning)
         {
-            <div class="section-body text-secondary">No expected milestone deliveries have been added.</div>
+            <div class="section-body text-secondary">No expected milestone build deliveries have been added.</div>
         }
         else
         {
@@ -275,6 +275,7 @@ else
                     <thead>
                         <tr>
                             <th>Project Name</th>
+                            <th>Milestone Description</th>
                             <th>Status</th>
                             <th>Build Receive Date</th>
                             <th>Ageing</th>
@@ -291,10 +292,31 @@ else
                             <tr>
                                 <td>
                                     <input type="hidden" name="id" value="@item.Id" form="@formId" />
-                                    <select class="form-select" name="projectName" form="@formId" required>
+                                    <select class="form-select" name="projectName" form="@formId" data-planning-project required>
                                         @foreach (var project in Model.Studios.Select(studio => studio.ProjectName).Distinct(StringComparer.OrdinalIgnoreCase))
                                         {
                                             <option value="@project" selected="@(string.Equals(project, item.ProjectName, StringComparison.OrdinalIgnoreCase) ? "selected" : null)">@project</option>
+                                        }
+                                    </select>
+                                </td>
+                                <td>
+                                    <select class="form-select" name="milestoneDescription" form="@formId" data-milestone-description required>
+                                        <option value="">Select milestone description</option>
+                                        @if (!string.IsNullOrWhiteSpace(item.MilestoneDescription)
+                                            && !Model.MilestoneDescriptionOptions.Any(option =>
+                                                string.Equals(option.ProjectName, item.ProjectName, StringComparison.OrdinalIgnoreCase)
+                                                && string.Equals(option.Description, item.MilestoneDescription, StringComparison.OrdinalIgnoreCase)))
+                                        {
+                                            <option value="@item.MilestoneDescription" data-project="@item.ProjectName" selected>@item.MilestoneDescription</option>
+                                        }
+                                        @foreach (var option in Model.MilestoneDescriptionOptions)
+                                        {
+                                            <option value="@option.Description"
+                                                    data-project="@option.ProjectName"
+                                                    selected="@(string.Equals(option.ProjectName, item.ProjectName, StringComparison.OrdinalIgnoreCase)
+                                                        && string.Equals(option.Description, item.MilestoneDescription, StringComparison.OrdinalIgnoreCase) ? "selected" : null)">
+                                                @option.Description
+                                            </option>
                                         }
                                     </select>
                                 </td>
@@ -319,6 +341,7 @@ else
                         {
                             <tr>
                                 <td>@item.ProjectName</td>
+                                <td>@(string.IsNullOrWhiteSpace(item.MilestoneDescription) ? "-" : item.MilestoneDescription)</td>
                                 <td>@item.Status</td>
                                 <td>@item.BuildReceiveDate.ToString("dd MMM yyyy")</td>
                                 <td class="text-nowrap">@Model.GetBuildAgeingDays(item.BuildReceiveDate) day(s)</td>
@@ -330,11 +353,20 @@ else
                     {
                         <tr class="table-light">
                             <td>
-                                <select class="form-select" name="projectName" form="build-review-new" required>
+                                <select class="form-select" name="projectName" form="build-review-new" data-planning-project required>
                                     <option value="">Select project</option>
                                     @foreach (var project in Model.Studios.Select(studio => studio.ProjectName).Distinct(StringComparer.OrdinalIgnoreCase))
                                     {
                                         <option value="@project">@project</option>
+                                    }
+                                </select>
+                            </td>
+                            <td>
+                                <select class="form-select" name="milestoneDescription" form="build-review-new" data-milestone-description required>
+                                    <option value="">Select milestone description</option>
+                                    @foreach (var option in Model.MilestoneDescriptionOptions)
+                                    {
+                                        <option value="@option.Description" data-project="@option.ProjectName">@option.Description</option>
                                     }
                                 </select>
                             </td>
@@ -361,7 +393,7 @@ else
 
     <section class="content-section" id="jira">
         <div class="section-heading">
-            <div><span>@Model.JiraTickets.Count ticket(s)</span><h2>Jira Support Activity</h2></div>
+            <div><span>@Model.JiraTickets.Count ticket(s)</span><h2>Support Activity Tickets</h2></div>
             <strong>@(Model.ActiveSprintOnly ? "Active sprint" : "All matching tickets")</strong>
         </div>
         @if (Model.JiraMessages.Count > 0)
@@ -375,11 +407,11 @@ else
         }
         @if (Model.IsUsingSharedJiraCredential)
         {
-            <div class="mx-4 mt-3 alert alert-secondary small">Shared Jira access is read only. Ticket changes are not permitted from TeamHub.</div>
+            <div class="mx-4 mt-3 alert alert-secondary small">Shared support-ticket access is read only. Ticket changes are not permitted from TeamHub.</div>
         }
         @if (Model.JiraTickets.Count == 0)
         {
-            <div class="section-body text-secondary">No Jira tickets match the selected filters.</div>
+            <div class="section-body text-secondary">No support tickets match the selected filters.</div>
         }
         else
         {

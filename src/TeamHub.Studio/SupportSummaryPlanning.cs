@@ -23,6 +23,7 @@ public sealed record ExpectedMilestoneDelivery(
 public sealed record MilestoneBuildReview(
     Guid Id,
     string ProjectName,
+    string MilestoneDescription,
     string Status,
     DateOnly BuildReceiveDate,
     DateOnly Eta);
@@ -116,7 +117,7 @@ internal sealed class SqliteSupportSummaryPlanningService(IConfiguration configu
         await using var connection = await OpenConnectionAsync(cancellationToken);
         await using var command = connection.CreateCommand();
         command.CommandText = """
-            SELECT Id, ProjectName, Status, BuildReceiveDate, Eta
+            SELECT Id, ProjectName, MilestoneDescription, Status, BuildReceiveDate, Eta
             FROM SupportSummaryBuildReviews
             ORDER BY Eta, CreatedAtUtc, ProjectName;
             """;
@@ -128,8 +129,9 @@ internal sealed class SqliteSupportSummaryPlanningService(IConfiguration configu
                 Guid.Parse(reader.GetString(0)),
                 reader.GetString(1),
                 reader.GetString(2),
-                ParseDate(reader.GetString(3)),
-                ParseDate(reader.GetString(4))));
+                reader.GetString(3),
+                ParseDate(reader.GetString(4)),
+                ParseDate(reader.GetString(5))));
         }
         return reviews;
     }
@@ -145,17 +147,19 @@ internal sealed class SqliteSupportSummaryPlanningService(IConfiguration configu
         {
             Id = review.Id == Guid.Empty ? Guid.NewGuid() : review.Id,
             ProjectName = Required(review.ProjectName, "Select a project."),
+            MilestoneDescription = Required(review.MilestoneDescription, "Select a milestone description."),
             Status = status
         };
         await using var connection = await OpenConnectionAsync(cancellationToken);
         await using var command = connection.CreateCommand();
         command.CommandText = """
             INSERT INTO SupportSummaryBuildReviews
-                (Id, ProjectName, Status, BuildReceiveDate, Eta, CreatedAtUtc, UpdatedAtUtc)
+                (Id, ProjectName, MilestoneDescription, Status, BuildReceiveDate, Eta, CreatedAtUtc, UpdatedAtUtc)
             VALUES
-                ($id, $projectName, $status, $buildReceiveDate, $eta, $now, $now)
+                ($id, $projectName, $description, $status, $buildReceiveDate, $eta, $now, $now)
             ON CONFLICT(Id) DO UPDATE SET
                 ProjectName = excluded.ProjectName,
+                MilestoneDescription = excluded.MilestoneDescription,
                 Status = excluded.Status,
                 BuildReceiveDate = excluded.BuildReceiveDate,
                 Eta = excluded.Eta,
@@ -164,6 +168,7 @@ internal sealed class SqliteSupportSummaryPlanningService(IConfiguration configu
         var now = DateTime.UtcNow.ToString("O", CultureInfo.InvariantCulture);
         command.Parameters.AddWithValue("$id", normalized.Id.ToString());
         command.Parameters.AddWithValue("$projectName", normalized.ProjectName);
+        command.Parameters.AddWithValue("$description", normalized.MilestoneDescription);
         command.Parameters.AddWithValue("$status", normalized.Status);
         command.Parameters.AddWithValue("$buildReceiveDate", FormatDate(normalized.BuildReceiveDate));
         command.Parameters.AddWithValue("$eta", FormatDate(normalized.Eta));
@@ -202,6 +207,7 @@ internal sealed class SqliteSupportSummaryPlanningService(IConfiguration configu
             CREATE TABLE IF NOT EXISTS SupportSummaryBuildReviews (
                 Id TEXT NOT NULL CONSTRAINT PK_SupportSummaryBuildReviews PRIMARY KEY,
                 ProjectName TEXT NOT NULL,
+                MilestoneDescription TEXT NOT NULL,
                 Status TEXT NOT NULL,
                 BuildReceiveDate TEXT NOT NULL,
                 Eta TEXT NOT NULL,
@@ -220,13 +226,30 @@ internal sealed class SqliteSupportSummaryPlanningService(IConfiguration configu
         var hasBuildReceiveDate = Convert.ToInt32(
             await migration.ExecuteScalarAsync(cancellationToken),
             CultureInfo.InvariantCulture) > 0;
-        if (hasBuildReceiveDate) return;
+        if (!hasBuildReceiveDate)
+        {
+            migration.CommandText = """
+                ALTER TABLE SupportSummaryBuildReviews ADD COLUMN BuildReceiveDate TEXT;
+                UPDATE SupportSummaryBuildReviews
+                SET BuildReceiveDate = substr(CreatedAtUtc, 1, 10)
+                WHERE BuildReceiveDate IS NULL OR BuildReceiveDate = '';
+                """;
+            await migration.ExecuteNonQueryAsync(cancellationToken);
+        }
 
         migration.CommandText = """
-            ALTER TABLE SupportSummaryBuildReviews ADD COLUMN BuildReceiveDate TEXT;
-            UPDATE SupportSummaryBuildReviews
-            SET BuildReceiveDate = substr(CreatedAtUtc, 1, 10)
-            WHERE BuildReceiveDate IS NULL OR BuildReceiveDate = '';
+            SELECT COUNT(*)
+            FROM pragma_table_info('SupportSummaryBuildReviews')
+            WHERE name = 'MilestoneDescription';
+            """;
+        var hasMilestoneDescription = Convert.ToInt32(
+            await migration.ExecuteScalarAsync(cancellationToken),
+            CultureInfo.InvariantCulture) > 0;
+        if (hasMilestoneDescription) return;
+
+        migration.CommandText = """
+            ALTER TABLE SupportSummaryBuildReviews
+            ADD COLUMN MilestoneDescription TEXT NOT NULL DEFAULT '';
             """;
         await migration.ExecuteNonQueryAsync(cancellationToken);
     }
