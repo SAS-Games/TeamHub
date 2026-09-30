@@ -531,6 +531,148 @@ public sealed class StudioDirectoryTests
     }
 
     [Fact]
+    public async Task GetTicketsForStudiosAsync_DownloadsSharedProjectOnceAndPaginatesAllIssues()
+    {
+        var dbPath = Path.Combine(Path.GetTempPath(), $"teamhub-studio-{Guid.NewGuid():N}.db");
+        var requestUris = new List<Uri>();
+        string? capturedJql = null;
+        var handler = new StubHttpMessageHandler(request =>
+        {
+            requestUris.Add(request.RequestUri!);
+            object responseBody;
+            if (request.RequestUri!.AbsolutePath.EndsWith("/rest/agile/1.0/board", StringComparison.Ordinal))
+            {
+                responseBody = new
+                {
+                    startAt = 0,
+                    maxResults = 50,
+                    isLast = true,
+                    values = new[] { new { id = 10, name = "SUP Scrum Board" } }
+                };
+            }
+            else if (request.RequestUri.AbsolutePath.EndsWith("/rest/agile/1.0/board/10/sprint", StringComparison.Ordinal))
+            {
+                responseBody = new
+                {
+                    startAt = 0,
+                    maxResults = 50,
+                    isLast = true,
+                    values = new[]
+                    {
+                        new { id = 101, startDate = "2026-09-01T09:00:00.000+05:30", endDate = "2026-09-14T18:00:00.000+05:30" }
+                    }
+                };
+            }
+            else
+            {
+                var parameters = request.RequestUri.Query.TrimStart('?')
+                    .Split('&', StringSplitOptions.RemoveEmptyEntries);
+                capturedJql ??= Uri.UnescapeDataString(parameters
+                    .Single(parameter => parameter.StartsWith("jql=", StringComparison.Ordinal))[4..]);
+                var startAt = int.Parse(parameters
+                    .Single(parameter => parameter.StartsWith("startAt=", StringComparison.Ordinal))[8..]);
+                var component = startAt == 0 ? "HDC" : "BBG";
+                var supportComponent = startAt == 0 ? "StudioSupport" : "ProjectWork";
+                responseBody = new
+                {
+                    startAt,
+                    maxResults = 1,
+                    total = 2,
+                    issues = new[]
+                    {
+                        new
+                        {
+                            key = startAt == 0 ? "SUP-1" : "SUP-2",
+                            fields = new
+                            {
+                                summary = startAt == 0 ? "HDC support" : "BBG project work",
+                                assignee = new { displayName = "Asha" },
+                                status = new { name = "In Progress" },
+                                priority = new { name = "High" },
+                                components = new[] { new { name = component }, new { name = supportComponent } }
+                            }
+                        }
+                    }
+                };
+            }
+
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(JsonSerializer.Serialize(responseBody), Encoding.UTF8, "application/json")
+            };
+        });
+
+        try
+        {
+            await using var provider = CreateServices(dbPath, jiraHandler: handler);
+            await using var scope = provider.CreateAsyncScope();
+            await scope.ServiceProvider.GetRequiredService<IStudioDatabaseInitializer>().InitializeAsync();
+            var directory = scope.ServiceProvider.GetRequiredService<IStudioDirectoryService>();
+            var configuration = scope.ServiceProvider.GetRequiredService<IAtlassianConfigurationService>();
+            var hdc = await directory.SaveStudioAsync(new StudioDetails
+            {
+                StudioName = "HDC Studio",
+                ProjectName = "Support Project"
+            });
+            var bbg = await directory.SaveStudioAsync(new StudioDetails
+            {
+                StudioName = "BBG Studio",
+                ProjectName = "Support Project"
+            });
+            await configuration.SaveSettingsAsync(new AtlassianIntegrationSettings
+            {
+                JiraEnabled = true,
+                JiraBaseUrl = "https://jira.example.test",
+                JiraSearchApiPath = "/rest/api/2/search",
+                JiraMaxResults = 1,
+                JiraDefaultSupportComponent = "StudioSupport"
+            });
+            await configuration.SaveStudioMappingsAsync([
+                new StudioAtlassianMapping
+                {
+                    StudioId = hdc.Id,
+                    JiraProjectKeys = ["SUP"],
+                    JiraStudioComponent = "HDC"
+                },
+                new StudioAtlassianMapping
+                {
+                    StudioId = bbg.Id,
+                    JiraProjectKeys = ["SUP"],
+                    JiraStudioComponent = "BBG"
+                }
+            ]);
+            await configuration.SaveUserTokensAsync("person@example.com", "personal-jira-token", null);
+
+            var result = await scope.ServiceProvider.GetRequiredService<IStudioJiraTicketService>()
+                .GetTicketsForStudiosAsync(new StudioJiraTicketBatchQuery
+                {
+                    StudioIds = [hdc.Id, bbg.Id],
+                    RequestingUserId = "person@example.com",
+                    ActiveSprintOnly = false,
+                    UseSprintDateRange = true,
+                    StartDate = new DateOnly(2026, 9, 1),
+                    EndDate = new DateOnly(2026, 9, 30)
+                });
+
+            requestUris.Should().HaveCount(4);
+            requestUris.Count(uri => uri.AbsolutePath.EndsWith("/rest/agile/1.0/board", StringComparison.Ordinal)).Should().Be(1);
+            requestUris.Count(uri => uri.AbsolutePath.EndsWith("/rest/agile/1.0/board/10/sprint", StringComparison.Ordinal)).Should().Be(1);
+            requestUris.Count(uri => uri.AbsolutePath.EndsWith("/rest/api/2/search", StringComparison.Ordinal)).Should().Be(2);
+            capturedJql.Should().Contain("project =").And.Contain("SUP").And.Contain("sprint in (101)");
+            capturedJql.Should().NotContain("component =");
+            result[hdc.Id].Groups.Single(group => group.Name == "Direct Support").Tickets
+                .Should().ContainSingle().Which.TicketId.Should().Be("SUP-1");
+            result[bbg.Id].Groups.Single(group => group.Name == "Indirect Support").Tickets
+                .Should().ContainSingle().Which.TicketId.Should().Be("SUP-2");
+        }
+        finally
+        {
+            SqliteConnection.ClearAllPools();
+            if (File.Exists(dbPath)) File.Delete(dbPath);
+        }
+    }
+
+    [Fact]
     public async Task SaveStudioAsync_CreatesStudio_WhenTeamMembersAndLinksAreEmpty()
     {
         var dbPath = Path.Combine(Path.GetTempPath(), $"teamhub-studio-{Guid.NewGuid():N}.db");

@@ -314,57 +314,60 @@ public sealed class SupportSummaryModel(
 
     private async Task LoadJiraAsync(CancellationToken cancellationToken)
     {
-        var tickets = new List<SupportSummaryTicket>();
-        var messages = new List<SupportSummaryMessage>();
-        IReadOnlyList<StudioJiraLoadResult> studioResults;
         if (serviceScopeFactory is null)
         {
-            var sequentialResults = new List<StudioJiraLoadResult>();
-            foreach (var studio in Studios)
-            {
-                sequentialResults.Add(await LoadStudioJiraAsync(studio, jiraTicketService, cancellationToken));
-            }
-            studioResults = sequentialResults;
-        }
-        else
-        {
-            using var concurrency = new SemaphoreSlim(4);
-            studioResults = await Task.WhenAll(Studios.Select(async studio =>
-            {
-                await concurrency.WaitAsync(cancellationToken);
-                try
-                {
-                    await using var scope = serviceScopeFactory.CreateAsyncScope();
-                    return await LoadStudioJiraAsync(
-                        studio,
-                        scope.ServiceProvider.GetRequiredService<IStudioJiraTicketService>(),
-                        cancellationToken);
-                }
-                finally
-                {
-                    concurrency.Release();
-                }
-            }));
+            await LoadJiraAsync(jiraTicketService, cancellationToken);
+            return;
         }
 
-        foreach (var studioResult in studioResults)
+        await using var scope = serviceScopeFactory.CreateAsyncScope();
+        await LoadJiraAsync(
+            scope.ServiceProvider.GetRequiredService<IStudioJiraTicketService>(),
+            cancellationToken);
+    }
+
+    private async Task LoadJiraAsync(
+        IStudioJiraTicketService service,
+        CancellationToken cancellationToken)
+    {
+        var tickets = new List<SupportSummaryTicket>();
+        var messages = new List<SupportSummaryMessage>();
+        IReadOnlyDictionary<string, StudioJiraTicketResult> studioResults;
+        try
         {
-            if (!string.IsNullOrWhiteSpace(studioResult.ErrorMessage))
+            studioResults = await service.GetTicketsForStudiosAsync(new StudioJiraTicketBatchQuery
             {
-                messages.Add(new SupportSummaryMessage(studioResult.Studio, studioResult.ErrorMessage));
+                StudioIds = Studios.Select(studio => studio.Id).ToList(),
+                RequestingUserId = User.Identity?.Name ?? string.Empty,
+                AllowPrivilegedDefaultCredential = User.IsInRole("Privileged"),
+                ActiveSprintOnly = false,
+                StartDate = StartDate,
+                EndDate = EndDate,
+                UseSprintDateRange = true
+            }, cancellationToken);
+        }
+        catch (HttpRequestException exception)
+        {
+            JiraMessages = Studios.Select(studio => new SupportSummaryMessage(studio, exception.Message)).ToList();
+            return;
+        }
+
+        foreach (var studio in Studios)
+        {
+            if (!studioResults.TryGetValue(studio.Id, out var result))
+            {
                 continue;
             }
 
-            var result = studioResult.Result!;
             IsUsingSharedJiraCredential |= result.IsUsingSharedCredential;
             if (!string.IsNullOrWhiteSpace(result.Message))
             {
-                messages.Add(new SupportSummaryMessage(studioResult.Studio, result.Message));
+                messages.Add(new SupportSummaryMessage(studio, result.Message));
             }
             foreach (var group in result.Groups)
             {
                 tickets.AddRange(group.Tickets.Select(ticket =>
-                    new SupportSummaryTicket(studioResult.Studio, group.Name, ticket)));
+                    new SupportSummaryTicket(studio, group.Name, ticket)));
             }
         }
 
@@ -387,31 +390,6 @@ public sealed class SupportSummaryModel(
             .ThenBy(item => item.SupportType, StringComparer.OrdinalIgnoreCase)
             .ThenBy(item => item.Ticket.TicketId, StringComparer.OrdinalIgnoreCase)
             .ToList();
-    }
-
-    private async Task<StudioJiraLoadResult> LoadStudioJiraAsync(
-        StudioDetails studio,
-        IStudioJiraTicketService service,
-        CancellationToken cancellationToken)
-    {
-        try
-        {
-            var result = await service.GetTicketsAsync(new StudioJiraTicketQuery
-            {
-                StudioId = studio.Id,
-                RequestingUserId = User.Identity?.Name ?? string.Empty,
-                AllowPrivilegedDefaultCredential = User.IsInRole("Privileged"),
-                ActiveSprintOnly = false,
-                StartDate = StartDate,
-                EndDate = EndDate,
-                UseSprintDateRange = true
-            }, cancellationToken);
-            return new StudioJiraLoadResult(studio, result, null);
-        }
-        catch (HttpRequestException exception)
-        {
-            return new StudioJiraLoadResult(studio, null, exception.Message);
-        }
     }
 
     private async Task LoadConfluenceFromIndependentScopeAsync(CancellationToken cancellationToken)
@@ -587,7 +565,3 @@ public sealed record SupportSummaryMilestoneDescriptionOption(string ProjectName
 public sealed record SupportSummaryTicket(StudioDetails Studio, string SupportType, StudioJiraTicket Ticket);
 public sealed record SupportSummaryMessage(StudioDetails Studio, string Message);
 public sealed record SupportSummaryWeekOption(int Number, DateOnly StartDate, DateOnly EndDate, string Label);
-internal sealed record StudioJiraLoadResult(
-    StudioDetails Studio,
-    StudioJiraTicketResult? Result,
-    string? ErrorMessage);

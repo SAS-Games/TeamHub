@@ -17,6 +17,17 @@ public sealed class StudioJiraTicketQuery
     public bool UseSprintDateRange { get; set; }
 }
 
+public sealed class StudioJiraTicketBatchQuery
+{
+    public IReadOnlyList<string> StudioIds { get; set; } = [];
+    public string RequestingUserId { get; set; } = string.Empty;
+    public bool AllowPrivilegedDefaultCredential { get; set; }
+    public bool ActiveSprintOnly { get; set; } = true;
+    public DateOnly? StartDate { get; set; }
+    public DateOnly? EndDate { get; set; }
+    public bool UseSprintDateRange { get; set; }
+}
+
 public sealed class StudioJiraTicketResult
 {
     public bool IsConfigured { get; set; }
@@ -46,6 +57,27 @@ public sealed class StudioJiraTicket
 public interface IStudioJiraTicketService
 {
     Task<StudioJiraTicketResult> GetTicketsAsync(StudioJiraTicketQuery query, CancellationToken cancellationToken = default);
+
+    async Task<IReadOnlyDictionary<string, StudioJiraTicketResult>> GetTicketsForStudiosAsync(
+        StudioJiraTicketBatchQuery query,
+        CancellationToken cancellationToken = default)
+    {
+        var results = new Dictionary<string, StudioJiraTicketResult>(StringComparer.OrdinalIgnoreCase);
+        foreach (var studioId in query.StudioIds.Distinct(StringComparer.OrdinalIgnoreCase))
+        {
+            results[studioId] = await GetTicketsAsync(new StudioJiraTicketQuery
+            {
+                StudioId = studioId,
+                RequestingUserId = query.RequestingUserId,
+                AllowPrivilegedDefaultCredential = query.AllowPrivilegedDefaultCredential,
+                ActiveSprintOnly = query.ActiveSprintOnly,
+                StartDate = query.StartDate,
+                EndDate = query.EndDate,
+                UseSprintDateRange = query.UseSprintDateRange
+            }, cancellationToken);
+        }
+        return results;
+    }
 }
 
 internal sealed class JiraStudioTicketService(
@@ -54,6 +86,39 @@ internal sealed class JiraStudioTicketService(
     IAtlassianCredentialAccessor credentialAccessor,
     IMemoryCache memoryCache) : IStudioJiraTicketService
 {
+    public async Task<IReadOnlyDictionary<string, StudioJiraTicketResult>> GetTicketsForStudiosAsync(
+        StudioJiraTicketBatchQuery query,
+        CancellationToken cancellationToken = default)
+    {
+        var studioIds = query.StudioIds
+            .Where(studioId => !string.IsNullOrWhiteSpace(studioId))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Order(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        var cacheKey = string.Join(
+            '|',
+            "studio-jira-batch-v1",
+            query.RequestingUserId.Trim().ToUpperInvariant(),
+            query.AllowPrivilegedDefaultCredential,
+            string.Join(',', studioIds.Select(studioId => studioId.ToUpperInvariant())),
+            query.ActiveSprintOnly,
+            query.UseSprintDateRange,
+            query.StartDate?.ToString("yyyy-MM-dd") ?? string.Empty,
+            query.EndDate?.ToString("yyyy-MM-dd") ?? string.Empty);
+        if (memoryCache.TryGetValue<IReadOnlyDictionary<string, StudioJiraTicketResult>>(cacheKey, out var cached)
+            && cached is not null)
+        {
+            return cached;
+        }
+
+        var result = await LoadTicketsForStudiosAsync(query, studioIds, cancellationToken);
+        if (result.Values.All(item => item.IsConfigured && string.IsNullOrWhiteSpace(item.Message)))
+        {
+            memoryCache.Set(cacheKey, result, TimeSpan.FromMinutes(2));
+        }
+        return result;
+    }
+
     public async Task<StudioJiraTicketResult> GetTicketsAsync(StudioJiraTicketQuery query, CancellationToken cancellationToken = default)
     {
         var cacheKey = string.Join(
@@ -131,6 +196,144 @@ internal sealed class JiraStudioTicketService(
             : "Your Jira token is not connected. Open My Atlassian Connection and add your Bearer API token.");
     }
 
+    private async Task<IReadOnlyDictionary<string, StudioJiraTicketResult>> LoadTicketsForStudiosAsync(
+        StudioJiraTicketBatchQuery query,
+        IReadOnlyList<string> studioIds,
+        CancellationToken cancellationToken)
+    {
+        var results = new Dictionary<string, StudioJiraTicketResult>(StringComparer.OrdinalIgnoreCase);
+        if (studioIds.Count == 0) return results;
+
+        var settings = await configurationService.GetSettingsAsync(cancellationToken);
+        if (!settings.JiraEnabled)
+        {
+            return CreateBatchMessage(studioIds, "Jira integration is disabled. An administrator can enable it in Configuration > Jira & Confluence.");
+        }
+        if (string.IsNullOrWhiteSpace(settings.JiraBaseUrl))
+        {
+            return CreateBatchMessage(studioIds, "The Jira base URL is not configured.");
+        }
+        if (string.IsNullOrWhiteSpace(query.RequestingUserId))
+        {
+            return CreateBatchMessage(studioIds, "Sign in and connect your Jira account to view tickets.");
+        }
+
+        var mappings = (await configurationService.ListStudioMappingsAsync(cancellationToken))
+            .Where(mapping => studioIds.Contains(mapping.StudioId, StringComparer.OrdinalIgnoreCase))
+            .ToDictionary(mapping => mapping.StudioId, StringComparer.OrdinalIgnoreCase);
+        var validMappings = new List<StudioAtlassianMapping>();
+        foreach (var studioId in studioIds)
+        {
+            if (!mappings.TryGetValue(studioId, out var mapping))
+            {
+                results[studioId] = NotConfigured("This studio does not have a Jira mapping. Ask an administrator to configure it.");
+            }
+            else if (mapping.JiraProjectKeys.Count == 0)
+            {
+                results[studioId] = NotConfigured("No Jira project key is configured for this studio.");
+            }
+            else if (string.IsNullOrWhiteSpace(mapping.JiraStudioComponent))
+            {
+                results[studioId] = NotConfigured("No studio-identifying Jira component is configured for this studio.");
+            }
+            else
+            {
+                validMappings.Add(mapping);
+            }
+        }
+
+        AtlassianResolvedCredential? credential;
+        try
+        {
+            credential = await credentialAccessor.ResolveJiraCredentialAsync(
+                query.RequestingUserId,
+                query.AllowPrivilegedDefaultCredential,
+                cancellationToken);
+        }
+        catch (InvalidOperationException exception)
+        {
+            foreach (var mapping in validMappings) results[mapping.StudioId] = NotConfigured(exception.Message);
+            return results;
+        }
+        if (credential is null)
+        {
+            var message = query.AllowPrivilegedDefaultCredential
+                ? "No Jira credential is available. Ask an administrator to grant your privileged account read-only Jira access, or add a personal token."
+                : "Your Jira token is not connected. Open My Atlassian Connection and add your Bearer API token.";
+            foreach (var mapping in validMappings) results[mapping.StudioId] = NotConfigured(message);
+            return results;
+        }
+
+        foreach (var projectGroup in validMappings.GroupBy(ProjectKeySet, StringComparer.OrdinalIgnoreCase))
+        {
+            var groupResults = await FetchTicketsForMappingsAsync(
+                settings,
+                projectGroup.ToList(),
+                query,
+                credential,
+                cancellationToken);
+            foreach (var item in groupResults) results[item.Key] = item.Value;
+        }
+        return results;
+    }
+
+    private async Task<IReadOnlyDictionary<string, StudioJiraTicketResult>> FetchTicketsForMappingsAsync(
+        AtlassianIntegrationSettings settings,
+        IReadOnlyList<StudioAtlassianMapping> mappings,
+        StudioJiraTicketBatchQuery query,
+        AtlassianResolvedCredential credential,
+        CancellationToken cancellationToken)
+    {
+        IReadOnlyList<long>? sprintIds = null;
+        if (query.UseSprintDateRange)
+        {
+            if (!query.StartDate.HasValue || !query.EndDate.HasValue)
+            {
+                return CreateBatchResult(
+                    mappings,
+                    credential,
+                    "Select both a start date and an end date to load Jira sprints.");
+            }
+
+            var sprintLookup = await FindOverlappingSprintIdsAsync(
+                settings,
+                mappings[0],
+                query.StartDate.Value,
+                query.EndDate.Value,
+                credential,
+                cancellationToken);
+            if (!string.IsNullOrWhiteSpace(sprintLookup.ErrorMessage))
+            {
+                return CreateBatchResult(mappings, credential, sprintLookup.ErrorMessage);
+            }
+            if (sprintLookup.Ids.Count == 0)
+            {
+                return CreateBatchResult(mappings, credential);
+            }
+            sprintIds = sprintLookup.Ids;
+        }
+
+        var jql = BuildBatchJql(mappings[0].JiraProjectKeys, query, sprintIds);
+        var ticketLookup = await FetchAllTicketPagesAsync(settings, jql, credential, cancellationToken);
+        if (!string.IsNullOrWhiteSpace(ticketLookup.ErrorMessage))
+        {
+            return CreateBatchResult(mappings, credential, ticketLookup.ErrorMessage);
+        }
+
+        var results = new Dictionary<string, StudioJiraTicketResult>(StringComparer.OrdinalIgnoreCase);
+        foreach (var mapping in mappings)
+        {
+            var studioTickets = ticketLookup.Tickets
+                .Where(ticket => ticket.Components.Any(component => string.Equals(
+                    component,
+                    mapping.JiraStudioComponent,
+                    StringComparison.OrdinalIgnoreCase)))
+                .ToList();
+            results[mapping.StudioId] = BuildConfiguredResult(settings, mapping, credential, studioTickets);
+        }
+        return results;
+    }
+
     private async Task<StudioJiraTicketResult> FetchTicketsAsync(
         AtlassianIntegrationSettings settings,
         StudioAtlassianMapping mapping,
@@ -181,42 +384,69 @@ internal sealed class JiraStudioTicketService(
             sprintIds = sprintLookup.Ids;
         }
 
-        var requestUri = BuildSearchUri(settings, mapping, query, sprintIds);
-        using var request = new HttpRequestMessage(HttpMethod.Get, requestUri);
-        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", credential.Token);
-        request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
-        request.Headers.TryAddWithoutValidation("X-Atlassian-Token", "no-check");
-
-        using var response = await httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
-        if (!response.IsSuccessStatusCode)
+        var ticketLookup = await FetchAllTicketPagesAsync(
+            settings,
+            BuildJql(mapping, query, sprintIds),
+            credential,
+            cancellationToken);
+        if (!string.IsNullOrWhiteSpace(ticketLookup.ErrorMessage))
         {
-            var message = response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden
-                ? credential.IsShared
-                    ? "Jira rejected the shared read-only token. Ask an administrator to update the default Jira credential."
-                    : "Jira rejected your personal token. Update it from My Atlassian Connection and confirm that your Jira account can access this project."
-                : $"Jira returned {(int)response.StatusCode} {response.ReasonPhrase}. Check the Jira URL and studio mapping.";
             return new StudioJiraTicketResult
             {
                 IsConfigured = true,
                 IsReadOnly = credential.IsReadOnly,
                 IsUsingSharedCredential = credential.IsShared,
-                Message = message
+                Message = ticketLookup.ErrorMessage
             };
         }
 
-        await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
-        var tickets = await ParseTicketsAsync(stream, settings, mapping, cancellationToken);
-        return new StudioJiraTicketResult
+        var tickets = ticketLookup.Tickets
+            .Where(ticket => ticket.Components.Any(component => string.Equals(
+                component,
+                mapping.JiraStudioComponent,
+                StringComparison.OrdinalIgnoreCase)))
+            .ToList();
+        return BuildConfiguredResult(settings, mapping, credential, tickets);
+    }
+
+    private async Task<JiraTicketLookupResult> FetchAllTicketPagesAsync(
+        AtlassianIntegrationSettings settings,
+        string jql,
+        AtlassianResolvedCredential credential,
+        CancellationToken cancellationToken)
+    {
+        var tickets = new List<StudioJiraTicket>();
+        var pageSize = Math.Clamp(settings.JiraMaxResults, 1, 1000);
+        var startAt = 0;
+        for (var page = 0; page < 1000; page++)
         {
-            IsConfigured = true,
-            IsReadOnly = credential.IsReadOnly,
-            IsUsingSharedCredential = credential.IsShared,
-            Groups =
-            [
-                new StudioJiraTicketGroup { Name = "Direct Support", Tickets = tickets.Where(ticket => IsSupportRequest(ticket, settings, mapping)).ToList() },
-                new StudioJiraTicketGroup { Name = "Indirect Support", Tickets = tickets.Where(ticket => !IsSupportRequest(ticket, settings, mapping)).ToList() }
-            ]
-        };
+            var requestUri = BuildSearchUri(settings, jql, startAt, pageSize);
+            using var request = CreateJiraRequest(requestUri, credential);
+            using var response = await httpClient.SendAsync(
+                request,
+                HttpCompletionOption.ResponseHeadersRead,
+                cancellationToken);
+            if (!response.IsSuccessStatusCode)
+            {
+                return new JiraTicketLookupResult([], BuildJiraRequestError(response, credential, "loading issues"));
+            }
+
+            await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
+            var ticketPage = await ParseTicketPageAsync(stream, settings, cancellationToken);
+            tickets.AddRange(ticketPage.Tickets);
+            if (ticketPage.Tickets.Count == 0) break;
+
+            var nextStartAt = startAt + ticketPage.Tickets.Count;
+            if (ticketPage.Total.HasValue
+                ? nextStartAt >= ticketPage.Total.Value
+                : ticketPage.Tickets.Count < pageSize)
+            {
+                break;
+            }
+            startAt = nextStartAt;
+        }
+
+        return new JiraTicketLookupResult(tickets);
     }
 
     private async Task<JiraIdLookupResult> FindOverlappingSprintIdsAsync(
@@ -330,11 +560,23 @@ internal sealed class JiraStudioTicketService(
     }
 
     private static string BuildSprintLookupError(HttpResponseMessage response, AtlassianResolvedCredential credential) =>
-        response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden
-            ? credential.IsShared
-                ? "Jira rejected the shared read-only token while loading sprint dates. Ask an administrator to update the default Jira credential."
-                : "Jira rejected your personal token while loading sprint dates. Update it from My Atlassian Connection."
-            : $"Jira returned {(int)response.StatusCode} {response.ReasonPhrase} while loading sprint dates. Confirm that the Jira Software Agile API is available.";
+        BuildJiraRequestError(response, credential, "loading sprint dates");
+
+    private static string BuildJiraRequestError(
+        HttpResponseMessage response,
+        AtlassianResolvedCredential credential,
+        string operation) =>
+        response.StatusCode switch
+        {
+            HttpStatusCode.Unauthorized => credential.IsShared
+                ? $"Jira rejected the shared read-only token while {operation}. Ask an administrator to update the default Jira credential."
+                : $"Jira rejected your personal token while {operation}. Update it from My Atlassian Connection.",
+            HttpStatusCode.Forbidden => credential.IsShared
+                ? $"The shared Jira account does not have permission to use the Jira Software Agile API while {operation}."
+                : $"Your Jira account does not have permission to use the Jira Software Agile API while {operation}.",
+            HttpStatusCode.TooManyRequests => $"Jira temporarily limited requests while {operation}. Please try again shortly.",
+            _ => $"Jira returned {(int)response.StatusCode} {response.ReasonPhrase} while {operation}. Confirm that the Jira Software Agile API is available."
+        };
 
     private static int? GetNextStartAt(JsonElement root, int currentStartAt, int valueCount)
     {
@@ -389,19 +631,79 @@ internal sealed class JiraStudioTicketService(
     }
 
     private sealed record JiraIdLookupResult(IReadOnlyList<long> Ids, string? ErrorMessage = null);
+    private sealed record JiraTicketLookupResult(
+        IReadOnlyList<StudioJiraTicket> Tickets,
+        string? ErrorMessage = null);
+    private sealed record JiraTicketPage(
+        IReadOnlyList<StudioJiraTicket> Tickets,
+        int? Total);
 
     private static StudioJiraTicketResult NotConfigured(string message) =>
         new() { IsConfigured = false, Message = message };
 
-    private static string BuildSearchUri(
+    private static IReadOnlyDictionary<string, StudioJiraTicketResult> CreateBatchMessage(
+        IReadOnlyList<string> studioIds,
+        string message) =>
+        studioIds.ToDictionary(
+            studioId => studioId,
+            _ => NotConfigured(message),
+            StringComparer.OrdinalIgnoreCase);
+
+    private static IReadOnlyDictionary<string, StudioJiraTicketResult> CreateBatchResult(
+        IReadOnlyList<StudioAtlassianMapping> mappings,
+        AtlassianResolvedCredential credential,
+        string? message = null) =>
+        mappings.ToDictionary(
+            mapping => mapping.StudioId,
+            _ => new StudioJiraTicketResult
+            {
+                IsConfigured = true,
+                IsReadOnly = credential.IsReadOnly,
+                IsUsingSharedCredential = credential.IsShared,
+                Message = message
+            },
+            StringComparer.OrdinalIgnoreCase);
+
+    private static StudioJiraTicketResult BuildConfiguredResult(
         AtlassianIntegrationSettings settings,
         StudioAtlassianMapping mapping,
-        StudioJiraTicketQuery query,
-        IReadOnlyList<long>? sprintIds = null)
+        AtlassianResolvedCredential credential,
+        IReadOnlyList<StudioJiraTicket> tickets) =>
+        new()
+        {
+            IsConfigured = true,
+            IsReadOnly = credential.IsReadOnly,
+            IsUsingSharedCredential = credential.IsShared,
+            Groups =
+            [
+                new StudioJiraTicketGroup
+                {
+                    Name = "Direct Support",
+                    Tickets = tickets.Where(ticket => IsSupportRequest(ticket, settings, mapping)).ToList()
+                },
+                new StudioJiraTicketGroup
+                {
+                    Name = "Indirect Support",
+                    Tickets = tickets.Where(ticket => !IsSupportRequest(ticket, settings, mapping)).ToList()
+                }
+            ]
+        };
+
+    private static string ProjectKeySet(StudioAtlassianMapping mapping) =>
+        string.Join(
+            '\u001f',
+            mapping.JiraProjectKeys
+                .Select(key => key.Trim().ToUpperInvariant())
+                .Order(StringComparer.OrdinalIgnoreCase));
+
+    private static string BuildSearchUri(
+        AtlassianIntegrationSettings settings,
+        string jql,
+        int startAt,
+        int maxResults)
     {
-        var jql = BuildJql(mapping, query, sprintIds);
         var fields = Uri.EscapeDataString("summary,assignee,status,priority,components");
-        return $"{settings.JiraBaseUrl.TrimEnd('/')}{settings.JiraSearchApiPath}?jql={Uri.EscapeDataString(jql)}&fields={fields}&maxResults={settings.JiraMaxResults}";
+        return $"{settings.JiraBaseUrl.TrimEnd('/')}{settings.JiraSearchApiPath}?jql={Uri.EscapeDataString(jql)}&fields={fields}&startAt={startAt}&maxResults={maxResults}";
     }
 
     internal static string BuildJql(
@@ -433,18 +735,45 @@ internal sealed class JiraStudioTicketService(
         return string.Join(" AND ", clauses) + " ORDER BY priority DESC, updated DESC";
     }
 
+    private static string BuildBatchJql(
+        IReadOnlyList<string> projectKeys,
+        StudioJiraTicketBatchQuery query,
+        IReadOnlyList<long>? sprintIds)
+    {
+        var projectClause = projectKeys.Count == 1
+            ? $"project = {QuoteJql(projectKeys[0])}"
+            : $"project in ({string.Join(", ", projectKeys.Select(QuoteJql))})";
+        var clauses = new List<string>
+        {
+            projectClause,
+            $"issuetype in ({QuoteJql("Task")}, {QuoteJql("Story")})"
+        };
+        if (query.UseSprintDateRange)
+        {
+            if (sprintIds is null || sprintIds.Count == 0)
+                throw new InvalidOperationException("Sprint IDs are required for sprint date-range filtering.");
+            clauses.Add($"sprint in ({string.Join(", ", sprintIds.Distinct().Order())})");
+        }
+        else
+        {
+            if (query.ActiveSprintOnly) clauses.Add("sprint in openSprints()");
+            if (query.StartDate.HasValue) clauses.Add($"created >= {QuoteJql(query.StartDate.Value.ToString("yyyy-MM-dd"))}");
+            if (query.EndDate.HasValue) clauses.Add($"created <= {QuoteJql(query.EndDate.Value.ToString("yyyy-MM-dd"))}");
+        }
+        return string.Join(" AND ", clauses) + " ORDER BY priority DESC, updated DESC";
+    }
+
     private static string QuoteJql(string value) => JsonSerializer.Serialize(value);
 
-    private static async Task<List<StudioJiraTicket>> ParseTicketsAsync(
+    private static async Task<JiraTicketPage> ParseTicketPageAsync(
         Stream stream,
         AtlassianIntegrationSettings settings,
-        StudioAtlassianMapping mapping,
         CancellationToken cancellationToken)
     {
         using var document = await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken);
         if (!document.RootElement.TryGetProperty("issues", out var issues) || issues.ValueKind != JsonValueKind.Array)
         {
-            return [];
+            return new JiraTicketPage([], 0);
         }
 
         var tickets = new List<StudioJiraTicket>();
@@ -465,9 +794,11 @@ internal sealed class JiraStudioTicketService(
             });
         }
 
-        return tickets
-            .Where(ticket => ticket.Components.Any(component => string.Equals(component, mapping.JiraStudioComponent, StringComparison.OrdinalIgnoreCase)))
-            .ToList();
+        int? total = document.RootElement.TryGetProperty("total", out var totalElement)
+            && totalElement.TryGetInt32(out var parsedTotal)
+                ? parsedTotal
+                : null;
+        return new JiraTicketPage(tickets, total);
     }
 
     private static bool IsSupportRequest(StudioJiraTicket ticket, AtlassianIntegrationSettings settings, StudioAtlassianMapping mapping)
