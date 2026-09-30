@@ -12,6 +12,21 @@ namespace TeamHub.Tests;
 public sealed class StudioDirectoryTests
 {
     [Fact]
+    public void JiraTicketQuery_ReturnsOnlyTasksAndStories()
+    {
+        var jql = JiraStudioTicketService.BuildJql(
+            new StudioAtlassianMapping
+            {
+                JiraProjectKeys = ["SUP"],
+                JiraStudioComponent = "HDC"
+            },
+            new StudioJiraTicketQuery { ActiveSprintOnly = true });
+
+        jql.Should().Contain("""issuetype in ("Task", "Story")""");
+        jql.Should().Contain("sprint in openSprints()");
+    }
+
+    [Fact]
     public async Task AtlassianTokens_AreEncryptedInDatabase_AndConnectionStatusDoesNotExposeThem()
     {
         var dbPath = Path.Combine(Path.GetTempPath(), $"teamhub-studio-{Guid.NewGuid():N}.db");
