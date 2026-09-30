@@ -24,7 +24,6 @@ public sealed class SupportSummaryModel(
     [BindProperty(SupportsGet = true)] public string ReportPeriod { get; set; } = WeeklyPeriod;
     [BindProperty(SupportsGet = true)] public string? SelectedMonth { get; set; }
     [BindProperty(SupportsGet = true)] public int? Week { get; set; }
-    [BindProperty(SupportsGet = true)] public bool ActiveSprintOnly { get; set; } = true;
     [BindProperty(SupportsGet = true)] public DateOnly? StartDate { get; set; }
     [BindProperty(SupportsGet = true)] public DateOnly? EndDate { get; set; }
     public IReadOnlyList<SupportSummaryWeekOption> WeekOptions { get; private set; } = [];
@@ -285,7 +284,10 @@ public sealed class SupportSummaryModel(
                     StudioId = studio.Id,
                     RequestingUserId = User.Identity?.Name ?? string.Empty,
                     AllowPrivilegedDefaultCredential = User.IsInRole("Privileged"),
-                    ActiveSprintOnly = ActiveSprintOnly
+                    ActiveSprintOnly = false,
+                    StartDate = StartDate,
+                    EndDate = EndDate,
+                    UseSprintDateRange = true
                 }, cancellationToken);
                 IsUsingSharedJiraCredential |= result.IsUsingSharedCredential;
                 if (!string.IsNullOrWhiteSpace(result.Message))

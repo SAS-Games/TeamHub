@@ -80,7 +80,6 @@ public sealed class SupportSummaryModelTests
         model.ReportPeriod.Should().Be(SupportSummaryModel.WeeklyPeriod);
         model.SelectedMonth.Should().Be(today.ToString("yyyy-MM"));
         model.Week.Should().NotBeNull();
-        model.ActiveSprintOnly.Should().BeTrue();
         model.Studios.Should().ContainSingle().Which.Id.Should().Be(activeStudio.Id);
         model.ActiveMilestones.Should().ContainSingle()
             .Which.Milestone.Milestone.Should().Be("Current delivery");
@@ -92,9 +91,10 @@ public sealed class SupportSummaryModelTests
 
         jiraService.Queries.Should().ContainSingle();
         jiraService.Queries[0].StudioId.Should().Be(activeStudio.Id);
-        jiraService.Queries[0].ActiveSprintOnly.Should().BeTrue();
-        jiraService.Queries[0].StartDate.Should().BeNull();
-        jiraService.Queries[0].EndDate.Should().BeNull();
+        jiraService.Queries[0].ActiveSprintOnly.Should().BeFalse();
+        jiraService.Queries[0].UseSprintDateRange.Should().BeTrue();
+        jiraService.Queries[0].StartDate.Should().Be(weekStart);
+        jiraService.Queries[0].EndDate.Should().Be(weekStart.AddDays(4));
         confluenceService.LastQuery.Should().NotBeNull();
         confluenceService.LastQuery!.StudioIds.Should().Equal(activeStudio.Id);
         confluenceService.LastQuery.StartDate.Should().Be(weekStart);
@@ -134,8 +134,9 @@ public sealed class SupportSummaryModelTests
         model.StartDate.Should().Be(new DateOnly(2026, 9, 1));
         model.EndDate.Should().Be(new DateOnly(2026, 9, 30));
         jiraService.Queries.Should().ContainSingle();
-        jiraService.Queries[0].StartDate.Should().BeNull();
-        jiraService.Queries[0].EndDate.Should().BeNull();
+        jiraService.Queries[0].UseSprintDateRange.Should().BeTrue();
+        jiraService.Queries[0].StartDate.Should().Be(new DateOnly(2026, 9, 1));
+        jiraService.Queries[0].EndDate.Should().Be(new DateOnly(2026, 9, 30));
         confluenceService.LastQuery!.StartDate.Should().Be(new DateOnly(2026, 9, 1));
         confluenceService.LastQuery.EndDate.Should().Be(new DateOnly(2026, 9, 30));
     }
@@ -165,8 +166,9 @@ public sealed class SupportSummaryModelTests
         model.ReportPeriod.Should().Be(SupportSummaryModel.CustomPeriod);
         model.StartDate.Should().Be(new DateOnly(2026, 9, 3));
         model.EndDate.Should().Be(new DateOnly(2026, 9, 18));
-        jiraService.Queries[0].StartDate.Should().BeNull();
-        jiraService.Queries[0].EndDate.Should().BeNull();
+        jiraService.Queries[0].UseSprintDateRange.Should().BeTrue();
+        jiraService.Queries[0].StartDate.Should().Be(new DateOnly(2026, 9, 3));
+        jiraService.Queries[0].EndDate.Should().Be(new DateOnly(2026, 9, 18));
         confluenceService.LastQuery!.StartDate.Should().Be(new DateOnly(2026, 9, 3));
         confluenceService.LastQuery.EndDate.Should().Be(new DateOnly(2026, 9, 18));
     }
