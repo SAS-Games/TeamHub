@@ -413,9 +413,9 @@ else
             </div>
             <strong>Actual hours</strong>
         </div>
-        @if (!string.IsNullOrWhiteSpace(Model.EffortErrorMessage))
+        @if (!string.IsNullOrWhiteSpace(Model.EffortErrorDisplayMessage))
         {
-            <div class="section-body text-warning">@Model.EffortErrorMessage</div>
+            <div class="section-body text-warning">@Model.EffortErrorDisplayMessage</div>
         }
         else if (Model.EffortSummary.Count == 0 && Model.StudioEffortBreakdown.Count == 0)
         {

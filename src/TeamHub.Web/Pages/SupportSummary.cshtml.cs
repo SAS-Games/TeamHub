@@ -44,6 +44,11 @@ public sealed class SupportSummaryModel(
     public string? MilestoneErrorMessage { get; private set; }
     public string? ConfluenceErrorMessage { get; private set; }
     public string? EffortErrorMessage { get; private set; }
+    public string? EffortErrorDisplayMessage => string.IsNullOrWhiteSpace(EffortErrorMessage)
+        ? null
+        : CanManagePlanning
+            ? EffortErrorMessage
+            : "Something went wrong while loading logged effort. Please contact an administrator.";
     public bool IsUsingSharedJiraCredential { get; private set; }
     public bool CanManagePlanning => User.IsInRole(TeamHubUserTypes.Admin);
 

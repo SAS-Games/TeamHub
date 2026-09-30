@@ -2,6 +2,7 @@ using System.Security.Claims;
 using FluentAssertions;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc.RazorPages;
+using TeamHub.Authentication;
 using TeamHub.Milestones;
 using TeamHub.Studio;
 using TeamHub.Web.Pages;
@@ -164,6 +165,44 @@ public sealed class SupportSummaryModelTests
         jiraService.Queries[0].EndDate.Should().Be(new DateOnly(2026, 9, 18));
         confluenceService.LastQuery!.StartDate.Should().Be(new DateOnly(2026, 9, 3));
         confluenceService.LastQuery.EndDate.Should().Be(new DateOnly(2026, 9, 18));
+    }
+
+    [Theory]
+    [InlineData(false, "Something went wrong while loading logged effort. Please contact an administrator.")]
+    [InlineData(true, "No Python at C:\\Users\\developer\\python.exe")]
+    public async Task OnGetAsync_ShowsDetailedEffortErrorsOnlyToAdministrators(
+        bool isAdmin,
+        string expectedDisplayMessage)
+    {
+        const string diagnostic = "No Python at C:\\Users\\developer\\python.exe";
+        var studio = Studio("active", "Alpha Studio", "Alpha Project", isActive: true);
+        var claims = new List<Claim> { new(ClaimTypes.Name, "user@example.com") };
+        if (isAdmin)
+        {
+            claims.Add(new Claim(ClaimTypes.Role, TeamHubUserTypes.Admin));
+        }
+
+        var model = new SupportSummaryModel(
+            new StubStudioDirectoryService([studio]),
+            new StubMilestoneService([]),
+            new StubJiraService(),
+            new StubConfluenceService(),
+            new StubPlanningService(),
+            new StubWorklogEffortService { Error = new InvalidOperationException(diagnostic) })
+        {
+            PageContext = new PageContext
+            {
+                HttpContext = new DefaultHttpContext
+                {
+                    User = new ClaimsPrincipal(new ClaimsIdentity(claims, "Test"))
+                }
+            }
+        };
+
+        await model.OnGetAsync(CancellationToken.None);
+
+        model.EffortErrorMessage.Should().Be(diagnostic);
+        model.EffortErrorDisplayMessage.Should().Be(expectedDisplayMessage);
     }
 
     [Fact]
@@ -361,6 +400,7 @@ public sealed class SupportSummaryModelTests
         public DateOnly? StartDate { get; private set; }
         public DateOnly? EndDate { get; private set; }
         public WorklogEffortReport Report { get; set; } = new();
+        public Exception? Error { get; set; }
 
         public Task<WorklogEffortReport> GetActualEffortAsync(
             DateOnly startDate,
@@ -369,6 +409,7 @@ public sealed class SupportSummaryModelTests
         {
             StartDate = startDate;
             EndDate = endDate;
+            if (Error is not null) throw Error;
             return Task.FromResult(Report);
         }
     }
