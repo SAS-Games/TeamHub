@@ -100,7 +100,7 @@ else
         {
             <div class="table-responsive">
                 <table class="table styled-table align-middle">
-                    <thead><tr><th>Studio</th><th>Project</th><th>Milestone</th><th>Description</th><th>Delivery</th><th>Approval</th><th>Release</th></tr></thead>
+                    <thead><tr><th>Studio</th><th>Project</th><th>Milestone</th><th>Description</th><th>Delivery</th><th>Approval</th><th>Release Date</th></tr></thead>
                     <tbody>
                     @foreach (var item in Model.ActiveMilestones)
                     {
@@ -112,124 +112,6 @@ else
                             <td>@(item.Milestone.DeliveryDate?.ToString("dd MMM yyyy") ?? "TBC")</td>
                             <td>@(item.Milestone.MsApprovalDate?.ToString("dd MMM yyyy") ?? "-")</td>
                             <td>@(item.Milestone.ReleaseDate?.ToString("dd MMM yyyy") ?? "-")</td>
-                        </tr>
-                    }
-                    </tbody>
-                </table>
-            </div>
-        }
-    </section>
-
-    <section class="content-section" id="expected-deliveries">
-        <div class="section-heading">
-            <div><span>@Model.ExpectedDeliveries.Count item(s)</span><h2>Expected Milestone Build Deliveries</h2></div>
-            @if (Model.CanManagePlanning)
-            {
-                <strong>Admin managed</strong>
-            }
-        </div>
-        @if (Model.CanManagePlanning)
-        {
-            <form id="expected-delivery-new" method="post" asp-page-handler="SaveExpectedDelivery"></form>
-            @foreach (var item in Model.ExpectedDeliveries)
-            {
-                <form id="expected-delivery-@item.Id" method="post" asp-page-handler="SaveExpectedDelivery"></form>
-                <form id="expected-delivery-delete-@item.Id" method="post" asp-page-handler="DeleteExpectedDelivery">
-                    <input type="hidden" name="id" value="@item.Id" />
-                </form>
-            }
-        }
-        @if (Model.ExpectedDeliveries.Count == 0 && !Model.CanManagePlanning)
-        {
-            <div class="section-body text-secondary">No expected milestone build deliveries have been added.</div>
-        }
-        else
-        {
-            <div class="table-responsive">
-                <table class="table styled-table align-middle">
-                    <thead>
-                        <tr>
-                            <th>Project Name</th>
-                            <th>Milestone Description</th>
-                            <th>Expected Delivery Date</th>
-                            @if (Model.CanManagePlanning) { <th class="text-end">Actions</th> }
-                        </tr>
-                    </thead>
-                    <tbody>
-                    @foreach (var item in Model.ExpectedDeliveries)
-                    {
-                        if (Model.CanManagePlanning)
-                        {
-                            var formId = $"expected-delivery-{item.Id}";
-                            <tr>
-                                <td>
-                                    <input type="hidden" name="id" value="@item.Id" form="@formId" />
-                                    <select class="form-select" name="projectName" form="@formId" data-planning-project required>
-                                        @foreach (var project in Model.Studios.Select(studio => studio.ProjectName).Distinct(StringComparer.OrdinalIgnoreCase))
-                                        {
-                                            <option value="@project" selected="@(string.Equals(project, item.ProjectName, StringComparison.OrdinalIgnoreCase) ? "selected" : null)">@project</option>
-                                        }
-                                    </select>
-                                </td>
-                                <td>
-                                    <select class="form-select" name="milestoneDescription" form="@formId" data-milestone-description required>
-                                        <option value="">Select milestone description</option>
-                                        @if (!Model.MilestoneDescriptionOptions.Any(option =>
-                                            string.Equals(option.ProjectName, item.ProjectName, StringComparison.OrdinalIgnoreCase)
-                                            && string.Equals(option.Description, item.MilestoneDescription, StringComparison.OrdinalIgnoreCase)))
-                                        {
-                                            <option value="@item.MilestoneDescription" data-project="@item.ProjectName" selected>@item.MilestoneDescription</option>
-                                        }
-                                        @foreach (var option in Model.MilestoneDescriptionOptions)
-                                        {
-                                            <option value="@option.Description"
-                                                    data-project="@option.ProjectName"
-                                                    selected="@(string.Equals(option.ProjectName, item.ProjectName, StringComparison.OrdinalIgnoreCase)
-                                                        && string.Equals(option.Description, item.MilestoneDescription, StringComparison.OrdinalIgnoreCase) ? "selected" : null)">
-                                                @option.Description
-                                            </option>
-                                        }
-                                    </select>
-                                </td>
-                                <td><input class="form-control" type="date" name="expectedDeliveryDate" value="@item.ExpectedDeliveryDate.ToString("yyyy-MM-dd")" form="@formId" required /></td>
-                                <td class="text-end text-nowrap">
-                                    <button class="btn btn-sm btn-primary" type="submit" form="@formId">Save</button>
-                                    <button class="btn btn-sm btn-outline-danger" type="submit" form="expected-delivery-delete-@item.Id" onclick="return confirm('Remove this expected delivery row?');">Remove</button>
-                                </td>
-                            </tr>
-                        }
-                        else
-                        {
-                            <tr>
-                                <td>@item.ProjectName</td>
-                                <td>@item.MilestoneDescription</td>
-                                <td>@item.ExpectedDeliveryDate.ToString("dd MMM yyyy")</td>
-                            </tr>
-                        }
-                    }
-                    @if (Model.CanManagePlanning)
-                    {
-                        <tr class="table-light">
-                            <td>
-                                <select class="form-select" name="projectName" form="expected-delivery-new" data-planning-project required>
-                                    <option value="">Select project</option>
-                                    @foreach (var project in Model.Studios.Select(studio => studio.ProjectName).Distinct(StringComparer.OrdinalIgnoreCase))
-                                    {
-                                        <option value="@project">@project</option>
-                                    }
-                                </select>
-                            </td>
-                            <td>
-                                <select class="form-select" name="milestoneDescription" form="expected-delivery-new" data-milestone-description required>
-                                    <option value="">Select milestone description</option>
-                                    @foreach (var option in Model.MilestoneDescriptionOptions)
-                                    {
-                                        <option value="@option.Description" data-project="@option.ProjectName">@option.Description</option>
-                                    }
-                                </select>
-                            </td>
-                            <td><input class="form-control" type="date" name="expectedDeliveryDate" form="expected-delivery-new" required /></td>
-                            <td class="text-end"><button class="btn btn-sm btn-primary" type="submit" form="expected-delivery-new">Add</button></td>
                         </tr>
                     }
                     </tbody>
@@ -376,6 +258,124 @@ else
                             <td class="text-secondary text-nowrap">Calculated on save</td>
                             <td><input class="form-control" type="date" name="eta" form="build-review-new" required /></td>
                             <td class="text-end"><button class="btn btn-sm btn-primary" type="submit" form="build-review-new">Add</button></td>
+                        </tr>
+                    }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </section>
+
+    <section class="content-section" id="expected-deliveries">
+        <div class="section-heading">
+            <div><span>@Model.ExpectedDeliveries.Count item(s)</span><h2>Expected Milestone Build Deliveries</h2></div>
+            @if (Model.CanManagePlanning)
+            {
+                <strong>Admin managed</strong>
+            }
+        </div>
+        @if (Model.CanManagePlanning)
+        {
+            <form id="expected-delivery-new" method="post" asp-page-handler="SaveExpectedDelivery"></form>
+            @foreach (var item in Model.ExpectedDeliveries)
+            {
+                <form id="expected-delivery-@item.Id" method="post" asp-page-handler="SaveExpectedDelivery"></form>
+                <form id="expected-delivery-delete-@item.Id" method="post" asp-page-handler="DeleteExpectedDelivery">
+                    <input type="hidden" name="id" value="@item.Id" />
+                </form>
+            }
+        }
+        @if (Model.ExpectedDeliveries.Count == 0 && !Model.CanManagePlanning)
+        {
+            <div class="section-body text-secondary">No expected milestone build deliveries have been added.</div>
+        }
+        else
+        {
+            <div class="table-responsive">
+                <table class="table styled-table align-middle">
+                    <thead>
+                        <tr>
+                            <th>Project Name</th>
+                            <th>Milestone Description</th>
+                            <th>Expected Delivery Date</th>
+                            @if (Model.CanManagePlanning) { <th class="text-end">Actions</th> }
+                        </tr>
+                    </thead>
+                    <tbody>
+                    @foreach (var item in Model.ExpectedDeliveries)
+                    {
+                        if (Model.CanManagePlanning)
+                        {
+                            var formId = $"expected-delivery-{item.Id}";
+                            <tr>
+                                <td>
+                                    <input type="hidden" name="id" value="@item.Id" form="@formId" />
+                                    <select class="form-select" name="projectName" form="@formId" data-planning-project required>
+                                        @foreach (var project in Model.Studios.Select(studio => studio.ProjectName).Distinct(StringComparer.OrdinalIgnoreCase))
+                                        {
+                                            <option value="@project" selected="@(string.Equals(project, item.ProjectName, StringComparison.OrdinalIgnoreCase) ? "selected" : null)">@project</option>
+                                        }
+                                    </select>
+                                </td>
+                                <td>
+                                    <select class="form-select" name="milestoneDescription" form="@formId" data-milestone-description required>
+                                        <option value="">Select milestone description</option>
+                                        @if (!Model.MilestoneDescriptionOptions.Any(option =>
+                                            string.Equals(option.ProjectName, item.ProjectName, StringComparison.OrdinalIgnoreCase)
+                                            && string.Equals(option.Description, item.MilestoneDescription, StringComparison.OrdinalIgnoreCase)))
+                                        {
+                                            <option value="@item.MilestoneDescription" data-project="@item.ProjectName" selected>@item.MilestoneDescription</option>
+                                        }
+                                        @foreach (var option in Model.MilestoneDescriptionOptions)
+                                        {
+                                            <option value="@option.Description"
+                                                    data-project="@option.ProjectName"
+                                                    selected="@(string.Equals(option.ProjectName, item.ProjectName, StringComparison.OrdinalIgnoreCase)
+                                                        && string.Equals(option.Description, item.MilestoneDescription, StringComparison.OrdinalIgnoreCase) ? "selected" : null)">
+                                                @option.Description
+                                            </option>
+                                        }
+                                    </select>
+                                </td>
+                                <td><input class="form-control" type="date" name="expectedDeliveryDate" value="@item.ExpectedDeliveryDate.ToString("yyyy-MM-dd")" form="@formId" required /></td>
+                                <td class="text-end text-nowrap">
+                                    <button class="btn btn-sm btn-primary" type="submit" form="@formId">Save</button>
+                                    <button class="btn btn-sm btn-outline-danger" type="submit" form="expected-delivery-delete-@item.Id" onclick="return confirm('Remove this expected delivery row?');">Remove</button>
+                                </td>
+                            </tr>
+                        }
+                        else
+                        {
+                            <tr>
+                                <td>@item.ProjectName</td>
+                                <td>@item.MilestoneDescription</td>
+                                <td>@item.ExpectedDeliveryDate.ToString("dd MMM yyyy")</td>
+                            </tr>
+                        }
+                    }
+                    @if (Model.CanManagePlanning)
+                    {
+                        <tr class="table-light">
+                            <td>
+                                <select class="form-select" name="projectName" form="expected-delivery-new" data-planning-project required>
+                                    <option value="">Select project</option>
+                                    @foreach (var project in Model.Studios.Select(studio => studio.ProjectName).Distinct(StringComparer.OrdinalIgnoreCase))
+                                    {
+                                        <option value="@project">@project</option>
+                                    }
+                                </select>
+                            </td>
+                            <td>
+                                <select class="form-select" name="milestoneDescription" form="expected-delivery-new" data-milestone-description required>
+                                    <option value="">Select milestone description</option>
+                                    @foreach (var option in Model.MilestoneDescriptionOptions)
+                                    {
+                                        <option value="@option.Description" data-project="@option.ProjectName">@option.Description</option>
+                                    }
+                                </select>
+                            </td>
+                            <td><input class="form-control" type="date" name="expectedDeliveryDate" form="expected-delivery-new" required /></td>
+                            <td class="text-end"><button class="btn btn-sm btn-primary" type="submit" form="expected-delivery-new">Add</button></td>
                         </tr>
                     }
                     </tbody>

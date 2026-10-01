@@ -246,7 +246,8 @@ public sealed class SupportSummaryModel(
                 .Where(milestone => !milestone.Milestone.StartsWith("Total MS", StringComparison.OrdinalIgnoreCase))
                 .ToList();
             var upcomingMilestones = selectableMilestones
-                .Where(milestone => !milestone.DeliveryDate.HasValue || milestone.DeliveryDate.Value.Date >= today)
+                .Where(milestone => GetMilestoneCompletionDate(milestone) is not DateTime completionDate
+                    || completionDate.Date >= today)
                 .ToList();
             MilestoneDescriptionOptions = Studios
                 .SelectMany(studio => selectableMilestones
@@ -266,7 +267,7 @@ public sealed class SupportSummaryModel(
                 {
                     var nextMilestone = upcomingMilestones
                         .Where(milestone => IsProjectMilestone(studio.ProjectName, milestone))
-                        .OrderBy(milestone => milestone.DeliveryDate ?? DateTime.MaxValue)
+                        .OrderBy(milestone => GetMilestoneCompletionDate(milestone) ?? DateTime.MaxValue)
                         .FirstOrDefault();
                     return nextMilestone is null
                         ? null
@@ -542,6 +543,9 @@ public sealed class SupportSummaryModel(
     private static bool IsProjectMilestone(string projectName, MilestoneDto milestone) =>
         string.Equals(milestone.Title, projectName, StringComparison.OrdinalIgnoreCase)
         || string.Equals(milestone.Program, projectName, StringComparison.OrdinalIgnoreCase);
+
+    private static DateTime? GetMilestoneCompletionDate(MilestoneDto milestone) =>
+        milestone.ReleaseDate ?? milestone.MsApprovalDate ?? milestone.DeliveryDate;
 
     private static readonly string[] EffortColors =
     [
