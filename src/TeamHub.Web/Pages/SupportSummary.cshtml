@@ -111,7 +111,7 @@ else
                             <td>@item.Milestone.Description</td>
                             <td>@(item.Milestone.DeliveryDate?.ToString("dd MMM yyyy") ?? "TBC")</td>
                             <td>@(item.Milestone.MsApprovalDate?.ToString("dd MMM yyyy") ?? "-")</td>
-                            <td>@(item.Milestone.ReleaseDate?.ToString("dd MMM yyyy") ?? "-")</td>
+                            <td>@(item.ReleaseDate?.ToString("dd MMM yyyy") ?? "-")</td>
                         </tr>
                     }
                     </tbody>

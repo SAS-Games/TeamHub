@@ -245,10 +245,6 @@ public sealed class SupportSummaryModel(
             var selectableMilestones = milestones
                 .Where(milestone => !milestone.Milestone.StartsWith("Total MS", StringComparison.OrdinalIgnoreCase))
                 .ToList();
-            var upcomingMilestones = selectableMilestones
-                .Where(milestone => GetMilestoneCompletionDate(milestone) is not DateTime completionDate
-                    || completionDate.Date >= today)
-                .ToList();
             MilestoneDescriptionOptions = Studios
                 .SelectMany(studio => selectableMilestones
                     .Where(milestone => IsProjectMilestone(studio.ProjectName, milestone))
@@ -265,13 +261,19 @@ public sealed class SupportSummaryModel(
             ActiveMilestones = Studios
                 .Select(studio =>
                 {
-                    var nextMilestone = upcomingMilestones
+                    var projectMilestones = selectableMilestones
                         .Where(milestone => IsProjectMilestone(studio.ProjectName, milestone))
-                        .OrderBy(milestone => GetMilestoneCompletionDate(milestone) ?? DateTime.MaxValue)
+                        .ToList();
+                    var nextMilestone = projectMilestones
+                        .Where(milestone => !milestone.DeliveryDate.HasValue || milestone.DeliveryDate.Value.Date >= today)
+                        .OrderBy(milestone => milestone.DeliveryDate ?? DateTime.MaxValue)
                         .FirstOrDefault();
+                    var releaseDate = projectMilestones
+                        .LastOrDefault(milestone => milestone.ReleaseDate.HasValue)?
+                        .ReleaseDate;
                     return nextMilestone is null
                         ? null
-                        : new SupportSummaryMilestone(studio, nextMilestone);
+                        : new SupportSummaryMilestone(studio, nextMilestone, releaseDate);
                 })
                 .OfType<SupportSummaryMilestone>()
                 .Where(item => MatchesSearch(
@@ -544,9 +546,6 @@ public sealed class SupportSummaryModel(
         string.Equals(milestone.Title, projectName, StringComparison.OrdinalIgnoreCase)
         || string.Equals(milestone.Program, projectName, StringComparison.OrdinalIgnoreCase);
 
-    private static DateTime? GetMilestoneCompletionDate(MilestoneDto milestone) =>
-        milestone.ReleaseDate ?? milestone.MsApprovalDate ?? milestone.DeliveryDate;
-
     private static readonly string[] EffortColors =
     [
         "#287565",
@@ -564,7 +563,7 @@ public sealed class SupportSummaryModel(
     ];
 }
 
-public sealed record SupportSummaryMilestone(StudioDetails Studio, MilestoneDto Milestone);
+public sealed record SupportSummaryMilestone(StudioDetails Studio, MilestoneDto Milestone, DateTime? ReleaseDate);
 public sealed record SupportSummaryMilestoneDescriptionOption(string ProjectName, string Description);
 public sealed record SupportSummaryTicket(StudioDetails Studio, string SupportType, StudioJiraTicket Ticket);
 public sealed record SupportSummaryMessage(StudioDetails Studio, string Message);
