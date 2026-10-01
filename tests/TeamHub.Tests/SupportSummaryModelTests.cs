@@ -269,6 +269,46 @@ public sealed class SupportSummaryModelTests
             "Unscheduled third milestone");
     }
 
+    [Fact]
+    public async Task OnGetAsync_KeepsDeliveredMilestoneActiveUntilItsReleaseDate()
+    {
+        var studio = Studio("active", "Alpha Studio", "Alpha Project", isActive: true);
+        var releaseDate = DateTime.Today.AddDays(7);
+        var model = new SupportSummaryModel(
+            new StubStudioDirectoryService([studio]),
+            new StubMilestoneService(
+            [
+                new()
+                {
+                    Title = studio.ProjectName,
+                    Milestone = "Release candidate",
+                    DeliveryDate = DateTime.Today.AddDays(-1),
+                    MsApprovalDate = DateTime.Today.AddDays(3),
+                    ReleaseDate = releaseDate
+                },
+                new()
+                {
+                    Title = studio.ProjectName,
+                    Milestone = "Next delivery",
+                    DeliveryDate = DateTime.Today.AddDays(10),
+                    ReleaseDate = DateTime.Today.AddDays(14)
+                }
+            ]),
+            new StubJiraService(),
+            new StubConfluenceService(),
+            new StubPlanningService(),
+            new StubWorklogEffortService())
+        {
+            PageContext = new PageContext { HttpContext = new DefaultHttpContext() }
+        };
+
+        await model.OnGetAsync(CancellationToken.None);
+
+        model.ActiveMilestones.Should().ContainSingle();
+        model.ActiveMilestones[0].Milestone.Milestone.Should().Be("Release candidate");
+        model.ActiveMilestones[0].Milestone.ReleaseDate.Should().Be(releaseDate);
+    }
+
     private static StudioDetails Studio(string id, string name, string project, bool isActive) => new()
     {
         Id = id,
