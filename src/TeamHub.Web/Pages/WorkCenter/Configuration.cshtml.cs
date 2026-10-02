@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
 using Microsoft.EntityFrameworkCore;
+using TeamHub.Authentication;
 using TeamHub.Application.Interfaces;
 using TeamHub.Application.Models;
 using TeamHub.Domain.Entities;
@@ -11,18 +12,22 @@ using TeamHub.Infrastructure.Persistence;
 
 namespace TeamHub.Web.Pages.WorkCenter;
 
-[Authorize]
+[Authorize(Roles = TeamHubUserTypes.Admin)]
 public class ConfigurationModel(
     IWorkflowConfigurationService configurationService,
     WorkflowDbContext dbContext,
     IFlowService flows,
-    IFlowTemplateCatalogService templates) : PageModel
+    IFlowTemplateCatalogService templates,
+    IFlowPublicationWorkflowService publications) : PageModel
 {
     [BindProperty]
     public WorkflowDraftInput Input { get; set; } = new();
 
     [TempData]
     public string? StatusMessage { get; set; }
+
+    [TempData]
+    public string? ErrorMessage { get; set; }
 
     public IReadOnlyList<WorkflowDraftSummaryDto> Drafts { get; private set; } = [];
     public IReadOnlyList<FlowSummary> VisualWorkflows { get; private set; } = [];
@@ -121,9 +126,70 @@ public class ConfigurationModel(
     }
 
     public async Task<IActionResult> OnPostDeleteVisualAsync(Guid id, CancellationToken cancellationToken)
+
     {
         await flows.DeleteAsync(id, cancellationToken);
         StatusMessage = "Visual workflow deleted.";
+        return RedirectToPage();
+    }
+
+    public async Task<IActionResult> OnPostPublishVisualAsync(Guid id, CancellationToken cancellationToken)
+    {
+        var flow = await flows.GetAsync(id, cancellationToken);
+        if (flow is null || flow.DiagramType != DiagramType.WorkCenterWorkflow)
+        {
+            return NotFound();
+        }
+
+        try
+        {
+            var request = await publications.RequestAsync(id, cancellationToken);
+            await publications.ApproveAsync(
+                request.Id,
+                "Published directly from the Work Center Workflow Library.",
+                cancellationToken);
+
+            var workflowKey = NormalizeKey(
+                flow.Metadata.TryGetValue("workflowKey", out var configuredKey)
+                    && !string.IsNullOrWhiteSpace(configuredKey)
+                    ? configuredKey
+                    : flow.Name);
+            var definition = await dbContext.WorkflowDefinitions
+                .Where(item => item.WorkflowKey == workflowKey && item.IsActive)
+                .OrderByDescending(item => item.Version)
+                .FirstAsync(cancellationToken);
+            definition.Enabled = true;
+            await dbContext.SaveChangesAsync(cancellationToken);
+
+            return RedirectToPage("/WorkCenter/StartNew", new { workflowKey, published = true });
+        }
+        catch (Exception exception) when (exception is InvalidOperationException
+            or ArgumentException
+            or UnauthorizedAccessException
+            or KeyNotFoundException)
+        {
+            ErrorMessage = exception.Message;
+            return RedirectToPage();
+        }
+    }
+
+    public async Task<IActionResult> OnPostSetAvailabilityAsync(
+        Guid definitionId,
+        bool enabled,
+        CancellationToken cancellationToken)
+    {
+        var definition = await dbContext.WorkflowDefinitions
+            .FirstOrDefaultAsync(item => item.Id == definitionId && item.IsActive, cancellationToken);
+        if (definition is null)
+        {
+            return NotFound();
+        }
+
+        definition.Enabled = enabled;
+        await dbContext.SaveChangesAsync(cancellationToken);
+        StatusMessage = enabled
+            ? $"'{definition.Name}' is now available in Start New."
+            : $"New starts for '{definition.Name}' are paused. Existing runs are unaffected.";
         return RedirectToPage();
     }
 
@@ -138,11 +204,17 @@ public class ConfigurationModel(
             .Where(template => template.DiagramType == DiagramType.WorkCenterWorkflow)
             .ToList();
         PublishedDefinitions = await dbContext.WorkflowDefinitions
+
             .AsNoTracking()
             .Where(x => x.IsActive)
             .OrderBy(x => x.WorkflowKey)
             .ToListAsync(cancellationToken);
+
     }
+
+    private static string NormalizeKey(string value) =>
+        string.Join('_', value.Trim().ToUpperInvariant().Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
+
 
     private void NormalizeInputRows()
     {

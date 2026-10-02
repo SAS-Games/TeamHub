@@ -179,6 +179,10 @@ public class WorkflowEngineTests
             StepName = "Task 1",
             Owner = "HR@COMPANY.COM",
             Status = WorkflowStepStatus.InProgress,
+            Assignees =
+            [
+                new WorkflowStepAssignee { Email = "HR@COMPANY.COM" }
+            ],
             ExpectedDurationHours = 1,
             Required = true,
             SortOrder = 1,
@@ -241,6 +245,224 @@ public class WorkflowEngineTests
         auditCount.Should().Be(1);
         var audit = await context.AuditLogs.SingleAsync(x => x.WorkflowStepInstanceId == employee.Id && x.EventType == "StepCompleted");
         audit.DetailsJson.Should().Contain("Employee ID verified.");
+    }
+
+
+    [Fact]
+    public async Task CompletingFinalRequiredStep_SkipsRemainingOptionalTasksBeforeCompletingWorkflow()
+    {
+        await using var context = CreateDbContext();
+        var clock = new TestClock(new DateTime(2026, 9, 4, 10, 0, 0, DateTimeKind.Utc));
+        var notification = new TestNotificationService();
+        var engine = new WorkflowEngineService(context, clock, notification);
+        var definition = SeedSimpleWorkflow(context);
+
+        foreach (var optionalDefinition in definition.Steps.Where(step => step.StepKey != "EMPLOYEE_ID"))
+        {
+            optionalDefinition.Required = false;
+        }
+        await context.SaveChangesAsync();
+
+        var instanceId = await engine.StartWorkflowAsync(new StartWorkflowRequest
+        {
+            WorkflowKey = definition.WorkflowKey,
+            InstanceName = "Optional closure",
+            StartedBy = "admin"
+        });
+        var requiredStep = await context.WorkflowStepInstances
+            .SingleAsync(step => step.WorkflowInstanceId == instanceId && step.StepKey == "EMPLOYEE_ID");
+
+        await engine.CompleteStepAsync(new StepCompletionRequest
+        {
+            StepInstanceId = requiredStep.Id,
+            Actor = "hr@company.com"
+        });
+
+        var instance = await context.WorkflowInstances.SingleAsync(item => item.Id == instanceId);
+        var remainingSteps = await context.WorkflowStepInstances
+            .Where(item => item.WorkflowInstanceId == instanceId && item.Id != requiredStep.Id)
+            .ToListAsync();
+
+        instance.Status.Should().Be(WorkflowInstanceStatus.Completed);
+        remainingSteps.Should().OnlyContain(item => item.Status == WorkflowStepStatus.Skipped);
+        (await context.AuditLogs.CountAsync(item =>
+            item.WorkflowInstanceId == instanceId && item.EventType == "StepSkipped"))
+            .Should().Be(remainingSteps.Count);
+        notification.Sent.Count(item => item.Type == NotificationType.Assignment).Should().Be(1);
+    }
+
+    [Fact]
+    public async Task MyTasks_ExcludesTasksFromTerminalWorkflow()
+    {
+        await using var context = CreateDbContext();
+        var clock = new TestClock(new DateTime(2026, 9, 4, 10, 0, 0, DateTimeKind.Utc));
+        var engine = new WorkflowEngineService(context, clock, new TestNotificationService());
+        var definition = SeedSimpleWorkflow(context);
+        var instanceId = await engine.StartWorkflowAsync(new StartWorkflowRequest
+        {
+            WorkflowKey = definition.WorkflowKey,
+            InstanceName = "Legacy terminal run",
+            StartedBy = "admin"
+        });
+
+        var instance = await context.WorkflowInstances.SingleAsync(item => item.Id == instanceId);
+        instance.Status = WorkflowInstanceStatus.Completed;
+        instance.CompletedAtUtc = clock.UtcNow;
+        await context.SaveChangesAsync();
+
+        var tasks = await new WorkflowReadService(context, clock)
+            .GetMyTasksAsync("hr@company.com");
+
+        tasks.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task WorkflowSummaries_FilterByRunStatus()
+    {
+        await using var context = CreateDbContext();
+        var clock = new TestClock(new DateTime(2026, 9, 4, 10, 0, 0, DateTimeKind.Utc));
+        var definition = SeedSimpleWorkflow(context);
+
+        context.WorkflowInstances.AddRange(
+            new WorkflowInstance
+            {
+                WorkflowDefinition = definition,
+                InstanceName = "Active",
+                Status = WorkflowInstanceStatus.InProgress,
+                StartedAtUtc = clock.UtcNow,
+                StartedBy = "admin"
+            },
+            new WorkflowInstance
+            {
+                WorkflowDefinition = definition,
+                InstanceName = "Completed",
+                Status = WorkflowInstanceStatus.Completed,
+                StartedAtUtc = clock.UtcNow.AddDays(-2),
+                CompletedAtUtc = clock.UtcNow.AddDays(-1),
+                StartedBy = "admin"
+            },
+            new WorkflowInstance
+            {
+                WorkflowDefinition = definition,
+                InstanceName = "Cancelled",
+                Status = WorkflowInstanceStatus.Cancelled,
+                StartedAtUtc = clock.UtcNow.AddDays(-3),
+                CancelledAtUtc = clock.UtcNow.AddDays(-2),
+                StartedBy = "admin"
+            });
+        await context.SaveChangesAsync();
+
+        var service = new WorkflowReadService(context, clock);
+        var active = await service.GetWorkflowSummariesAsync(WorkflowInstanceStatus.InProgress);
+        var completed = await service.GetWorkflowSummariesAsync(WorkflowInstanceStatus.Completed);
+
+        active.Should().ContainSingle(item => item.InstanceName == "Active");
+        completed.Should().ContainSingle(item => item.InstanceName == "Completed");
+        completed.Single().CompletedAtUtc.Should().Be(clock.UtcNow.AddDays(-1));
+    }
+
+
+    [Fact]
+    public async Task MultiAssigneeTask_AdvancesOnlyAfterEveryAssigneeCompletes()
+    {
+        await using var context = CreateDbContext();
+        var clock = new TestClock(new DateTime(2026, 9, 4, 10, 0, 0, DateTimeKind.Utc));
+        var notifications = new TestNotificationService();
+        var engine = new WorkflowEngineService(context, clock, notifications);
+        var definition = SeedSimpleWorkflow(context);
+        var firstDefinition = await context.WorkflowStepDefinitions
+            .SingleAsync(step => step.WorkflowDefinitionId == definition.Id && step.StepKey == "EMPLOYEE_ID");
+        firstDefinition.Owner = "hr@company.com; manager@company.com";
+        await context.SaveChangesAsync();
+
+        var instanceId = await engine.StartWorkflowAsync(new StartWorkflowRequest
+        {
+            WorkflowKey = definition.WorkflowKey,
+            InstanceName = "Shared task",
+            StartedBy = "admin"
+        });
+        var step = await context.WorkflowStepInstances
+            .SingleAsync(item => item.WorkflowInstanceId == instanceId && item.StepKey == "EMPLOYEE_ID");
+
+        notifications.Sent
+            .Where(message => message.Type == NotificationType.Assignment)
+            .Select(message => message.Recipient)
+            .Should().BeEquivalentTo("hr@company.com", "manager@company.com");
+
+        await engine.CompleteStepAsync(new StepCompletionRequest
+        {
+            StepInstanceId = step.Id,
+            Actor = "hr@company.com",
+            Comment = "HR portion complete."
+        });
+
+        step = await context.WorkflowStepInstances
+            .Include(item => item.Assignees)
+            .SingleAsync(item => item.Id == step.Id);
+        step.Status.Should().Be(WorkflowStepStatus.InProgress);
+        step.Assignees.Single(item => item.Email == "hr@company.com").CompletedAtUtc.Should().NotBeNull();
+        step.Assignees.Single(item => item.Email == "manager@company.com").CompletedAtUtc.Should().BeNull();
+
+        var managerTasks = await new WorkflowReadService(context, clock)
+            .GetMyTasksAsync("manager@company.com");
+        managerTasks.Should().ContainSingle();
+        managerTasks.Single().CompletedAssignees.Should().Be(1);
+        managerTasks.Single().TotalAssignees.Should().Be(2);
+
+        await engine.CompleteStepAsync(new StepCompletionRequest
+        {
+            StepInstanceId = step.Id,
+            Actor = "manager@company.com",
+            Comment = "Manager portion complete."
+        });
+
+        step = await context.WorkflowStepInstances.SingleAsync(item => item.Id == step.Id);
+        step.Status.Should().Be(WorkflowStepStatus.Completed);
+        (await context.AuditLogs.CountAsync(item =>
+            item.WorkflowStepInstanceId == step.Id && item.EventType == "AssigneeCompleted"))
+            .Should().Be(2);
+    }
+
+    [Fact]
+    public async Task ReminderCycle_NotifiesEveryOutstandingAssigneeIndividually()
+    {
+        await using var context = CreateDbContext();
+        var clock = new TestClock(new DateTime(2026, 9, 4, 10, 0, 0, DateTimeKind.Utc));
+        var notifications = new TestNotificationService();
+        var engine = new WorkflowEngineService(context, clock, notifications);
+        var definition = SeedSimpleWorkflow(context);
+        var firstDefinition = await context.WorkflowStepDefinitions
+            .SingleAsync(step => step.WorkflowDefinitionId == definition.Id && step.StepKey == "EMPLOYEE_ID");
+        firstDefinition.Owner = "hr@company.com; manager@company.com";
+        firstDefinition.ReminderAfterHours = 1;
+        firstDefinition.ReminderRepeatHours = 1;
+        await context.SaveChangesAsync();
+
+        var instanceId = await engine.StartWorkflowAsync(new StartWorkflowRequest
+        {
+            WorkflowKey = definition.WorkflowKey,
+            InstanceName = "Reminder fan-out",
+            StartedBy = "admin"
+        });
+        var step = await context.WorkflowStepInstances
+            .SingleAsync(item => item.WorkflowInstanceId == instanceId && item.StepKey == "EMPLOYEE_ID");
+        notifications.Sent.Clear();
+
+        clock.UtcNow = clock.UtcNow.AddHours(2);
+        (await engine.RunReminderCycleAsync()).Should().Be(2);
+        notifications.Sent.Select(message => message.Recipient)
+            .Should().BeEquivalentTo("hr@company.com", "manager@company.com");
+
+        await engine.CompleteStepAsync(new StepCompletionRequest
+        {
+            StepInstanceId = step.Id,
+            Actor = "hr@company.com"
+        });
+        notifications.Sent.Clear();
+        clock.UtcNow = clock.UtcNow.AddHours(2);
+
+        (await engine.RunReminderCycleAsync()).Should().Be(1);
+        notifications.Sent.Should().ContainSingle(message => message.Recipient == "manager@company.com");
     }
 
     private static WorkflowDbContext CreateDbContext()

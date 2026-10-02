@@ -9,7 +9,7 @@
     <div>
         <div class="eyebrow">Work Center</div>
         <h1>Start New</h1>
-        <p>Kick off a new workflow instance.</p>
+        <p>Start a run from a published workflow that is currently available.</p>
     </div>
 </div>
 <partial name="_WorkCenterNav" />
@@ -19,29 +19,71 @@
     <div class="alert alert-success">@Model.ResultMessage</div>
 }
 
-<section class="content-section">
-<form method="post" class="section-body">
-    <div class="mb-3">
-        <label class="form-label">Workflow</label>
-        <select asp-for="Input.WorkflowKey" class="form-select" required>
-            <option value="">Select workflow</option>
-            @foreach (var workflow in Model.Workflows)
-            {
-                <option value="@workflow.Key">@workflow.Name (v@(workflow.Version))</option>
-            }
-        </select>
-    </div>
+@if (Model.Workflows.Count == 0)
+{
+    <section class="content-section">
+        <div class="section-body">
+            <div class="alert alert-info mb-0">
+                <strong>No workflows are available to start.</strong>
+                A workflow must be published and marked Available before it appears here.
+                @if (User.IsInRole("Admin"))
+                {
+                    <a class="alert-link" asp-page="/WorkCenter/Configuration">Open Workflow Library</a>
+                }
+            </div>
+        </div>
+    </section>
+}
+else
+{
+    <section class="content-section">
+        <form method="post" class="section-body">
+            <div asp-validation-summary="All" class="text-danger mb-3"></div>
 
-    <div class="mb-3">
-        <label class="form-label">Instance Name</label>
-        <input asp-for="Input.InstanceName" class="form-control" required />
-    </div>
+            <div class="mb-3">
+                <label asp-for="Input.WorkflowKey" class="form-label">Workflow</label>
+                <select asp-for="Input.WorkflowKey" class="form-select" required>
+                    <option value="">Select workflow</option>
+                    @foreach (var workflow in Model.Workflows)
+                    {
+                        <option value="@workflow.Key">@workflow.Name (v@(workflow.Version), @workflow.StepCount task@(workflow.StepCount == 1 ? "" : "s"))</option>
+                    }
+                </select>
+                <div class="form-text">Only current, published workflows with starts enabled are listed.</div>
+            </div>
 
-    <div class="mb-3">
-        <label class="form-label">Description</label>
-        <textarea asp-for="Input.Description" class="form-control"></textarea>
-    </div>
+            <div class="mb-3">
+                <label asp-for="Input.InstanceName" class="form-label">Instance Name</label>
+                <input asp-for="Input.InstanceName" class="form-control" required />
+                <div class="form-text">Use a recognizable project, person, or delivery name.</div>
+            </div>
 
-    <button type="submit" class="btn btn-primary">Start Workflow</button>
-</form>
-</section>
+            <div class="mb-3">
+                <label asp-for="Input.Description" class="form-label">Description</label>
+                <textarea asp-for="Input.Description" class="form-control" rows="3"></textarea>
+            </div>
+
+            <button type="submit" class="btn btn-primary">Start Workflow</button>
+        </form>
+    </section>
+
+    <section class="content-section">
+        <div class="section-heading"><div><span>Available definitions</span><h2>What can be started</h2></div></div>
+        <div class="table-responsive">
+            <table class="table styled-table align-middle">
+                <thead><tr><th>Workflow</th><th>Version</th><th>Tasks</th><th>Published (UTC)</th></tr></thead>
+                <tbody>
+                @foreach (var workflow in Model.Workflows)
+                {
+                    <tr>
+                        <td><strong>@workflow.Name</strong><div class="small text-secondary">@workflow.Description</div></td>
+                        <td>@workflow.Version</td>
+                        <td>@workflow.StepCount</td>
+                        <td>@workflow.PublishedAtUtc.ToString("yyyy-MM-dd HH:mm")</td>
+                    </tr>
+                }
+                </tbody>
+            </table>
+        </div>
+    </section>
+}

@@ -229,8 +229,17 @@
                 <section id="workCenterTaskProperties" class="d-none" aria-labelledby="workCenterTaskHeading">
                     <h3 id="workCenterTaskHeading" class="h6 mb-3">Work Center task</h3>
                     <div class="mb-3"><label class="form-label" for="taskStepKey">Task key</label><input class="form-control" id="taskStepKey" maxlength="128" placeholder="Generated from task name" /></div>
-                    <div class="mb-3"><label class="form-label" for="taskOwner">Assigned to</label><input class="form-control" id="taskOwner" maxlength="256" placeholder="Sign-in name or email" /></div>
-                    <div class="mb-3"><label class="form-label" for="taskOwnerType">Assignment type</label><select class="form-select" id="taskOwnerType"><option value="User">User</option><option value="Email">Email</option></select></div>
+                    <div class="mb-3">
+                        <label class="form-label" for="taskAssigneeEntry">Assignee emails</label>
+                        <div class="input-group">
+                            <input class="form-control" id="taskAssigneeEntry" type="email" list="registeredAssigneeEmails" maxlength="320" placeholder="Select or enter an email" />
+                            <button class="btn btn-outline-secondary" id="addTaskAssignee" type="button">Add</button>
+                        </div>
+                        <datalist id="registeredAssigneeEmails"></datalist>
+                        <input id="taskOwner" type="hidden" />
+                        <div class="d-flex flex-wrap gap-1 mt-2" id="taskAssigneeList"></div>
+                        <div class="form-text">Choose a registered email or enter one manually. Every assignee must complete their part.</div>
+                    </div>
                     <div class="mb-3"><label class="form-label" for="taskExpectedHours">Expected duration (hours)</label><input class="form-control" id="taskExpectedHours" type="number" min="0" step="any" value="24" /></div>
                     <details class="mb-3"><summary class="fw-semibold">Reminders and escalation</summary>
                         <div class="mt-3"><label class="form-label" for="taskReminderAfterHours">First reminder after (hours)</label><input class="form-control" id="taskReminderAfterHours" type="number" min="0" step="any" /></div>

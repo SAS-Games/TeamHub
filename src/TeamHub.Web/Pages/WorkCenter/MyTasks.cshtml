@@ -27,7 +27,8 @@
             <th>Instance</th>
             <th>Workflow</th>
             <th>Task</th>
-            <th>Owner</th>
+            <th>Assignee</th>
+            <th>Group progress</th>
             <th>Due (UTC)</th>
             <th>Status</th>
             <th></th>
@@ -42,6 +43,7 @@
             <td>@task.StepName</td>
             <td>@task.Owner</td>
             <td>@(task.DueAtUtc?.ToString("yyyy-MM-dd HH:mm") ?? "-")</td>
+            <td>@task.CompletedAssignees / @task.TotalAssignees complete</td>
             <td>@(task.IsOverdue ? "Overdue" : "InProgress")</td>
             <td>
                 <form method="post" asp-page-handler="Complete">
@@ -49,6 +51,7 @@
                     <input type="hidden" name="stepInstanceId" value="@task.StepInstanceId" />
                     <textarea name="Comment" class="form-control form-control-sm mb-2" rows="2" maxlength="2000" placeholder="Optional comment"></textarea>
                     <button type="submit" class="btn btn-sm btn-success">Complete</button>
+                    <input type="hidden" name="assigneeEmail" value="@task.Owner" />
                 </form>
             </td>
         </tr>

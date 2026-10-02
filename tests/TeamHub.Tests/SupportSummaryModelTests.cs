@@ -270,28 +270,41 @@ public sealed class SupportSummaryModelTests
     }
 
     [Fact]
-    public async Task OnGetAsync_KeepsDeliveredMilestoneActiveUntilItsReleaseDate()
+    public async Task OnGetAsync_UsesEachProjectsFinalReleaseDateForItsCurrentMilestone()
     {
-        var studio = Studio("active", "Alpha Studio", "Alpha Project", isActive: true);
-        var releaseDate = DateTime.Today.AddDays(7);
+        var alphaStudio = Studio("alpha", "Alpha Studio", "Alpha Project", isActive: true);
+        var betaStudio = Studio("beta", "Beta Studio", "Beta Project", isActive: true);
+        var alphaReleaseDate = DateTime.Today.AddDays(90);
+        var betaReleaseDate = DateTime.Today.AddDays(60);
         var model = new SupportSummaryModel(
-            new StubStudioDirectoryService([studio]),
+            new StubStudioDirectoryService([alphaStudio, betaStudio]),
             new StubMilestoneService(
             [
                 new()
                 {
-                    Title = studio.ProjectName,
-                    Milestone = "Release candidate",
-                    DeliveryDate = DateTime.Today.AddDays(-1),
-                    MsApprovalDate = DateTime.Today.AddDays(3),
-                    ReleaseDate = releaseDate
+                    Title = alphaStudio.ProjectName,
+                    Milestone = "Gold Master",
+                    DeliveryDate = DateTime.Today.AddDays(10)
                 },
                 new()
                 {
-                    Title = studio.ProjectName,
-                    Milestone = "Next delivery",
-                    DeliveryDate = DateTime.Today.AddDays(10),
-                    ReleaseDate = DateTime.Today.AddDays(14)
+                    Title = alphaStudio.ProjectName,
+                    Milestone = "Release",
+                    DeliveryDate = alphaReleaseDate,
+                    ReleaseDate = alphaReleaseDate
+                },
+                new()
+                {
+                    Title = betaStudio.ProjectName,
+                    Milestone = "Beta",
+                    DeliveryDate = DateTime.Today.AddDays(5)
+                },
+                new()
+                {
+                    Title = betaStudio.ProjectName,
+                    Milestone = "Release",
+                    DeliveryDate = betaReleaseDate,
+                    ReleaseDate = betaReleaseDate
                 }
             ]),
             new StubJiraService(),
@@ -304,9 +317,8 @@ public sealed class SupportSummaryModelTests
 
         await model.OnGetAsync(CancellationToken.None);
 
-        model.ActiveMilestones.Should().ContainSingle();
-        model.ActiveMilestones[0].Milestone.Milestone.Should().Be("Release candidate");
-        model.ActiveMilestones[0].Milestone.ReleaseDate.Should().Be(releaseDate);
+        model.ActiveMilestones.Select(item => item.Milestone.Milestone).Should().Equal("Gold Master", "Beta");
+        model.ActiveMilestones.Select(item => item.ReleaseDate).Should().Equal(alphaReleaseDate, betaReleaseDate);
     }
 
     private static StudioDetails Studio(string id, string name, string project, bool isActive) => new()

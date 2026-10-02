@@ -10,6 +10,7 @@ public sealed class WorkflowDbContext(DbContextOptions<WorkflowDbContext> option
     public DbSet<WorkflowStepDependency> WorkflowStepDependencies => Set<WorkflowStepDependency>();
     public DbSet<WorkflowInstance> WorkflowInstances => Set<WorkflowInstance>();
     public DbSet<WorkflowStepInstance> WorkflowStepInstances => Set<WorkflowStepInstance>();
+    public DbSet<WorkflowStepAssignee> WorkflowStepAssignees => Set<WorkflowStepAssignee>();
     public DbSet<WorkflowStepInstanceDependency> WorkflowStepInstanceDependencies => Set<WorkflowStepInstanceDependency>();
     public DbSet<NotificationLog> NotificationLogs => Set<NotificationLog>();
     public DbSet<NotificationOutboxItem> NotificationOutbox => Set<NotificationOutboxItem>();
@@ -34,7 +35,7 @@ public sealed class WorkflowDbContext(DbContextOptions<WorkflowDbContext> option
             e.HasIndex(x => new { x.WorkflowDefinitionId, x.StepKey }).IsUnique();
             e.Property(x => x.StepKey).HasMaxLength(128);
             e.Property(x => x.Name).HasMaxLength(256);
-            e.Property(x => x.Owner).HasMaxLength(256);
+            e.Property(x => x.Owner).HasMaxLength(2000);
             e.Property(x => x.OwnerType).HasMaxLength(64);
             e.HasOne(x => x.WorkflowDefinition)
                 .WithMany(x => x.Steps)
@@ -69,13 +70,25 @@ public sealed class WorkflowDbContext(DbContextOptions<WorkflowDbContext> option
             e.HasIndex(x => new { x.WorkflowInstanceId, x.StepKey });
             e.Property(x => x.StepKey).HasMaxLength(128);
             e.Property(x => x.StepName).HasMaxLength(256);
-            e.Property(x => x.Owner).HasMaxLength(256);
+            e.Property(x => x.Owner).HasMaxLength(2000);
             e.Property(x => x.OwnerType).HasMaxLength(64);
             e.HasOne(x => x.WorkflowInstance)
                 .WithMany(x => x.Steps)
                 .HasForeignKey(x => x.WorkflowInstanceId)
                 .OnDelete(DeleteBehavior.Cascade);
         });
+        modelBuilder.Entity<WorkflowStepAssignee>(e =>
+        {
+            e.Property(x => x.Email).HasMaxLength(320).UseCollation("NOCASE");
+            e.Property(x => x.CompletedBy).HasMaxLength(320);
+            e.Property(x => x.CompletionComment).HasMaxLength(2000);
+            e.HasIndex(x => new { x.WorkflowStepInstanceId, x.Email }).IsUnique();
+            e.HasOne(x => x.WorkflowStepInstance)
+                .WithMany(x => x.Assignees)
+                .HasForeignKey(x => x.WorkflowStepInstanceId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
 
         modelBuilder.Entity<WorkflowStepInstanceDependency>(e =>
         {
@@ -134,7 +147,7 @@ public sealed class WorkflowDbContext(DbContextOptions<WorkflowDbContext> option
         {
             e.Property(x => x.StepKey).HasMaxLength(128);
             e.Property(x => x.Name).HasMaxLength(256);
-            e.Property(x => x.Owner).HasMaxLength(256);
+            e.Property(x => x.Owner).HasMaxLength(2000);
             e.Property(x => x.OwnerType).HasMaxLength(64);
             e.HasIndex(x => new { x.WorkflowDraftDefinitionId, x.SortOrder });
             e.HasOne(x => x.WorkflowDraftDefinition)

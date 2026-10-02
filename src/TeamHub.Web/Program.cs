@@ -1,4 +1,5 @@
 using System.IO;
+using System.Net.Mail;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Routing;
 using TeamHub.Authentication;
@@ -135,6 +136,25 @@ app.UseAuthentication();
 app.UseTeamHubAccessControl();
 app.UseAuthorization();
 
+
+app.MapGet("/api/work-center/assignees", async (
+    IUserAccessService users,
+    CancellationToken cancellationToken) =>
+{
+    var assignees = (await users.ListUsersAsync(cancellationToken))
+        .Where(user => user.IsActive
+            && user.IsRegistered
+            && MailAddress.TryCreate(user.UserId, out _))
+        .OrderBy(user => user.DisplayName)
+        .ThenBy(user => user.UserId)
+        .Select(user => new
+        {
+            email = user.UserId.Trim().ToLowerInvariant(),
+            displayName = user.DisplayName
+        })
+        .ToList();
+    return Results.Ok(assignees);
+}).RequireAuthorization();
 app.MapRazorPages();
 app.MapFlowDesignerApi();
 

@@ -62,6 +62,40 @@ public sealed class WorkCenterFlowPublicationTests
     }
 
     [Fact]
+    public async Task Publish_NormalizesAndDeduplicatesAssigneeEmails()
+    {
+        var configuration = new RecordingWorkflowConfigurationService();
+        var publisher = new WorkCenterFlowPublicationService(configuration, AdminContext());
+        var flow = OnboardingFlow();
+        flow.Nodes.Single(node => node.Id == "approval").CustomProperties["owner"] =
+            "First@Example.com; second@example.com; FIRST@example.com";
+
+        var result = await publisher.PublishAsync(flow);
+
+        result.Success.Should().BeTrue();
+        var step = configuration.SavedDraft!.Steps
+            .Single(item => item.StepKey == "PIC_UAT_APPROVAL");
+        step.Owner.Should().Be("first@example.com; second@example.com");
+        step.OwnerType.Should().Be("Email");
+    }
+
+    [Fact]
+    public async Task Publish_RejectsInvalidAssigneeEmail()
+    {
+        var configuration = new RecordingWorkflowConfigurationService();
+        var publisher = new WorkCenterFlowPublicationService(configuration, AdminContext());
+        var flow = OnboardingFlow();
+        flow.Nodes.Single(node => node.Id == "approval").CustomProperties["owner"] = "not-an-email";
+
+        var result = await publisher.PublishAsync(flow);
+
+        result.Success.Should().BeFalse();
+        result.Errors.Should().Contain(error => error.Contains("invalid assignee email"));
+        configuration.SavedDraft.Should().BeNull();
+    }
+
+
+    [Fact]
     public async Task Publish_RequiresAdminRole()
     {
         var configuration = new RecordingWorkflowConfigurationService();
@@ -119,7 +153,9 @@ public sealed class WorkCenterFlowPublicationTests
         Title = title,
         CustomProperties = new Dictionary<string, string>
         {
-            ["owner"] = owner,
+            ["owner"] = string.IsNullOrWhiteSpace(owner)
+                ? string.Empty
+                : $"{owner.Replace(" ", ".").ToLowerInvariant()}@company.com",
             ["ownerType"] = "User",
             ["expectedDurationHours"] = expectedHours.ToString(System.Globalization.CultureInfo.InvariantCulture),
             ["stepKey"] = stepKey ?? ""

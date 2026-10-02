@@ -54,7 +54,7 @@
             </tr>
         </thead>
         <tbody>
-        @foreach (var row in Model.Workflows)
+        @foreach (var row in Model.ActiveWorkflows)
         {
             <tr>
                 <td><a asp-page="/Workflows/Details" asp-route-id="@row.Id">@row.InstanceName</a></td>
@@ -70,4 +70,68 @@
         </tbody>
     </table>
     </div>
+    @if (Model.ActiveWorkflows.Count == 0)
+    {
+        <div class="section-body text-secondary">No workflows are currently in progress. Start an available workflow to create a new run.</div>
+    }
+</section>
+
+<section class="content-section">
+    <div class="section-heading">
+        <div><span>History</span><h2>Recently Completed</h2></div>
+    </div>
+    @if (Model.CompletedWorkflows.Count == 0)
+    {
+        <div class="section-body text-secondary">No completed workflows yet.</div>
+    }
+    else
+    {
+        <div class="table-responsive">
+            <table class="table styled-table">
+                <thead><tr><th>Instance</th><th>Workflow</th><th>Version</th><th>Started (UTC)</th><th>Completed (UTC)</th></tr></thead>
+                <tbody>
+                @foreach (var row in Model.CompletedWorkflows)
+                {
+                    <tr>
+                        <td><a asp-page="/Workflows/Details" asp-route-id="@row.Id">@row.InstanceName</a></td>
+                        <td>@row.WorkflowName</td>
+                        <td>@row.Version</td>
+                        <td>@row.StartedAtUtc.ToString("yyyy-MM-dd HH:mm")</td>
+                        <td>@(row.CompletedAtUtc?.ToString("yyyy-MM-dd HH:mm") ?? "-")</td>
+                    </tr>
+                }
+                </tbody>
+            </table>
+        </div>
+    }
+</section>
+
+<section class="content-section">
+    <div class="section-heading">
+        <div><span>History</span><h2>Recently Cancelled</h2></div>
+    </div>
+    @if (Model.CancelledWorkflows.Count == 0)
+    {
+        <div class="section-body text-secondary">No cancelled workflows.</div>
+    }
+    else
+    {
+        <div class="table-responsive">
+            <table class="table styled-table">
+                <thead><tr><th>Instance</th><th>Workflow</th><th>Version</th><th>Started (UTC)</th><th>Cancelled (UTC)</th></tr></thead>
+                <tbody>
+                @foreach (var row in Model.CancelledWorkflows)
+                {
+                    <tr>
+                        <td><a asp-page="/Workflows/Details" asp-route-id="@row.Id">@row.InstanceName</a></td>
+                        <td>@row.WorkflowName</td>
+                        <td>@row.Version</td>
+                        <td>@row.StartedAtUtc.ToString("yyyy-MM-dd HH:mm")</td>
+                        <td>@(row.CancelledAtUtc?.ToString("yyyy-MM-dd HH:mm") ?? "-")</td>
+                    </tr>
+                }
+                </tbody>
+            </table>
+        </div>
+    }
 </section>

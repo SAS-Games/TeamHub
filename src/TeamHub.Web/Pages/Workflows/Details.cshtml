@@ -20,7 +20,7 @@
         <tr>
             <th>Status</th>
             <th>Step</th>
-            <th>Owner</th>
+            <th>Assignee progress</th>
             <th>Started (UTC)</th>
             <th>Due (UTC)</th>
             <th>Completed (UTC)</th>
@@ -32,7 +32,22 @@
         <tr>
             <td>@step.Status</td>
             <td>@step.StepName</td>
-            <td>@step.Owner</td>
+            <td>
+                @foreach (var assignee in step.Assignees.OrderBy(item => item.Email))
+                {
+                    <div class="mb-1">
+                        <span>@assignee.Email</span>
+                        @if (assignee.CompletedAtUtc.HasValue)
+                        {
+                            <span class="badge text-bg-success">Completed</span>
+                        }
+                        else
+                        {
+                            <span class="badge text-bg-secondary">Outstanding</span>
+                        }
+                    </div>
+                }
+            </td>
             <td>@(step.StartedAtUtc?.ToString("yyyy-MM-dd HH:mm") ?? "-")</td>
             <td>@(step.DueAtUtc?.ToString("yyyy-MM-dd HH:mm") ?? "-")</td>
             <td>@(step.CompletedAtUtc?.ToString("yyyy-MM-dd HH:mm") ?? "-")</td>

@@ -15,6 +15,7 @@ public sealed class StepCompletionRequest
 {
     public Guid StepInstanceId { get; set; }
     public string Actor { get; set; } = string.Empty;
+    public string? AssigneeEmail { get; set; }
     public bool IsAdminOverride { get; set; }
     public string? Comment { get; set; }
 }
@@ -29,6 +30,8 @@ public sealed class WorkflowSummaryDto
     public DateTime StartedAtUtc { get; set; }
     public DateTime? NextDueAtUtc { get; set; }
     public int ProgressPercent { get; set; }
+    public DateTime? CompletedAtUtc { get; set; }
+    public DateTime? CancelledAtUtc { get; set; }
     public int OverdueCount { get; set; }
     public string ActiveOwners { get; set; } = string.Empty;
     public string ActiveSteps { get; set; } = string.Empty;
@@ -52,4 +55,6 @@ public sealed class TaskItemDto
     public string Owner { get; set; } = string.Empty;
     public DateTime? DueAtUtc { get; set; }
     public bool IsOverdue { get; set; }
+    public int CompletedAssignees { get; set; }
+    public int TotalAssignees { get; set; }
 }
