@@ -30,4 +30,5 @@ public sealed class WorkflowStepInstance
     public DateTime? LastEscalationAtUtc { get; set; }
 
     public ICollection<WorkflowStepInstanceDependency> Dependencies { get; set; } = new List<WorkflowStepInstanceDependency>();
+    public ICollection<WorkflowStepAssignee> Assignees { get; set; } = new List<WorkflowStepAssignee>();
 }

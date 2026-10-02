@@ -1,4 +1,6 @@
 using Microsoft.EntityFrameworkCore;
+using TeamHub.Application.Models;
+using TeamHub.Domain.Entities;
 
 namespace TeamHub.Infrastructure.Persistence;
 
@@ -80,6 +82,44 @@ internal sealed class WorkflowDatabaseInitializer(WorkflowDbContext dbContext) :
 
             CREATE INDEX IF NOT EXISTS IX_NotificationOutbox_Status_NextAttemptAtUtc
             ON NotificationOutbox (Status, NextAttemptAtUtc);
+
+            CREATE TABLE IF NOT EXISTS WorkflowStepAssignees (
+                Id TEXT NOT NULL CONSTRAINT PK_WorkflowStepAssignees PRIMARY KEY,
+                WorkflowStepInstanceId TEXT NOT NULL,
+                Email TEXT COLLATE NOCASE NOT NULL,
+                CompletedAtUtc TEXT NULL,
+                CompletedBy TEXT NULL,
+                CompletionComment TEXT NULL,
+                LastReminderAtUtc TEXT NULL,
+                LastEscalationAtUtc TEXT NULL,
+                CONSTRAINT FK_WorkflowStepAssignees_WorkflowStepInstances_WorkflowStepInstanceId
+                    FOREIGN KEY (WorkflowStepInstanceId) REFERENCES WorkflowStepInstances (Id) ON DELETE CASCADE
+            );
+
+            CREATE UNIQUE INDEX IF NOT EXISTS IX_WorkflowStepAssignees_WorkflowStepInstanceId_Email
+            ON WorkflowStepAssignees (WorkflowStepInstanceId, Email);
             """, cancellationToken);
+
+        var stepsWithoutAssignees = await dbContext.WorkflowStepInstances
+            .Include(step => step.Assignees)
+            .Where(step => !step.Assignees.Any())
+            .ToListAsync(cancellationToken);
+
+        foreach (var step in stepsWithoutAssignees)
+        {
+            foreach (var email in WorkflowAssigneeEmails.Parse(step.Owner))
+            {
+                step.Assignees.Add(new WorkflowStepAssignee
+                {
+                    WorkflowStepInstance = step,
+                    Email = email
+                });
+            }
+        }
+
+        if (stepsWithoutAssignees.Count > 0)
+        {
+            await dbContext.SaveChangesAsync(cancellationToken);
+        }
     }
 }

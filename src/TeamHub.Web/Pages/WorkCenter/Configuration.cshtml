@@ -1,15 +1,15 @@
 @page "/WorkCenter/Configuration"
 @model TeamHub.Web.Pages.WorkCenter.ConfigurationModel
 @{
-    ViewData["Title"] = "Configuration";
+    ViewData["Title"] = "Workflow Library";
     ViewData["WorkCenterTab"] = "Configuration";
 }
 
 <div class="page-hero">
     <div>
         <div class="eyebrow">Work Center</div>
-        <h1>Configuration</h1>
-        <p>Design task dependencies visually, configure ownership and timing, then publish the workflow.</p>
+        <h1>Workflow Library</h1>
+        <p>Create reusable workflow designs, publish runtime versions, and control which workflows can be started.</p>
     </div>
     <div class="d-flex gap-2">
         <a class="btn btn-outline-secondary" asp-page="/Configuration/Index">All Configuration</a>
@@ -21,6 +21,11 @@
 @if (!string.IsNullOrWhiteSpace(Model.StatusMessage))
 {
     <div class="alert alert-info mt-3">@Model.StatusMessage</div>
+}
+
+@if (!string.IsNullOrWhiteSpace(Model.ErrorMessage))
+{
+    <div class="alert alert-danger mt-3"><strong>Publication failed.</strong> @Model.ErrorMessage</div>
 }
 
 @if (!Model.ShowForm)
@@ -50,6 +55,11 @@
             }
         </div>
         <div class="section-heading"><div><span>Visual authoring</span><h2>Work Center Workflows</h2></div></div>
+
+        <div class="section-body border-bottom">
+            <strong>How this works:</strong> design and save a workflow here, then select
+            <strong>Publish &amp; make available</strong>. Templates are reusable starting points only and never appear in Start New by themselves.
+        </div>
         @if (Model.VisualWorkflows.Count == 0)
         {
             <div class="section-body text-secondary">No visual workflows yet. Create one, add Start, Task, and End nodes, then publish it.</div>
@@ -69,6 +79,7 @@
                             <td>@workflow.UpdatedAt.LocalDateTime.ToString("yyyy-MM-dd HH:mm")</td>
                             <td class="studio-actions">
                                 <a class="btn btn-sm btn-outline-primary" asp-page="/Flows/Edit" asp-route-id="@workflow.Id">Design</a>
+                                <form method="post" asp-page-handler="PublishVisual" asp-route-id="@workflow.Id" class="d-inline"><button class="btn btn-sm btn-success" type="submit">Publish &amp; make available</button></form>
                                 <form method="post" asp-page-handler="DuplicateVisual" asp-route-id="@workflow.Id" class="d-inline"><button class="btn btn-sm btn-outline-secondary" type="submit">Duplicate</button></form>
                                 <form method="post" asp-page-handler="DeleteVisual" asp-route-id="@workflow.Id" class="d-inline"><button class="btn btn-sm btn-outline-danger" type="submit">Delete</button></form>
                             </td>
@@ -110,10 +121,16 @@
     }
 
     <section class="content-section">
-        <div class="section-heading"><div><span>Published</span><h2>Active Workflows</h2></div></div>
-        <div class="table-responsive">
+        <div class="section-heading"><div><span>Runtime definitions</span><h2>Published Workflows</h2></div></div>
+        @if (Model.PublishedDefinitions.Count == 0)
+        {
+            <div class="section-body text-secondary">No workflows have been published yet. Publish a saved visual workflow to make it available in Start New.</div>
+        }
+        else
+        {
+            <div class="table-responsive">
             <table class="table styled-table">
-                <thead><tr><th>Workflow Key</th><th>Name</th><th>Version</th><th>Enabled</th><th>Published</th></tr></thead>
+                <thead><tr><th>Workflow Key</th><th>Name</th><th>Version</th><th>Availability</th><th>Published (UTC)</th><th>Actions</th></tr></thead>
                 <tbody>
                 @foreach (var definition in Model.PublishedDefinitions)
                 {
@@ -121,13 +138,39 @@
                         <td>@definition.WorkflowKey</td>
                         <td>@definition.Name</td>
                         <td>@definition.Version</td>
-                        <td>@definition.Enabled</td>
+
+                        <td>
+                            @if (definition.Enabled)
+                            {
+                                <span class="badge text-bg-success">Available</span>
+                            }
+                            else
+                            {
+                                <span class="badge text-bg-secondary">Starts paused</span>
+                            }
+                        </td>
                         <td>@definition.ImportedAtUtc.ToString("yyyy-MM-dd HH:mm")</td>
+                        <td class="studio-actions">
+                            @if (definition.Enabled)
+                            {
+                                <a class="btn btn-sm btn-outline-primary" asp-page="/WorkCenter/StartNew" asp-route-workflowKey="@definition.WorkflowKey">Start</a>
+                                <form method="post" asp-page-handler="SetAvailability" asp-route-definitionId="@definition.Id" asp-route-enabled="false" class="d-inline">
+                                    <button class="btn btn-sm btn-outline-secondary" type="submit">Pause starts</button>
+                                </form>
+                            }
+                            else
+                            {
+                                <form method="post" asp-page-handler="SetAvailability" asp-route-definitionId="@definition.Id" asp-route-enabled="true" class="d-inline">
+                                    <button class="btn btn-sm btn-outline-success" type="submit">Resume starts</button>
+                                </form>
+                            }
+                        </td>
                     </tr>
                 }
                 </tbody>
             </table>
         </div>
+        }
     </section>
 }
 
@@ -177,8 +220,9 @@
                                     <textarea asp-for="Input.Steps[index].Description" class="form-control" rows="2" data-field="Description" placeholder="Description"></textarea>
                                 </td>
                                 <td>
-                                    <input asp-for="Input.Steps[index].Owner" class="form-control mb-2" data-field="Owner" />
-                                    <input asp-for="Input.Steps[index].OwnerType" class="form-control" data-field="OwnerType" />
+                                    <input asp-for="Input.Steps[index].Owner" class="form-control" data-field="Owner" list="registeredWorkflowEmails" placeholder="email1@example.com; email2@example.com" />
+                                    <input asp-for="Input.Steps[index].OwnerType" type="hidden" value="Email" data-field="OwnerType" />
+                                    <div class="form-text">Select a registered email or enter valid emails separated by semicolons.</div>
                                 </td>
                                 <td>
                                     <input asp-for="Input.Steps[index].ExpectedDurationHours" type="number" min="0" step="0.5" class="form-control" data-field="ExpectedDurationHours" />
@@ -201,6 +245,7 @@
                         </tbody>
                     </table>
                 </div>
+                <datalist id="registeredWorkflowEmails"></datalist>
 
                 <button type="submit" asp-page-handler="Save" class="btn btn-outline-primary">Save Draft</button>
                 <button type="submit" asp-page-handler="Publish" class="btn btn-primary">Publish</button>
@@ -262,7 +307,10 @@
                 row.innerHTML = `<td></td><td></td><td></td><td></td><td></td><td></td><td class="studio-actions"></td>`;
                 row.children[0].append(makeInput(prefix, index, "StepKey"));
                 row.children[1].append(makeInput(prefix, index, "StepName"), makeInput(prefix, index, "Description", { multiline: true, placeholder: "Description" }));
-                row.children[2].append(makeInput(prefix, index, "Owner"), makeInput(prefix, index, "OwnerType", { value: "Email" }));
+                const owner = makeInput(prefix, index, "Owner", { placeholder: "email1@example.com; email2@example.com" });
+                owner.setAttribute("list", "registeredWorkflowEmails");
+                row.children[2].append(owner, makeInput(prefix, index, "OwnerType", { type: "hidden", value: "Email" }));
+                row.children[2].insertAdjacentHTML("beforeend", "<div class=\"form-text\">Select or enter valid emails separated by semicolons.</div>");
                 row.children[3].append(makeInput(prefix, index, "ExpectedDurationHours", { type: "number", value: "0" }), makeInput(prefix, index, "ReminderAfterHours", { type: "number", placeholder: "Reminder" }));
                 row.children[4].append(makeInput(prefix, index, "DependsOnCsv", { placeholder: "STEP_A, STEP_B" }));
                 row.children[5].append(makeInput(prefix, index, "SortOrder", { type: "hidden", value: `${index + 1}` }), makeInput(prefix, index, "EscalationAfterHours", { type: "hidden" }), makeInput(prefix, index, "EscalationOwner", { type: "hidden" }), makeInput(prefix, index, "Required", { type: "checkbox", checkbox: true, checked: true }), makeInput(prefix, index, "Enabled", { type: "checkbox", checkbox: true, checked: true }));
@@ -284,6 +332,21 @@
                     reindex(body);
                 }
             });
+
+            fetch("/api/work-center/assignees")
+                .then(response => response.ok ? response.json() : [])
+                .then(assignees => {
+                    const datalist = document.getElementById("registeredWorkflowEmails");
+                    assignees.forEach(assignee => {
+                        const option = document.createElement("option");
+                        option.value = assignee.email;
+                        option.label = assignee.displayName
+                            ? `${assignee.displayName} (${assignee.email})`
+                            : assignee.email;
+                        datalist.append(option);
+                    });
+                })
+                .catch(() => {});
         })();
     </script>
 }

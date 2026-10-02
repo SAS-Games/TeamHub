@@ -15,6 +15,7 @@ public class DetailsModel(WorkflowDbContext dbContext) : PageModel
         Instance = await dbContext.WorkflowInstances
             .Include(x => x.WorkflowDefinition)
             .Include(x => x.Steps.OrderBy(s => s.SortOrder))
+            .ThenInclude(step => step.Assignees)
             .FirstOrDefaultAsync(x => x.Id == id);
 
         if (Instance is null)

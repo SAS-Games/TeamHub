@@ -7,6 +7,9 @@
     @if (User.IsInRole("Admin"))
     {
         <a class="@(current == "StartNew" ? "active" : "")" asp-page="/WorkCenter/StartNew">Start New</a>
-        <a class="@(current == "Configuration" ? "active" : "")" asp-page="/WorkCenter/Configuration">Configuration</a>
+        @if (User.IsInRole("Admin"))
+        {
+            <a class="@(current == "Configuration" ? "active" : "")" asp-page="/WorkCenter/Configuration">Workflow Library</a>
+        }
     }
 </nav>

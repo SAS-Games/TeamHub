@@ -21,18 +21,19 @@ public class MyTasksModel(IWorkflowReadService readService, IWorkflowEngine work
         Tasks = await readService.GetMyTasksAsync(Owner, IsAdmin);
     }
 
-    public async Task<IActionResult> OnPostCompleteAsync(Guid stepInstanceId)
+    public async Task<IActionResult> OnPostCompleteAsync(Guid stepInstanceId, string assigneeEmail)
     {
         Owner = User.Identity?.Name ?? string.Empty;
         await workflowEngine.CompleteStepAsync(new StepCompletionRequest
         {
             StepInstanceId = stepInstanceId,
             Actor = Owner,
+            AssigneeEmail = assigneeEmail,
             IsAdminOverride = User.IsInRole("Admin"),
             Comment = Comment
         });
 
-        ResultMessage = "Task completed.";
+        ResultMessage = "Your part is complete. The task will advance after every assignee completes their part.";
         Comment = null;
         Tasks = await readService.GetMyTasksAsync(Owner, IsAdmin);
         return Page();

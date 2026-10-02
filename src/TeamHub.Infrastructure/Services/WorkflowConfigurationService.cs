@@ -172,8 +172,8 @@ public sealed class WorkflowConfigurationService(
                     StepKey = step.StepKey,
                     Name = step.StepName,
                     Description = step.Description,
-                    OwnerType = step.OwnerType,
-                    Owner = step.Owner,
+                    OwnerType = "Email",
+                    Owner = WorkflowAssigneeEmails.Format(WorkflowAssigneeEmails.Parse(step.Owner)),
                     ExpectedDurationHours = step.ExpectedDurationHours,
                     ReminderAfterHours = step.ReminderAfterHours,
                     ReminderRepeatHours = step.ReminderRepeatHours,
@@ -238,6 +238,7 @@ public sealed class WorkflowConfigurationService(
 
         foreach (var key in duplicateWorkflowKeys)
         {
+
             errors.Add($"Duplicate WorkflowKey: {key}");
         }
 
@@ -264,10 +265,19 @@ public sealed class WorkflowConfigurationService(
 
             foreach (var step in workflow.Steps)
             {
-                if (string.IsNullOrWhiteSpace(step.Owner))
+                var assigneeEmails = WorkflowAssigneeEmails.Parse(step.Owner);
+                if (assigneeEmails.Count == 0)
                 {
                     errors.Add($"Workflow {workflow.WorkflowKey}: Step {step.StepKey} owner is required.");
                 }
+                else
+                {
+                    foreach (var invalidEmail in assigneeEmails.Where(email => !WorkflowAssigneeEmails.IsValid(email)))
+                    {
+                        errors.Add($"Workflow {workflow.WorkflowKey}: Step {step.StepKey} assignee '{invalidEmail}' is not a valid email address.");
+                    }
+                }
+
 
                 if (step.ExpectedDurationHours < 0)
                 {
@@ -502,8 +512,8 @@ public sealed class WorkflowConfigurationService(
                 StepKey = NormalizeKey(step.StepKey),
                 Name = step.StepName.Trim(),
                 Description = string.IsNullOrWhiteSpace(step.Description) ? null : step.Description.Trim(),
-                OwnerType = string.IsNullOrWhiteSpace(step.OwnerType) ? "Email" : step.OwnerType.Trim(),
-                Owner = step.Owner.Trim(),
+                OwnerType = "Email",
+                Owner = WorkflowAssigneeEmails.Format(WorkflowAssigneeEmails.Parse(step.Owner)),
                 ExpectedDurationHours = step.ExpectedDurationHours,
                 DependsOnCsv = string.Join(", ", ParseDependsOn(step.DependsOnCsv)),
                 ReminderAfterHours = step.ReminderAfterHours,

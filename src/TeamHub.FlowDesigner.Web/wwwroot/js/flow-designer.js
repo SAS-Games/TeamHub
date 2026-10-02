@@ -77,6 +77,7 @@
         nameInput.value = flow.name;
         root.dataset.diagramType = flow.diagramType;
         root.classList.add(`fd-mode-${flow.diagramType.toLowerCase()}`);
+        if (isWorkCenter() && canEdit) await loadRegisteredAssignees();
         adapter.setGraph(flow);
         const storedZoom = readStoredZoom();
         if (!adapter.setZoom(storedZoom)) {
@@ -214,8 +215,21 @@
             byId("childFlowName").value = selectedNode?.title?.trim() || "Detailed diagram";
         });
         byId("createChildFlowForm").addEventListener("submit", createChildFlow);
-        ["taskStepKey", "taskOwner", "taskExpectedHours", "taskReminderAfterHours", "taskReminderRepeatHours", "taskEscalationAfterHours", "taskEscalationOwner"].forEach(id => byId(id).addEventListener("input", updateSelectedNode));
-        ["taskOwnerType", "taskRequired", "taskEnabled"].forEach(id => byId(id).addEventListener("change", updateSelectedNode));
+        ["taskStepKey", "taskExpectedHours", "taskReminderAfterHours", "taskReminderRepeatHours", "taskEscalationAfterHours", "taskEscalationOwner"].forEach(id => byId(id).addEventListener("input", updateSelectedNode));
+        ["taskRequired", "taskEnabled"].forEach(id => byId(id).addEventListener("change", updateSelectedNode));
+        byId("addTaskAssignee").addEventListener("click", addTaskAssignee);
+        byId("taskAssigneeEntry").addEventListener("change", addTaskAssignee);
+        byId("taskAssigneeEntry").addEventListener("keydown", event => {
+            if (!["Enter", ",", ";"].includes(event.key)) return;
+            event.preventDefault();
+            addTaskAssignee();
+        });
+        byId("taskAssigneeList").addEventListener("click", event => {
+            const removeButton = event.target.closest("[data-remove-assignee]");
+            if (!removeButton) return;
+            setTaskAssignees(parseAssigneeEmails(byId("taskOwner").value)
+                .filter(email => email !== removeButton.dataset.removeAssignee));
+        });
         byId("addNodeComment").addEventListener("click", addNodeComment);
         byId("cancelNodeCommentReply").addEventListener("click", cancelNodeCommentReply);
         byId("deleteNode").addEventListener("click", () => adapter.deleteSelected());
@@ -599,7 +613,8 @@
         byId("workCenterTaskProperties").classList.toggle("d-none", !isTask);
         byId("taskStepKey").value = node.customProperties?.stepKey || toKey(node.title);
         byId("taskOwner").value = node.customProperties?.owner || "";
-        byId("taskOwnerType").value = node.customProperties?.ownerType || "User";
+        byId("taskAssigneeEntry").value = "";
+        renderTaskAssignees();
         byId("taskExpectedHours").value = node.customProperties?.expectedDurationHours || "24";
         byId("taskReminderAfterHours").value = node.customProperties?.reminderAfterHours || "";
         byId("taskReminderRepeatHours").value = node.customProperties?.reminderRepeatHours || "";
@@ -610,6 +625,75 @@
         byId("newNodeComment").value = "";
         byId("newNodeCommentPublic").checked = isPublishedView;
         renderNodeComments(node.comments || []);
+    }
+
+    async function loadRegisteredAssignees() {
+        try {
+            const response = await fetch("/api/work-center/assignees");
+            if (!response.ok) return;
+            const assignees = await response.json();
+            const datalist = byId("registeredAssigneeEmails");
+            datalist.replaceChildren();
+            assignees.forEach(assignee => {
+                const option = document.createElement("option");
+                option.value = assignee.email;
+                option.label = assignee.displayName ? `${assignee.displayName} (${assignee.email})` : assignee.email;
+                datalist.append(option);
+            });
+        } catch (error) {
+            console.warn("Could not load registered workflow assignees.", error);
+        }
+    }
+
+    function parseAssigneeEmails(value) {
+        return [...new Set(String(value || "")
+            .split(/[,;\r\n]+/)
+            .map(email => email.trim().toLowerCase())
+            .filter(Boolean))];
+    }
+
+    function isValidEmail(value) {
+        return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+    }
+
+    function setTaskAssignees(emails) {
+        byId("taskOwner").value = emails.join("; ");
+        renderTaskAssignees();
+        updateSelectedNode();
+    }
+
+    function addTaskAssignee() {
+        const input = byId("taskAssigneeEntry");
+        const email = input.value.trim().toLowerCase();
+        if (!email) return;
+        if (!isValidEmail(email)) {
+            showToast("Enter a valid email address.");
+            input.focus();
+            return;
+        }
+
+        setTaskAssignees([...parseAssigneeEmails(byId("taskOwner").value), email]);
+        input.value = "";
+        input.focus();
+    }
+
+    function renderTaskAssignees() {
+        const list = byId("taskAssigneeList");
+        list.replaceChildren();
+        parseAssigneeEmails(byId("taskOwner").value).forEach(email => {
+            const badge = document.createElement("span");
+            badge.className = "badge rounded-pill text-bg-light border d-inline-flex align-items-center gap-1";
+            badge.append(document.createTextNode(email));
+            if (canEdit && !presentationMode) {
+                const remove = document.createElement("button");
+                remove.type = "button";
+                remove.className = "btn-close";
+                remove.setAttribute("aria-label", `Remove ${email}`);
+                remove.dataset.removeAssignee = email;
+                badge.append(remove);
+            }
+            list.append(badge);
+        });
     }
 
     function configureConnectorPinControls(node) {
@@ -737,7 +821,7 @@
             Object.assign(customProperties, {
                 stepKey: byId("taskStepKey").value,
                 owner: byId("taskOwner").value,
-                ownerType: byId("taskOwnerType").value,
+                ownerType: "Email",
                 expectedDurationHours: byId("taskExpectedHours").value,
                 reminderAfterHours: byId("taskReminderAfterHours").value,
                 reminderRepeatHours: byId("taskReminderRepeatHours").value,
@@ -1473,7 +1557,15 @@
             if (starts !== 1) issues.push({ severity: "Error", code: "start-count", message: `Exactly one Start node is required; this workflow has ${starts}.` });
             if (!graph.nodes.some(node => node.type === "End")) issues.push({ severity: "Error", code: "missing-end", message: "At least one End node is required." });
             if (!graph.nodes.some(node => node.type === "Activity")) issues.push({ severity: "Error", code: "missing-task", message: "Add at least one Task." });
-            graph.nodes.filter(node => node.type === "Activity" && !node.customProperties?.owner?.trim()).forEach(node => issues.push({ severity: "Warning", code: "missing-owner", message: `'${node.title}' needs an assignee before publishing.`, elementId: node.id }));
+            graph.nodes.filter(node => node.type === "Activity").forEach(node => {
+                const emails = parseAssigneeEmails(node.customProperties?.owner);
+                if (emails.length === 0) {
+                    issues.push({ severity: "Error", code: "missing-owner", message: `'${node.title}' needs at least one assignee email.`, elementId: node.id });
+                }
+                emails.filter(email => !isValidEmail(email)).forEach(email => {
+                    issues.push({ severity: "Error", code: "invalid-owner", message: `'${node.title}' has an invalid assignee email: ${email}.`, elementId: node.id });
+                });
+            });
         } else {
             if (flow.diagramType !== "BusinessWorkflow" && starts !== 1) issues.push({ severity: "Warning", code: "start-count", message: `Exactly one Start node is recommended; this flow has ${starts}.` });
             if (flow.diagramType !== "BusinessWorkflow" && !graph.nodes.some(node => node.type === "End")) issues.push({ severity: "Warning", code: "missing-end", message: "At least one End node is recommended." });

@@ -86,9 +86,14 @@ public sealed class WorkCenterFlowPublicationService(
 
         foreach (var task in tasks)
         {
-            if (string.IsNullOrWhiteSpace(Get(task.CustomProperties, "owner")))
+            var assignees = WorkflowAssigneeEmails.Parse(Get(task.CustomProperties, "owner"));
+            if (assignees.Count == 0)
             {
-                errors.Add($"Task '{task.Title}' needs an assignee.");
+                errors.Add($"Task '{task.Title}' needs at least one assignee email.");
+            }
+            foreach (var invalidEmail in assignees.Where(email => !WorkflowAssigneeEmails.IsValid(email)))
+            {
+                errors.Add($"Task '{task.Title}' has an invalid assignee email: '{invalidEmail}'.");
             }
 
             ValidateNumber(task, "expectedDurationHours", "Expected duration", errors);
@@ -179,8 +184,8 @@ public sealed class WorkCenterFlowPublicationService(
                 StepKey = stepKeyByNode[node.Id],
                 StepName = node.Title,
                 Description = string.IsNullOrWhiteSpace(node.Description) ? null : node.Description,
-                OwnerType = Get(node.CustomProperties, "ownerType") ?? "User",
-                Owner = Get(node.CustomProperties, "owner") ?? string.Empty,
+                OwnerType = "Email",
+                Owner = WorkflowAssigneeEmails.Format(WorkflowAssigneeEmails.Parse(Get(node.CustomProperties, "owner"))),
                 ExpectedDurationHours = GetDouble(node.CustomProperties, "expectedDurationHours") ?? 24,
                 DependsOnCsv = string.Join(", ", FindUpstreamTasks(node.Id, incoming, nodeById, taskIds)
                     .Select(id => stepKeyByNode[id])
