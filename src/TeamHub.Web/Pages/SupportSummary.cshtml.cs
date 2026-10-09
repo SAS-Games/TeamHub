@@ -6,6 +6,9 @@ using TeamHub.Authentication;
 using TeamHub.Milestones;
 using TeamHub.Studio;
 using TeamHub.Web.WorklogAnalytics;
+using TeamHub.Web.Reports;
+using TeamHub.AI.Contracts;
+using TeamHub.AI.ReportGenerator.Contracts;
 
 namespace TeamHub.Web.Pages;
 
@@ -16,6 +19,7 @@ public sealed class SupportSummaryModel(
     IStudioConfluenceUpdateService confluenceUpdateService,
     ISupportSummaryPlanningService planningService,
     IWorklogEffortService worklogEffortService,
+    IWeeklyWorkSummaryService weeklyWorkSummaryService,
     IServiceScopeFactory? serviceScopeFactory = null) : PageModel
 {
     public const string WeeklyPeriod = "Weekly";
@@ -53,6 +57,8 @@ public sealed class SupportSummaryModel(
             : "Something went wrong while loading logged effort. Please contact an administrator.";
     public bool IsUsingSharedJiraCredential { get; private set; }
     public bool CanManagePlanning => User.IsInRole(TeamHubUserTypes.Admin);
+    public bool CanGenerateWeeklyWorkSummary { get; private set; }
+    public bool IsWeeklyWorkSummaryEnabled => weeklyWorkSummaryService.IsEnabled;
 
     [TempData]
     public string? StatusMessage { get; set; }
@@ -63,6 +69,7 @@ public sealed class SupportSummaryModel(
     public async Task OnGetAsync(CancellationToken cancellationToken)
     {
         SetReportRange();
+        CanGenerateWeeklyWorkSummary = await weeklyWorkSummaryService.CanGenerateAsync(cancellationToken);
         Studios = (await studioDirectoryService.GetStudiosAsync(cancellationToken))
             .Where(studio => studio.IsActive)
             .OrderBy(studio => studio.GroupDisplayOrder ?? int.MaxValue)
@@ -95,6 +102,47 @@ public sealed class SupportSummaryModel(
             colors = EffortColors
         });
     }
+
+    public async Task<IActionResult> OnPostGenerateWeeklyWorkSummaryAsync(CancellationToken cancellationToken)
+    {
+        Response.Headers.CacheControl = "no-store";
+        if (!await weeklyWorkSummaryService.CanGenerateAsync(cancellationToken)) return Forbid();
+        if (!ModelState.IsValid
+            || !string.Equals(ReportPeriod, WeeklyPeriod, StringComparison.Ordinal)
+            || !DateOnly.TryParseExact($"{SelectedMonth}-01", "yyyy-MM-dd",
+                CultureInfo.InvariantCulture, DateTimeStyles.None, out var selectedMonth)
+            || selectedMonth == new DateOnly(9999, 12, 1)
+            || !Week.HasValue)
+            return WeeklySummaryError("Select a valid month and week in the Weekly summary period.");
+        var requestedWeek = Week;
+        SetReportRange();
+        if (Week != requestedWeek)
+            return WeeklySummaryError("The selected week does not exist in this month.");
+        try
+        {
+            var preview = await weeklyWorkSummaryService.GenerateAsync(
+                StartDate!.Value, EndDate!.Value, User, cancellationToken);
+            return new JsonResult(new
+            {
+                rows = preview.Draft.Rows,
+                warnings = preview.Warnings,
+                provider = preview.Draft.Provider,
+                model = preview.Draft.Model
+            });
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return Forbid();
+        }
+        catch (Exception exception) when (exception is WeeklyWorkSummaryException
+            or AiModelProviderException or HttpRequestException)
+        {
+            return WeeklySummaryError(exception.Message);
+        }
+    }
+
+    private static JsonResult WeeklySummaryError(string message) =>
+        new(new { error = message }) { StatusCode = StatusCodes.Status400BadRequest };
 
     public async Task<IActionResult> OnPostSaveExpectedDeliveryAsync(
         Guid? id,

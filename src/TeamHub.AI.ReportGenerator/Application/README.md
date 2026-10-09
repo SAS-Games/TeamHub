@@ -1,3 +1,8 @@
 # Application
 
-The future fixed workflow belongs here: collect approved source rows, remove excluded fields, build the versioned prompt/schema request, call `IAiModelService`, validate meaning and structure, apply bounded retries, and return a draft for review.
+`WeeklyWorkSummaryWorkflow` processes approved HPGDS Support and Notes source
+rows independently through `IAiModelService`. It validates structured output
+and protected identifiers, bounds concurrent requests, records completed-run
+audit metadata and returns a draft for review. There are no automatic retries
+or source-text fallbacks. The host selects and projects the source data before
+calling this workflow.

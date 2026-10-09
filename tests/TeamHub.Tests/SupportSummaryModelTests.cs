@@ -2,6 +2,11 @@ using System.Security.Claims;
 using FluentAssertions;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc.RazorPages;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Options;
+using TeamHub.AI.ReportGenerator.Contracts;
+using TeamHub.Web.AccessControl;
+using TeamHub.Web.Reports;
 using TeamHub.Authentication;
 using TeamHub.Milestones;
 using TeamHub.Studio;
@@ -68,7 +73,8 @@ public sealed class SupportSummaryModelTests
             jiraService,
             confluenceService,
             new StubPlanningService(),
-            effortService)
+            effortService,
+            new StubWeeklySummaryService())
         {
             PageContext = new PageContext
             {
@@ -135,7 +141,8 @@ public sealed class SupportSummaryModelTests
             jiraService,
             confluenceService,
             new StubPlanningService(),
-            new StubWorklogEffortService())
+            new StubWorklogEffortService(),
+            new StubWeeklySummaryService())
         {
             ReportPeriod = SupportSummaryModel.MonthlyPeriod,
             SelectedMonth = "2026-09",
@@ -168,7 +175,8 @@ public sealed class SupportSummaryModelTests
             jiraService,
             confluenceService,
             new StubPlanningService(),
-            new StubWorklogEffortService())
+            new StubWorklogEffortService(),
+            new StubWeeklySummaryService())
         {
             ReportPeriod = SupportSummaryModel.CustomPeriod,
             StartDate = new DateOnly(2026, 9, 3),
@@ -209,7 +217,8 @@ public sealed class SupportSummaryModelTests
             new StubJiraService(),
             new StubConfluenceService(),
             new StubPlanningService(),
-            new StubWorklogEffortService { Error = new InvalidOperationException(diagnostic) })
+            new StubWorklogEffortService { Error = new InvalidOperationException(diagnostic) },
+            new StubWeeklySummaryService())
         {
             PageContext = new PageContext
             {
@@ -254,7 +263,8 @@ public sealed class SupportSummaryModelTests
             new StubJiraService(),
             new StubConfluenceService(),
             new StubPlanningService(),
-            new StubWorklogEffortService())
+            new StubWorklogEffortService(),
+            new StubWeeklySummaryService())
         {
             PageContext = new PageContext { HttpContext = new DefaultHttpContext() }
         };
@@ -310,7 +320,8 @@ public sealed class SupportSummaryModelTests
             new StubJiraService(),
             new StubConfluenceService(),
             new StubPlanningService(),
-            new StubWorklogEffortService())
+            new StubWorklogEffortService(),
+            new StubWeeklySummaryService())
         {
             PageContext = new PageContext { HttpContext = new DefaultHttpContext() }
         };
@@ -329,6 +340,258 @@ public sealed class SupportSummaryModelTests
         StudioGroup = "Group",
         IsActive = isActive
     };
+
+    [Fact]
+    public async Task WeeklySummaryPost_DeniesUnauthorizedRequestsBeforeReadingSources()
+    {
+        var summary = new StubWeeklySummaryService { Allowed = false };
+        var model = SummaryModel(summary);
+        (await model.OnPostGenerateWeeklyWorkSummaryAsync(CancellationToken.None))
+            .Should().BeOfType<ForbidResult>();
+        summary.Calls.Should().Be(0);
+    }
+
+    [Theory]
+    [InlineData("Monthly", "2026-09", 1)]
+    [InlineData("Custom", "2026-09", 1)]
+    [InlineData("Weekly", "invalid", 1)]
+    [InlineData("Weekly", "9999-12", 1)]
+    [InlineData("Weekly", "2026-09", 99)]
+    public async Task WeeklySummaryPost_RejectsInvalidPeriodWithoutGeneration(string period, string month, int week)
+    {
+        var summary = new StubWeeklySummaryService { Allowed = true };
+        var model = SummaryModel(summary);
+        model.ReportPeriod = period;
+        model.SelectedMonth = month;
+        model.Week = week;
+        var result = (JsonResult)await model.OnPostGenerateWeeklyWorkSummaryAsync(CancellationToken.None);
+        result.StatusCode.Should().Be(400);
+        summary.Calls.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task WeeklySummaryPost_UsesSelectedWeekIncludingPreviousMonthBoundary()
+    {
+        var summary = new StubWeeklySummaryService { Allowed = true };
+        var model = SummaryModel(summary);
+        model.Search = "a presentation filter";
+        var result = await model.OnPostGenerateWeeklyWorkSummaryAsync(CancellationToken.None);
+        result.Should().BeOfType<JsonResult>();
+        summary.Start.Should().Be(new DateOnly(2026, 8, 31));
+        summary.End.Should().Be(new DateOnly(2026, 9, 4));
+        model.Response.Headers.CacheControl.ToString().Should().Be("no-store");
+    }
+
+    [Fact]
+    public async Task WeeklySummaryPost_SurfacesGenerationFailure()
+    {
+        var model = SummaryModel(new StubWeeklySummaryService
+        {
+            Allowed = true,
+            Error = new WeeklyWorkSummaryException("AI report generation is busy.")
+        });
+        var result = (JsonResult)await model.OnPostGenerateWeeklyWorkSummaryAsync(CancellationToken.None);
+        result.StatusCode.Should().Be(400);
+        System.Text.Json.JsonSerializer.Serialize(result.Value).Should().Contain("AI report generation is busy.");
+    }
+
+    [Theory]
+    [InlineData(AccessLevel.NoAccess, false)]
+    [InlineData(AccessLevel.ReadOnly, false)]
+    [InlineData(AccessLevel.Create, true)]
+    [InlineData(AccessLevel.FullAccess, true)]
+    public async Task WeeklySummaryService_RequiresAiReportsCreateAccess(AccessLevel granted, bool expected)
+    {
+        var service = new WeeklyWorkSummaryService(
+            new StubCurrentAccess(granted), new StubStudioDirectoryService([]),
+            new StubConfluenceService(), new StubWeeklyWorkflow(),
+            Options.Create(new ReportGeneratorOptions { Enabled = true }));
+        (await service.CanGenerateAsync()).Should().Be(expected);
+    }
+
+    [Theory]
+    [InlineData(false, true)]
+    [InlineData(true, false)]
+    public async Task WeeklySummaryService_DeniesMissingPermissionOrDisabledFeatureBeforeFetchingSources(
+        bool allowed, bool enabled)
+    {
+        var confluence = new StubConfluenceService();
+        var workflow = new StubWeeklyWorkflow();
+        var service = new WeeklyWorkSummaryService(
+            new StubCurrentAccess(allowed ? AccessLevel.Create : AccessLevel.ReadOnly),
+            new StubStudioDirectoryService([Studio("one", "One", "One", true)]),
+            confluence, workflow, Options.Create(new ReportGeneratorOptions { Enabled = enabled }));
+        Func<Task> act = () => service.GenerateAsync(new DateOnly(2026, 8, 31), new DateOnly(2026, 9, 4),
+            new ClaimsPrincipal());
+        if (!allowed) await act.Should().ThrowAsync<UnauthorizedAccessException>();
+        else await act.Should().ThrowAsync<WeeklyWorkSummaryException>();
+        confluence.LastQuery.Should().BeNull();
+        workflow.Request.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task WeeklySummaryService_DeniesMissingStudioSupportPermission()
+    {
+        var service = new WeeklyWorkSummaryService(
+            new StubCurrentAccess(AccessLevel.Create, AccessLevel.NoAccess),
+            new StubStudioDirectoryService([]), new StubConfluenceService(), new StubWeeklyWorkflow(),
+            Options.Create(new ReportGeneratorOptions { Enabled = true }));
+        (await service.CanGenerateAsync()).Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task WeeklySummaryService_RejectsConfluenceReadFailureWithoutGeneratingPartialReport()
+    {
+        var workflow = new StubWeeklyWorkflow();
+        var service = new WeeklyWorkSummaryService(
+            new StubCurrentAccess(AccessLevel.Create),
+            new StubStudioDirectoryService([Studio("one", "One", "One", true)]),
+            new StubConfluenceService
+            {
+                Result = new StudioConfluenceUpdateResult { IsConfigured = true, Message = "Confluence could not be read." }
+            }, workflow, Options.Create(new ReportGeneratorOptions { Enabled = true }));
+        var act = () => service.GenerateAsync(new DateOnly(2026, 8, 31), new DateOnly(2026, 9, 4),
+            new ClaimsPrincipal());
+        await act.Should().ThrowAsync<WeeklyWorkSummaryException>().WithMessage("Confluence could not be read.");
+        workflow.Request.Should().BeNull();
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task WeeklySummaryGet_ExposesButtonOnlyToAuthorizedUsers(bool allowed)
+    {
+        var model = SummaryModel(new StubWeeklySummaryService { Allowed = allowed });
+        await model.OnGetAsync(CancellationToken.None);
+        model.CanGenerateWeeklyWorkSummary.Should().Be(allowed);
+    }
+
+    [Fact]
+    public async Task WeeklySummaryService_ProjectsOnlyApprovedColumnsAndUsesActiveStudioOrder()
+    {
+        var second = Studio("second", "Second", "Second project", true);
+        second.StudioDisplayOrder = 2;
+        var first = Studio("first", "First", "First project", true);
+        first.StudioDisplayOrder = 1;
+        var confluence = new StubConfluenceService
+        {
+            Result = new StudioConfluenceUpdateResult
+            {
+                IsConfigured = true,
+                Updates =
+                [
+                    SummaryUpdate("second"), SummaryUpdate("first"),
+                    SummaryUpdate("old", new DateOnly(2026, 8, 24))
+                ]
+            }
+        };
+        var workflow = new StubWeeklyWorkflow();
+        var service = new WeeklyWorkSummaryService(
+            new StubCurrentAccess(AccessLevel.Create),
+            new StubStudioDirectoryService([second, Studio("inactive", "Inactive", "Inactive", false), first]),
+            confluence, workflow, Options.Create(new ReportGeneratorOptions { Enabled = true }));
+        var user = new ClaimsPrincipal(new ClaimsIdentity(
+            [new Claim(ClaimTypes.Name, "reader@example.com"), new Claim(ClaimTypes.Role, TeamHubUserTypes.Privileged)], "Test"));
+
+        var preview = await service.GenerateAsync(new DateOnly(2026, 8, 31), new DateOnly(2026, 9, 4), user);
+
+        confluence.LastQuery!.StudioIds.Should().Equal("first", "second");
+        confluence.LastQuery.AllowPrivilegedDefaultCredential.Should().BeTrue();
+        confluence.LastQuery.RequestingUserId.Should().Be("reader@example.com");
+        workflow.Request!.Sources.Select(source => source.StudioId).Should().Equal("first", "second");
+        var payload = System.Text.Json.JsonSerializer.Serialize(workflow.Request.Sources);
+        payload.Should().Contain("Support text").And.Contain("Notes text");
+        payload.Should().NotContain("Excluded text");
+        preview.Warnings.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task WeeklySummaryService_DisclosesMissingAndEmptySources()
+    {
+        var confluence = new StubConfluenceService
+        {
+            Result = new StudioConfluenceUpdateResult
+            {
+                IsConfigured = true,
+                Updates = [SummaryUpdate("present"), SummaryUpdate("empty")]
+            }
+        };
+        var empty = confluence.Result!.Updates[1];
+        empty.HpgdsSupport = "";
+        empty.Notes = "";
+        var workflow = new StubWeeklyWorkflow();
+        var service = new WeeklyWorkSummaryService(
+            new StubCurrentAccess(AccessLevel.Create),
+            new StubStudioDirectoryService([
+                Studio("present", "Present", "P", true),
+                Studio("empty", "Empty", "E", true),
+                Studio("missing", "Missing", "M", true)]),
+            confluence, workflow, Options.Create(new ReportGeneratorOptions { Enabled = true }));
+        var preview = await service.GenerateAsync(new DateOnly(2026, 8, 31), new DateOnly(2026, 9, 4),
+            new ClaimsPrincipal(new ClaimsIdentity([new Claim(ClaimTypes.Name, "reader")], "Test")));
+        workflow.Request!.Sources.Should().ContainSingle().Which.StudioId.Should().Be("present");
+        preview.Warnings.Should().HaveCount(2);
+    }
+
+    private static StudioConfluenceWeeklyUpdate SummaryUpdate(string id, DateOnly? start = null) => new()
+    {
+        StudioId = id, WeekStart = start ?? new DateOnly(2026, 8, 31),
+        WeekEnd = (start ?? new DateOnly(2026, 8, 31)).AddDays(4),
+        PageFound = true, StudioFound = true, HpgdsSupport = "Support text", Notes = "Notes text",
+        StudioWork = "Excluded text", WmdSupport = "Excluded text", ActionItems = "Excluded text",
+        PageId = "123", PageVersion = 2
+    };
+
+    private static SupportSummaryModel SummaryModel(StubWeeklySummaryService service) => new(
+        new StubStudioDirectoryService([]), new StubMilestoneService([]), new StubJiraService(),
+        new StubConfluenceService(), new StubPlanningService(), new StubWorklogEffortService(), service)
+    {
+        SelectedMonth = "2026-09", Week = 1,
+        PageContext = new PageContext { HttpContext = new DefaultHttpContext() }
+    };
+
+    private sealed class StubWeeklySummaryService : IWeeklyWorkSummaryService
+    {
+        public bool IsEnabled => true;
+        public bool Allowed { get; set; }
+        public int Calls { get; private set; }
+        public DateOnly Start { get; private set; }
+        public DateOnly End { get; private set; }
+        public Exception? Error { get; set; }
+        public Task<bool> CanGenerateAsync(CancellationToken cancellationToken = default) => Task.FromResult(Allowed);
+        public Task<WeeklyWorkSummaryPreview> GenerateAsync(DateOnly start, DateOnly end, ClaimsPrincipal user,
+            CancellationToken cancellationToken = default)
+        {
+            Calls++;
+            Start = start;
+            End = end;
+            if (Error is not null) throw Error;
+            return Task.FromResult(new WeeklyWorkSummaryPreview(new WeeklyWorkSummaryDraft(
+                [new WeeklyWorkSummaryRow("Studio", "Support activity")], "Test", "Test"), []));
+        }
+    }
+
+    private sealed class StubWeeklyWorkflow : IWeeklyWorkSummaryWorkflow
+    {
+        public WeeklyWorkSummaryRequest? Request { get; private set; }
+        public Task<WeeklyWorkSummaryDraft> GenerateAsync(WeeklyWorkSummaryRequest request,
+            CancellationToken cancellationToken = default)
+        {
+            Request = request;
+            return Task.FromResult(new WeeklyWorkSummaryDraft([], "Test", "Test"));
+        }
+    }
+
+    private sealed class StubCurrentAccess(AccessLevel reports, AccessLevel studio = AccessLevel.ReadOnly) : ICurrentAccessService
+    {
+        public Task<CurrentAccessSnapshot> GetCurrentAsync(CancellationToken cancellationToken = default) =>
+            Task.FromResult(new CurrentAccessSnapshot(TeamHubUserTypes.Registered, null));
+        public Task<AccessLevel> GetAccessLevelAsync(string module, CancellationToken cancellationToken = default) =>
+            Task.FromResult(module == TeamHubModules.AiReports ? reports : studio);
+        public async Task<bool> CanAsync(string module, AccessLevel required = AccessLevel.ReadOnly,
+            CancellationToken cancellationToken = default) =>
+            (await GetAccessLevelAsync(module, cancellationToken)).Allows(required);
+    }
 
     private sealed class StubStudioDirectoryService(IReadOnlyList<StudioDetails> studios) : IStudioDirectoryService
     {
@@ -397,6 +660,7 @@ public sealed class SupportSummaryModelTests
     private sealed class StubConfluenceService : IStudioConfluenceUpdateService
     {
         public ConsolidatedStudioConfluenceUpdateQuery? LastQuery { get; private set; }
+        public StudioConfluenceUpdateResult? Result { get; set; }
 
         public Task<StudioConfluenceUpdateResult> GetUpdatesAsync(
             StudioConfluenceUpdateQuery query,
@@ -408,7 +672,7 @@ public sealed class SupportSummaryModelTests
             CancellationToken cancellationToken = default)
         {
             LastQuery = query;
-            return Task.FromResult(new StudioConfluenceUpdateResult
+            return Task.FromResult(Result ?? new StudioConfluenceUpdateResult
             {
                 IsConfigured = true,
                 Updates = query.StudioIds

@@ -7,10 +7,77 @@
 | Branch | `feature/ai-generated-reports` |
 | Workspace | `D:\TeamHub` |
 | Baseline | `main` at `59cfed5` (`confluence page update`) |
-| Status | Controlled Report Generator workflow architecture ready; weekly workflow implementation is next |
-| Last updated | 2026-09-14 |
+| Status | Weekly Work Summary implemented; broader reports/export remain proposed |
+| Last updated | 2026-10-09 |
 
 This document is the scope contract, design record, and development checklist for the AI-generated reporting feature. Update it whenever a requirement, decision, milestone, test result, or known issue changes.
+
+## Current implementation: Weekly Work Summary
+
+This section supersedes the earlier report proposal below **for Weekly Work
+Summary only**. The remaining sections retain the historical broader-report
+design; they do not describe the currently implemented summary.
+
+- Entry point: Support Summary, Generate Weekly Work Summary.
+- Select Weekly, a month and a week, then apply the page filters with Search.
+- Source: the selected Monday-Friday week's original Confluence HPGDS Support
+  **and Notes** for all active studios. Search does not narrow generation.
+- Exclude Studio Work, WMD Support, Action Items, Jira, milestones and effort
+  before inference. Studio identities and source page IDs/versions remain
+  server-controlled, outside model-editable content.
+- Preview: exactly **Studio | Support Activity**, combining support and notes
+  into clear short statements in simple, management-friendly English.
+- Access: Studio Support Read Only plus existing AI Reports Create or higher,
+  granted through role defaults/per-user overrides in the access matrix.
+  Admins have Full Access. The POST checks permissions independently of UI.
+- Enable using `AI:ReportGenerator:Enabled=true`; disabled by default to preserve
+  existing deployments. Shared provider/model settings are unchanged.
+- The isolated `IWeeklyWorkSummaryWorkflow` is implemented in Report Generator;
+  a web adapter owns source fetching. No changes to planning persistence,
+  existing Confluence parsing, shared AI providers or Flow Designer workflows.
+- Studios are processed independently. Malformed/empty responses and changed
+  protected numbers, URLs, Jira identifiers or acronyms reject the entire draft.
+  HPGDS Support and Notes are validated independently before server-side
+  combination; non-empty fields cannot have empty replacements.
+  Source bounds reject rather than truncate. Concurrent report requests are
+  bounded independently of Flow Designer.
+- Missing/empty studio sources are disclosed as coverage warnings; a global
+  Confluence error or no usable source prevents generation.
+- Human review against the existing Confluence section is required. Automated
+  validation does not prove meaning preservation, names or completion status.
+- Only completed-run audit metadata is persisted in `ai-reports.db`; draft
+  content is a transient page preview. No source data is modified.
+- Model instructions are loaded from Report Generator's
+  `Prompts/WeeklyWorkSummary.md` once per report. Edit the deployed file without
+  a code change/restart; its hash is recorded as the prompt version. The optional
+  `WeeklyWorkSummaryPromptPath` override selects another administrator-owned
+  file. Missing/empty instructions fail explicitly; schema/validation stay in code.
+- Copy Report copies the generated two-column table using HTML/plain-text
+  clipboard formats. HTTPS/localhost and browser permission are required;
+  clipboard failures show manual-copy guidance.
+- Downloads, saved report content/history, monthly reports and broader weekly
+  reports are not part of this increment.
+
+Tests cover permissions, weekly/month-boundary selection, source-column
+projection, missing coverage, schema validation, protected-value changes,
+source limits, cancellation and concurrency. Project map and extension boundaries
+are captured in [PROJECT_CONTEXT.md](PROJECT_CONTEXT.md).
+
+Verification on 2026-10-09: 138 focused xUnit tests passed across Report Generator,
+Support Summary, access control, Confluence/planning and existing AI consumers.
+The web/Razor build, JavaScript syntax check and mocked browser smoke test passed.
+The configured Ollama loopback endpoint was unavailable, so live inference against
+Confluence has not been verified in this environment.
+
+Follow-up verification: 53 focused report/persistence/page tests passed after
+externalizing the prompt. Tests verify per-report instruction snapshots,
+reload between reports, prompt hashes and missing/empty-file errors.
+The build copied the Markdown prompt into the web output. Mocked browser tests
+verified formatted/text clipboard representations, multiline/escaped content,
+denied/unavailable clipboard guidance and hiding Copy Report after a failed
+generation. No live AI inference or native document/email paste was performed.
+
+## Historical broader-report proposal (not yet implemented)
 
 ## Purpose
 

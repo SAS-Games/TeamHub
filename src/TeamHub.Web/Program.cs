@@ -24,6 +24,7 @@ using TeamHub.Web.FlowDesigner;
 using TeamHub.Web.WorkCenter;
 using TeamHub.Web.Formatting;
 using TeamHub.Web.WorklogAnalytics;
+using TeamHub.Web.Reports;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.WebHost.UseStaticWebAssets();
@@ -97,6 +98,7 @@ builder.Services.AddStudioDirectory(builder.Configuration);
 builder.Services.AddTeamHubAi(builder.Configuration);
 builder.Services.AddAiFlowDesigner(builder.Configuration);
 builder.Services.AddReportGenerator(builder.Configuration);
+builder.Services.AddScoped<IWeeklyWorkSummaryService, WeeklyWorkSummaryService>();
 builder.Services.Configure<HomeConfigurationOptions>(builder.Configuration.GetSection(HomeConfigurationOptions.SectionName));
 builder.Services.AddSingleton<IHomeContentService, HomeContentService>();
 

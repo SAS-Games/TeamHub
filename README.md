@@ -66,6 +66,28 @@ Email delivery is configured by an administrator under **Configuration > Email S
 
 ## Local AI runtime
 
+### Weekly Work Summary
+
+On **Support Summary**, select a Weekly month/week and apply the filters, then
+use **Generate Weekly Work Summary**. The AI reads only that week's Confluence
+HPGDS Support and Notes for all active studios and produces a reviewable
+**Studio | Support Activity** table. Search does not narrow generation.
+
+Set `AI:ReportGenerator:Enabled=true` to enable the feature. Admins can generate;
+other users need **AI Reports: Create** or higher in the access matrix and
+**Studio Support: Read Only** or higher. Existing Confluence credentials remain
+required. Source records are never edited. Review the draft before sharing;
+automated validation cannot guarantee identical meaning.
+
+Model instructions are editable in
+[WeeklyWorkSummary.md](src/TeamHub.AI.ReportGenerator/Prompts/WeeklyWorkSummary.md).
+Edit the deployed `Prompts/WeeklyWorkSummary.md` to apply changes to the next
+report without recompiling/restarting. **Copy Report** copies the generated
+table for pasting into documents, email or spreadsheets.
+
+See [project context](docs/PROJECT_CONTEXT.md) and
+[AI reports](docs/AI_GENERATED_REPORTS.md) for boundaries and remaining scope.
+
 Team Hub supports `Ollama`, `LlamaCpp`, and a generic `OpenAICompatible` provider. Ollama and llama.cpp have separate endpoint/model profiles in `appsettings.json`; switch between them by changing only `AI:Provider` and restarting Team Hub.
 
 For an organization-approved llama.cpp deployment, see `scripts/ai/README.md`. The supplied scripts never download software or models, bind llama-server to loopback, optionally verify SHA-256 hashes, and validate that the configured model alias is available. The runtime binary and GGUF model must be obtained through the organization's approved software-distribution process.

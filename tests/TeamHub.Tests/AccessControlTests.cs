@@ -16,6 +16,18 @@ namespace TeamHub.Tests;
 public sealed class AccessControlTests
 {
     [Fact]
+    public void WeeklySummaryGeneration_UsesReadOnlyStudioAccessAndChecksAiPermissionInTheHandler()
+    {
+        var request = new DefaultHttpContext().Request;
+        request.Path = "/SupportSummary";
+        request.Method = "POST";
+        request.QueryString = new QueryString("?handler=GenerateWeeklyWorkSummary");
+        TeamHubAccessRoutes.ResolveRequiredAccess(request).Should().Be(AccessLevel.ReadOnly);
+        request.QueryString = new QueryString("?handler=SaveExpectedDelivery");
+        TeamHubAccessRoutes.ResolveRequiredAccess(request).Should().Be(AccessLevel.Edit);
+    }
+
+    [Fact]
     public async Task BootstrapUser_IsImportedAndAuthenticatedFromAuthorizedList()
     {
         await using var host = await AccessTestHost.CreateAsync();

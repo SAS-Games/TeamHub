@@ -47,11 +47,12 @@ Owns the controlled report-generation workflow:
 - Weekly and monthly report source models and orchestration.
 - Meaning-preserving prompts and deterministic validation.
 - Bounded correction/retry behavior controlled by application code.
-- Four-column report drafts and export.
+- Two-column Weekly Work Summary drafts; broader reports and export remain future work.
 - Report audit metadata in `ai-reports.db`.
 - Its own feature flag, permissions, and concurrency policy.
 
-Its public orchestration boundary is `IReportGenerationWorkflow`.
+Weekly Work Summary uses `IWeeklyWorkSummaryWorkflow`. The separate
+`IReportGenerationWorkflow` contract remains reserved for broader reports.
 
 ### `TeamHub.AI.FlowDesigner`
 

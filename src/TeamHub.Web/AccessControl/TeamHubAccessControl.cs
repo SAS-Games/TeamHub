@@ -170,6 +170,10 @@ public static class TeamHubAccessRoutes
     {
         var path = request.Path.Value ?? string.Empty;
         var handler = request.Query["handler"].ToString();
+        if (path.Equals("/SupportSummary", StringComparison.OrdinalIgnoreCase)
+            && HttpMethods.IsPost(request.Method)
+            && handler.Equals("GenerateWeeklyWorkSummary", StringComparison.OrdinalIgnoreCase))
+            return AccessLevel.ReadOnly;
         if (path.StartsWith("/Flows/Review", StringComparison.OrdinalIgnoreCase)
             || path.StartsWith("/api/flows/publication-requests/", StringComparison.OrdinalIgnoreCase)
             || handler.Contains("Approve", StringComparison.OrdinalIgnoreCase)

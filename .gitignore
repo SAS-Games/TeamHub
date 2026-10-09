@@ -25,6 +25,7 @@ TestResults/
 !src/TeamHub.Web/data/flow-library.db
 **/tests/
 **/Tests/
+!/tests/
 
 # Browser QA profiles and captures
 .browser-qa/
