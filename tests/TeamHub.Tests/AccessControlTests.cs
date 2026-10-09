@@ -16,6 +16,17 @@ namespace TeamHub.Tests;
 public sealed class AccessControlTests
 {
     [Fact]
+    public void JiraCommentRoutes_RequireStudioSupportReadAccessIncludingImages()
+    {
+        var request = new DefaultHttpContext().Request;
+        request.Path = "/SupportSummary/Comments";
+        request.Method = "GET";
+        request.QueryString = new QueryString("?handler=Image");
+        TeamHubAccessRoutes.ResolveModule(request.Path).Should().Be(TeamHubModules.StudioSupport);
+        TeamHubAccessRoutes.ResolveRequiredAccess(request).Should().Be(AccessLevel.ReadOnly);
+    }
+
+    [Fact]
     public void WeeklySummaryGeneration_UsesReadOnlyStudioAccessAndChecksAiPermissionInTheHandler()
     {
         var request = new DefaultHttpContext().Request;

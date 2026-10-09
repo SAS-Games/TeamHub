@@ -58,6 +58,26 @@ Independent service scopes protect scoped database services during parallel
 loads. Effort is loaded separately through the existing worklog integration.
 Search filters are presentation filters, not report source selection.
 
+Support Activity Tickets offers on-demand Latest Comments via
+`/SupportSummary/Comments` with an Image handler. The separate
+`IStudioJiraCommentService` validates active studio/project/component scope,
+uses existing personal/shared credential rules and fetches all comment pages
+before sorting newest-first. It never changes ticket-search caching or filters.
+Only attachments referenced by a separately re-authorized visible comment
+may be proxied. Attachment downloads stay under the configured Jira URL with
+redirects disabled, supported raster formats/signatures and a 10 MB cap.
+No Jira credentials or arbitrary raw HTML reach the browser. External images
+remain links; unsupported/unresolvable media shows an explicit Jira-view notice.
+Image downloads are bounded to four concurrent requests in the preview; closing
+or changing tickets cancels pending work and releases browser object URLs.
+
+Comment-preview verification: 125 focused Studio/comment/page/access tests
+passed, including paging/order, shared access, attachment membership and
+restricted comments, unsafe hosts/formats and explicit failures. The web/Razor
+build and JavaScript syntax checks passed. Mocked browser tests exercised image
+decoding, escaped text, external links, ticket switching, error notices, image
+concurrency and modal cleanup. A live Jira instance was not used for this check.
+
 `SupportSummaryPlanning.cs` stores expected milestone deliveries and build
 reviews; it is not the weekly work source. `IStudioConfluenceUpdateService`
 fetches consolidated updates with source week, page ID/version, studio identity,

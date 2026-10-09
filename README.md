@@ -66,6 +66,23 @@ Email delivery is configured by an administrator under **Configuration > Email S
 
 ## Local AI runtime
 
+### Jira comment preview
+
+In **Support Summary > Support Activity Tickets**, use **Latest Comments** to
+open a read-only modal with comments ordered newest to oldest by creation time.
+The preview uses existing Studio Support Read Only permission and the requesting
+user's Jira credentials, including explicitly granted shared read-only access.
+Jira comment visibility and studio/project/component scope are enforced.
+
+Jira-attached PNG, JPEG, GIF and WebP images referenced by a visible comment
+are loaded through Team Hub; Jira tokens are never sent to the browser.
+Images larger than 10 MB, unsupported formats, ambiguous attachment names and
+unresolvable cloud media IDs show a notice to open the comment in Jira.
+External images remain links and are not loaded automatically.
+Basic wiki/Atlassian document text, links and image references are supported;
+the preview does not render arbitrary Jira HTML or reproduce every rich-text
+format. An **Open in Jira** link provides the original view.
+
 ### Weekly Work Summary
 
 On **Support Summary**, select a Weekly month/week and apply the filters, then

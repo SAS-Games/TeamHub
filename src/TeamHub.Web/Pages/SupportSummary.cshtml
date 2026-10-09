@@ -504,7 +504,7 @@ else
             <div class="section-body text-secondary @(defaultTicketCount == 0 ? "" : "d-none")" data-ticket-status-empty>No tickets match the selected statuses.</div>
             <div class="table-responsive @(defaultTicketCount == 0 ? "d-none" : "")" data-ticket-table>
                 <table class="table styled-table align-middle">
-                    <thead><tr><th>Studio</th><th>Support Type</th><th>Ticket</th><th>Summary</th><th>Assigned User</th><th>Status</th><th>Priority</th></tr></thead>
+                    <thead><tr><th>Studio</th><th>Support Type</th><th>Ticket</th><th>Summary</th><th>Assigned User</th><th>Status</th><th>Priority</th><th>Comments</th></tr></thead>
                     <tbody>
                     @foreach (var item in Model.JiraTickets)
                     {
@@ -518,6 +518,14 @@ else
                             <td>@item.Ticket.AssignedUser</td>
                             <td>@item.Ticket.Status</td>
                             <td>@item.Ticket.Priority</td>
+                            <td>
+                                <button type="button" class="btn btn-sm btn-outline-secondary"
+                                        data-jira-comments
+                                        data-ticket-id="@item.Ticket.TicketId"
+                                        data-comments-url="@Url.Page("/SupportSummaryComments", new { studioId = item.Studio.Id, ticketId = item.Ticket.TicketId })">
+                                    Latest Comments
+                                </button>
+                            </td>
                         </tr>
                     }
                     </tbody>
@@ -525,6 +533,29 @@ else
             </div>
         }
     </section>
+
+    <div class="modal fade" id="jira-comments-modal" tabindex="-1" aria-labelledby="jira-comments-title" aria-hidden="true"
+         data-jira-comments-modal>
+        <div class="modal-dialog modal-xl modal-dialog-scrollable">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h2 class="modal-title fs-5" id="jira-comments-title" data-jira-comments-title>Latest Comments</h2>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <p class="text-secondary small">Newest comments first, ordered by creation time. Only comments visible to your Jira account are included.</p>
+                    <div role="status" aria-live="polite" data-jira-comments-status></div>
+                    <div class="alert alert-danger" role="alert" data-jira-comments-error hidden></div>
+                    <div class="alert alert-secondary small" data-jira-comments-shared hidden>Using shared read-only Jira access.</div>
+                    <div data-jira-comments-content></div>
+                </div>
+                <div class="modal-footer">
+                    <a class="btn btn-outline-primary" data-jira-comments-open target="_blank" rel="noopener noreferrer" hidden>Open in Jira</a>
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
 
     <section class="content-section"
              id="effort"
@@ -675,6 +706,7 @@ else
 
 @section Scripts {
 <script src="~/js/weekly-work-summary.js" asp-append-version="true"></script>
+<script src="~/js/jira-comments.js" asp-append-version="true"></script>
 <script>
 (() => {
     const form = document.querySelector('[data-support-summary-filters]');

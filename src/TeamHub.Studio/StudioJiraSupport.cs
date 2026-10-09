@@ -550,7 +550,7 @@ internal sealed class JiraStudioTicketService(
         return new JiraIdLookupResult(boardIds.Order().ToList());
     }
 
-    private static HttpRequestMessage CreateJiraRequest(string requestUri, AtlassianResolvedCredential credential)
+    internal static HttpRequestMessage CreateJiraRequest(string requestUri, AtlassianResolvedCredential credential)
     {
         var request = new HttpRequestMessage(HttpMethod.Get, requestUri);
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", credential.Token);

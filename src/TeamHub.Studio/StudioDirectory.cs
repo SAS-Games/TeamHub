@@ -1239,6 +1239,8 @@ public static class StudioDirectoryServiceCollectionExtensions
         services.AddScoped<IAtlassianConfigurationService>(provider => provider.GetRequiredService<SqliteAtlassianConfigurationService>());
         services.AddScoped<IAtlassianCredentialAccessor>(provider => provider.GetRequiredService<SqliteAtlassianConfigurationService>());
         services.AddHttpClient<IStudioJiraTicketService, JiraStudioTicketService>();
+        services.AddHttpClient<IStudioJiraCommentService, JiraStudioCommentService>()
+            .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false });
         services.AddHttpClient<IStudioConfluenceUpdateService, ConfluenceStudioUpdateService>();
         return services;
     }
