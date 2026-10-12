@@ -32,8 +32,9 @@ public sealed class WeeklyWorkSummaryService(
     public bool IsEnabled => options.Value.Enabled;
 
     public async Task<bool> CanGenerateAsync(CancellationToken cancellationToken = default) =>
-        await access.CanAsync(TeamHubModules.StudioSupport, AccessLevel.ReadOnly, cancellationToken)
-        && await access.CanAsync(TeamHubModules.AiReports, AccessLevel.Create, cancellationToken);
+        IsEnabled
+        && await access.CanAsync(TeamHubModules.AiReports, AccessLevel.Create, cancellationToken)
+        && await access.CanAsync(TeamHubModules.StudioSupport, AccessLevel.ReadOnly, cancellationToken);
 
     public async Task<WeeklyWorkSummaryPreview> GenerateAsync(
         DateOnly weekStart,
@@ -41,10 +42,10 @@ public sealed class WeeklyWorkSummaryService(
         ClaimsPrincipal user,
         CancellationToken cancellationToken = default)
     {
-        if (!await CanGenerateAsync(cancellationToken))
-            throw new UnauthorizedAccessException("You do not have permission to generate AI reports.");
         if (!IsEnabled)
             throw new WeeklyWorkSummaryException("AI report generation is disabled. An administrator can enable AI:ReportGenerator:Enabled.");
+        if (!await CanGenerateAsync(cancellationToken))
+            throw new UnauthorizedAccessException("AI Reports Create and Studio Support Read Only access are required to generate this report.");
         if (weekStart.DayOfWeek != DayOfWeek.Monday || weekEnd != weekStart.AddDays(4))
             throw new WeeklyWorkSummaryException("Select a Monday-Friday weekly period.");
 

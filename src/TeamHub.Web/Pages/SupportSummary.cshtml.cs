@@ -69,7 +69,8 @@ public sealed class SupportSummaryModel(
     public async Task OnGetAsync(CancellationToken cancellationToken)
     {
         SetReportRange();
-        CanGenerateWeeklyWorkSummary = await weeklyWorkSummaryService.CanGenerateAsync(cancellationToken);
+        CanGenerateWeeklyWorkSummary = IsWeeklyWorkSummaryEnabled
+            && await weeklyWorkSummaryService.CanGenerateAsync(cancellationToken);
         Studios = (await studioDirectoryService.GetStudiosAsync(cancellationToken))
             .Where(studio => studio.IsActive)
             .OrderBy(studio => studio.GroupDisplayOrder ?? int.MaxValue)
@@ -106,7 +107,8 @@ public sealed class SupportSummaryModel(
     public async Task<IActionResult> OnPostGenerateWeeklyWorkSummaryAsync(CancellationToken cancellationToken)
     {
         Response.Headers.CacheControl = "no-store";
-        if (!await weeklyWorkSummaryService.CanGenerateAsync(cancellationToken)) return Forbid();
+        if (!IsWeeklyWorkSummaryEnabled
+            || !await weeklyWorkSummaryService.CanGenerateAsync(cancellationToken)) return Forbid();
         if (!ModelState.IsValid
             || !string.Equals(ReportPeriod, WeeklyPeriod, StringComparison.Ordinal)
             || !DateOnly.TryParseExact($"{SelectedMonth}-01", "yyyy-MM-dd",

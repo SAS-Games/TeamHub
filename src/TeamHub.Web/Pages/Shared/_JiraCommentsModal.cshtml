@@ -1,0 +1,22 @@
+<div class="modal fade" id="jira-comments-modal" tabindex="-1" aria-labelledby="jira-comments-title" aria-hidden="true"
+     data-jira-comments-modal>
+    <div class="modal-dialog modal-xl modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 class="modal-title fs-5" id="jira-comments-title" data-jira-comments-title>Latest Comments</h2>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p class="text-secondary small">Newest comments first, ordered by creation time. Only comments visible to your Jira account are included.</p>
+                <div role="status" aria-live="polite" data-jira-comments-status></div>
+                <div class="alert alert-danger" role="alert" data-jira-comments-error hidden></div>
+                <div class="alert alert-secondary small" data-jira-comments-shared hidden>Using shared read-only Jira access.</div>
+                <div data-jira-comments-content></div>
+            </div>
+            <div class="modal-footer">
+                <a class="btn btn-outline-primary" data-jira-comments-open target="_blank" rel="noopener noreferrer" hidden>Open in Jira</a>
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>

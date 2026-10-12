@@ -10,6 +10,17 @@
     const rows = section.querySelector("[data-weekly-summary-rows]");
     const copyButton = section.querySelector("[data-weekly-summary-copy]");
     const copyStatus = section.querySelector("[data-weekly-summary-copy-status]");
+    const modalElement = section.querySelector("[data-weekly-summary-modal]");
+    const modal = bootstrap.Modal.getOrCreateInstance(modalElement);
+    let pending;
+
+    modalElement.addEventListener("hidden.bs.modal", () => {
+        pending?.abort();
+        preview.hidden = true;
+        copyButton.hidden = true;
+        rows.replaceChildren();
+        copyStatus.textContent = "";
+    });
 
     copyButton.addEventListener("click", async () => {
         copyButton.disabled = true;
@@ -59,6 +70,9 @@
 
     form.addEventListener("submit", async event => {
         event.preventDefault();
+        pending?.abort();
+        const controller = new AbortController();
+        pending = controller;
         button.disabled = true;
         error.hidden = true;
         warnings.hidden = true;
@@ -66,10 +80,12 @@
         copyButton.hidden = true;
         copyStatus.textContent = "";
         rows.replaceChildren();
-        status.textContent = "Preparing the weekly summary. You can continue using this page.";
+        status.textContent = "Preparing the weekly summary...";
+        modal.show();
         try {
             const response = await fetch(form.action, {
                 method: "POST",
+                signal: controller.signal,
                 body: new FormData(form),
                 headers: { Accept: "application/json" }
             });
@@ -77,6 +93,7 @@
                 throw new Error("The report could not be generated. Your session or permissions may have changed. Refresh the page and try again.");
             }
             const result = await response.json();
+            if (controller.signal.aborted) return;
             if (!response.ok) throw new Error(result.error || "The report could not be generated.");
             for (const row of result.rows) {
                 const tr = document.createElement("tr");
@@ -99,11 +116,12 @@
             copyButton.hidden = false;
             status.textContent = `Draft generated using ${result.provider} / ${result.model}. Review it against the source before sharing.`;
         } catch (failure) {
+            if (controller.signal.aborted) return;
             error.textContent = failure instanceof Error ? failure.message : "The report could not be generated.";
             error.hidden = false;
             status.textContent = "";
         } finally {
-            button.disabled = false;
+            if (pending === controller) button.disabled = false;
         }
     });
 })();

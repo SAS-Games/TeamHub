@@ -74,52 +74,6 @@
 }
 else
 {
-    @if (Model.CanGenerateWeeklyWorkSummary)
-    {
-        <section class="content-section" id="weekly-work-summary" data-weekly-work-summary>
-            <div class="section-heading">
-                <div><span>AI-assisted draft</span><h2>Weekly Work Summary</h2></div>
-                <form method="post" asp-page-handler="GenerateWeeklyWorkSummary" data-weekly-summary-form>
-                    <input type="hidden" name="ReportPeriod" value="@Model.ReportPeriod" />
-                    <input type="hidden" name="SelectedMonth" value="@Model.SelectedMonth" />
-                    <input type="hidden" name="Week" value="@Model.Week" />
-                    <button type="submit" class="btn btn-primary"
-                            disabled="@(!Model.IsWeeklyWorkSummaryEnabled || Model.ReportPeriod != SupportSummaryModel.WeeklyPeriod)">
-                        Generate Weekly Work Summary
-                    </button>
-                </form>
-            </div>
-            <div class="section-body">
-                <p class="text-secondary">
-                    Uses only HPGDS Support and Notes for all active studios for
-                    @Model.StartDate?.ToString("dd MMM yyyy") &ndash; @Model.EndDate?.ToString("dd MMM yyyy").
-                    Search does not limit this report. Review the draft against Confluence before sharing.
-                </p>
-                @if (!Model.IsWeeklyWorkSummaryEnabled)
-                {
-                    <p class="text-warning">AI report generation is disabled. An administrator can enable AI:ReportGenerator:Enabled.</p>
-                }
-                @if (Model.ReportPeriod != SupportSummaryModel.WeeklyPeriod)
-                {
-                    <p class="text-secondary">Select the Weekly summary period to generate this report.</p>
-                }
-                <div role="status" aria-live="polite" data-weekly-summary-status></div>
-                <div class="alert alert-danger" role="alert" data-weekly-summary-error hidden></div>
-                <div class="alert alert-warning" data-weekly-summary-warnings hidden></div>
-                <button type="button" class="btn btn-outline-secondary mt-2" data-weekly-summary-copy hidden>
-                    Copy Report
-                </button>
-                <div role="status" aria-live="polite" data-weekly-summary-copy-status></div>
-            </div>
-            <div class="table-responsive" data-weekly-summary-preview hidden>
-                <table class="table styled-table align-middle">
-                    <thead><tr><th>Studio</th><th>Support Activity</th></tr></thead>
-                    <tbody data-weekly-summary-rows></tbody>
-                </table>
-            </div>
-        </section>
-    }
-
     <section class="content-section">
         <div class="stat-tiles">
             <div class="stat-tile"><div class="stat-label">Active Studios</div><div class="stat-value">@Model.Studios.Count</div></div>
@@ -534,28 +488,7 @@ else
         }
     </section>
 
-    <div class="modal fade" id="jira-comments-modal" tabindex="-1" aria-labelledby="jira-comments-title" aria-hidden="true"
-         data-jira-comments-modal>
-        <div class="modal-dialog modal-xl modal-dialog-scrollable">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h2 class="modal-title fs-5" id="jira-comments-title" data-jira-comments-title>Latest Comments</h2>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-                </div>
-                <div class="modal-body">
-                    <p class="text-secondary small">Newest comments first, ordered by creation time. Only comments visible to your Jira account are included.</p>
-                    <div role="status" aria-live="polite" data-jira-comments-status></div>
-                    <div class="alert alert-danger" role="alert" data-jira-comments-error hidden></div>
-                    <div class="alert alert-secondary small" data-jira-comments-shared hidden>Using shared read-only Jira access.</div>
-                    <div data-jira-comments-content></div>
-                </div>
-                <div class="modal-footer">
-                    <a class="btn btn-outline-primary" data-jira-comments-open target="_blank" rel="noopener noreferrer" hidden>Open in Jira</a>
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
-                </div>
-            </div>
-        </div>
-    </div>
+    <partial name="_JiraCommentsModal" />
 
     <section class="content-section"
              id="effort"
@@ -702,6 +635,63 @@ else
             </article>
         </div>
     </section>
+
+    @if (Model.CanGenerateWeeklyWorkSummary)
+    {
+        <section class="content-section" id="ai-reports" data-weekly-work-summary>
+            <div class="section-heading">
+                <div><span>Admin tools</span><h2>AI Reports</h2></div>
+            </div>
+            <div class="section-body">
+                <p class="text-secondary">Generate a report for the selected period and review it in a preview window.</p>
+                <form method="post" asp-page-handler="GenerateWeeklyWorkSummary" data-weekly-summary-form>
+                    <input type="hidden" name="ReportPeriod" value="@Model.ReportPeriod" />
+                    <input type="hidden" name="SelectedMonth" value="@Model.SelectedMonth" />
+                    <input type="hidden" name="Week" value="@Model.Week" />
+                    <button type="submit" class="btn btn-primary"
+                            disabled="@(Model.ReportPeriod != SupportSummaryModel.WeeklyPeriod)">
+                        Weekly Work Summary
+                    </button>
+                </form>
+                @if (Model.ReportPeriod != SupportSummaryModel.WeeklyPeriod)
+                {
+                    <p class="text-secondary mt-2">Select the Weekly summary period to generate this report.</p>
+                }
+            </div>
+            <div class="modal fade" id="weekly-work-summary-modal" tabindex="-1"
+                 aria-labelledby="weekly-work-summary-title" aria-hidden="true" data-weekly-summary-modal>
+                <div class="modal-dialog modal-xl modal-dialog-scrollable">
+                    <div class="modal-content">
+                        <div class="modal-header">
+                            <h2 class="modal-title fs-5" id="weekly-work-summary-title">Weekly Work Summary</h2>
+                            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                        </div>
+                        <div class="modal-body">
+                            <p class="text-secondary">
+                                Uses only HPGDS Support and Notes for all active studios for
+                                @Model.StartDate?.ToString("dd MMM yyyy") &ndash; @Model.EndDate?.ToString("dd MMM yyyy").
+                                Search does not limit this report. Review the draft against Confluence before sharing.
+                            </p>
+                            <div role="status" aria-live="polite" data-weekly-summary-status></div>
+                            <div class="alert alert-danger" role="alert" data-weekly-summary-error hidden></div>
+                            <div class="alert alert-warning" data-weekly-summary-warnings hidden></div>
+                            <div class="table-responsive" data-weekly-summary-preview hidden>
+                                <table class="table styled-table align-middle">
+                                    <thead><tr><th>Studio</th><th>Support Activity</th></tr></thead>
+                                    <tbody data-weekly-summary-rows></tbody>
+                                </table>
+                            </div>
+                            <div role="status" aria-live="polite" data-weekly-summary-copy-status></div>
+                        </div>
+                        <div class="modal-footer">
+                            <button type="button" class="btn btn-outline-primary" data-weekly-summary-copy hidden>Copy Report</button>
+                            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+    }
 }
 
 @section Scripts {

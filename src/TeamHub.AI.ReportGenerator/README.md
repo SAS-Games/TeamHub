@@ -67,8 +67,11 @@ requires HTTPS or localhost and browser permission. If copying fails, the page
 displays instructions for selecting and copying the table manually.
 
 The host adapter owns Confluence fetching and authorization. In Team Hub,
-generation requires Studio Support Read Only and AI Reports Create access
-(including role/per-user matrix grants); admins have Full Access. Source
+the bottom AI Reports section is shown to administrators and users granted
+AI Reports Create access or higher when `AI:ReportGenerator:Enabled=true`.
+Generation enforces the same matrix permissions server-side.
+Weekly Work Summary opens a scrollable modal containing the two-column preview
+and Copy Report. Existing Studio Support access and source
 credential rules are unchanged. Monthly/custom ranges are not supported by this
 workflow. Existing `IReportGenerationWorkflow` is reserved for the broader
 report feature, not reused through report-type compatibility branches.

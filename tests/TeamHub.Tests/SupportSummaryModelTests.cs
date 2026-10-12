@@ -396,16 +396,24 @@ public sealed class SupportSummaryModelTests
     }
 
     [Theory]
-    [InlineData(AccessLevel.NoAccess, false)]
-    [InlineData(AccessLevel.ReadOnly, false)]
-    [InlineData(AccessLevel.Create, true)]
-    [InlineData(AccessLevel.FullAccess, true)]
-    public async Task WeeklySummaryService_RequiresAiReportsCreateAccess(AccessLevel granted, bool expected)
+    [InlineData(TeamHubUserTypes.Registered, AccessLevel.NoAccess, true, false)]
+    [InlineData(TeamHubUserTypes.Registered, AccessLevel.ReadOnly, true, false)]
+    [InlineData(TeamHubUserTypes.Registered, AccessLevel.Create, true, true)]
+    [InlineData(TeamHubUserTypes.Registered, AccessLevel.Edit, true, true)]
+    [InlineData(TeamHubUserTypes.Registered, AccessLevel.Delete, true, true)]
+    [InlineData(TeamHubUserTypes.Registered, AccessLevel.FullAccess, true, true)]
+    [InlineData(TeamHubUserTypes.Registered, AccessLevel.Create, false, false)]
+    [InlineData(TeamHubUserTypes.Privileged, AccessLevel.Create, true, true)]
+    [InlineData(TeamHubUserTypes.Privileged, AccessLevel.FullAccess, true, true)]
+    [InlineData(TeamHubUserTypes.Admin, AccessLevel.FullAccess, false, false)]
+    [InlineData(TeamHubUserTypes.Admin, AccessLevel.NoAccess, true, true)]
+    public async Task WeeklySummaryService_RequiresMatrixCreateAccessAndEnabledFeature(
+        string userType, AccessLevel granted, bool enabled, bool expected)
     {
         var service = new WeeklyWorkSummaryService(
-            new StubCurrentAccess(granted), new StubStudioDirectoryService([]),
+            new StubCurrentAccess(granted, userType: userType), new StubStudioDirectoryService([]),
             new StubConfluenceService(), new StubWeeklyWorkflow(),
-            Options.Create(new ReportGeneratorOptions { Enabled = true }));
+            Options.Create(new ReportGeneratorOptions { Enabled = enabled }));
         (await service.CanGenerateAsync()).Should().Be(expected);
     }
 
@@ -418,7 +426,8 @@ public sealed class SupportSummaryModelTests
         var confluence = new StubConfluenceService();
         var workflow = new StubWeeklyWorkflow();
         var service = new WeeklyWorkSummaryService(
-            new StubCurrentAccess(allowed ? AccessLevel.Create : AccessLevel.ReadOnly),
+            new StubCurrentAccess(allowed ? AccessLevel.Create : AccessLevel.ReadOnly,
+                userType: TeamHubUserTypes.Registered),
             new StubStudioDirectoryService([Studio("one", "One", "One", true)]),
             confluence, workflow, Options.Create(new ReportGeneratorOptions { Enabled = enabled }));
         Func<Task> act = () => service.GenerateAsync(new DateOnly(2026, 8, 31), new DateOnly(2026, 9, 4),
@@ -433,7 +442,7 @@ public sealed class SupportSummaryModelTests
     public async Task WeeklySummaryService_DeniesMissingStudioSupportPermission()
     {
         var service = new WeeklyWorkSummaryService(
-            new StubCurrentAccess(AccessLevel.Create, AccessLevel.NoAccess),
+            new StubCurrentAccess(AccessLevel.Create, AccessLevel.NoAccess, TeamHubUserTypes.Registered),
             new StubStudioDirectoryService([]), new StubConfluenceService(), new StubWeeklyWorkflow(),
             Options.Create(new ReportGeneratorOptions { Enabled = true }));
         (await service.CanGenerateAsync()).Should().BeFalse();
@@ -457,17 +466,55 @@ public sealed class SupportSummaryModelTests
     }
 
     [Theory]
-    [InlineData(true)]
-    [InlineData(false)]
-    public async Task WeeklySummaryGet_ExposesButtonOnlyToAuthorizedUsers(bool allowed)
+    [InlineData(TeamHubUserTypes.Admin, true, true, true)]
+    [InlineData(TeamHubUserTypes.Admin, false, true, false)]
+    [InlineData(TeamHubUserTypes.Admin, true, false, false)]
+    [InlineData(TeamHubUserTypes.Registered, true, true, true)]
+    [InlineData(TeamHubUserTypes.Privileged, true, true, true)]
+    [InlineData(TeamHubUserTypes.Registered, false, true, false)]
+    [InlineData(TeamHubUserTypes.Registered, true, false, false)]
+    public async Task WeeklySummaryGet_ExposesSectionOnlyToEnabledAuthorizedUsers(
+        string role, bool enabled, bool allowed, bool expected)
     {
-        var model = SummaryModel(new StubWeeklySummaryService { Allowed = allowed });
+        var model = SummaryModel(new StubWeeklySummaryService { Allowed = allowed, IsEnabled = enabled });
+        model.HttpContext.User = new ClaimsPrincipal(new ClaimsIdentity([new Claim(ClaimTypes.Role, role)], "Test"));
         await model.OnGetAsync(CancellationToken.None);
-        model.CanGenerateWeeklyWorkSummary.Should().Be(allowed);
+        model.CanGenerateWeeklyWorkSummary.Should().Be(expected);
     }
 
-    [Fact]
-    public async Task WeeklySummaryService_ProjectsOnlyApprovedColumnsAndUsesActiveStudioOrder()
+    [Theory]
+    [InlineData(TeamHubUserTypes.Registered, false)]
+    [InlineData(TeamHubUserTypes.Privileged, false)]
+    [InlineData(TeamHubUserTypes.Admin, false)]
+    public async Task WeeklySummaryPost_DeniesDisabledFeatureEvenWhenMatrixAllowsGeneration(
+        string role, bool enabled)
+    {
+        var summary = new StubWeeklySummaryService { Allowed = true, IsEnabled = enabled };
+        var model = SummaryModel(summary);
+        model.HttpContext.User = new ClaimsPrincipal(new ClaimsIdentity([new Claim(ClaimTypes.Role, role)], "Test"));
+        (await model.OnPostGenerateWeeklyWorkSummaryAsync(CancellationToken.None)).Should().BeOfType<ForbidResult>();
+        summary.Calls.Should().Be(0);
+    }
+
+    [Theory]
+    [InlineData(TeamHubUserTypes.Registered)]
+    [InlineData(TeamHubUserTypes.Privileged)]
+    [InlineData(TeamHubUserTypes.Admin)]
+    public async Task WeeklySummaryPost_AllowsUsersWithGenerationPermission(string role)
+    {
+        var summary = new StubWeeklySummaryService { Allowed = true };
+        var model = SummaryModel(summary);
+        model.HttpContext.User = new ClaimsPrincipal(new ClaimsIdentity([new Claim(ClaimTypes.Role, role)], "Test"));
+        var result = await model.OnPostGenerateWeeklyWorkSummaryAsync(CancellationToken.None);
+        result.Should().BeOfType<JsonResult>().Which.StatusCode.Should().BeNull();
+        summary.Calls.Should().Be(1);
+    }
+
+    [Theory]
+    [InlineData(TeamHubUserTypes.Admin)]
+    [InlineData(TeamHubUserTypes.Registered)]
+    [InlineData(TeamHubUserTypes.Privileged)]
+    public async Task WeeklySummaryService_ProjectsOnlyApprovedColumnsAndUsesActiveStudioOrder(string role)
     {
         var second = Studio("second", "Second", "Second project", true);
         second.StudioDisplayOrder = 2;
@@ -487,16 +534,16 @@ public sealed class SupportSummaryModelTests
         };
         var workflow = new StubWeeklyWorkflow();
         var service = new WeeklyWorkSummaryService(
-            new StubCurrentAccess(AccessLevel.Create),
+            new StubCurrentAccess(AccessLevel.Create, userType: role),
             new StubStudioDirectoryService([second, Studio("inactive", "Inactive", "Inactive", false), first]),
             confluence, workflow, Options.Create(new ReportGeneratorOptions { Enabled = true }));
         var user = new ClaimsPrincipal(new ClaimsIdentity(
-            [new Claim(ClaimTypes.Name, "reader@example.com"), new Claim(ClaimTypes.Role, TeamHubUserTypes.Privileged)], "Test"));
+            [new Claim(ClaimTypes.Name, "reader@example.com"), new Claim(ClaimTypes.Role, role)], "Test"));
 
         var preview = await service.GenerateAsync(new DateOnly(2026, 8, 31), new DateOnly(2026, 9, 4), user);
 
         confluence.LastQuery!.StudioIds.Should().Equal("first", "second");
-        confluence.LastQuery.AllowPrivilegedDefaultCredential.Should().BeTrue();
+        confluence.LastQuery.AllowPrivilegedDefaultCredential.Should().Be(role == TeamHubUserTypes.Privileged);
         confluence.LastQuery.RequestingUserId.Should().Be("reader@example.com");
         workflow.Request!.Sources.Select(source => source.StudioId).Should().Equal("first", "second");
         var payload = System.Text.Json.JsonSerializer.Serialize(workflow.Request.Sources);
@@ -547,12 +594,18 @@ public sealed class SupportSummaryModelTests
         new StubConfluenceService(), new StubPlanningService(), new StubWorklogEffortService(), service)
     {
         SelectedMonth = "2026-09", Week = 1,
-        PageContext = new PageContext { HttpContext = new DefaultHttpContext() }
+        PageContext = new PageContext
+        {
+            HttpContext = new DefaultHttpContext
+            {
+                User = new ClaimsPrincipal(new ClaimsIdentity([new Claim(ClaimTypes.Role, TeamHubUserTypes.Admin)], "Test"))
+            }
+        }
     };
 
     private sealed class StubWeeklySummaryService : IWeeklyWorkSummaryService
     {
-        public bool IsEnabled => true;
+        public bool IsEnabled { get; set; } = true;
         public bool Allowed { get; set; }
         public int Calls { get; private set; }
         public DateOnly Start { get; private set; }
@@ -582,12 +635,15 @@ public sealed class SupportSummaryModelTests
         }
     }
 
-    private sealed class StubCurrentAccess(AccessLevel reports, AccessLevel studio = AccessLevel.ReadOnly) : ICurrentAccessService
+    private sealed class StubCurrentAccess(AccessLevel reports, AccessLevel studio = AccessLevel.ReadOnly,
+        string userType = TeamHubUserTypes.Admin) : ICurrentAccessService
     {
         public Task<CurrentAccessSnapshot> GetCurrentAsync(CancellationToken cancellationToken = default) =>
-            Task.FromResult(new CurrentAccessSnapshot(TeamHubUserTypes.Registered, null));
+            Task.FromResult(new CurrentAccessSnapshot(userType, null));
         public Task<AccessLevel> GetAccessLevelAsync(string module, CancellationToken cancellationToken = default) =>
-            Task.FromResult(module == TeamHubModules.AiReports ? reports : studio);
+            Task.FromResult(userType == TeamHubUserTypes.Admin
+                ? AccessLevel.FullAccess
+                : module == TeamHubModules.AiReports ? reports : studio);
         public async Task<bool> CanAsync(string module, AccessLevel required = AccessLevel.ReadOnly,
             CancellationToken cancellationToken = default) =>
             (await GetAccessLevelAsync(module, cancellationToken)).Allows(required);
