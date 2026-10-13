@@ -8,6 +8,9 @@
     const shared = modalElement.querySelector("[data-jira-comments-shared]");
     const content = modalElement.querySelector("[data-jira-comments-content]");
     const open = modalElement.querySelector("[data-jira-comments-open]");
+    const subtitle = modalElement.querySelector("[data-jira-comments-subtitle]");
+    const copyButton = modalElement.querySelector("[data-jira-comments-copy]");
+    const copyStatus = modalElement.querySelector("[data-jira-comments-copy-status]");
     let pending;
     let imageUrls = [];
 
@@ -16,8 +19,50 @@
         for (const url of imageUrls) URL.revokeObjectURL(url);
         imageUrls = [];
         content.replaceChildren();
+        if (copyButton) copyButton.hidden = true;
+        if (copyStatus) copyStatus.textContent = "";
     };
     modalElement.addEventListener("hidden.bs.modal", clear);
+
+    if (copyButton) {
+        copyButton.addEventListener("click", async () => {
+            try {
+                if (!navigator.clipboard?.writeText) {
+                    throw new Error("Clipboard copy is not supported in this browser. Please select and copy the text manually.");
+                }
+                const articles = content.querySelectorAll("article");
+                const pieces = [];
+                for (const article of articles) {
+                    const author = article.querySelector("h3")?.textContent?.trim() || "";
+                    const date = article.querySelector(".text-secondary")?.textContent?.trim() || "";
+                    const body = article.querySelector("div:last-child")?.textContent?.trim() || "";
+                    pieces.push(`${author}${date ? ` (${date})` : ""}\n\n${body}`);
+                }
+                const fullText = pieces.join("\n\n---\n\n");
+                await navigator.clipboard.writeText(fullText);
+                if (copyStatus) {
+                    copyStatus.className = "small text-success me-auto";
+                    copyStatus.textContent = "Copied to clipboard!";
+                    setTimeout(() => {
+                        if (copyStatus && copyStatus.textContent === "Copied to clipboard!") {
+                            copyStatus.textContent = "";
+                        }
+                    }, 3000);
+                }
+            } catch (err) {
+                if (copyStatus) {
+                    copyStatus.className = "small text-danger me-auto";
+                    copyStatus.textContent = err instanceof Error ? err.message : "Failed to copy.";
+                    setTimeout(() => {
+                        if (copyStatus) {
+                            copyStatus.className = "small text-success me-auto";
+                            copyStatus.textContent = "";
+                        }
+                    }, 4000);
+                }
+            }
+        });
+    }
 
     const readResponse = async response => {
         if (response.redirected || !response.headers.get("content-type")?.includes("application/json")) {
@@ -84,11 +129,22 @@
             clear();
             const controller = new AbortController();
             pending = controller;
-            title.textContent = `${button.dataset.ticketId} - Latest Comments`;
-            status.textContent = "Loading comments from Jira...";
+            const ticketId = button.dataset.ticketId;
+            const modalTitle = button.dataset.modalTitle;
+            title.textContent = modalTitle
+                ? (ticketId ? `${modalTitle} (${ticketId})` : modalTitle)
+                : (ticketId ? `${ticketId} - Latest Comments` : "Provided Feedback");
+            if (subtitle) {
+                subtitle.textContent = ticketId
+                    ? "Newest comments first, ordered by creation time. Only comments visible to your Jira account are included."
+                    : "Feedback recorded for this milestone review.";
+            }
+            status.textContent = ticketId ? "Loading comments from Jira..." : "Loading feedback...";
             error.hidden = true;
             shared.hidden = true;
             open.hidden = true;
+            if (copyButton) copyButton.hidden = true;
+            if (copyStatus) copyStatus.textContent = "";
             modal.show();
             try {
                 const result = await readResponse(await fetch(button.dataset.commentsUrl, {
@@ -96,10 +152,24 @@
                     headers: { Accept: "application/json" }
                 }));
                 if (controller.signal.aborted) return;
-                open.href = safeUrl(result.ticketUrl);
-                open.hidden = false;
+                if (result.ticketUrl) {
+                    open.href = safeUrl(result.ticketUrl);
+                    open.hidden = false;
+                } else {
+                    open.hidden = true;
+                }
                 shared.hidden = !result.isUsingSharedCredential;
-                status.textContent = result.comments.length ? `${result.comments.length} comment(s)` : "No comments are visible for this ticket.";
+                if (result.comments && result.comments.length) {
+                    status.textContent = ticketId
+                        ? `${result.comments.length} comment(s)`
+                        : `${result.comments.length} contributor entry(s)`;
+                    if (copyButton) copyButton.hidden = false;
+                } else {
+                    status.textContent = ticketId
+                        ? "No comments are visible for this ticket."
+                        : "No feedback was recorded for this review.";
+                    if (copyButton) copyButton.hidden = true;
+                }
                 const imageJobs = [];
                 for (const comment of result.comments) {
                     const article = document.createElement("article");

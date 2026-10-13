@@ -565,6 +565,7 @@ internal sealed class UserAccessService(
             (TeamHubModules.WorkCenter, TeamHubUserTypes.Privileged) => AccessLevel.FullAccess,
             (TeamHubModules.Milestones, TeamHubUserTypes.Registered) => AccessLevel.ReadOnly,
             (TeamHubModules.Milestones, TeamHubUserTypes.Privileged) => AccessLevel.Edit,
+            (TeamHubModules.MilestoneReview, TeamHubUserTypes.Registered or TeamHubUserTypes.Privileged) => AccessLevel.ReadOnly,
             (TeamHubModules.FlowDesigner, TeamHubUserTypes.Registered) => AccessLevel.Edit,
             (TeamHubModules.FlowDesigner, TeamHubUserTypes.Privileged) => AccessLevel.FullAccess,
             (TeamHubModules.StudioConfiguration, TeamHubUserTypes.Registered) => AccessLevel.ReadOnly,

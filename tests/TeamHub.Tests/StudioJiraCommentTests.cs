@@ -216,6 +216,72 @@ public sealed class StudioJiraCommentTests
     }
 
     [Fact]
+    public async Task UpsertMilestoneReviewComment_CreatesUpdatesAndRecoversByMarkerUsingPersonalCredential()
+    {
+        var feedbackId = Guid.NewGuid();
+        var calls = new List<(HttpMethod Method, string Path)>();
+        await using var host = await Host.CreateAsync(request =>
+        {
+            request.Headers.Authorization!.Parameter.Should().Be("personal-test-token");
+            var path = request.RequestUri!.AbsolutePath;
+            calls.Add((request.Method, path));
+            if (path.EndsWith("/issue/SUP-1", StringComparison.Ordinal)) return Json(IssueJson);
+            if (request.Method == HttpMethod.Post)
+            {
+                var body = JsonDocument.Parse(request.Content!.ReadAsStringAsync().GetAwaiter().GetResult());
+                body.RootElement.GetProperty("body").GetString().Should().Contain("Reviewer email: reader@example.com");
+                body.RootElement.GetProperty("body").GetString().Should().Contain($"[TeamHub Milestone Review Feedback: {feedbackId:D}]");
+                return Json("""{"id":"42"}""");
+            }
+            if (request.Method == HttpMethod.Put) return new HttpResponseMessage(HttpStatusCode.NoContent);
+            if (path.EndsWith("/comment", StringComparison.Ordinal)
+                && calls.Count(call => call.Method == HttpMethod.Get
+                    && call.Path.EndsWith("/comment", StringComparison.Ordinal)) == 1)
+                return Json("""{"total":0,"comments":[]}""");
+            if (request.RequestUri.Query.Contains("startAt=0", StringComparison.Ordinal))
+                return Json($$"""{"total":1,"comments":[{"id":"42","body":"[TeamHub Milestone Review Feedback: {{feedbackId:D}}]"}]}""");
+            throw new InvalidOperationException($"Unexpected Jira request: {request.Method} {path}");
+        });
+        var request = new StudioJiraMilestoneReviewCommentRequest(
+            "SUP-1", host.Query.RequestingUserId, feedbackId, null,
+            "Project", "Milestone", "Reviewer", "Good", "Bad", "Improve");
+
+        var created = await host.Service.UpsertMilestoneReviewCommentAsync(request);
+        created.CommentId.Should().Be("42");
+        var updated = await host.Service.UpsertMilestoneReviewCommentAsync(request with { CommentId = created.CommentId });
+        updated.CommentId.Should().Be("42");
+        var recovered = await host.Service.UpsertMilestoneReviewCommentAsync(request);
+        recovered.CommentId.Should().Be("42");
+
+        calls.Select(call => (call.Method.Method, call.Path)).Should().Equal(
+            ("GET", "/rest/api/2/issue/SUP-1"),
+            ("GET", "/rest/api/2/issue/SUP-1/comment"),
+            ("POST", "/rest/api/2/issue/SUP-1/comment"),
+            ("GET", "/rest/api/2/issue/SUP-1"),
+            ("PUT", "/rest/api/2/issue/SUP-1/comment/42"),
+            ("GET", "/rest/api/2/issue/SUP-1"),
+            ("GET", "/rest/api/2/issue/SUP-1/comment"),
+            ("PUT", "/rest/api/2/issue/SUP-1/comment/42"));
+    }
+
+    [Fact]
+    public async Task UpsertMilestoneReviewComment_RejectsSharedReadOnlyCredential()
+    {
+        var calls = 0;
+        await using var host = await Host.CreateAsync(_ => { calls++; return Json(IssueJson); });
+        await host.ConfigureSharedAccessAsync();
+        var request = new StudioJiraMilestoneReviewCommentRequest(
+            "SUP-1", host.Query.RequestingUserId, Guid.NewGuid(), null,
+            "Project", "Milestone", "Reviewer", "Good", "Bad", "Improve");
+
+        var act = () => host.Service.UpsertMilestoneReviewCommentAsync(request);
+
+        await act.Should().ThrowAsync<StudioJiraCommentException>()
+            .WithMessage("*personal Jira connection*");
+        calls.Should().Be(0);
+    }
+
+    [Fact]
     public void WikiBody_RendersExternalImagesAsLinksAndNeverRendersRawHtml()
     {
         using var body = JsonDocument.Parse(JsonSerializer.Serialize(
@@ -396,6 +462,9 @@ public sealed class StudioJiraCommentTests
             if (Error is not null) throw Error;
             return Task.FromResult(new StudioJiraCommentImage([], "image/png"));
         }
+        public Task<StudioJiraMilestoneReviewCommentResult> UpsertMilestoneReviewCommentAsync(
+            StudioJiraMilestoneReviewCommentRequest request, CancellationToken cancellationToken = default) =>
+            Task.FromResult(new StudioJiraMilestoneReviewCommentResult(request.CommentId ?? "1"));
     }
     private sealed class StubAccess(bool allowed) : ICurrentAccessService
     {

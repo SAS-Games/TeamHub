@@ -39,6 +39,17 @@ public sealed class AccessControlTests
     }
 
     [Fact]
+    public void MilestoneReviewPage_UsesDedicatedReadOnlyModuleForAllPostHandlers()
+    {
+        var request = new DefaultHttpContext().Request;
+        request.Path = "/MilestoneReview";
+        request.Method = "POST";
+        request.QueryString = new QueryString("?handler=SaveFeedback");
+        TeamHubAccessRoutes.ResolveModule(request.Path).Should().Be(TeamHubModules.MilestoneReview);
+        TeamHubAccessRoutes.ResolveRequiredAccess(request).Should().Be(AccessLevel.ReadOnly);
+    }
+
+    [Fact]
     public async Task BootstrapUser_IsImportedAndAuthenticatedFromAuthorizedList()
     {
         await using var host = await AccessTestHost.CreateAsync();
@@ -168,6 +179,8 @@ public sealed class AccessControlTests
         (await users.GetAccessLevelAsync(TeamHubModules.FlowDesigner, TeamHubUserTypes.Registered)).Should().Be(AccessLevel.Edit);
         (await users.GetAccessLevelAsync(TeamHubModules.AtlassianConnection, TeamHubUserTypes.Registered)).Should().Be(AccessLevel.Edit);
         (await users.GetAccessLevelAsync(TeamHubModules.StudioSupport, TeamHubUserTypes.Privileged)).Should().Be(AccessLevel.ReadOnly);
+        (await users.GetAccessLevelAsync(TeamHubModules.MilestoneReview, TeamHubUserTypes.Registered)).Should().Be(AccessLevel.ReadOnly);
+        (await users.GetAccessLevelAsync(TeamHubModules.MilestoneReview, TeamHubUserTypes.Privileged)).Should().Be(AccessLevel.ReadOnly);
 
         await users.SetPermissionsAsync([
             new(TeamHubModules.Milestones, TeamHubUserTypes.Registered, AccessLevel.Create),

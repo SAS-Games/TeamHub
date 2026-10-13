@@ -7,13 +7,15 @@
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
             <div class="modal-body">
-                <p class="text-secondary small">Newest comments first, ordered by creation time. Only comments visible to your Jira account are included.</p>
+                <p class="text-secondary small" data-jira-comments-subtitle>Newest comments first, ordered by creation time. Only comments visible to your Jira account are included.</p>
                 <div role="status" aria-live="polite" data-jira-comments-status></div>
                 <div class="alert alert-danger" role="alert" data-jira-comments-error hidden></div>
                 <div class="alert alert-secondary small" data-jira-comments-shared hidden>Using shared read-only Jira access.</div>
                 <div data-jira-comments-content></div>
             </div>
             <div class="modal-footer">
+                <span class="small text-success me-auto" data-jira-comments-copy-status aria-live="polite"></span>
+                <button type="button" class="btn btn-outline-secondary" data-jira-comments-copy hidden>Copy Feedback</button>
                 <a class="btn btn-outline-primary" data-jira-comments-open target="_blank" rel="noopener noreferrer" hidden>Open in Jira</a>
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
             </div>

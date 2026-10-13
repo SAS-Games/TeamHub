@@ -1,0 +1,269 @@
+@page "/MilestoneReview"
+@model TeamHub.Web.Pages.MilestoneReviewModel
+@{
+    ViewData["Title"] = "Milestone Review";
+}
+
+<div class="page-hero">
+    <div>
+        <div class="eyebrow">Build feedback</div>
+        <h1>Milestone Review</h1>
+        <p>Share milestone feedback with the team. Review entries are visible to all users with page access.</p>
+    </div>
+</div>
+
+@if (!string.IsNullOrWhiteSpace(Model.StatusMessage))
+{
+    <div class="alert alert-success mt-3">@Model.StatusMessage</div>
+}
+@if (!string.IsNullOrWhiteSpace(Model.ErrorMessage))
+{
+    <div class="alert alert-danger mt-3">@Model.ErrorMessage</div>
+}
+
+@if (Model.IsAdmin)
+{
+    @if (Model.Draft is null)
+    {
+        <button class="btn btn-outline-primary mb-3" type="button" data-bs-toggle="collapse"
+                data-bs-target="#create-milestone-review" aria-expanded="false" aria-controls="create-milestone-review">
+            Create New Milestone Review
+        </button>
+        <div class="collapse" id="create-milestone-review">
+            <section class="content-section">
+            <div class="section-heading"><div><span>New review</span><h2>Milestone Details</h2></div></div>
+            <form method="post" asp-page-handler="CreateDraft" class="section-body">
+                <div asp-validation-summary="ModelOnly" class="text-danger mb-3"></div>
+                <div class="row g-3">
+                    <div class="col-md-6">
+                        <label asp-for="ProjectName" class="form-label">Project Name</label>
+                        <input asp-for="ProjectName" class="form-control" maxlength="160" required />
+                        <span asp-validation-for="ProjectName" class="text-danger"></span>
+                    </div>
+                    <div class="col-md-6">
+                        <label asp-for="MilestoneName" class="form-label">Milestone Name</label>
+                        <input asp-for="MilestoneName" class="form-control" maxlength="160" required />
+                        <span asp-validation-for="MilestoneName" class="text-danger"></span>
+                    </div>
+                    <div class="col-12">
+                        <label asp-for="Description" class="form-label">Description</label>
+                        <textarea asp-for="Description" class="form-control" rows="3" maxlength="4000"></textarea>
+                    </div>
+                    <div class="col-12">
+                        <label asp-for="JiraTicketId" class="form-label">Jira Ticket ID (optional)</label>
+                        <input asp-for="JiraTicketId" class="form-control" maxlength="64" placeholder="e.g. GAME-123" />
+                        <div class="form-text">When provided, each reviewer’s save creates or updates that reviewer’s comment on this ticket. Reviewers need their own Jira connection with comment edit permission.</div>
+                    </div>
+                    <div class="col-12">
+                        <label class="form-label">Feedback contributors</label>
+                        <div class="border rounded p-2" role="group" aria-label="Feedback contributors">
+                            @foreach (var reviewer in Model.AvailableReviewers)
+                            {
+                                <label class="d-flex align-items-center gap-2 border-bottom py-2 px-1">
+                                    <input class="form-check-input mt-0" type="checkbox" name="ReviewerIds" value="@reviewer.Id" />
+                                    <span class="flex-grow-1">
+                                        <strong class="d-block">@reviewer.DisplayName</strong>
+                                        <small class="text-secondary">@reviewer.UserId</small>
+                                    </span>
+                                    <span class="small text-secondary">Can review</span>
+                                </label>
+                            }
+                        </div>
+                        <div class="form-text">Check “Can review” to include a user. Selected users can edit only their own row; all page readers can view every row.</div>
+                    </div>
+                </div>
+                <button type="submit" class="btn btn-primary mt-3">Create Draft</button>
+            </form>
+            </section>
+        </div>
+    }
+    else
+    {
+        <section class="content-section">
+            <div class="section-heading"><div><span>Not visible to reviewers yet</span><h2>Draft: @Model.Draft.ProjectName — @Model.Draft.MilestoneName</h2></div></div>
+            <div class="section-body">
+                <p class="mb-2">@Model.Draft.Description</p>
+                <p><strong>Feedback contributors:</strong> @string.Join(", ", Model.Draft.AssignedReviewers.Select(item => $"{item.DisplayName} ({item.UserId})"))</p>
+                @if (!string.IsNullOrWhiteSpace(Model.Draft.JiraTicketId))
+                {
+                    <p><strong>Jira ticket:</strong> @Model.Draft.JiraTicketId</p>
+                }
+                <form method="post" class="d-inline">
+                    <button asp-page-handler="Publish" type="submit" class="btn btn-primary">Publish Review</button>
+                </form>
+                <form method="post" class="d-inline" onsubmit="return confirm('Discard this unpublished draft?')">
+                    <button asp-page-handler="DiscardDraft" type="submit" class="btn btn-outline-danger">Discard Draft</button>
+                </form>
+            </div>
+        </section>
+    }
+}
+
+@if (Model.CurrentReview is null)
+{
+    <section class="content-section"><div class="section-body text-secondary">There is no published milestone review yet.</div></section>
+}
+else
+{
+    <section class="content-section">
+        <div class="section-heading">
+            <div>
+                <span>@Model.CurrentReview.ProjectName</span>
+                <h2>@Model.CurrentReview.MilestoneName</h2>
+                @if (!string.IsNullOrWhiteSpace(Model.CurrentReview.JiraTicketId))
+                {
+                    <div class="d-flex align-items-center gap-2">
+                        <span class="small text-secondary">Jira ticket: @Model.CurrentReview.JiraTicketId</span>
+                        <button type="button" class="btn btn-sm btn-outline-secondary"
+                                data-jira-comments
+                                data-ticket-id="@Model.CurrentReview.JiraTicketId"
+                                data-modal-title="@Model.CurrentReview.ProjectName — @Model.CurrentReview.MilestoneName"
+                                data-comments-url="@Url.Page("/MilestoneReview", "Comments", new { ticketId = Model.CurrentReview.JiraTicketId })">
+                            Show Jira Comments
+                        </button>
+                    </div>
+                }
+            </div>
+            <small class="text-secondary">Published @Model.CurrentReview.PublishedAt?.ToLocalTime().ToString("g")</small>
+        </div>
+        @if (!string.IsNullOrWhiteSpace(Model.CurrentReview.Description))
+        {
+            <div class="section-body border-bottom">@Model.CurrentReview.Description</div>
+        }
+        <div class="table-responsive">
+            <table class="table styled-table align-middle">
+                <thead><tr><th>Reviewer</th><th>What Good</th><th>What's Bad</th><th>Need Improvements</th><th>Actions</th></tr></thead>
+                <tbody>
+                @foreach (var feedback in Model.CurrentReview.Feedback)
+                {
+                    var canEdit = Model.CanEdit(feedback);
+                    <tr>
+                        <td>@feedback.Reviewer</td>
+                        @{
+                            var feedbackFormId = $"feedback-{feedback.Id}";
+                        }
+                        @if (canEdit)
+                        {
+                            <td><textarea name="WhatGood" form="@feedbackFormId" class="form-control" rows="4" maxlength="20000">@feedback.WhatGood</textarea></td>
+                            <td><textarea name="WhatsBad" form="@feedbackFormId" class="form-control" rows="4" maxlength="20000">@feedback.WhatsBad</textarea></td>
+                            <td><textarea name="NeedImprovements" form="@feedbackFormId" class="form-control" rows="4" maxlength="20000">@feedback.NeedImprovements</textarea></td>
+                            <td>
+                                @if (!string.IsNullOrWhiteSpace(feedback.JiraSyncError))
+                                {
+                                    <div class="small text-danger mb-1" title="@feedback.JiraSyncError">Jira sync pending</div>
+                                }
+                                <form id="@feedbackFormId" method="post" asp-page-handler="SaveFeedback">
+                                    <input type="hidden" name="ReviewId" value="@Model.CurrentReview.Id" />
+                                    <input type="hidden" name="FeedbackId" value="@feedback.Id" />
+                                    <input type="hidden" name="Version" value="@feedback.Version" />
+                                    <button type="submit" class="btn btn-sm btn-outline-primary">Save</button>
+                                </form>
+                            </td>
+                        }
+                        else
+                        {
+                            <td><div class="milestone-review-text">@feedback.WhatGood</div></td>
+                            <td><div class="milestone-review-text">@feedback.WhatsBad</div></td>
+                            <td><div class="milestone-review-text">@feedback.NeedImprovements</div></td>
+                            <td>
+                                @if (!string.IsNullOrWhiteSpace(feedback.JiraSyncError))
+                                {
+                                    <span class="small text-danger" title="@feedback.JiraSyncError">Jira sync pending</span>
+                                }
+                            </td>
+                        }
+                    </tr>
+                }
+                </tbody>
+            </table>
+        </div>
+    </section>
+}
+
+<section class="content-section mt-4">
+    <div class="section-heading">
+        <div>
+            <span>Archive</span>
+            <h2>Review History</h2>
+        </div>
+        <small class="text-secondary">@Model.HistoryReviews.Count past review@(Model.HistoryReviews.Count == 1 ? "" : "s")</small>
+    </div>
+    @if (Model.HistoryReviews.Count == 0)
+    {
+        <div class="section-body text-secondary">No previous milestone reviews archived yet.</div>
+    }
+    else
+    {
+        <div class="table-responsive">
+            <table class="table styled-table align-middle mb-0">
+                <thead>
+                    <tr>
+                        <th>Project</th>
+                        <th>Milestone</th>
+                        <th>Published</th>
+                        <th>Jira Ticket</th>
+                        <th>Contributors</th>
+                        <th class="text-end">Feedback</th>
+                    </tr>
+                </thead>
+                <tbody>
+                @foreach (var pastReview in Model.HistoryReviews)
+                {
+                    <tr>
+                        <td><strong>@pastReview.ProjectName</strong></td>
+                        <td>
+                            <div>@pastReview.MilestoneName</div>
+                            @if (!string.IsNullOrWhiteSpace(pastReview.Description))
+                            {
+                                <div class="small text-secondary" style="max-width: 360px;">@pastReview.Description</div>
+                            }
+                        </td>
+                        <td class="text-nowrap">@(pastReview.PublishedAt.HasValue ? pastReview.PublishedAt.Value.ToLocalTime().ToString("g") : "-")</td>
+                        <td>
+                            @if (!string.IsNullOrWhiteSpace(pastReview.JiraTicketId))
+                            {
+                                <span class="badge bg-light text-dark border">@pastReview.JiraTicketId</span>
+                            }
+                            else
+                            {
+                                <span class="text-secondary">-</span>
+                            }
+                        </td>
+                        <td>
+                            <span class="badge bg-light text-secondary border">@pastReview.Feedback.Count contributor@(pastReview.Feedback.Count == 1 ? "" : "s")</span>
+                        </td>
+                        <td class="text-end">
+                            @if (!string.IsNullOrWhiteSpace(pastReview.JiraTicketId))
+                            {
+                                <button type="button" class="btn btn-sm btn-outline-primary"
+                                        data-jira-comments
+                                        data-ticket-id="@pastReview.JiraTicketId"
+                                        data-modal-title="@pastReview.ProjectName — @pastReview.MilestoneName"
+                                        data-comments-url="@Url.Page("/MilestoneReview", "Comments", new { ticketId = pastReview.JiraTicketId })">
+                                    Show Provided Feedback
+                                </button>
+                            }
+                            else
+                            {
+                                <button type="button" class="btn btn-sm btn-outline-primary"
+                                        data-jira-comments
+                                        data-modal-title="@pastReview.ProjectName — @pastReview.MilestoneName"
+                                        data-comments-url="@Url.Page("/MilestoneReview", "Feedback", new { reviewId = pastReview.Id })">
+                                    Show Provided Feedback
+                                </button>
+                            }
+                        </td>
+                    </tr>
+                }
+                </tbody>
+            </table>
+        </div>
+    }
+</section>
+
+<partial name="_JiraCommentsModal" />
+
+@section Scripts {
+    <partial name="_ValidationScriptsPartial" />
+    <script src="~/js/jira-comments.js" asp-append-version="true"></script>
+}

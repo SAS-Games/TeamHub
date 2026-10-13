@@ -15,6 +15,7 @@ using TeamHub.FlowDesigner.Web;
 using TeamHub.Infrastructure;
 using TeamHub.Infrastructure.Persistence;
 using TeamHub.Milestones;
+using TeamHub.MilestoneReview;
 using TeamHub.Studio;
 using TeamHub.Team;
 using TeamHub.Web.Home;
@@ -25,6 +26,7 @@ using TeamHub.Web.WorkCenter;
 using TeamHub.Web.Formatting;
 using TeamHub.Web.WorklogAnalytics;
 using TeamHub.Web.Reports;
+using TeamHub.Web.Reviews;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.WebHost.UseStaticWebAssets();
@@ -46,6 +48,7 @@ builder.Configuration["ConnectionStrings:TeamDb"] = $"Data Source={Path.Combine(
 builder.Configuration["ConnectionStrings:StudioDb"] = $"Data Source={Path.Combine(dataDir, "studio.db")}";
 builder.Configuration["TeamExcel:UploadDirectory"] = Path.Combine(dataDir, "team-excel");
 builder.Configuration["ConnectionStrings:AiReportsDb"] = $"Data Source={Path.Combine(dataDir, "ai-reports.db")}";
+builder.Configuration["ConnectionStrings:MilestoneReviewDb"] = $"Data Source={Path.Combine(dataDir, "milestone-review.db")}";
 var accessDatabasePath = Path.Combine(dataDir, "access.db");
 var flowDesignerDatabasePath = Path.Combine(dataDir, "flowdesigner.db");
 var flowLibraryDatabasePath = Path.Combine(dataDir, "flow-library.db");
@@ -94,6 +97,9 @@ builder.Services.AddFlowDesigner(options =>
 });
 builder.Services.AddMilestoneTracker(builder.Configuration);
 builder.Services.AddTeamDirectory(builder.Configuration);
+builder.Services.AddMilestoneReview(builder.Configuration);
+builder.Services.AddScoped<IMilestoneReviewUserDirectory, TeamHubMilestoneReviewUserDirectory>();
+builder.Services.AddScoped<IMilestoneReviewCommentPublisher, StudioMilestoneReviewCommentPublisher>();
 builder.Services.AddStudioDirectory(builder.Configuration);
 builder.Services.AddTeamHubAi(builder.Configuration);
 builder.Services.AddAiFlowDesigner(builder.Configuration);
@@ -114,6 +120,7 @@ using (var scope = app.Services.CreateScope())
     var teamDatabase = scope.ServiceProvider.GetRequiredService<ITeamDatabaseInitializer>();
     teamDatabase.InitializeAsync().GetAwaiter().GetResult();
     await scope.ServiceProvider.GetRequiredService<IReportGeneratorDatabaseInitializer>().InitializeAsync();
+    await scope.ServiceProvider.GetRequiredService<IMilestoneReviewDatabaseInitializer>().InitializeAsync();
     var customTeamTabs = scope.ServiceProvider.GetRequiredService<ICustomTeamTabService>();
     var customTeamModules = (await customTeamTabs.ListTabsAsync())
         .Select(tab => CustomTeamTabAccess.ModuleForSlug(tab.Slug))

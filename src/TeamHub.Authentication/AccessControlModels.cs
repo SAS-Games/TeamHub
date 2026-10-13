@@ -21,6 +21,7 @@ public static class TeamHubModules
     public const string Team = "Team";
     public const string WorkCenter = "Work Center";
     public const string Milestones = "Milestones";
+    public const string MilestoneReview = "Milestone Review";
     public const string FlowDesigner = "Flow Designer";
     public const string StudioConfiguration = "Studio Configuration";
     public const string StudioSupport = "Studio Support";
@@ -37,6 +38,7 @@ public static class TeamHubModules
         Team,
         WorkCenter,
         Milestones,
+        MilestoneReview,
         FlowDesigner,
         StudioConfiguration,
         StudioSupport,

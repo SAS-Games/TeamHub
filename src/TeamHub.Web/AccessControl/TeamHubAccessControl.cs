@@ -154,6 +154,7 @@ public static class TeamHubAccessRoutes
         if (path.StartsWithSegments("/Profile/Atlassian")) return TeamHubModules.AtlassianConnection;
         if (path.StartsWithSegments("/WorkCenter") || path.StartsWithSegments("/Workflows")) return TeamHubModules.WorkCenter;
         if (path.StartsWithSegments("/Milestones")) return TeamHubModules.Milestones;
+        if (path.StartsWithSegments("/MilestoneReview")) return TeamHubModules.MilestoneReview;
         if (path.StartsWithSegments("/Flows") || path.StartsWithSegments("/api/flows")) return TeamHubModules.FlowDesigner;
         if (path.StartsWithSegments("/SupportSummary")) return TeamHubModules.StudioSupport;
         if (path.StartsWithSegments("/AIReports") || path.StartsWithSegments("/api/ai-reports")) return TeamHubModules.AiReports;
@@ -173,6 +174,9 @@ public static class TeamHubAccessRoutes
         if (path.Equals("/SupportSummary", StringComparison.OrdinalIgnoreCase)
             && HttpMethods.IsPost(request.Method)
             && handler.Equals("GenerateWeeklyWorkSummary", StringComparison.OrdinalIgnoreCase))
+            return AccessLevel.ReadOnly;
+        if (path.Equals("/MilestoneReview", StringComparison.OrdinalIgnoreCase)
+            && HttpMethods.IsPost(request.Method))
             return AccessLevel.ReadOnly;
         if (path.StartsWith("/Flows/Review", StringComparison.OrdinalIgnoreCase)
             || path.StartsWith("/api/flows/publication-requests/", StringComparison.OrdinalIgnoreCase)

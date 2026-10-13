@@ -15,12 +15,26 @@ public sealed record StudioJiraComment(
 public sealed record StudioJiraCommentResult(
     string TicketId, string TicketUrl, bool IsUsingSharedCredential, IReadOnlyList<StudioJiraComment> Comments);
 public sealed record StudioJiraCommentImage(byte[] Content, string ContentType);
+public sealed record StudioJiraMilestoneReviewCommentRequest(
+    string TicketId,
+    string RequestingUserId,
+    Guid FeedbackId,
+    string? CommentId,
+    string ProjectName,
+    string MilestoneName,
+    string Reviewer,
+    string WhatGood,
+    string WhatsBad,
+    string NeedImprovements);
+public sealed record StudioJiraMilestoneReviewCommentResult(string CommentId);
 
 public interface IStudioJiraCommentService
 {
     Task<StudioJiraCommentResult> GetCommentsAsync(StudioJiraCommentQuery query, CancellationToken cancellationToken = default);
     Task<StudioJiraCommentImage> GetImageAsync(
         StudioJiraCommentQuery query, string commentId, string attachmentId, CancellationToken cancellationToken = default);
+    Task<StudioJiraMilestoneReviewCommentResult> UpsertMilestoneReviewCommentAsync(
+        StudioJiraMilestoneReviewCommentRequest request, CancellationToken cancellationToken = default);
 }
 
 public sealed class StudioJiraCommentException(string message) : Exception(message);
@@ -113,7 +127,148 @@ internal sealed partial class JiraStudioCommentService(
         return new StudioJiraCommentImage(bytes, contentType);
     }
 
-    private async Task<IssueContext> GetIssueContextAsync(StudioJiraCommentQuery query, CancellationToken cancellationToken)
+    public async Task<StudioJiraMilestoneReviewCommentResult> UpsertMilestoneReviewCommentAsync(
+        StudioJiraMilestoneReviewCommentRequest request, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(request.RequestingUserId)
+            || !TicketKey().IsMatch(request.TicketId)
+            || request.FeedbackId == Guid.Empty)
+            throw new StudioJiraCommentException("A valid Jira ticket, reviewer, and feedback row are required.");
+
+        var prefix = request.TicketId[..request.TicketId.LastIndexOf('-')];
+        var candidates = new List<string>();
+        foreach (var studio in (await studioDirectory.GetStudiosAsync(cancellationToken)).Where(item => item.IsActive))
+        {
+            var mapping = await configuration.GetStudioMappingAsync(studio.Id, cancellationToken);
+            if (mapping is not null
+                && mapping.JiraProjectKeys.Contains(prefix, StringComparer.OrdinalIgnoreCase)
+                && !string.IsNullOrWhiteSpace(mapping.JiraStudioComponent))
+                candidates.Add(studio.Id);
+        }
+        if (candidates.Count != 1)
+            throw new StudioJiraCommentException(candidates.Count == 0
+                ? "The Jira ticket project is not mapped to an active studio."
+                : "The Jira ticket project maps to multiple studios. Configure a unique project mapping before syncing feedback.");
+
+        IssueContext context;
+        try
+        {
+            context = await GetIssueContextAsync(
+                new StudioJiraCommentQuery(candidates[0], request.TicketId, request.RequestingUserId, false),
+                cancellationToken,
+                requirePersonalWriteCredential: true);
+        }
+        catch (StudioJiraCommentException)
+        {
+            throw;
+        }
+        if (context.Credential.IsShared || context.Credential.IsReadOnly)
+            throw new StudioJiraCommentException("Milestone feedback requires your personal Jira connection with permission to create and edit comments. Shared read-only access cannot be used.");
+
+        var marker = $"[TeamHub Milestone Review Feedback: {request.FeedbackId:D}]";
+        if (!string.IsNullOrWhiteSpace(request.CommentId) && !NumericId().IsMatch(request.CommentId))
+            throw new StudioJiraCommentException("The saved Jira feedback comment ID is invalid.");
+        var commentId = request.CommentId
+            ?? await FindManagedCommentIdAsync(context, marker, cancellationToken);
+        var body = BuildMilestoneReviewBody(request, marker);
+        var method = string.IsNullOrWhiteSpace(commentId) ? HttpMethod.Post : HttpMethod.Put;
+        var url = string.IsNullOrWhiteSpace(commentId)
+            ? $"{context.IssueUrl}/comment"
+            : $"{context.IssueUrl}/comment/{Uri.EscapeDataString(commentId)}";
+        using var httpRequest = JiraStudioTicketService.CreateJiraRequest(url, context.Credential);
+        httpRequest.Method = method;
+        httpRequest.Content = System.Net.Http.Json.JsonContent.Create(new { body });
+        using var response = await httpClient.SendAsync(httpRequest, cancellationToken);
+        if (!response.IsSuccessStatusCode)
+        {
+            var reason = response.StatusCode switch
+            {
+                HttpStatusCode.Unauthorized => "Jira rejected your personal credential. Update My Atlassian Connection.",
+                HttpStatusCode.Forbidden => "Your Jira account does not have permission to create or edit comments on this ticket.",
+                HttpStatusCode.NotFound => "The Jira ticket or feedback comment was not found or is no longer accessible.",
+                HttpStatusCode.TooManyRequests => "Jira temporarily limited comment updates. Please try again shortly.",
+                _ => $"Jira returned HTTP {(int)response.StatusCode} while saving the feedback comment."
+            };
+            throw new StudioJiraCommentException(reason);
+        }
+
+        if (!string.IsNullOrWhiteSpace(commentId))
+            return new StudioJiraMilestoneReviewCommentResult(commentId);
+        using var result = await JsonDocument.ParseAsync(
+            await response.Content.ReadAsStreamAsync(cancellationToken), cancellationToken: cancellationToken);
+        var createdId = result.RootElement.TryGetProperty("id", out var id)
+            ? id.ValueKind == JsonValueKind.String ? id.GetString() : id.ToString()
+            : null;
+        if (string.IsNullOrWhiteSpace(createdId) || !NumericId().IsMatch(createdId))
+            throw new StudioJiraCommentException("Jira created a comment but did not return a valid comment ID. Save again to reconcile the comment.");
+        return new StudioJiraMilestoneReviewCommentResult(createdId);
+    }
+
+    private async Task<string?> FindManagedCommentIdAsync(
+        IssueContext context, string marker, CancellationToken cancellationToken)
+    {
+        var startAt = 0;
+        for (var page = 0; page < 100; page++)
+        {
+            using var document = await GetJsonAsync(
+                $"{context.IssueUrl}/comment?startAt={startAt}&maxResults=100", context.Credential, cancellationToken);
+            var root = document.RootElement;
+            if (!root.TryGetProperty("comments", out var items) || items.ValueKind != JsonValueKind.Array)
+                throw new StudioJiraCommentException("Jira returned an invalid comment list while locating the feedback comment.");
+            foreach (var item in items.EnumerateArray())
+            {
+                if (!item.TryGetProperty("body", out var body) || !ContainsText(body, marker)) continue;
+                var id = item.TryGetProperty("id", out var idElement)
+                    ? idElement.ValueKind == JsonValueKind.String ? idElement.GetString() : idElement.ToString()
+                    : null;
+                if (id is not null && NumericId().IsMatch(id)) return id;
+            }
+            if (!root.TryGetProperty("total", out var total) || !total.TryGetInt32(out var count))
+                throw new StudioJiraCommentException("Jira did not return valid pagination information while locating the feedback comment.");
+            startAt += items.GetArrayLength();
+            if (startAt >= count) return null;
+            if (items.GetArrayLength() == 0)
+                throw new StudioJiraCommentException("Jira stopped returning comments before the feedback comment could be located.");
+        }
+        throw new StudioJiraCommentException("The ticket has too many comments to safely locate the existing feedback comment.");
+    }
+
+    private static bool ContainsText(JsonElement element, string value)
+    {
+        if (element.ValueKind == JsonValueKind.String)
+            return element.GetString()?.Contains(value, StringComparison.Ordinal) == true;
+        if (element.ValueKind == JsonValueKind.Object)
+            return element.EnumerateObject().Any(property => ContainsText(property.Value, value));
+        if (element.ValueKind == JsonValueKind.Array)
+            return element.EnumerateArray().Any(child => ContainsText(child, value));
+        return false;
+    }
+
+    private static string BuildMilestoneReviewBody(
+        StudioJiraMilestoneReviewCommentRequest request, string marker) =>
+        $"""
+        Milestone Review Feedback
+        Project: {request.ProjectName}
+        Milestone: {request.MilestoneName}
+        Reviewer: {request.Reviewer}
+        Reviewer email: {request.RequestingUserId}
+
+        What Good
+        {request.WhatGood}
+
+        What's Bad
+        {request.WhatsBad}
+
+        Need Improvements
+        {request.NeedImprovements}
+
+        {marker}
+        """;
+
+    private async Task<IssueContext> GetIssueContextAsync(
+        StudioJiraCommentQuery query,
+        CancellationToken cancellationToken,
+        bool requirePersonalWriteCredential = false)
     {
         if (string.IsNullOrWhiteSpace(query.RequestingUserId) || string.IsNullOrWhiteSpace(query.StudioId)
             || string.IsNullOrWhiteSpace(query.TicketId) || !TicketKey().IsMatch(query.TicketId))
@@ -139,7 +294,9 @@ internal sealed partial class JiraStudioCommentService(
             throw new StudioJiraCommentException(exception.Message);
         }
         if (credential is null)
-            throw new StudioJiraCommentException("No Jira credential is available. Connect your account in My Atlassian Connection or ask an administrator to grant shared read-only access.");
+            throw new StudioJiraCommentException(requirePersonalWriteCredential
+                ? "Milestone feedback requires your personal Jira connection with permission to create and edit comments."
+                : "No Jira credential is available. Connect your account in My Atlassian Connection or ask an administrator to grant shared read-only access.");
         var baseUrl = settings.JiraBaseUrl.TrimEnd('/');
         var issueUrl = $"{baseUrl}/rest/api/2/issue/{Uri.EscapeDataString(query.TicketId)}";
         using var document = await GetJsonAsync(

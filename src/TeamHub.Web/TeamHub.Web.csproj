@@ -4,6 +4,7 @@
     <ProjectReference Include="..\TeamHub.Application\TeamHub.Application.csproj" />
     <ProjectReference Include="..\TeamHub.Infrastructure\TeamHub.Infrastructure.csproj" />
     <ProjectReference Include="..\TeamHub.Milestones\TeamHub.Milestones.csproj" />
+    <ProjectReference Include="..\TeamHub.MilestoneReview\TeamHub.MilestoneReview.csproj" />
     <ProjectReference Include="..\TeamHub.Studio\TeamHub.Studio.csproj" />
     <ProjectReference Include="..\TeamHub.Authentication\TeamHub.Authentication.csproj" />
     <ProjectReference Include="..\TeamHub.Team\TeamHub.Team.csproj" />
