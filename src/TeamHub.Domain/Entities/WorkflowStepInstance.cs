@@ -26,8 +26,14 @@ public sealed class WorkflowStepInstance
     public double? ReminderRepeatHours { get; set; }
     public double? EscalationAfterHours { get; set; }
     public string? EscalationOwner { get; set; }
+    public double? EscalationLevel2AfterHours { get; set; }
+    public string? EscalationLevel2Owners { get; set; }
+    public double? EscalationLevel3AfterHours { get; set; }
+    public string? EscalationLevel3Owners { get; set; }
     public DateTime? LastReminderAtUtc { get; set; }
     public DateTime? LastEscalationAtUtc { get; set; }
+    public DateTime? LastEscalationLevel2AtUtc { get; set; }
+    public DateTime? LastEscalationLevel3AtUtc { get; set; }
 
     public ICollection<WorkflowStepInstanceDependency> Dependencies { get; set; } = new List<WorkflowStepInstanceDependency>();
     public ICollection<WorkflowStepAssignee> Assignees { get; set; } = new List<WorkflowStepAssignee>();

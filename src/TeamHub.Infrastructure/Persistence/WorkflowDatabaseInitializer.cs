@@ -100,6 +100,18 @@ internal sealed class WorkflowDatabaseInitializer(WorkflowDbContext dbContext) :
             ON WorkflowStepAssignees (WorkflowStepInstanceId, Email);
             """, cancellationToken);
 
+        await dbContext.Database.OpenConnectionAsync(cancellationToken);
+        try
+        {
+            await AddEscalationColumnsAsync("WorkflowStepDefinitions", includeSentTimestamps: false, cancellationToken);
+            await AddEscalationColumnsAsync("WorkflowStepInstances", includeSentTimestamps: true, cancellationToken);
+            await AddEscalationColumnsAsync("WorkflowDraftStepDefinitions", includeSentTimestamps: false, cancellationToken);
+        }
+        finally
+        {
+            await dbContext.Database.CloseConnectionAsync();
+        }
+
         var stepsWithoutAssignees = await dbContext.WorkflowStepInstances
             .Include(step => step.Assignees)
             .Where(step => !step.Assignees.Any())
@@ -121,5 +133,74 @@ internal sealed class WorkflowDatabaseInitializer(WorkflowDbContext dbContext) :
         {
             await dbContext.SaveChangesAsync(cancellationToken);
         }
+    }
+
+    private async Task AddEscalationColumnsAsync(
+        string tableName,
+        bool includeSentTimestamps,
+        CancellationToken cancellationToken)
+    {
+        if (!await TableExistsAsync(tableName, cancellationToken))
+        {
+            return;
+        }
+
+        await AddColumnIfMissingAsync(tableName, "EscalationLevel2AfterHours", "REAL NULL", cancellationToken);
+        await AddColumnIfMissingAsync(tableName, "EscalationLevel2Owners", "TEXT NULL", cancellationToken);
+        await AddColumnIfMissingAsync(tableName, "EscalationLevel3AfterHours", "REAL NULL", cancellationToken);
+        await AddColumnIfMissingAsync(tableName, "EscalationLevel3Owners", "TEXT NULL", cancellationToken);
+        if (includeSentTimestamps)
+        {
+            await AddColumnIfMissingAsync(tableName, "LastEscalationLevel2AtUtc", "TEXT NULL", cancellationToken);
+            await AddColumnIfMissingAsync(tableName, "LastEscalationLevel3AtUtc", "TEXT NULL", cancellationToken);
+        }
+    }
+
+    private async Task AddColumnIfMissingAsync(
+        string tableName,
+        string columnName,
+        string definition,
+        CancellationToken cancellationToken)
+    {
+        if (await ColumnExistsAsync(tableName, columnName, cancellationToken))
+        {
+            return;
+        }
+
+        #pragma warning disable EF1002 // Table and column names are fixed internal constants.
+        await dbContext.Database.ExecuteSqlRawAsync(
+            $"ALTER TABLE {tableName} ADD COLUMN {columnName} {definition};",
+            cancellationToken);
+        #pragma warning restore EF1002
+    }
+
+    private async Task<bool> ColumnExistsAsync(
+        string tableName,
+        string columnName,
+        CancellationToken cancellationToken)
+    {
+        await using var command = dbContext.Database.GetDbConnection().CreateCommand();
+        command.CommandText = $"PRAGMA table_info({tableName});";
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            if (string.Equals(reader.GetString(1), columnName, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private async Task<bool> TableExistsAsync(string tableName, CancellationToken cancellationToken)
+    {
+        await using var command = dbContext.Database.GetDbConnection().CreateCommand();
+        command.CommandText = "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = $name LIMIT 1;";
+        var parameter = command.CreateParameter();
+        parameter.ParameterName = "$name";
+        parameter.Value = tableName;
+        command.Parameters.Add(parameter);
+        return await command.ExecuteScalarAsync(cancellationToken) is not null;
     }
 }

@@ -178,7 +178,11 @@ public sealed class WorkflowConfigurationService(
                     ReminderAfterHours = step.ReminderAfterHours,
                     ReminderRepeatHours = step.ReminderRepeatHours,
                     EscalationAfterHours = step.EscalationAfterHours,
-                    EscalationOwner = step.EscalationOwner,
+                    EscalationOwner = FormatEmails(step.EscalationOwner),
+                    EscalationLevel2AfterHours = step.EscalationLevel2AfterHours,
+                    EscalationLevel2Owners = FormatEmails(step.EscalationLevel2Owners),
+                    EscalationLevel3AfterHours = step.EscalationLevel3AfterHours,
+                    EscalationLevel3Owners = FormatEmails(step.EscalationLevel3Owners),
                     Required = step.Required,
                     Enabled = step.Enabled,
                     SortOrder = step.SortOrder
@@ -284,9 +288,28 @@ public sealed class WorkflowConfigurationService(
                     errors.Add($"Workflow {workflow.WorkflowKey}: Step {step.StepKey} expected duration cannot be negative.");
                 }
 
-                if (step.EscalationAfterHours.HasValue && string.IsNullOrWhiteSpace(step.EscalationOwner))
+                ValidateEscalationLevel(workflow.WorkflowKey, step.StepKey, 1, step.EscalationAfterHours, step.EscalationOwner, errors);
+                ValidateEscalationLevel(workflow.WorkflowKey, step.StepKey, 2, step.EscalationLevel2AfterHours, step.EscalationLevel2Owners, errors);
+                ValidateEscalationLevel(workflow.WorkflowKey, step.StepKey, 3, step.EscalationLevel3AfterHours, step.EscalationLevel3Owners, errors);
+                if (step.EscalationLevel2AfterHours.HasValue && !step.EscalationAfterHours.HasValue)
                 {
-                    errors.Add($"Workflow {workflow.WorkflowKey}: Step {step.StepKey} escalation owner is required when escalation is configured.");
+                    errors.Add($"Workflow {workflow.WorkflowKey}: Step {step.StepKey} escalation level 2 requires level 1.");
+                }
+                if (step.EscalationLevel3AfterHours.HasValue && !step.EscalationLevel2AfterHours.HasValue)
+                {
+                    errors.Add($"Workflow {workflow.WorkflowKey}: Step {step.StepKey} escalation level 3 requires level 2.");
+                }
+                if (step.EscalationAfterHours.HasValue
+                    && step.EscalationLevel2AfterHours.HasValue
+                    && step.EscalationLevel2AfterHours.Value <= step.EscalationAfterHours.Value)
+                {
+                    errors.Add($"Workflow {workflow.WorkflowKey}: Step {step.StepKey} escalation level 2 must occur after level 1.");
+                }
+                if (step.EscalationLevel2AfterHours.HasValue
+                    && step.EscalationLevel3AfterHours.HasValue
+                    && step.EscalationLevel3AfterHours.Value <= step.EscalationLevel2AfterHours.Value)
+                {
+                    errors.Add($"Workflow {workflow.WorkflowKey}: Step {step.StepKey} escalation level 3 must occur after level 2.");
                 }
 
                 foreach (var dependency in step.DependsOn)
@@ -373,6 +396,10 @@ public sealed class WorkflowConfigurationService(
                     x.ReminderRepeatHours,
                     x.EscalationAfterHours,
                     x.EscalationOwner,
+                    x.EscalationLevel2AfterHours,
+                    x.EscalationLevel2Owners,
+                    x.EscalationLevel3AfterHours,
+                    x.EscalationLevel3Owners,
                     x.Required,
                     x.Enabled,
                     x.SortOrder
@@ -424,6 +451,10 @@ public sealed class WorkflowConfigurationService(
                 ReminderRepeatHours REAL NULL,
                 EscalationAfterHours REAL NULL,
                 EscalationOwner TEXT NULL,
+                EscalationLevel2AfterHours REAL NULL,
+                EscalationLevel2Owners TEXT NULL,
+                EscalationLevel3AfterHours REAL NULL,
+                EscalationLevel3Owners TEXT NULL,
                 Required INTEGER NOT NULL,
                 Enabled INTEGER NOT NULL,
                 SortOrder INTEGER NOT NULL,
@@ -462,6 +493,10 @@ public sealed class WorkflowConfigurationService(
                     ReminderRepeatHours = x.ReminderRepeatHours,
                     EscalationAfterHours = x.EscalationAfterHours,
                     EscalationOwner = x.EscalationOwner,
+                    EscalationLevel2AfterHours = x.EscalationLevel2AfterHours,
+                    EscalationLevel2Owners = x.EscalationLevel2Owners,
+                    EscalationLevel3AfterHours = x.EscalationLevel3AfterHours,
+                    EscalationLevel3Owners = x.EscalationLevel3Owners,
                     Required = x.Required,
                     Enabled = x.Enabled,
                     SortOrder = x.SortOrder
@@ -493,6 +528,10 @@ public sealed class WorkflowConfigurationService(
                     ReminderRepeatHours = x.ReminderRepeatHours,
                     EscalationAfterHours = x.EscalationAfterHours,
                     EscalationOwner = x.EscalationOwner,
+                    EscalationLevel2AfterHours = x.EscalationLevel2AfterHours,
+                    EscalationLevel2Owners = x.EscalationLevel2Owners,
+                    EscalationLevel3AfterHours = x.EscalationLevel3AfterHours,
+                    EscalationLevel3Owners = x.EscalationLevel3Owners,
                     Required = x.Required,
                     Enabled = x.Enabled,
                     SortOrder = x.SortOrder
@@ -519,7 +558,11 @@ public sealed class WorkflowConfigurationService(
                 ReminderAfterHours = step.ReminderAfterHours,
                 ReminderRepeatHours = step.ReminderRepeatHours,
                 EscalationAfterHours = step.EscalationAfterHours,
-                EscalationOwner = string.IsNullOrWhiteSpace(step.EscalationOwner) ? null : step.EscalationOwner.Trim(),
+                EscalationOwner = FormatEmails(step.EscalationOwner),
+                EscalationLevel2AfterHours = step.EscalationLevel2AfterHours,
+                EscalationLevel2Owners = FormatEmails(step.EscalationLevel2Owners),
+                EscalationLevel3AfterHours = step.EscalationLevel3AfterHours,
+                EscalationLevel3Owners = FormatEmails(step.EscalationLevel3Owners),
                 Required = step.Required,
                 Enabled = step.Enabled,
                 SortOrder = step.SortOrder > 0 ? step.SortOrder : sortOrder
@@ -543,6 +586,38 @@ public sealed class WorkflowConfigurationService(
                 .Where(x => !string.IsNullOrWhiteSpace(x))
                 .Distinct(StringComparer.OrdinalIgnoreCase)
                 .ToList();
+
+    private static string? FormatEmails(string? value)
+    {
+        var emails = WorkflowAssigneeEmails.Parse(value);
+        return emails.Count == 0 ? null : WorkflowAssigneeEmails.Format(emails);
+    }
+
+    private static void ValidateEscalationLevel(
+        string workflowKey,
+        string stepKey,
+        int level,
+        double? afterHours,
+        string? owners,
+        ICollection<string> errors)
+    {
+        if (afterHours < 0)
+        {
+            errors.Add($"Workflow {workflowKey}: Step {stepKey} escalation level {level} delay cannot be negative.");
+        }
+        if (!afterHours.HasValue && !string.IsNullOrWhiteSpace(owners))
+        {
+            errors.Add($"Workflow {workflowKey}: Step {stepKey} escalation level {level} delay is required when recipients are configured.");
+        }
+        if (afterHours.HasValue && string.IsNullOrWhiteSpace(owners))
+        {
+            errors.Add($"Workflow {workflowKey}: Step {stepKey} escalation level {level} needs at least one recipient.");
+        }
+        foreach (var email in WorkflowAssigneeEmails.Parse(owners).Where(email => !WorkflowAssigneeEmails.IsValid(email)))
+        {
+            errors.Add($"Workflow {workflowKey}: Step {stepKey} escalation level {level} recipient '{email}' is not a valid email address.");
+        }
+    }
 
     private static string NormalizeKey(string value)
         => string.Join('_', value.Trim().ToUpperInvariant().Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));

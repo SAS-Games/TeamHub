@@ -269,6 +269,10 @@ public class ConfigurationModel(
                     ReminderRepeatHours = step.ReminderRepeatHours,
                     EscalationAfterHours = step.EscalationAfterHours,
                     EscalationOwner = step.EscalationOwner,
+                    EscalationLevel2AfterHours = step.EscalationLevel2AfterHours,
+                    EscalationLevel2Owners = step.EscalationLevel2Owners,
+                    EscalationLevel3AfterHours = step.EscalationLevel3AfterHours,
+                    EscalationLevel3Owners = step.EscalationLevel3Owners,
                     Required = step.Required,
                     Enabled = step.Enabled,
                     SortOrder = step.SortOrder
@@ -298,6 +302,10 @@ public class ConfigurationModel(
                     ReminderRepeatHours = step.ReminderRepeatHours,
                     EscalationAfterHours = step.EscalationAfterHours,
                     EscalationOwner = step.EscalationOwner,
+                    EscalationLevel2AfterHours = step.EscalationLevel2AfterHours,
+                    EscalationLevel2Owners = step.EscalationLevel2Owners,
+                    EscalationLevel3AfterHours = step.EscalationLevel3AfterHours,
+                    EscalationLevel3Owners = step.EscalationLevel3Owners,
                     Required = step.Required,
                     Enabled = step.Enabled,
                     SortOrder = step.SortOrder
@@ -319,6 +327,10 @@ public class ConfigurationModel(
         public double? ReminderRepeatHours { get; set; }
         public double? EscalationAfterHours { get; set; }
         public string? EscalationOwner { get; set; }
+        public double? EscalationLevel2AfterHours { get; set; }
+        public string? EscalationLevel2Owners { get; set; }
+        public double? EscalationLevel3AfterHours { get; set; }
+        public string? EscalationLevel3Owners { get; set; }
         public bool Required { get; set; } = true;
         public bool Enabled { get; set; } = true;
         public int SortOrder { get; set; }

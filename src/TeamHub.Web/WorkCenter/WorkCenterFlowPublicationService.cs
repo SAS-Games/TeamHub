@@ -100,12 +100,9 @@ public sealed class WorkCenterFlowPublicationService(
             ValidateNumber(task, "reminderAfterHours", "First reminder", errors);
             ValidateNumber(task, "reminderRepeatHours", "Reminder repeat", errors);
             ValidateNumber(task, "escalationAfterHours", "Escalation delay", errors);
-
-            if (!string.IsNullOrWhiteSpace(Get(task.CustomProperties, "escalationAfterHours"))
-                && string.IsNullOrWhiteSpace(Get(task.CustomProperties, "escalationOwner")))
-            {
-                errors.Add($"Task '{task.Title}' needs an escalation owner when escalation is enabled.");
-            }
+            ValidateNumber(task, "escalationLevel2AfterHours", "Escalation level 2 delay", errors);
+            ValidateNumber(task, "escalationLevel3AfterHours", "Escalation level 3 delay", errors);
+            ValidateEscalations(task, errors);
         }
 
         var visualNodeIds = flow.Nodes
@@ -194,6 +191,10 @@ public sealed class WorkCenterFlowPublicationService(
                 ReminderRepeatHours = GetDouble(node.CustomProperties, "reminderRepeatHours"),
                 EscalationAfterHours = GetDouble(node.CustomProperties, "escalationAfterHours"),
                 EscalationOwner = Get(node.CustomProperties, "escalationOwner"),
+                EscalationLevel2AfterHours = GetDouble(node.CustomProperties, "escalationLevel2AfterHours"),
+                EscalationLevel2Owners = Get(node.CustomProperties, "escalationLevel2Owners"),
+                EscalationLevel3AfterHours = GetDouble(node.CustomProperties, "escalationLevel3AfterHours"),
+                EscalationLevel3Owners = Get(node.CustomProperties, "escalationLevel3Owners"),
                 Required = GetBool(node.CustomProperties, "required", true),
                 Enabled = GetBool(node.CustomProperties, "enabled", true),
                 SortOrder = index + 1
@@ -272,6 +273,55 @@ public sealed class WorkCenterFlowPublicationService(
         if (!double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out var parsed) || parsed < 0)
         {
             errors.Add($"Task '{node.Title}': {label} must be zero or greater.");
+        }
+    }
+
+    private static void ValidateEscalations(FlowNode task, ICollection<string> errors)
+    {
+        var levels = new[]
+        {
+            new { Level = 1, DelayKey = "escalationAfterHours", OwnersKey = "escalationOwner" },
+            new { Level = 2, DelayKey = "escalationLevel2AfterHours", OwnersKey = "escalationLevel2Owners" },
+            new { Level = 3, DelayKey = "escalationLevel3AfterHours", OwnersKey = "escalationLevel3Owners" }
+        };
+
+        foreach (var level in levels)
+        {
+            var delay = GetDouble(task.CustomProperties, level.DelayKey);
+            var owners = Get(task.CustomProperties, level.OwnersKey);
+            var recipients = WorkflowAssigneeEmails.Parse(owners);
+            if (delay.HasValue && recipients.Count == 0)
+            {
+                errors.Add($"Task '{task.Title}' needs at least one escalation level {level.Level} recipient.");
+            }
+            if (!delay.HasValue && recipients.Count > 0)
+            {
+                errors.Add($"Task '{task.Title}' needs an escalation level {level.Level} delay when recipients are configured.");
+            }
+            foreach (var invalidEmail in recipients.Where(email => !WorkflowAssigneeEmails.IsValid(email)))
+            {
+                errors.Add($"Task '{task.Title}' has an invalid escalation level {level.Level} recipient: '{invalidEmail}'.");
+            }
+        }
+
+        var level1 = GetDouble(task.CustomProperties, "escalationAfterHours");
+        var level2 = GetDouble(task.CustomProperties, "escalationLevel2AfterHours");
+        var level3 = GetDouble(task.CustomProperties, "escalationLevel3AfterHours");
+        if (level2.HasValue && !level1.HasValue)
+        {
+            errors.Add($"Task '{task.Title}' escalation level 2 requires level 1.");
+        }
+        if (level3.HasValue && !level2.HasValue)
+        {
+            errors.Add($"Task '{task.Title}' escalation level 3 requires level 2.");
+        }
+        if (level1.HasValue && level2.HasValue && level2.Value <= level1.Value)
+        {
+            errors.Add($"Task '{task.Title}' escalation level 2 must occur after level 1.");
+        }
+        if (level2.HasValue && level3.HasValue && level3.Value <= level2.Value)
+        {
+            errors.Add($"Task '{task.Title}' escalation level 3 must occur after level 2.");
         }
     }
 

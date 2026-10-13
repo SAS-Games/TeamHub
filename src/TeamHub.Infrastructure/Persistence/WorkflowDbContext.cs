@@ -37,6 +37,9 @@ public sealed class WorkflowDbContext(DbContextOptions<WorkflowDbContext> option
             e.Property(x => x.Name).HasMaxLength(256);
             e.Property(x => x.Owner).HasMaxLength(2000);
             e.Property(x => x.OwnerType).HasMaxLength(64);
+            e.Property(x => x.EscalationOwner).HasMaxLength(2000);
+            e.Property(x => x.EscalationLevel2Owners).HasMaxLength(2000);
+            e.Property(x => x.EscalationLevel3Owners).HasMaxLength(2000);
             e.HasOne(x => x.WorkflowDefinition)
                 .WithMany(x => x.Steps)
                 .HasForeignKey(x => x.WorkflowDefinitionId)
@@ -72,6 +75,9 @@ public sealed class WorkflowDbContext(DbContextOptions<WorkflowDbContext> option
             e.Property(x => x.StepName).HasMaxLength(256);
             e.Property(x => x.Owner).HasMaxLength(2000);
             e.Property(x => x.OwnerType).HasMaxLength(64);
+            e.Property(x => x.EscalationOwner).HasMaxLength(2000);
+            e.Property(x => x.EscalationLevel2Owners).HasMaxLength(2000);
+            e.Property(x => x.EscalationLevel3Owners).HasMaxLength(2000);
             e.HasOne(x => x.WorkflowInstance)
                 .WithMany(x => x.Steps)
                 .HasForeignKey(x => x.WorkflowInstanceId)
@@ -149,6 +155,9 @@ public sealed class WorkflowDbContext(DbContextOptions<WorkflowDbContext> option
             e.Property(x => x.Name).HasMaxLength(256);
             e.Property(x => x.Owner).HasMaxLength(2000);
             e.Property(x => x.OwnerType).HasMaxLength(64);
+            e.Property(x => x.EscalationOwner).HasMaxLength(2000);
+            e.Property(x => x.EscalationLevel2Owners).HasMaxLength(2000);
+            e.Property(x => x.EscalationLevel3Owners).HasMaxLength(2000);
             e.HasIndex(x => new { x.WorkflowDraftDefinitionId, x.SortOrder });
             e.HasOne(x => x.WorkflowDraftDefinition)
                 .WithMany(x => x.Steps)
