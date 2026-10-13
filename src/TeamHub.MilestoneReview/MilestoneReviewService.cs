@@ -59,8 +59,8 @@ public sealed partial class MilestoneReviewService(
             {
                 item.ReviewId,
                 Dto = new MilestoneReviewFeedback(
-                    item.Id, item.ReviewerId, item.Reviewer, item.WhatGood, item.WhatsBad,
-                    item.NeedImprovements, item.Version, item.JiraCommentId, item.JiraSyncError)
+                    item.Id, item.ReviewerId, item.Reviewer, item.SessionDetails, item.WhatGood,
+                    item.NeedImprovements, item.AdditionalFeedback, item.Version, item.JiraCommentId, item.JiraSyncError)
             })
             .ToListAsync(cancellationToken);
         var feedbackByReviewId = feedback
@@ -177,6 +177,30 @@ public sealed partial class MilestoneReviewService(
         await dbContext.SaveChangesAsync(cancellationToken);
     }
 
+    public async Task ArchiveAsync(Guid reviewId, bool isAdmin, CancellationToken cancellationToken = default)
+    {
+        if (!isAdmin)
+            throw new UnauthorizedAccessException("Only administrators can archive milestone reviews.");
+        var updated = await dbContext.Reviews
+            .Where(item => item.Id == reviewId && item.Status == MilestoneReviewStatus.Published)
+            .ExecuteUpdateAsync(update => update.SetProperty(
+                item => item.Status, MilestoneReviewStatus.Superseded), cancellationToken);
+        if (updated == 0)
+            throw new InvalidOperationException("The published review was not found or has already been archived. Reload the page.");
+    }
+
+    public async Task DeleteAsync(Guid reviewId, bool isAdmin, CancellationToken cancellationToken = default)
+    {
+        if (!isAdmin)
+            throw new UnauthorizedAccessException("Only administrators can delete milestone reviews.");
+        var deleted = await dbContext.Reviews
+            .Where(item => item.Id == reviewId
+                && (item.Status == MilestoneReviewStatus.Published || item.Status == MilestoneReviewStatus.Superseded))
+            .ExecuteDeleteAsync(cancellationToken);
+        if (deleted == 0)
+            throw new InvalidOperationException("The published or archived review was not found. Reload the page.");
+    }
+
     public async Task SaveFeedbackAsync(
         SaveMilestoneReviewFeedbackRequest request,
         Guid actorId,
@@ -199,9 +223,14 @@ public sealed partial class MilestoneReviewService(
         if (feedback.Version != request.Version)
             throw new InvalidOperationException("This feedback row was changed by another user. Reload the page before saving again.");
 
-        feedback.WhatGood = Bounded(request.WhatGood, 20000, "What Good");
-        feedback.WhatsBad = Bounded(request.WhatsBad, 20000, "What's Bad");
-        feedback.NeedImprovements = Bounded(request.NeedImprovements, 20000, "Need Improvements");
+        var sessionDetails = Bounded(request.SessionDetails, 20000, "Session Details");
+        var whatGood = Bounded(request.WhatGood, 20000, "What's Good");
+        var needImprovements = Bounded(request.NeedImprovements, 20000, "Needs Improvement");
+        var additionalFeedback = Bounded(request.AdditionalFeedback, 20000, "Additional Feedback");
+        feedback.SessionDetails = sessionDetails;
+        feedback.WhatGood = whatGood;
+        feedback.NeedImprovements = needImprovements;
+        feedback.AdditionalFeedback = additionalFeedback;
         feedback.Version++;
         feedback.UpdatedAt = DateTimeOffset.UtcNow;
         try
@@ -226,9 +255,10 @@ public sealed partial class MilestoneReviewService(
                 review.ProjectName,
                 review.MilestoneName,
                 feedback.Reviewer,
+                feedback.SessionDetails,
                 feedback.WhatGood,
-                feedback.WhatsBad,
-                feedback.NeedImprovements), cancellationToken);
+                feedback.NeedImprovements,
+                feedback.AdditionalFeedback), cancellationToken);
             feedback.JiraCommentId = result.CommentId;
             feedback.JiraSyncError = null;
             await dbContext.SaveChangesAsync(cancellationToken);
@@ -262,8 +292,8 @@ public sealed partial class MilestoneReviewService(
             .Where(item => item.ReviewId == review.Id)
             .OrderBy(item => item.Reviewer)
             .Select(item => new MilestoneReviewFeedback(
-                item.Id, item.ReviewerId, item.Reviewer, item.WhatGood, item.WhatsBad,
-                item.NeedImprovements, item.Version, item.JiraCommentId, item.JiraSyncError))
+                item.Id, item.ReviewerId, item.Reviewer, item.SessionDetails, item.WhatGood,
+                item.NeedImprovements, item.AdditionalFeedback, item.Version, item.JiraCommentId, item.JiraSyncError))
             .ToListAsync(cancellationToken);
         return new MilestoneReview(
             review.Id, review.ProjectName, review.MilestoneName, review.Description,

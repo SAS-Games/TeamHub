@@ -226,14 +226,21 @@ public sealed class StudioJiraCommentTests
             var path = request.RequestUri!.AbsolutePath;
             calls.Add((request.Method, path));
             if (path.EndsWith("/issue/SUP-1", StringComparison.Ordinal)) return Json(IssueJson);
-            if (request.Method == HttpMethod.Post)
+            if (request.Method == HttpMethod.Post || request.Method == HttpMethod.Put)
             {
-                var body = JsonDocument.Parse(request.Content!.ReadAsStringAsync().GetAwaiter().GetResult());
+                using var body = JsonDocument.Parse(request.Content!.ReadAsStringAsync().GetAwaiter().GetResult());
                 body.RootElement.GetProperty("body").GetString().Should().Contain("Reviewer email: reader@example.com");
                 body.RootElement.GetProperty("body").GetString().Should().Contain($"[TeamHub Milestone Review Feedback: {feedbackId:D}]");
-                return Json("""{"id":"42"}""");
+                var text = body.RootElement.GetProperty("body").GetString();
+                text.Should().Contain($"Session Details{Environment.NewLine}PC, 1 hour");
+                text.Should().Contain($"What's Good{Environment.NewLine}Good");
+                text.Should().Contain($"Needs Improvement{Environment.NewLine}Improve");
+                text.Should().Contain($"Additional Feedback{Environment.NewLine}Art notes");
+                text.Should().NotContain("What's Bad");
+                return request.Method == HttpMethod.Post
+                    ? Json("""{"id":"42"}""")
+                    : new HttpResponseMessage(HttpStatusCode.NoContent);
             }
-            if (request.Method == HttpMethod.Put) return new HttpResponseMessage(HttpStatusCode.NoContent);
             if (path.EndsWith("/comment", StringComparison.Ordinal)
                 && calls.Count(call => call.Method == HttpMethod.Get
                     && call.Path.EndsWith("/comment", StringComparison.Ordinal)) == 1)
@@ -244,7 +251,7 @@ public sealed class StudioJiraCommentTests
         });
         var request = new StudioJiraMilestoneReviewCommentRequest(
             "SUP-1", host.Query.RequestingUserId, feedbackId, null,
-            "Project", "Milestone", "Reviewer", "Good", "Bad", "Improve");
+            "Project", "Milestone", "Reviewer", "PC, 1 hour", "Good", "Improve", "Art notes");
 
         var created = await host.Service.UpsertMilestoneReviewCommentAsync(request);
         created.CommentId.Should().Be("42");
@@ -272,7 +279,7 @@ public sealed class StudioJiraCommentTests
         await host.ConfigureSharedAccessAsync();
         var request = new StudioJiraMilestoneReviewCommentRequest(
             "SUP-1", host.Query.RequestingUserId, Guid.NewGuid(), null,
-            "Project", "Milestone", "Reviewer", "Good", "Bad", "Improve");
+            "Project", "Milestone", "Reviewer", "PC, 1 hour", "Good", "Improve", "Art notes");
 
         var act = () => host.Service.UpsertMilestoneReviewCommentAsync(request);
 

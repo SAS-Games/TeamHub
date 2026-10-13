@@ -21,9 +21,10 @@ public sealed class StudioMilestoneReviewCommentPublisher(IStudioJiraCommentServ
                     request.ProjectName,
                     request.MilestoneName,
                     request.Reviewer,
+                    request.SessionDetails,
                     request.WhatGood,
-                    request.WhatsBad,
-                    request.NeedImprovements),
+                    request.NeedImprovements,
+                    request.AdditionalFeedback),
                 cancellationToken);
             return new MilestoneReviewCommentResult(result.CommentId);
         }

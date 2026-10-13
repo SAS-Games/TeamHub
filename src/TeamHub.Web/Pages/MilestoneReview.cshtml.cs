@@ -6,6 +6,7 @@ using TeamHub.Authentication;
 using TeamHub.MilestoneReview;
 using TeamHub.Studio;
 using TeamHub.Web.AccessControl;
+using TeamHub.Web.Formatting;
 using ReviewSnapshot = TeamHub.MilestoneReview.MilestoneReview;
 
 namespace TeamHub.Web.Pages;
@@ -17,6 +18,7 @@ public sealed partial class MilestoneReviewModel(
     IStudioJiraCommentService comments,
     IStudioDirectoryService studioDirectory,
     IAtlassianConfigurationService configuration,
+    ISafeMarkdownRenderer markdown,
     ILogger<MilestoneReviewModel> logger) : PageModel
 {
     [BindProperty]
@@ -47,10 +49,13 @@ public sealed partial class MilestoneReviewModel(
     public string? WhatGood { get; set; }
 
     [BindProperty]
-    public string? WhatsBad { get; set; }
+    public string? SessionDetails { get; set; }
 
     [BindProperty]
     public string? NeedImprovements { get; set; }
+
+    [BindProperty]
+    public string? AdditionalFeedback { get; set; }
 
     public ReviewSnapshot? CurrentReview { get; private set; }
     public ReviewSnapshot? Draft { get; private set; }
@@ -121,14 +126,45 @@ public sealed partial class MilestoneReviewModel(
         return RedirectToPage();
     }
 
+    public async Task<IActionResult> OnPostArchiveAsync(CancellationToken cancellationToken)
+    {
+        if (!IsAdmin) return Forbid();
+        try
+        {
+            await reviews.ArchiveAsync(ReviewId, IsAdmin, cancellationToken);
+            StatusMessage = "Milestone review archived. Its feedback is available read-only in Review History.";
+        }
+        catch (InvalidOperationException exception)
+        {
+            ErrorMessage = exception.Message;
+        }
+        return RedirectToPage();
+    }
+
+    public async Task<IActionResult> OnPostDeleteAsync(CancellationToken cancellationToken)
+    {
+        if (!IsAdmin) return Forbid();
+        try
+        {
+            await reviews.DeleteAsync(ReviewId, IsAdmin, cancellationToken);
+            StatusMessage = "Milestone review and its saved feedback permanently deleted from TeamHub. Jira comments were not deleted.";
+        }
+        catch (InvalidOperationException exception)
+        {
+            ErrorMessage = exception.Message;
+        }
+        return RedirectToPage();
+    }
+
     public async Task<IActionResult> OnPostSaveFeedbackAsync(CancellationToken cancellationToken)
     {
         var current = await access.GetCurrentAsync(cancellationToken);
         if (current.User is null)
             return Forbid();
-        if (!ValidLength(WhatGood, 20000)
-            || !ValidLength(WhatsBad, 20000)
-            || !ValidLength(NeedImprovements, 20000))
+        if (!ValidLength(SessionDetails, 20000)
+            || !ValidLength(WhatGood, 20000)
+            || !ValidLength(NeedImprovements, 20000)
+            || !ValidLength(AdditionalFeedback, 20000))
         {
             ErrorMessage = "Feedback was not saved. Check that each field is no longer than 20,000 characters.";
             return RedirectToPage();
@@ -138,7 +174,8 @@ public sealed partial class MilestoneReviewModel(
             await reviews.SaveFeedbackAsync(
                 new SaveMilestoneReviewFeedbackRequest(
                     ReviewId, FeedbackId, Version,
-                    WhatGood ?? string.Empty, WhatsBad ?? string.Empty, NeedImprovements ?? string.Empty),
+                    SessionDetails ?? string.Empty, WhatGood ?? string.Empty,
+                    NeedImprovements ?? string.Empty, AdditionalFeedback ?? string.Empty),
                 current.User.Id,
                 IsAdmin,
                 cancellationToken);
@@ -181,28 +218,35 @@ public sealed partial class MilestoneReviewModel(
             return JiraFailure("The requested milestone review was not found.", StatusCodes.Status404NotFound);
 
         var comments = target.Feedback
-            .Where(fb => !string.IsNullOrWhiteSpace(fb.WhatGood)
-                || !string.IsNullOrWhiteSpace(fb.WhatsBad)
-                || !string.IsNullOrWhiteSpace(fb.NeedImprovements))
+            .Where(fb => !string.IsNullOrWhiteSpace(fb.SessionDetails)
+                || !string.IsNullOrWhiteSpace(fb.WhatGood)
+                || !string.IsNullOrWhiteSpace(fb.NeedImprovements)
+                || !string.IsNullOrWhiteSpace(fb.AdditionalFeedback))
             .Select(fb =>
             {
                 var sb = new System.Text.StringBuilder();
-                if (!string.IsNullOrWhiteSpace(fb.WhatGood))
+                if (!string.IsNullOrWhiteSpace(fb.SessionDetails))
                 {
-                    sb.AppendLine("What Good:");
-                    sb.AppendLine(fb.WhatGood.Trim());
+                    sb.AppendLine("Session Details:");
+                    sb.AppendLine(fb.SessionDetails.Trim());
                     sb.AppendLine();
                 }
-                if (!string.IsNullOrWhiteSpace(fb.WhatsBad))
+                if (!string.IsNullOrWhiteSpace(fb.WhatGood))
                 {
-                    sb.AppendLine("What's Bad:");
-                    sb.AppendLine(fb.WhatsBad.Trim());
+                    sb.AppendLine("What's Good:");
+                    sb.AppendLine(fb.WhatGood.Trim());
                     sb.AppendLine();
                 }
                 if (!string.IsNullOrWhiteSpace(fb.NeedImprovements))
                 {
-                    sb.AppendLine("Need Improvements:");
+                    sb.AppendLine("Needs Improvement:");
                     sb.AppendLine(fb.NeedImprovements.Trim());
+                    sb.AppendLine();
+                }
+                if (!string.IsNullOrWhiteSpace(fb.AdditionalFeedback))
+                {
+                    sb.AppendLine("Additional Feedback:");
+                    sb.AppendLine(fb.AdditionalFeedback.Trim());
                 }
 
                 return new
@@ -211,7 +255,12 @@ public sealed partial class MilestoneReviewModel(
                     author = fb.Reviewer,
                     created = target.PublishedAt ?? target.CreatedAt,
                     updated = (DateTimeOffset?)null,
-                    parts = new[] { new { kind = "text", text = sb.ToString().TrimEnd() } }
+                    parts = new[] { new
+                    {
+                        kind = "markdown",
+                        text = sb.ToString().TrimEnd(),
+                        html = markdown.ToHtml(sb.ToString().TrimEnd())
+                    } }
                 };
             }).ToList();
 

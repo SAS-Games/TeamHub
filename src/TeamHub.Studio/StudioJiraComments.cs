@@ -23,9 +23,10 @@ public sealed record StudioJiraMilestoneReviewCommentRequest(
     string ProjectName,
     string MilestoneName,
     string Reviewer,
+    string SessionDetails,
     string WhatGood,
-    string WhatsBad,
-    string NeedImprovements);
+    string NeedImprovements,
+    string AdditionalFeedback);
 public sealed record StudioJiraMilestoneReviewCommentResult(string CommentId);
 
 public interface IStudioJiraCommentService
@@ -253,14 +254,17 @@ internal sealed partial class JiraStudioCommentService(
         Reviewer: {request.Reviewer}
         Reviewer email: {request.RequestingUserId}
 
-        What Good
+        Session Details
+        {request.SessionDetails}
+
+        What's Good
         {request.WhatGood}
 
-        What's Bad
-        {request.WhatsBad}
-
-        Need Improvements
+        Needs Improvement
         {request.NeedImprovements}
+
+        Additional Feedback
+        {request.AdditionalFeedback}
 
         {marker}
         """;

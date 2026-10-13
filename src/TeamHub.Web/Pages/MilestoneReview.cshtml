@@ -48,6 +48,7 @@
                     <div class="col-12">
                         <label asp-for="Description" class="form-label">Description</label>
                         <textarea asp-for="Description" class="form-control" rows="3" maxlength="4000"></textarea>
+                        <partial name="_MarkdownHelp" />
                     </div>
                     <div class="col-12">
                         <label asp-for="JiraTicketId" class="form-label">Jira Ticket ID (optional)</label>
@@ -82,7 +83,7 @@
         <section class="content-section">
             <div class="section-heading"><div><span>Not visible to reviewers yet</span><h2>Draft: @Model.Draft.ProjectName — @Model.Draft.MilestoneName</h2></div></div>
             <div class="section-body">
-                <p class="mb-2">@Model.Draft.Description</p>
+                <safe-markdown class="markdown-content mb-2" text="@Model.Draft.Description"></safe-markdown>
                 <p><strong>Feedback contributors:</strong> @string.Join(", ", Model.Draft.AssignedReviewers.Select(item => $"{item.DisplayName} ({item.UserId})"))</p>
                 @if (!string.IsNullOrWhiteSpace(Model.Draft.JiraTicketId))
                 {
@@ -124,15 +125,45 @@ else
                     </div>
                 }
             </div>
-            <small class="text-secondary">Published @Model.CurrentReview.PublishedAt?.ToLocalTime().ToString("g")</small>
+            <div class="d-flex flex-wrap align-items-center gap-2">
+                <small class="text-secondary">Published @Model.CurrentReview.PublishedAt?.ToLocalTime().ToString("g")</small>
+                @if (Model.IsAdmin)
+                {
+                    <form method="post" asp-page-handler="Archive"
+                          onsubmit="return confirm('Archive this review? Feedback will be preserved in Review History and can no longer be edited.')">
+                        <input type="hidden" name="ReviewId" value="@Model.CurrentReview.Id" />
+                        <button type="submit" class="btn btn-sm btn-outline-secondary">Archive Review</button>
+                    </form>
+                    <form method="post" asp-page-handler="Delete"
+                          onsubmit="return confirm('Permanently delete this review and all its saved feedback from TeamHub? This cannot be undone. Jira comments will not be deleted.')">
+                        <input type="hidden" name="ReviewId" value="@Model.CurrentReview.Id" />
+                        <button type="submit" class="btn btn-sm btn-outline-danger">Delete Review</button>
+                    </form>
+                }
+            </div>
         </div>
         @if (!string.IsNullOrWhiteSpace(Model.CurrentReview.Description))
         {
-            <div class="section-body border-bottom">@Model.CurrentReview.Description</div>
+            <div class="section-body border-bottom">
+                <safe-markdown class="markdown-content" text="@Model.CurrentReview.Description"></safe-markdown>
+            </div>
         }
+        <div class="section-body border-bottom">
+            <p class="small text-secondary mb-0">All feedback sections support Markdown. Save your feedback, then open “Preview saved feedback” to see its formatting.</p>
+            <partial name="_MarkdownHelp" />
+        </div>
         <div class="table-responsive">
             <table class="table styled-table align-middle">
-                <thead><tr><th>Reviewer</th><th>What Good</th><th>What's Bad</th><th>Need Improvements</th><th>Actions</th></tr></thead>
+                <thead>
+                    <tr>
+                        <th scope="col">Reviewer</th>
+                        <th scope="col">Session Details<div id="session-details-help" class="small fw-normal">Platform, duration, and levels or areas explored.</div></th>
+                        <th scope="col">What's Good<div id="what-good-help" class="small fw-normal">Aspects enjoyed or found effective during play.</div></th>
+                        <th scope="col">Needs Improvement<div id="needs-improvement-help" class="small fw-normal">Elements that need refinement, fixing, or felt frustrating during play.</div></th>
+                        <th scope="col">Additional Feedback<div id="additional-feedback-help" class="small fw-normal">Feature or discipline-specific notes, if any.</div></th>
+                        <th scope="col">Actions</th>
+                    </tr>
+                </thead>
                 <tbody>
                 @foreach (var feedback in Model.CurrentReview.Feedback)
                 {
@@ -144,9 +175,10 @@ else
                         }
                         @if (canEdit)
                         {
-                            <td><textarea name="WhatGood" form="@feedbackFormId" class="form-control" rows="4" maxlength="20000">@feedback.WhatGood</textarea></td>
-                            <td><textarea name="WhatsBad" form="@feedbackFormId" class="form-control" rows="4" maxlength="20000">@feedback.WhatsBad</textarea></td>
-                            <td><textarea name="NeedImprovements" form="@feedbackFormId" class="form-control" rows="4" maxlength="20000">@feedback.NeedImprovements</textarea></td>
+                            <td><textarea name="SessionDetails" form="@feedbackFormId" class="form-control" rows="4" maxlength="20000" aria-label="Session Details for @feedback.Reviewer" aria-describedby="session-details-help" placeholder="e.g. PC, 1 hour, levels 1-3">@feedback.SessionDetails</textarea></td>
+                            <td><textarea name="WhatGood" form="@feedbackFormId" class="form-control" rows="4" maxlength="20000" aria-label="What's Good for @feedback.Reviewer" aria-describedby="what-good-help" placeholder="What did you enjoy or find effective?">@feedback.WhatGood</textarea></td>
+                            <td><textarea name="NeedImprovements" form="@feedbackFormId" class="form-control" rows="4" maxlength="20000" aria-label="Needs Improvement for @feedback.Reviewer" aria-describedby="needs-improvement-help" placeholder="What needs refinement or fixing, or felt frustrating?">@feedback.NeedImprovements</textarea></td>
+                            <td><textarea name="AdditionalFeedback" form="@feedbackFormId" class="form-control" rows="4" maxlength="20000" aria-label="Additional Feedback for @feedback.Reviewer" aria-describedby="additional-feedback-help" placeholder="Optional feature or discipline-specific notes">@feedback.AdditionalFeedback</textarea></td>
                             <td>
                                 @if (!string.IsNullOrWhiteSpace(feedback.JiraSyncError))
                                 {
@@ -162,9 +194,10 @@ else
                         }
                         else
                         {
-                            <td><div class="milestone-review-text">@feedback.WhatGood</div></td>
-                            <td><div class="milestone-review-text">@feedback.WhatsBad</div></td>
-                            <td><div class="milestone-review-text">@feedback.NeedImprovements</div></td>
+                            <td><safe-markdown class="milestone-review-text markdown-content" text="@feedback.SessionDetails"></safe-markdown></td>
+                            <td><safe-markdown class="milestone-review-text markdown-content" text="@feedback.WhatGood"></safe-markdown></td>
+                            <td><safe-markdown class="milestone-review-text markdown-content" text="@feedback.NeedImprovements"></safe-markdown></td>
+                            <td><safe-markdown class="milestone-review-text markdown-content" text="@feedback.AdditionalFeedback"></safe-markdown></td>
                             <td>
                                 @if (!string.IsNullOrWhiteSpace(feedback.JiraSyncError))
                                 {
@@ -173,6 +206,22 @@ else
                             </td>
                         }
                     </tr>
+                    @if (canEdit)
+                    {
+                        <tr>
+                            <td colspan="6">
+                                <details>
+                                    <summary>Preview saved feedback for @feedback.Reviewer</summary>
+                                    <div class="row g-3 mt-1">
+                                        <div class="col-md-6"><h3 class="h6">Session Details</h3><safe-markdown class="markdown-content" text="@feedback.SessionDetails"></safe-markdown></div>
+                                        <div class="col-md-6"><h3 class="h6">What's Good</h3><safe-markdown class="markdown-content" text="@feedback.WhatGood"></safe-markdown></div>
+                                        <div class="col-md-6"><h3 class="h6">Needs Improvement</h3><safe-markdown class="markdown-content" text="@feedback.NeedImprovements"></safe-markdown></div>
+                                        <div class="col-md-6"><h3 class="h6">Additional Feedback</h3><safe-markdown class="markdown-content" text="@feedback.AdditionalFeedback"></safe-markdown></div>
+                                    </div>
+                                </details>
+                            </td>
+                        </tr>
+                    }
                 }
                 </tbody>
             </table>
@@ -204,6 +253,10 @@ else
                         <th>Jira Ticket</th>
                         <th>Contributors</th>
                         <th class="text-end">Feedback</th>
+                        @if (Model.IsAdmin)
+                        {
+                            <th class="text-end">Actions</th>
+                        }
                     </tr>
                 </thead>
                 <tbody>
@@ -215,7 +268,7 @@ else
                             <div>@pastReview.MilestoneName</div>
                             @if (!string.IsNullOrWhiteSpace(pastReview.Description))
                             {
-                                <div class="small text-secondary" style="max-width: 360px;">@pastReview.Description</div>
+                                <safe-markdown class="markdown-content small text-secondary" style="max-width: 360px;" text="@pastReview.Description"></safe-markdown>
                             }
                         </td>
                         <td class="text-nowrap">@(pastReview.PublishedAt.HasValue ? pastReview.PublishedAt.Value.ToLocalTime().ToString("g") : "-")</td>
@@ -253,6 +306,16 @@ else
                                 </button>
                             }
                         </td>
+                        @if (Model.IsAdmin)
+                        {
+                            <td class="text-end">
+                                <form method="post" asp-page-handler="Delete"
+                                      onsubmit="return confirm('Permanently delete this archived review and all its saved feedback from TeamHub? This cannot be undone. Jira comments will not be deleted.')">
+                                    <input type="hidden" name="ReviewId" value="@pastReview.Id" />
+                                    <button type="submit" class="btn btn-sm btn-outline-danger">Delete Review</button>
+                                </form>
+                            </td>
+                        }
                     </tr>
                 }
                 </tbody>

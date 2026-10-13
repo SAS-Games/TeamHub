@@ -248,6 +248,109 @@ public sealed class MilestoneWorkbookTests
         }
     }
 
+    [Fact]
+    public async Task MilestoneConfiguration_PersistsAndLoadsGraphCredentials()
+    {
+        var databasePath = Path.Combine(Path.GetTempPath(), $"teamhub-milestones-{Guid.NewGuid():N}.db");
+        try
+        {
+            var configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["ConnectionStrings:TeamDb"] = $"Data Source={databasePath}"
+            }).Build();
+            using var provider = new ServiceCollection().AddMilestoneTracker(configuration).BuildServiceProvider();
+            using var scope = provider.CreateScope();
+            var settings = scope.ServiceProvider.GetRequiredService<IMilestoneConfigurationService>();
+
+            await settings.SaveSettingsAsync(new MilestoneSourceSettings
+            {
+                SourceType = ExcelWorkbookSourceTypes.MicrosoftGraphExcel,
+                SourceUrl = "https://company.sharepoint.com/:x:/r/sites/Team/Documents/Milestones.xlsx",
+                TenantId = "tenant-guid-123",
+                ClientId = "client-guid-456",
+                ClientSecret = "secret-value-789"
+            });
+
+            var loaded = await settings.GetSettingsAsync();
+            loaded.TenantId.Should().Be("tenant-guid-123");
+            loaded.ClientId.Should().Be("client-guid-456");
+            loaded.ClientSecret.Should().Be("secret-value-789");
+        }
+        finally
+        {
+            SqliteConnection.ClearAllPools();
+            if (File.Exists(databasePath)) File.Delete(databasePath);
+        }
+    }
+
+    [Fact]
+    public async Task MilestoneConfiguration_AllowsEmptyOptionalGraphCredentials()
+    {
+        var databasePath = Path.Combine(Path.GetTempPath(), $"teamhub-milestones-{Guid.NewGuid():N}.db");
+        try
+        {
+            var configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["ConnectionStrings:TeamDb"] = $"Data Source={databasePath}"
+            }).Build();
+            using var provider = new ServiceCollection().AddMilestoneTracker(configuration).BuildServiceProvider();
+            using var scope = provider.CreateScope();
+            var settings = scope.ServiceProvider.GetRequiredService<IMilestoneConfigurationService>();
+
+            await settings.SaveSettingsAsync(new MilestoneSourceSettings
+            {
+                SourceType = ExcelWorkbookSourceTypes.MicrosoftGraphExcel,
+                SourceUrl = "https://company.sharepoint.com/:x:/r/sites/Team/Documents/Milestones.xlsx",
+                TenantId = null,
+                ClientId = "",
+                ClientSecret = "   "
+            });
+
+            var loaded = await settings.GetSettingsAsync();
+            loaded.TenantId.Should().BeEmpty();
+            loaded.ClientId.Should().BeEmpty();
+            loaded.ClientSecret.Should().BeEmpty();
+        }
+        finally
+        {
+            SqliteConnection.ClearAllPools();
+            if (File.Exists(databasePath)) File.Delete(databasePath);
+        }
+    }
+
+    [Fact]
+    public void MicrosoftCloudLinkHelper_TransformsSharePointDocAspxUrl()
+    {
+        const string docAspxUrl = "https://sonyapc-my.sharepoint.com/personal/sujith_sukumaran_sony_com/_layouts/15/Doc.aspx?sourcedoc=%7BEB3BC51E-3B47-4001-BFC1-CBE12FDB17DF%7D&file=SIE%20Hero%20Project_Milestone%20Tracker%201.3.xlsx&action=default&mobileredirect=true&DefaultItemOpen=1";
+
+        MicrosoftCloudLinkHelper.IsMicrosoftCloudUrl(docAspxUrl).Should().BeTrue();
+        var candidates = MicrosoftCloudLinkHelper.GetDirectDownloadCandidateUrls(docAspxUrl);
+        candidates.Should().NotBeEmpty();
+        candidates.Should().Contain(u => u.Contains("download.aspx") && u.Contains("EB3BC51E-3B47-4001-BFC1-CBE12FDB17DF", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void MicrosoftCloudLinkHelper_TransformsOneDriveConsumerUrl()
+    {
+        const string oneDriveUrl = "https://onedrive.live.com/view.aspx?resid=123456!789&ithint=file%2cxlsx";
+
+        MicrosoftCloudLinkHelper.IsMicrosoftCloudUrl(oneDriveUrl).Should().BeTrue();
+        var candidates = MicrosoftCloudLinkHelper.GetDirectDownloadCandidateUrls(oneDriveUrl);
+        candidates.Should().Contain(u => u.Contains("download.aspx"));
+    }
+
+    [Fact]
+    public void MicrosoftCloudLinkHelper_ValidatesExcelStreamSignatures()
+    {
+        var validExcel = CreateWorkbook(DateTime.UtcNow);
+        using var validStream = new MemoryStream(validExcel);
+        MicrosoftCloudLinkHelper.IsSupportedExcelStream(validStream).Should().BeTrue();
+
+        var htmlSignInPage = System.Text.Encoding.UTF8.GetBytes("<html><head><title>Sign in to your account</title></head><body>login.microsoftonline.com</body></html>");
+        using var htmlStream = new MemoryStream(htmlSignInPage);
+        MicrosoftCloudLinkHelper.IsSupportedExcelStream(htmlStream).Should().BeFalse();
+    }
+
     private static byte[] CreateWorkbook(DateTime delivery)
     {
         using var stream = new MemoryStream();

@@ -31,9 +31,10 @@ internal sealed class MilestoneReviewFeedbackRecord
     public Guid ReviewerId { get; set; }
     public string ReviewerUserId { get; set; } = string.Empty;
     public string Reviewer { get; set; } = string.Empty;
+    public string SessionDetails { get; set; } = string.Empty;
     public string WhatGood { get; set; } = string.Empty;
-    public string WhatsBad { get; set; } = string.Empty;
     public string NeedImprovements { get; set; } = string.Empty;
+    public string AdditionalFeedback { get; set; } = string.Empty;
     public int Version { get; set; }
     public string? JiraCommentId { get; set; }
     public string? JiraSyncError { get; set; }
@@ -74,9 +75,10 @@ public sealed class MilestoneReviewDbContext(DbContextOptions<MilestoneReviewDbC
             entity.HasKey(item => item.Id);
             entity.Property(item => item.Reviewer).HasMaxLength(160).IsRequired();
             entity.Property(item => item.ReviewerUserId).HasMaxLength(320).IsRequired();
+            entity.Property(item => item.SessionDetails).HasMaxLength(20000).IsRequired();
             entity.Property(item => item.WhatGood).HasMaxLength(20000).IsRequired();
-            entity.Property(item => item.WhatsBad).HasMaxLength(20000).IsRequired();
             entity.Property(item => item.NeedImprovements).HasMaxLength(20000).IsRequired();
+            entity.Property(item => item.AdditionalFeedback).HasMaxLength(20000).IsRequired();
             entity.Property(item => item.JiraCommentId).HasMaxLength(32);
             entity.Property(item => item.JiraSyncError).HasMaxLength(1000);
             entity.Property(item => item.Version).IsConcurrencyToken();
@@ -103,6 +105,14 @@ internal sealed class SqliteMilestoneReviewDatabaseInitializer(MilestoneReviewDb
         await AddColumnIfMissingAsync("MilestoneReviewFeedback", "ReviewerUserId", "TEXT NOT NULL DEFAULT ''", cancellationToken);
         await AddColumnIfMissingAsync("MilestoneReviewFeedback", "JiraCommentId", "TEXT NULL", cancellationToken);
         await AddColumnIfMissingAsync("MilestoneReviewFeedback", "JiraSyncError", "TEXT NULL", cancellationToken);
+        await AddColumnIfMissingAsync("MilestoneReviewFeedback", "SessionDetails", "TEXT NOT NULL DEFAULT ''", cancellationToken);
+        await AddColumnIfMissingAsync("MilestoneReviewFeedback", "AdditionalFeedback", "TEXT NOT NULL DEFAULT ''", cancellationToken);
+        var hasWhatsBad = await dbContext.Database.SqlQueryRaw<int>(
+            """SELECT COUNT(*) AS Value FROM pragma_table_info('MilestoneReviewFeedback') WHERE name = 'WhatsBad'""")
+            .SingleAsync(cancellationToken);
+        if (hasWhatsBad > 0)
+            await dbContext.Database.ExecuteSqlRawAsync(
+                """ALTER TABLE "MilestoneReviewFeedback" DROP COLUMN "WhatsBad";""", cancellationToken);
     }
 
     private async Task AddColumnIfMissingAsync(

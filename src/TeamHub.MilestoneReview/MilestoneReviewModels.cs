@@ -13,9 +13,10 @@ public sealed record MilestoneReviewFeedback(
     Guid Id,
     Guid ReviewerId,
     string Reviewer,
+    string SessionDetails,
     string WhatGood,
-    string WhatsBad,
     string NeedImprovements,
+    string AdditionalFeedback,
     int Version,
     string? JiraCommentId,
     string? JiraSyncError);
@@ -45,9 +46,10 @@ public sealed record SaveMilestoneReviewFeedbackRequest(
     Guid ReviewId,
     Guid FeedbackId,
     int Version,
+    string SessionDetails,
     string WhatGood,
-    string WhatsBad,
-    string NeedImprovements);
+    string NeedImprovements,
+    string AdditionalFeedback);
 
 public interface IMilestoneReviewUserDirectory
 {
@@ -62,9 +64,10 @@ public sealed record MilestoneReviewCommentRequest(
     string ProjectName,
     string MilestoneName,
     string Reviewer,
+    string SessionDetails,
     string WhatGood,
-    string WhatsBad,
-    string NeedImprovements);
+    string NeedImprovements,
+    string AdditionalFeedback);
 
 public sealed record MilestoneReviewCommentResult(string CommentId);
 
@@ -89,6 +92,8 @@ public interface IMilestoneReviewService
         CancellationToken cancellationToken = default);
     Task<MilestoneReview?> PublishDraftAsync(string actor, CancellationToken cancellationToken = default);
     Task DiscardDraftAsync(CancellationToken cancellationToken = default);
+    Task ArchiveAsync(Guid reviewId, bool isAdmin, CancellationToken cancellationToken = default);
+    Task DeleteAsync(Guid reviewId, bool isAdmin, CancellationToken cancellationToken = default);
     Task SaveFeedbackAsync(
         SaveMilestoneReviewFeedbackRequest request,
         Guid actorId,

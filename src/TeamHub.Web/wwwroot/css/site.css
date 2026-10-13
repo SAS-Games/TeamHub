@@ -181,6 +181,7 @@ body {
 .team-matrix-multiline { white-space: pre-line; overflow-wrap: anywhere; }
 .custom-team-cell-value { white-space: pre-line; overflow-wrap: anywhere; }
 .milestone-review-text { min-width: 180px; max-width: 520px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.milestone-review-text.markdown-content { white-space: normal; }
 .support-summary-confluence { min-width: 1200px; }
 .support-summary-confluence th { min-width: 170px; }
 .support-summary-confluence td { min-width: 220px; white-space: pre-wrap; overflow-wrap: anywhere; }

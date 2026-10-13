@@ -74,7 +74,9 @@ public sealed class MilestoneReviewTests : IAsyncLifetime
                     .AddMilestoneReview(configuration)
                     .BuildServiceProvider();
                 await using var scope = provider.CreateAsyncScope();
-                await scope.ServiceProvider.GetRequiredService<IMilestoneReviewDatabaseInitializer>().InitializeAsync();
+                var initializer = scope.ServiceProvider.GetRequiredService<IMilestoneReviewDatabaseInitializer>();
+                await initializer.InitializeAsync();
+                await initializer.InitializeAsync();
                 var context = scope.ServiceProvider.GetRequiredService<MilestoneReviewDbContext>();
 
                 await using var columns = context.Database.GetDbConnection().CreateCommand();
@@ -88,6 +90,8 @@ public sealed class MilestoneReviewTests : IAsyncLifetime
                 var addedColumns = new List<string>();
                 while (await reader.ReadAsync()) addedColumns.Add(reader.GetString(0));
                 addedColumns.Should().Contain("JiraTicketId", "ReviewerUserId", "JiraCommentId", "JiraSyncError");
+                addedColumns.Should().Contain("SessionDetails", "AdditionalFeedback");
+                addedColumns.Should().NotContain("WhatsBad");
             }
             finally
             {
@@ -104,6 +108,66 @@ public sealed class MilestoneReviewTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task SchemaUpdateRetainsSupportedFeedbackAndAllowsNewRowsAfterUpgrade()
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"milestone-review-schema-{Guid.NewGuid():N}.db");
+        try
+        {
+            var configuration = new ConfigurationBuilder().AddInMemoryCollection(
+                new Dictionary<string, string?> { ["ConnectionStrings:MilestoneReviewDb"] = $"Data Source={path}" })
+                .Build();
+            await using var provider = new ServiceCollection().AddMilestoneReview(configuration).BuildServiceProvider();
+            await using var scope = provider.CreateAsyncScope();
+            var initializer = scope.ServiceProvider.GetRequiredService<IMilestoneReviewDatabaseInitializer>();
+            await initializer.InitializeAsync();
+            var context = scope.ServiceProvider.GetRequiredService<MilestoneReviewDbContext>();
+            var upgradedService = new MilestoneReviewService(context, new StubUserDirectory(
+                [new MilestoneReviewUser(reviewerOne, "Reviewer One", "reviewer.one@example.com", true, true)]),
+                commentPublisher);
+            await upgradedService.CreateDraftAsync(
+                new CreateMilestoneReviewRequest("Project", "Milestone", "", null, [reviewerOne]), "admin@example.com");
+            await upgradedService.PublishDraftAsync("admin@example.com");
+            var current = (await upgradedService.GetCurrentAsync())!;
+            var row = current.Feedback.Single();
+            await upgradedService.SaveFeedbackAsync(
+                new SaveMilestoneReviewFeedbackRequest(current.Id, row.Id, row.Version, "", "Good", "Improve", ""),
+                reviewerOne, isAdmin: false);
+
+            await context.Database.ExecuteSqlRawAsync("""
+                ALTER TABLE MilestoneReviewFeedback DROP COLUMN SessionDetails;
+                ALTER TABLE MilestoneReviewFeedback DROP COLUMN AdditionalFeedback;
+                ALTER TABLE MilestoneReviewFeedback ADD COLUMN WhatsBad TEXT NOT NULL DEFAULT '';
+                UPDATE MilestoneReviewFeedback SET WhatsBad = 'Obsolete development feedback';
+                """);
+            context.ChangeTracker.Clear();
+            await initializer.InitializeAsync();
+            await initializer.InitializeAsync();
+
+            var upgraded = (await upgradedService.GetCurrentAsync())!.Feedback.Single();
+            upgraded.WhatGood.Should().Be("Good");
+            upgraded.NeedImprovements.Should().Be("Improve");
+            upgraded.SessionDetails.Should().BeEmpty();
+            upgraded.AdditionalFeedback.Should().BeEmpty();
+            upgraded.Id.Should().Be(row.Id);
+            await upgradedService.SaveFeedbackAsync(
+                new SaveMilestoneReviewFeedbackRequest(current.Id, upgraded.Id, upgraded.Version, "PC", "Good", "Improve", "Art"),
+                reviewerOne, isAdmin: false);
+            (await upgradedService.GetCurrentAsync())!.Feedback.Single().AdditionalFeedback.Should().Be("Art");
+            await upgradedService.CreateDraftAsync(
+                new CreateMilestoneReviewRequest("Project", "Next", "", null, [reviewerOne]), "admin@example.com");
+            await upgradedService.PublishDraftAsync("admin@example.com");
+            (await upgradedService.GetCurrentAsync())!.Feedback.Should().ContainSingle();
+            (await upgradedService.GetHistoryAsync()).Should().ContainSingle()
+                .Which.Feedback.Single().SessionDetails.Should().Be("PC");
+        }
+        finally
+        {
+            SqliteConnection.ClearAllPools();
+            File.Delete(path);
+        }
+    }
+
+    [Fact]
     public async Task PublishCreatesSharedRowsAndOnlyAssignedReviewerCanEditOwnRow()
     {
         await CreateAndPublishAsync([reviewerOne, reviewerTwo]);
@@ -115,10 +179,13 @@ public sealed class MilestoneReviewTests : IAsyncLifetime
 
         var row = current.Feedback.Single(item => item.ReviewerId == reviewerOne);
         var save = new SaveMilestoneReviewFeedbackRequest(
-            current.Id, row.Id, row.Version, "Good", "Bad", "Improve");
+            current.Id, row.Id, row.Version, "PC, 1 hour, levels 1-3", "Good", "Improve", "Art notes");
         await service.SaveFeedbackAsync(save, reviewerOne, isAdmin: false);
         var updated = (await service.GetCurrentAsync())!.Feedback.Single(item => item.Id == row.Id);
         updated.WhatGood.Should().Be("Good");
+        updated.SessionDetails.Should().Be("PC, 1 hour, levels 1-3");
+        updated.NeedImprovements.Should().Be("Improve");
+        updated.AdditionalFeedback.Should().Be("Art notes");
         updated.Version.Should().Be(row.Version + 1);
         await using (var reloadedContext = new MilestoneReviewDbContext(
             new DbContextOptionsBuilder<MilestoneReviewDbContext>().UseSqlite(connection).Options))
@@ -126,12 +193,43 @@ public sealed class MilestoneReviewTests : IAsyncLifetime
             var reloaded = await new MilestoneReviewService(
                 reloadedContext, new StubUserDirectory([]), commentPublisher).GetCurrentAsync();
             reloaded!.Feedback.Single(item => item.Id == row.Id).WhatGood.Should().Be("Good");
+            reloaded.Feedback.Single(item => item.Id == row.Id).Should().BeEquivalentTo(updated);
         }
 
         var otherUser = () => service.SaveFeedbackAsync(
             save with { Version = updated.Version, WhatGood = "Overwrite" }, reviewerTwo, isAdmin: false);
         await otherUser.Should().ThrowAsync<UnauthorizedAccessException>();
         (await service.GetCurrentAsync())!.Feedback.Single(item => item.Id == row.Id).WhatGood.Should().Be("Good");
+    }
+
+    [Theory]
+    [InlineData("SessionDetails")]
+    [InlineData("WhatGood")]
+    [InlineData("NeedImprovements")]
+    [InlineData("AdditionalFeedback")]
+    public async Task FeedbackFieldsAcceptLimitAndRejectOverLimitWithoutPartialChanges(string field)
+    {
+        await CreateAndPublishAsync([reviewerOne]);
+        var current = (await service.GetCurrentAsync())!;
+        var row = current.Feedback.Single();
+        var baseline = new SaveMilestoneReviewFeedbackRequest(current.Id, row.Id, row.Version, "", "", "", "");
+        SaveMilestoneReviewFeedbackRequest WithText(string text) => field switch
+        {
+            "SessionDetails" => baseline with { SessionDetails = text },
+            "WhatGood" => baseline with { WhatGood = text },
+            "NeedImprovements" => baseline with { NeedImprovements = text },
+            "AdditionalFeedback" => baseline with { AdditionalFeedback = text },
+            _ => throw new ArgumentOutOfRangeException(nameof(field))
+        };
+        await service.SaveFeedbackAsync(WithText(new string('a', 20000)), reviewerOne, isAdmin: false);
+        var saved = (await service.GetCurrentAsync())!.Feedback.Single();
+        baseline = baseline with { Version = saved.Version };
+
+        var invalidSave = () => service.SaveFeedbackAsync(
+            WithText(new string('b', 20001)), reviewerOne, isAdmin: false);
+        await invalidSave.Should().ThrowAsync<ArgumentException>().WithMessage("*20000*");
+        (await service.GetCurrentAsync())!.Feedback.Single().Should().BeEquivalentTo(saved);
+        dbContext.ChangeTracker.HasChanges().Should().BeFalse();
     }
 
     [Fact]
@@ -141,7 +239,7 @@ public sealed class MilestoneReviewTests : IAsyncLifetime
         var current = (await service.GetCurrentAsync())!;
         var row = current.Feedback.Single();
         var request = new SaveMilestoneReviewFeedbackRequest(
-            current.Id, row.Id, row.Version, "First save", "", "");
+            current.Id, row.Id, row.Version, "", "First save", "", "");
         await service.SaveFeedbackAsync(request, reviewerOne, isAdmin: false);
 
         var stale = () => service.SaveFeedbackAsync(request, reviewerOne, isAdmin: false);
@@ -175,7 +273,7 @@ public sealed class MilestoneReviewTests : IAsyncLifetime
         Convert.ToInt32(await command.ExecuteScalarAsync()).Should().Be(1);
         var oldFeedback = old.Feedback.Single();
         var oldSave = () => service.SaveFeedbackAsync(
-            new SaveMilestoneReviewFeedbackRequest(old.Id, oldFeedback.Id, oldFeedback.Version, "Late", "", ""),
+            new SaveMilestoneReviewFeedbackRequest(old.Id, oldFeedback.Id, oldFeedback.Version, "", "Late", "", ""),
             reviewerOne, isAdmin: true);
         await oldSave.Should().ThrowAsync<InvalidOperationException>()
             .WithMessage("*current published review*");
@@ -199,7 +297,7 @@ public sealed class MilestoneReviewTests : IAsyncLifetime
         var current = (await service.GetCurrentAsync())!;
         var fb = current.Feedback.Single();
         await service.SaveFeedbackAsync(
-            new SaveMilestoneReviewFeedbackRequest(current.Id, fb.Id, fb.Version, "M1 Good", "M1 Bad", "M1 Improve"),
+            new SaveMilestoneReviewFeedbackRequest(current.Id, fb.Id, fb.Version, "PC", "M1 Good", "M1 Improve", "M1 Art"),
             reviewerOne, isAdmin: false);
 
         await service.CreateDraftAsync(
@@ -244,6 +342,151 @@ public sealed class MilestoneReviewTests : IAsyncLifetime
         await invalidTicket.Should().ThrowAsync<ArgumentException>().WithMessage("*project-key format*");
     }
 
+    [Fact]
+    public async Task ArchivePreservesFeedbackAndDraftAndClosesEditing()
+    {
+        await CreateAndPublishAsync([reviewerOne]);
+        var current = (await service.GetCurrentAsync())!;
+        var row = current.Feedback.Single();
+        var save = new SaveMilestoneReviewFeedbackRequest(current.Id, row.Id, row.Version, "PC", "Good", "Improve", "Art");
+        await service.SaveFeedbackAsync(save, reviewerOne, isAdmin: false);
+        var saved = (await service.GetCurrentAsync())!;
+        var draft = await service.CreateDraftAsync(
+            new CreateMilestoneReviewRequest("Project", "Next milestone", "", null, [reviewerTwo]),
+            "admin@example.com");
+
+        await service.ArchiveAsync(current.Id, isAdmin: true);
+
+        (await service.GetCurrentAsync()).Should().BeNull();
+        (await service.GetDraftAsync())!.Id.Should().Be(draft!.Id);
+        var archived = (await service.GetHistoryAsync()).Should().ContainSingle().Subject;
+        archived.Status.Should().Be(MilestoneReviewStatus.Superseded);
+        archived.Feedback.Should().BeEquivalentTo(saved.Feedback);
+        archived.AssignedReviewers.Should().BeEquivalentTo(saved.AssignedReviewers);
+        var lateSave = () => service.SaveFeedbackAsync(
+            save with { Version = saved.Feedback.Single().Version }, reviewerOne, isAdmin: true);
+        await lateSave.Should().ThrowAsync<InvalidOperationException>().WithMessage("*current published review*");
+
+        await service.PublishDraftAsync("admin@example.com");
+        (await service.GetCurrentAsync())!.Id.Should().Be(draft.Id);
+        (await service.GetHistoryAsync()).Should().ContainSingle();
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task DeleteRemovesPublishedOrArchivedReviewAndOnlyItsDependentRows(bool archiveFirst)
+    {
+        await service.CreateDraftAsync(
+            new CreateMilestoneReviewRequest("Project", "First", "", "GAME-123", [reviewerOne]),
+            "admin@example.com");
+        await service.PublishDraftAsync("admin@example.com");
+        var target = (await service.GetCurrentAsync())!;
+        var row = target.Feedback.Single();
+        await service.SaveFeedbackAsync(
+            new SaveMilestoneReviewFeedbackRequest(target.Id, row.Id, row.Version, "", "Good", "", ""),
+            reviewerOne, isAdmin: false);
+        await service.CreateDraftAsync(
+            new CreateMilestoneReviewRequest("Project", "Second", "", null, [reviewerTwo]),
+            "admin@example.com");
+        if (archiveFirst)
+            await service.PublishDraftAsync("admin@example.com");
+        var otherDraft = await service.GetDraftAsync();
+        var otherCurrent = await service.GetCurrentAsync();
+        var jiraWrites = commentPublisher.Requests.Count;
+
+        await service.DeleteAsync(target.Id, isAdmin: true);
+
+        (await service.GetHistoryAsync()).Should().BeEmpty();
+        var remainingCurrent = await service.GetCurrentAsync();
+        var remainingDraft = await service.GetDraftAsync();
+        remainingCurrent.Should().BeEquivalentTo(archiveFirst ? otherCurrent : null);
+        remainingDraft.Should().BeEquivalentTo(otherDraft);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT
+                (SELECT COUNT(*) FROM MilestoneReviews WHERE Id = $id) +
+                (SELECT COUNT(*) FROM MilestoneReviewAssignments WHERE ReviewId = $id) +
+                (SELECT COUNT(*) FROM MilestoneReviewFeedback WHERE ReviewId = $id);
+            """;
+        command.Parameters.AddWithValue("$id", target.Id);
+        Convert.ToInt32(await command.ExecuteScalarAsync()).Should().Be(0);
+        commentPublisher.Requests.Should().HaveCount(jiraWrites);
+        var preview = await CreateModel(service, allowed: true).OnGetFeedbackAsync(target.Id, CancellationToken.None);
+        preview.Should().BeOfType<JsonResult>().Which.StatusCode.Should().Be(404);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ServiceRejectsNonAdminArchiveAndDelete(bool delete)
+    {
+        await CreateAndPublishAsync([reviewerOne]);
+        var current = (await service.GetCurrentAsync())!;
+        var action = () => delete
+            ? service.DeleteAsync(current.Id, isAdmin: false)
+            : service.ArchiveAsync(current.Id, isAdmin: false);
+
+        await action.Should().ThrowAsync<UnauthorizedAccessException>();
+        (await service.GetCurrentAsync())!.Id.Should().Be(current.Id);
+    }
+
+    [Theory]
+    [InlineData(TeamHubUserTypes.Registered)]
+    [InlineData(TeamHubUserTypes.Privileged)]
+    public async Task HandlersRejectNonAdminEvenWithPageAccess(string role)
+    {
+        await CreateAndPublishAsync([reviewerOne]);
+        var current = (await service.GetCurrentAsync())!;
+        var model = CreateModel(service, allowed: true);
+        model.HttpContext.User = new System.Security.Claims.ClaimsPrincipal(
+            new System.Security.Claims.ClaimsIdentity(
+                [new System.Security.Claims.Claim(System.Security.Claims.ClaimTypes.Role, role)], "Test"));
+        model.ReviewId = current.Id;
+
+        (await model.OnPostArchiveAsync(CancellationToken.None)).Should().BeOfType<ForbidResult>();
+        (await model.OnPostDeleteAsync(CancellationToken.None)).Should().BeOfType<ForbidResult>();
+        (await service.GetCurrentAsync())!.Id.Should().Be(current.Id);
+    }
+
+    [Fact]
+    public async Task AdminHandlersArchiveAndDeleteAndReportStaleRequests()
+    {
+        await CreateAndPublishAsync([reviewerOne]);
+        var model = CreateModel(service, allowed: true);
+        model.HttpContext.User = new System.Security.Claims.ClaimsPrincipal(
+            new System.Security.Claims.ClaimsIdentity(
+                [new System.Security.Claims.Claim(System.Security.Claims.ClaimTypes.Role, TeamHubUserTypes.Admin)], "Test"));
+        model.ReviewId = (await service.GetCurrentAsync())!.Id;
+
+        (await model.OnPostArchiveAsync(CancellationToken.None)).Should().BeOfType<RedirectToPageResult>();
+        model.StatusMessage.Should().Contain("archived");
+        (await service.GetCurrentAsync()).Should().BeNull();
+        (await model.OnPostArchiveAsync(CancellationToken.None)).Should().BeOfType<RedirectToPageResult>();
+        model.ErrorMessage.Should().Contain("already been archived");
+        (await model.OnPostDeleteAsync(CancellationToken.None)).Should().BeOfType<RedirectToPageResult>();
+        model.StatusMessage.Should().Contain("permanently deleted");
+        (await service.GetHistoryAsync()).Should().BeEmpty();
+        (await model.OnPostDeleteAsync(CancellationToken.None)).Should().BeOfType<RedirectToPageResult>();
+        model.ErrorMessage.Should().Contain("not found");
+    }
+
+    [Fact]
+    public async Task ArchiveAndDeleteRejectDraftsAndUnknownIds()
+    {
+        var draft = (await service.CreateDraftAsync(
+            new CreateMilestoneReviewRequest("Project", "Draft", "", null, [reviewerOne]),
+            "admin@example.com"))!;
+        foreach (var id in new[] { draft.Id, Guid.Empty, Guid.NewGuid() })
+        {
+            var archive = () => service.ArchiveAsync(id, isAdmin: true);
+            var delete = () => service.DeleteAsync(id, isAdmin: true);
+            await archive.Should().ThrowAsync<InvalidOperationException>();
+            await delete.Should().ThrowAsync<InvalidOperationException>();
+        }
+        (await service.GetDraftAsync())!.Id.Should().Be(draft.Id);
+    }
+
     private async Task CreateAndPublishAsync(IReadOnlyCollection<Guid> reviewers, string milestone = "Milestone")
     {
         await service.CreateDraftAsync(
@@ -271,20 +514,27 @@ public sealed class MilestoneReviewTests : IAsyncLifetime
         var row = current.Feedback.Single();
 
         var firstSave = new SaveMilestoneReviewFeedbackRequest(
-            current.Id, row.Id, row.Version, "Good", "Bad", "Improve");
+            current.Id, row.Id, row.Version, "PC, 2 hours", "Good", "Improve", "Audio notes");
         await service.SaveFeedbackAsync(firstSave, reviewerOne, isAdmin: false);
         var saved = (await service.GetCurrentAsync())!.Feedback.Single();
         saved.JiraCommentId.Should().Be("42");
         commentPublisher.Requests.Should().ContainSingle();
         commentPublisher.Requests[0].RequestingUserId.Should().Be("reviewer.one@example.com");
         commentPublisher.Requests[0].TicketId.Should().Be("GAME-123");
+        commentPublisher.Requests[0].SessionDetails.Should().Be("PC, 2 hours");
+        commentPublisher.Requests[0].WhatGood.Should().Be("Good");
+        commentPublisher.Requests[0].NeedImprovements.Should().Be("Improve");
+        commentPublisher.Requests[0].AdditionalFeedback.Should().Be("Audio notes");
 
         await service.SaveFeedbackAsync(
-            firstSave with { Version = saved.Version, WhatGood = "Updated good" },
+            firstSave with { Version = saved.Version, WhatGood = "Updated good",
+                SessionDetails = "Console, 3 hours", AdditionalFeedback = "Updated audio notes" },
             reviewerOne, isAdmin: false);
         commentPublisher.Requests.Should().HaveCount(2);
         commentPublisher.Requests[1].CommentId.Should().Be("42");
         commentPublisher.Requests[1].WhatGood.Should().Be("Updated good");
+        commentPublisher.Requests[1].SessionDetails.Should().Be("Console, 3 hours");
+        commentPublisher.Requests[1].AdditionalFeedback.Should().Be("Updated audio notes");
     }
 
     [Fact]
@@ -298,7 +548,7 @@ public sealed class MilestoneReviewTests : IAsyncLifetime
         var row = current.Feedback.Single();
         commentPublisher.Error = new MilestoneReviewCommentSyncException("Jira comment update failed.");
         var save = () => service.SaveFeedbackAsync(
-            new SaveMilestoneReviewFeedbackRequest(current.Id, row.Id, row.Version, "Saved locally", "", ""),
+            new SaveMilestoneReviewFeedbackRequest(current.Id, row.Id, row.Version, "", "Saved locally", "", ""),
             reviewerOne, isAdmin: false);
 
         await save.Should().ThrowAsync<MilestoneReviewCommentSyncException>()
@@ -330,7 +580,8 @@ public sealed class MilestoneReviewTests : IAsyncLifetime
         var current = (await service.GetCurrentAsync())!;
         var row = current.Feedback.Single();
         await service.SaveFeedbackAsync(
-            new SaveMilestoneReviewFeedbackRequest(current.Id, row.Id, row.Version, "Good graphics", "Bugs in level 2", "Add tutorial"),
+            new SaveMilestoneReviewFeedbackRequest(current.Id, row.Id, row.Version, "PC, 1 hour, level 2",
+                "Good graphics", "Bugs in level 2", "Audio notes"),
             reviewerOne, isAdmin: false);
 
         var model = CreateModel(service, allowed: true);
@@ -341,8 +592,80 @@ public sealed class MilestoneReviewTests : IAsyncLifetime
         var jsonText = System.Text.Json.JsonSerializer.Serialize(json.Value);
         jsonText.Should().Contain("Good graphics");
         jsonText.Should().Contain("Bugs in level 2");
-        jsonText.Should().Contain("Add tutorial");
+        jsonText.Should().Contain("PC, 1 hour, level 2");
+        jsonText.Should().Contain("Audio notes");
         jsonText.Should().Contain("Reviewer One");
+        using var payload = System.Text.Json.JsonDocument.Parse(jsonText);
+        var text = payload.RootElement.GetProperty("comments")[0].GetProperty("parts")[0].GetProperty("text").GetString();
+        text.Should().Be("Session Details:\nPC, 1 hour, level 2\n\nWhat's Good:\nGood graphics\n\nNeeds Improvement:\nBugs in level 2\n\nAdditional Feedback:\nAudio notes".Replace("\n", Environment.NewLine));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task FeedbackPreviewRendersSafeMarkdownAndPreservesSource(bool archived)
+    {
+        await service.CreateDraftAsync(
+            new CreateMilestoneReviewRequest("Project", "Milestone", "**Build notes**", "GAME-123", [reviewerOne]),
+            "admin@example.com");
+        await service.PublishDraftAsync("admin@example.com");
+        var current = (await service.GetCurrentAsync())!;
+        var row = current.Feedback.Single();
+        var request = new SaveMilestoneReviewFeedbackRequest(current.Id, row.Id, row.Version,
+            "**PC**\n*1 hour*", "==Great art==\n\n- Music\n- Controls",
+            "~~Old issue~~\n\n> Improve calibration",
+            "[Details](https://example.com)\n<script>alert('xss')</script>\n[Unsafe](javascript:alert(1))");
+        await service.SaveFeedbackAsync(request, reviewerOne, isAdmin: false);
+        var saved = (await service.GetCurrentAsync())!.Feedback.Single();
+        saved.SessionDetails.Should().Be(request.SessionDetails);
+        saved.WhatGood.Should().Be(request.WhatGood);
+        saved.NeedImprovements.Should().Be(request.NeedImprovements);
+        saved.AdditionalFeedback.Should().Be(request.AdditionalFeedback);
+        var jira = commentPublisher.Requests.Should().ContainSingle().Subject;
+        jira.SessionDetails.Should().Be(request.SessionDetails);
+        jira.WhatGood.Should().Be(request.WhatGood);
+        jira.NeedImprovements.Should().Be(request.NeedImprovements);
+        jira.AdditionalFeedback.Should().Be(request.AdditionalFeedback);
+        if (archived) await service.ArchiveAsync(current.Id, isAdmin: true);
+
+        var result = (JsonResult)await CreateModel(service, allowed: true)
+            .OnGetFeedbackAsync(current.Id, CancellationToken.None);
+        using var payload = System.Text.Json.JsonDocument.Parse(System.Text.Json.JsonSerializer.Serialize(result.Value));
+        var part = payload.RootElement.GetProperty("comments")[0].GetProperty("parts")[0];
+        part.GetProperty("kind").GetString().Should().Be("markdown");
+        var source = part.GetProperty("text").GetString();
+        source.Should().Contain(request.SessionDetails).And.Contain(request.WhatGood)
+            .And.Contain(request.NeedImprovements).And.Contain(request.AdditionalFeedback);
+        var html = part.GetProperty("html").GetString();
+        html.Should().Contain("<strong>PC</strong>").And.Contain("<em>1 hour</em>")
+            .And.Contain("<mark>Great art</mark>").And.Contain("<ul><li>Music</li><li>Controls</li></ul>")
+            .And.Contain("<del>Old issue</del>").And.Contain("<blockquote>Improve calibration</blockquote>")
+            .And.Contain("href='https://example.com'").And.Contain("&lt;script&gt;")
+            .And.NotContain("<script>").And.NotContain("href='javascript:");
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task HistoryPreviewIncludesFeedbackWithOnlyANewSectionFilled(bool sessionOnly)
+    {
+        await CreateAndPublishAsync([reviewerOne]);
+        var current = (await service.GetCurrentAsync())!;
+        var row = current.Feedback.Single();
+        await service.SaveFeedbackAsync(new SaveMilestoneReviewFeedbackRequest(
+            current.Id, row.Id, row.Version,
+            sessionOnly ? "PC, 30 minutes" : "", "", "", sessionOnly ? "" : "Audio notes"),
+            reviewerOne, isAdmin: false);
+        await service.ArchiveAsync(current.Id, isAdmin: true);
+        var result = (JsonResult)await CreateModel(service, allowed: true)
+            .OnGetFeedbackAsync(current.Id, CancellationToken.None);
+        using var payload = System.Text.Json.JsonDocument.Parse(System.Text.Json.JsonSerializer.Serialize(result.Value));
+        var comments = payload.RootElement.GetProperty("comments");
+        comments.GetArrayLength().Should().Be(1);
+        comments[0].GetProperty("parts")[0].GetProperty("text").GetString()
+            .Should().Be(sessionOnly
+                ? $"Session Details:{Environment.NewLine}PC, 30 minutes"
+                : $"Additional Feedback:{Environment.NewLine}Audio notes");
     }
 
     [Fact]
@@ -363,6 +686,7 @@ public sealed class MilestoneReviewTests : IAsyncLifetime
             new StubCommentService(),
             new StubStudioDirectory(),
             new StubConfigurationService(),
+            new TeamHub.Web.Formatting.SafeMarkdownRenderer(),
             NullLogger<MilestoneReviewModel>.Instance)
         {
             PageContext = new PageContext { HttpContext = new DefaultHttpContext() }
