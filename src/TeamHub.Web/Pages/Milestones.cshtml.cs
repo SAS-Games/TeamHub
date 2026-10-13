@@ -33,5 +33,9 @@ public class MilestonesModel(IMilestoneTrackerService milestoneTrackerService) :
         {
             ErrorMessage = ex.Message;
         }
+        catch (Exception ex)
+        {
+            ErrorMessage = ex.Message;
+        }
     }
 }

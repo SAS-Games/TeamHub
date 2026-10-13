@@ -483,10 +483,7 @@ public sealed class ConfigurationModel(
         {
             throw;
         }
-        catch (Exception exception) when (exception is ArgumentException
-            or InvalidOperationException
-            or InvalidDataException
-            or HttpRequestException)
+        catch (Exception exception)
         {
             return new JsonResult(new
             {

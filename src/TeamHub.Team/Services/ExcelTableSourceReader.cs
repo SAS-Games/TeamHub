@@ -18,7 +18,10 @@ public sealed record ExcelTableSourceRequest(
     string? SourceDriveId,
     string? SourceItemId,
     string? Worksheet,
-    int HeaderRow);
+    int HeaderRow,
+    string? TenantId = null,
+    string? ClientId = null,
+    string? ClientSecret = null);
 
 public interface IExcelTableSourceReader
 {
@@ -63,7 +66,10 @@ internal sealed partial class DirectDownloadExcelTableSourceReader(IExcelWorkboo
                 ExcelWorkbookSourceTypes.MicrosoftGraphExcel,
                 DriveId: request.SourceDriveId,
                 ItemId: request.SourceItemId,
-                SharingUrl: request.SourceUrl),
+                SharingUrl: request.SourceUrl,
+                TenantId: request.TenantId,
+                ClientId: request.ClientId,
+                ClientSecret: request.ClientSecret),
             _ => throw new InvalidOperationException("The configured Excel source is not supported.")
         };
 

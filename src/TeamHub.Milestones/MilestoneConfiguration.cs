@@ -8,11 +8,14 @@ namespace TeamHub.Milestones;
 public sealed class MilestoneSourceSettings
 {
     public string SourceType { get; set; } = ExcelWorkbookSourceTypes.LocalFile;
-    public string ExcelPath { get; set; } = string.Empty;
-    public string SourceUrl { get; set; } = string.Empty;
-    public string SourceDriveId { get; set; } = string.Empty;
-    public string SourceItemId { get; set; } = string.Empty;
-    public string SourceDisplayName { get; set; } = string.Empty;
+    public string? ExcelPath { get; set; } = string.Empty;
+    public string? SourceUrl { get; set; } = string.Empty;
+    public string? SourceDriveId { get; set; } = string.Empty;
+    public string? SourceItemId { get; set; } = string.Empty;
+    public string? SourceDisplayName { get; set; } = string.Empty;
+    public string? TenantId { get; set; } = string.Empty;
+    public string? ClientId { get; set; } = string.Empty;
+    public string? ClientSecret { get; set; } = string.Empty;
 }
 
 public interface IMilestoneConfigurationService
@@ -38,7 +41,7 @@ internal sealed class SqliteMilestoneConfigurationService(
         await EnsureTableAsync(connection, cancellationToken);
         await using var command = connection.CreateCommand();
         command.CommandText = """
-            SELECT SourceType, ExcelPath, SourceUrl, SourceDriveId, SourceItemId, SourceDisplayName
+            SELECT SourceType, ExcelPath, SourceUrl, SourceDriveId, SourceItemId, SourceDisplayName, TenantId, ClientId, ClientSecret
             FROM MilestoneSourceSettings
             WHERE Id = 1;
             """;
@@ -55,7 +58,10 @@ internal sealed class SqliteMilestoneConfigurationService(
             SourceUrl = reader.GetString(2),
             SourceDriveId = reader.GetString(3),
             SourceItemId = reader.GetString(4),
-            SourceDisplayName = reader.GetString(5)
+            SourceDisplayName = reader.GetString(5),
+            TenantId = reader.IsDBNull(6) ? string.Empty : reader.GetString(6),
+            ClientId = reader.IsDBNull(7) ? string.Empty : reader.GetString(7),
+            ClientSecret = reader.IsDBNull(8) ? string.Empty : reader.GetString(8)
         };
     }
 
@@ -74,9 +80,9 @@ internal sealed class SqliteMilestoneConfigurationService(
         await using var command = connection.CreateCommand();
         command.CommandText = """
             INSERT INTO MilestoneSourceSettings
-                (Id, SourceType, ExcelPath, SourceUrl, SourceDriveId, SourceItemId, SourceDisplayName, UpdatedAtUtc)
+                (Id, SourceType, ExcelPath, SourceUrl, SourceDriveId, SourceItemId, SourceDisplayName, TenantId, ClientId, ClientSecret, UpdatedAtUtc)
             VALUES
-                (1, $sourceType, $excelPath, $sourceUrl, $sourceDriveId, $sourceItemId, $sourceDisplayName, $updatedAtUtc)
+                (1, $sourceType, $excelPath, $sourceUrl, $sourceDriveId, $sourceItemId, $sourceDisplayName, $tenantId, $clientId, $clientSecret, $updatedAtUtc)
             ON CONFLICT(Id) DO UPDATE SET
                 SourceType = excluded.SourceType,
                 ExcelPath = excluded.ExcelPath,
@@ -84,6 +90,9 @@ internal sealed class SqliteMilestoneConfigurationService(
                 SourceDriveId = excluded.SourceDriveId,
                 SourceItemId = excluded.SourceItemId,
                 SourceDisplayName = excluded.SourceDisplayName,
+                TenantId = excluded.TenantId,
+                ClientId = excluded.ClientId,
+                ClientSecret = excluded.ClientSecret,
                 UpdatedAtUtc = excluded.UpdatedAtUtc;
             """;
         command.Parameters.AddWithValue("$sourceType", normalized.SourceType);
@@ -92,6 +101,9 @@ internal sealed class SqliteMilestoneConfigurationService(
         command.Parameters.AddWithValue("$sourceDriveId", normalized.SourceDriveId);
         command.Parameters.AddWithValue("$sourceItemId", normalized.SourceItemId);
         command.Parameters.AddWithValue("$sourceDisplayName", normalized.SourceDisplayName);
+        command.Parameters.AddWithValue("$tenantId", normalized.TenantId);
+        command.Parameters.AddWithValue("$clientId", normalized.ClientId);
+        command.Parameters.AddWithValue("$clientSecret", normalized.ClientSecret);
         command.Parameters.AddWithValue("$updatedAtUtc", DateTime.UtcNow.ToString("O"));
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
@@ -112,6 +124,9 @@ internal sealed class SqliteMilestoneConfigurationService(
         var driveId = settings.SourceDriveId?.Trim() ?? string.Empty;
         var itemId = settings.SourceItemId?.Trim() ?? string.Empty;
         var sourceDisplayName = settings.SourceDisplayName?.Trim() ?? string.Empty;
+        var tenantId = settings.TenantId?.Trim() ?? string.Empty;
+        var clientId = settings.ClientId?.Trim() ?? string.Empty;
+        var clientSecret = settings.ClientSecret?.Trim() ?? string.Empty;
 
         if (sourceType == ExcelWorkbookSourceTypes.LocalFile && excelPath.Length == 0)
             throw new ArgumentException("Enter the Excel workbook path on the TeamHub server.");
@@ -138,7 +153,10 @@ internal sealed class SqliteMilestoneConfigurationService(
             SourceUrl = sourceUrl,
             SourceDriveId = driveId,
             SourceItemId = itemId,
-            SourceDisplayName = sourceDisplayName
+            SourceDisplayName = sourceDisplayName,
+            TenantId = tenantId,
+            ClientId = clientId,
+            ClientSecret = clientSecret
         };
     }
 
@@ -173,6 +191,9 @@ internal sealed class SqliteMilestoneConfigurationService(
             """;
         await command.ExecuteNonQueryAsync(cancellationToken);
         await AddColumnIfMissingAsync(connection, "SourceDisplayName", "TEXT NOT NULL DEFAULT ''", cancellationToken);
+        await AddColumnIfMissingAsync(connection, "TenantId", "TEXT NOT NULL DEFAULT ''", cancellationToken);
+        await AddColumnIfMissingAsync(connection, "ClientId", "TEXT NOT NULL DEFAULT ''", cancellationToken);
+        await AddColumnIfMissingAsync(connection, "ClientSecret", "TEXT NOT NULL DEFAULT ''", cancellationToken);
     }
 
     private static async Task AddColumnIfMissingAsync(

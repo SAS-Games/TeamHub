@@ -47,7 +47,31 @@
             </div>
 
             <div class="col-12 milestone-source-fields" data-source="@ExcelWorkbookSourceTypes.MicrosoftGraphExcel">
-                <div class="alert alert-secondary mb-0">TeamHub resolves this link through Microsoft Graph using the same application credentials as Excel-backed custom Team tabs. Client secrets remain in secure deployment configuration.</div>
+                <div class="alert alert-secondary mb-3">
+                    <strong>How TeamHub accesses SharePoint / OneDrive:</strong>
+                    <ul class="mb-0 mt-1 ps-3">
+                        <li>TeamHub automatically detects SharePoint Online, OneDrive, and <code>Doc.aspx</code> links, attempting direct workbook access first.</li>
+                        <li>If your organization requires sign-in, you can enter Microsoft Graph App Registration credentials below (or configure them in <code>appsettings.json</code> under <code>TeamExcel:MicrosoftGraph</code>).</li>
+                    </ul>
+                </div>
+                <div class="card border bg-light p-3">
+                    <h6 class="mb-1">Microsoft Graph Credentials <span class="badge bg-secondary text-light fw-normal">Optional</span></h6>
+                    <p class="text-muted small mb-3">Only needed if your SharePoint/OneDrive link requires enterprise authentication. Credentials saved here will also be used for Excel-backed Custom Team Tabs.</p>
+                    <div class="row g-2">
+                        <div class="col-12 col-md-4">
+                            <label asp-for="Settings.TenantId" class="form-label small">Directory (Tenant) ID</label>
+                            <input asp-for="Settings.TenantId" class="form-control form-control-sm" placeholder="e.g. 72f988bf-86f1-41af-91ab-2d7cd011db47" autocomplete="off" />
+                        </div>
+                        <div class="col-12 col-md-4">
+                            <label asp-for="Settings.ClientId" class="form-label small">Application (Client) ID</label>
+                            <input asp-for="Settings.ClientId" class="form-control form-control-sm" placeholder="e.g. 11111111-2222-3333-4444-555555555555" autocomplete="off" />
+                        </div>
+                        <div class="col-12 col-md-4">
+                            <label asp-for="Settings.ClientSecret" class="form-label small">Client Secret Value</label>
+                            <input asp-for="Settings.ClientSecret" type="password" class="form-control form-control-sm" placeholder="Secret value" autocomplete="new-password" />
+                        </div>
+                    </div>
+                </div>
             </div>
 
             <div class="col-12 milestone-source-fields" data-source="@ExcelWorkbookSourceTypes.UploadedExcel">

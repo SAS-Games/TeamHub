@@ -28,6 +28,7 @@ public sealed class MilestonesModel(
 
     public async Task<IActionResult> OnPostSaveAsync(CancellationToken cancellationToken)
     {
+        ModelState.Clear();
         try
         {
             await PrepareUploadedWorkbookAsync(cancellationToken);
@@ -50,6 +51,7 @@ public sealed class MilestonesModel(
 
     public async Task<IActionResult> OnPostTestAsync(CancellationToken cancellationToken)
     {
+        ModelState.Clear();
         try
         {
             await PrepareUploadedWorkbookAsync(cancellationToken);

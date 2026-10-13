@@ -228,7 +228,10 @@ internal sealed class ExcelMilestoneTrackerService(
                 sourceType,
                 DriveId: Optional(settings.SourceDriveId),
                 ItemId: Optional(settings.SourceItemId),
-                SharingUrl: Optional(settings.SourceUrl)),
+                SharingUrl: Optional(settings.SourceUrl),
+                TenantId: Optional(settings.TenantId),
+                ClientId: Optional(settings.ClientId),
+                ClientSecret: Optional(settings.ClientSecret)),
             _ => throw new InvalidOperationException($"MilestoneConfiguration:SourceType '{sourceType}' is not supported.")
         };
     }
