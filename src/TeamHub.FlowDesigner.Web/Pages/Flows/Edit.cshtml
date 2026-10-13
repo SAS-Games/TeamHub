@@ -244,8 +244,43 @@
                     <details class="mb-3"><summary class="fw-semibold">Reminders and escalation</summary>
                         <div class="mt-3"><label class="form-label" for="taskReminderAfterHours">First reminder after (hours)</label><input class="form-control" id="taskReminderAfterHours" type="number" min="0" step="any" /></div>
                         <div class="mt-3"><label class="form-label" for="taskReminderRepeatHours">Repeat reminder every (hours)</label><input class="form-control" id="taskReminderRepeatHours" type="number" min="0" step="any" /></div>
-                        <div class="mt-3"><label class="form-label" for="taskEscalationAfterHours">Escalate after due date (hours)</label><input class="form-control" id="taskEscalationAfterHours" type="number" min="0" step="any" /></div>
-                        <div class="mt-3"><label class="form-label" for="taskEscalationOwner">Escalation owner</label><input class="form-control" id="taskEscalationOwner" maxlength="256" /></div>
+                        <div class="border rounded p-2 mt-3">
+                            <div class="fw-semibold">Escalation level 1</div>
+                            <label class="form-label mt-2" for="taskEscalationAfterHours">After due date (hours)</label>
+                            <input class="form-control" id="taskEscalationAfterHours" type="number" min="0" step="any" />
+                            <label class="form-label mt-2" for="taskEscalationEntry">Recipients</label>
+                            <div class="input-group">
+                                <input class="form-control" id="taskEscalationEntry" type="email" list="registeredAssigneeEmails" maxlength="320" placeholder="Select or enter an email" />
+                                <button class="btn btn-outline-secondary" id="addTaskEscalationRecipient" type="button">Add</button>
+                            </div>
+                            <input id="taskEscalationOwner" type="hidden" />
+                            <div class="d-flex flex-wrap gap-1 mt-2" id="taskEscalationList"></div>
+                        </div>
+                        <div class="border rounded p-2 mt-3">
+                            <div class="fw-semibold">Escalation level 2</div>
+                            <label class="form-label mt-2" for="taskEscalationLevel2AfterHours">After due date (hours)</label>
+                            <input class="form-control" id="taskEscalationLevel2AfterHours" type="number" min="0" step="any" />
+                            <label class="form-label mt-2" for="taskEscalationLevel2Entry">Recipients</label>
+                            <div class="input-group">
+                                <input class="form-control" id="taskEscalationLevel2Entry" type="email" list="registeredAssigneeEmails" maxlength="320" placeholder="Select or enter an email" />
+                                <button class="btn btn-outline-secondary" id="addTaskEscalationLevel2Recipient" type="button">Add</button>
+                            </div>
+                            <input id="taskEscalationLevel2Owners" type="hidden" />
+                            <div class="d-flex flex-wrap gap-1 mt-2" id="taskEscalationLevel2List"></div>
+                        </div>
+                        <div class="border rounded p-2 mt-3">
+                            <div class="fw-semibold">Escalation level 3 <span class="text-secondary fw-normal">(optional)</span></div>
+                            <label class="form-label mt-2" for="taskEscalationLevel3AfterHours">After due date (hours)</label>
+                            <input class="form-control" id="taskEscalationLevel3AfterHours" type="number" min="0" step="any" />
+                            <label class="form-label mt-2" for="taskEscalationLevel3Entry">Recipients</label>
+                            <div class="input-group">
+                                <input class="form-control" id="taskEscalationLevel3Entry" type="email" list="registeredAssigneeEmails" maxlength="320" placeholder="Select or enter an email" />
+                                <button class="btn btn-outline-secondary" id="addTaskEscalationLevel3Recipient" type="button">Add</button>
+                            </div>
+                            <input id="taskEscalationLevel3Owners" type="hidden" />
+                            <div class="d-flex flex-wrap gap-1 mt-2" id="taskEscalationLevel3List"></div>
+                        </div>
+                        <div class="form-text mt-2">Each level is measured from the due date. Later levels must use a larger delay.</div>
                     </details>
                     <div class="form-check"><input class="form-check-input" id="taskRequired" type="checkbox" checked /><label class="form-check-label" for="taskRequired">Required for workflow completion</label></div>
                     <div class="form-check mb-3"><input class="form-check-input" id="taskEnabled" type="checkbox" checked /><label class="form-check-label" for="taskEnabled">Enabled</label></div>

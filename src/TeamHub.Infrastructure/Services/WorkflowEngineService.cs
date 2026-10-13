@@ -74,6 +74,10 @@ public sealed class WorkflowEngineService(
             ReminderRepeatHours = step.ReminderRepeatHours,
             EscalationAfterHours = step.EscalationAfterHours,
             EscalationOwner = step.EscalationOwner,
+            EscalationLevel2AfterHours = step.EscalationLevel2AfterHours,
+            EscalationLevel2Owners = step.EscalationLevel2Owners,
+            EscalationLevel3AfterHours = step.EscalationLevel3AfterHours,
+            EscalationLevel3Owners = step.EscalationLevel3Owners,
             Assignees = WorkflowAssigneeEmails.Parse(step.Owner)
                 .Select(email => new WorkflowStepAssignee { Email = email })
                 .ToList()
@@ -363,25 +367,53 @@ public sealed class WorkflowEngineService(
                 }
             }
 
-            if (step.DueAtUtc.Value < now
-                && step.EscalationAfterHours.HasValue
-                && !string.IsNullOrWhiteSpace(step.EscalationOwner)
-                && (now - step.DueAtUtc.Value).TotalHours >= step.EscalationAfterHours.Value
-                && step.LastEscalationAtUtc is null
-                && outstandingAssignees.Count > 0)
+            if (step.DueAtUtc.Value < now && outstandingAssignees.Count > 0)
             {
-                await notificationService.SendAsync(new NotificationMessage
+                var levels = new[]
                 {
-                    WorkflowInstanceId = step.WorkflowInstanceId,
-                    WorkflowStepInstanceId = step.Id,
-                    Type = NotificationType.Escalation,
-                    Recipient = step.EscalationOwner!,
-                    Subject = $"Escalation - {step.StepName}",
-                    Body = $"Task '{step.StepName}' for instance '{step.WorkflowInstance.InstanceName}' is overdue for: {string.Join(", ", outstandingAssignees.Select(item => item.Email))}."
-                }, cancellationToken);
+                    new { Level = 1, AfterHours = step.EscalationAfterHours, Owners = step.EscalationOwner, SentAtUtc = step.LastEscalationAtUtc },
+                    new { Level = 2, AfterHours = step.EscalationLevel2AfterHours, Owners = step.EscalationLevel2Owners, SentAtUtc = step.LastEscalationLevel2AtUtc },
+                    new { Level = 3, AfterHours = step.EscalationLevel3AfterHours, Owners = step.EscalationLevel3Owners, SentAtUtc = step.LastEscalationLevel3AtUtc }
+                };
 
-                step.LastEscalationAtUtc = now;
-                notificationsSent++;
+                foreach (var level in levels.Where(level =>
+                    level.AfterHours.HasValue
+                    && level.SentAtUtc is null
+                    && (now - step.DueAtUtc.Value).TotalHours >= level.AfterHours.Value))
+                {
+                    var recipients = WorkflowAssigneeEmails.Parse(level.Owners);
+                    if (recipients.Count == 0)
+                    {
+                        continue;
+                    }
+
+                    foreach (var recipient in recipients)
+                    {
+                        await notificationService.SendAsync(new NotificationMessage
+                        {
+                            WorkflowInstanceId = step.WorkflowInstanceId,
+                            WorkflowStepInstanceId = step.Id,
+                            Type = NotificationType.Escalation,
+                            Recipient = recipient,
+                            Subject = $"Escalation level {level.Level} - {step.StepName}",
+                            Body = $"Task '{step.StepName}' for instance '{step.WorkflowInstance.InstanceName}' is overdue for: {string.Join(", ", outstandingAssignees.Select(item => item.Email))}."
+                        }, cancellationToken);
+                        notificationsSent++;
+                    }
+
+                    switch (level.Level)
+                    {
+                        case 1:
+                            step.LastEscalationAtUtc = now;
+                            break;
+                        case 2:
+                            step.LastEscalationLevel2AtUtc = now;
+                            break;
+                        case 3:
+                            step.LastEscalationLevel3AtUtc = now;
+                            break;
+                    }
+                }
             }
         }
 

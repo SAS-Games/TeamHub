@@ -209,7 +209,7 @@
                 </div>
                 <div class="table-responsive mb-4">
                     <table class="table styled-table align-middle">
-                        <thead><tr><th>Step Key</th><th>Name</th><th>Owner</th><th>Hours</th><th>Depends On</th><th>Flags</th><th>Actions</th></tr></thead>
+                        <thead><tr><th>Step Key</th><th>Name</th><th>Owner</th><th>Hours</th><th>Depends On</th><th>Escalations</th><th>Flags</th><th>Actions</th></tr></thead>
                         <tbody data-steps data-prefix="Input.Steps">
                         @for (var index = 0; index < Model.Input.Steps.Count; index++)
                         {
@@ -230,9 +230,16 @@
                                 </td>
                                 <td><input asp-for="Input.Steps[index].DependsOnCsv" class="form-control" data-field="DependsOnCsv" placeholder="STEP_A, STEP_B" /></td>
                                 <td>
+                                    <input asp-for="Input.Steps[index].EscalationAfterHours" type="number" min="0" step="0.5" class="form-control" data-field="EscalationAfterHours" placeholder="Level 1 hours" />
+                                    <input asp-for="Input.Steps[index].EscalationOwner" class="form-control mt-1" data-field="EscalationOwner" list="registeredWorkflowEmails" placeholder="Level 1 emails" />
+                                    <input asp-for="Input.Steps[index].EscalationLevel2AfterHours" type="number" min="0" step="0.5" class="form-control mt-2" data-field="EscalationLevel2AfterHours" placeholder="Level 2 hours" />
+                                    <input asp-for="Input.Steps[index].EscalationLevel2Owners" class="form-control mt-1" data-field="EscalationLevel2Owners" list="registeredWorkflowEmails" placeholder="Level 2 emails" />
+                                    <input asp-for="Input.Steps[index].EscalationLevel3AfterHours" type="number" min="0" step="0.5" class="form-control mt-2" data-field="EscalationLevel3AfterHours" placeholder="Level 3 hours" />
+                                    <input asp-for="Input.Steps[index].EscalationLevel3Owners" class="form-control mt-1" data-field="EscalationLevel3Owners" list="registeredWorkflowEmails" placeholder="Level 3 emails" />
+                                    <div class="form-text">Hours after due date; separate emails with semicolons.</div>
+                                </td>
+                                <td>
                                     <input asp-for="Input.Steps[index].SortOrder" type="hidden" data-field="SortOrder" />
-                                    <input asp-for="Input.Steps[index].EscalationAfterHours" type="hidden" data-field="EscalationAfterHours" />
-                                    <input asp-for="Input.Steps[index].EscalationOwner" type="hidden" data-field="EscalationOwner" />
                                     <div class="form-check"><input asp-for="Input.Steps[index].Required" class="form-check-input" data-field="Required" /><label asp-for="Input.Steps[index].Required" class="form-check-label">Required</label></div>
                                     <div class="form-check"><input asp-for="Input.Steps[index].Enabled" class="form-check-input" data-field="Enabled" /><label asp-for="Input.Steps[index].Enabled" class="form-check-label">Enabled</label></div>
                                 </td>
@@ -304,7 +311,7 @@
                 const index = body.querySelectorAll("tr[data-row]").length;
                 const row = document.createElement("tr");
                 row.dataset.row = "";
-                row.innerHTML = `<td></td><td></td><td></td><td></td><td></td><td></td><td class="studio-actions"></td>`;
+                row.innerHTML = `<td></td><td></td><td></td><td></td><td></td><td></td><td></td><td class="studio-actions"></td>`;
                 row.children[0].append(makeInput(prefix, index, "StepKey"));
                 row.children[1].append(makeInput(prefix, index, "StepName"), makeInput(prefix, index, "Description", { multiline: true, placeholder: "Description" }));
                 const owner = makeInput(prefix, index, "Owner", { placeholder: "email1@example.com; email2@example.com" });
@@ -313,9 +320,11 @@
                 row.children[2].insertAdjacentHTML("beforeend", "<div class=\"form-text\">Select or enter valid emails separated by semicolons.</div>");
                 row.children[3].append(makeInput(prefix, index, "ExpectedDurationHours", { type: "number", value: "0" }), makeInput(prefix, index, "ReminderAfterHours", { type: "number", placeholder: "Reminder" }));
                 row.children[4].append(makeInput(prefix, index, "DependsOnCsv", { placeholder: "STEP_A, STEP_B" }));
-                row.children[5].append(makeInput(prefix, index, "SortOrder", { type: "hidden", value: `${index + 1}` }), makeInput(prefix, index, "EscalationAfterHours", { type: "hidden" }), makeInput(prefix, index, "EscalationOwner", { type: "hidden" }), makeInput(prefix, index, "Required", { type: "checkbox", checkbox: true, checked: true }), makeInput(prefix, index, "Enabled", { type: "checkbox", checkbox: true, checked: true }));
-                row.children[6].append(makeInput(prefix, index, "Remove", { type: "hidden", value: "false" }));
-                row.children[6].insertAdjacentHTML("beforeend", `<button type="button" class="btn btn-sm btn-outline-danger" data-remove-row>Remove</button>`);
+                row.children[5].append(makeInput(prefix, index, "EscalationAfterHours", { type: "number", placeholder: "Level 1 hours" }), makeInput(prefix, index, "EscalationOwner", { placeholder: "Level 1 emails" }), makeInput(prefix, index, "EscalationLevel2AfterHours", { type: "number", placeholder: "Level 2 hours" }), makeInput(prefix, index, "EscalationLevel2Owners", { placeholder: "Level 2 emails" }), makeInput(prefix, index, "EscalationLevel3AfterHours", { type: "number", placeholder: "Level 3 hours" }), makeInput(prefix, index, "EscalationLevel3Owners", { placeholder: "Level 3 emails" }));
+                row.children[5].querySelectorAll("input:not([type='number'])").forEach(input => input.setAttribute("list", "registeredWorkflowEmails"));
+                row.children[6].append(makeInput(prefix, index, "SortOrder", { type: "hidden", value: `${index + 1}` }), makeInput(prefix, index, "Required", { type: "checkbox", checkbox: true, checked: true }), makeInput(prefix, index, "Enabled", { type: "checkbox", checkbox: true, checked: true }));
+                row.children[7].append(makeInput(prefix, index, "Remove", { type: "hidden", value: "false" }));
+                row.children[7].insertAdjacentHTML("beforeend", `<button type="button" class="btn btn-sm btn-outline-danger" data-remove-row>Remove</button>`);
                 body.append(row);
             };
 

@@ -215,7 +215,7 @@
             byId("childFlowName").value = selectedNode?.title?.trim() || "Detailed diagram";
         });
         byId("createChildFlowForm").addEventListener("submit", createChildFlow);
-        ["taskStepKey", "taskExpectedHours", "taskReminderAfterHours", "taskReminderRepeatHours", "taskEscalationAfterHours", "taskEscalationOwner"].forEach(id => byId(id).addEventListener("input", updateSelectedNode));
+        ["taskStepKey", "taskExpectedHours", "taskReminderAfterHours", "taskReminderRepeatHours", "taskEscalationAfterHours", "taskEscalationLevel2AfterHours", "taskEscalationLevel3AfterHours"].forEach(id => byId(id).addEventListener("input", updateSelectedNode));
         ["taskRequired", "taskEnabled"].forEach(id => byId(id).addEventListener("change", updateSelectedNode));
         byId("addTaskAssignee").addEventListener("click", addTaskAssignee);
         byId("taskAssigneeEntry").addEventListener("change", addTaskAssignee);
@@ -230,6 +230,7 @@
             setTaskAssignees(parseAssigneeEmails(byId("taskOwner").value)
                 .filter(email => email !== removeButton.dataset.removeAssignee));
         });
+        setupEscalationRecipientControls();
         byId("addNodeComment").addEventListener("click", addNodeComment);
         byId("cancelNodeCommentReply").addEventListener("click", cancelNodeCommentReply);
         byId("deleteNode").addEventListener("click", () => adapter.deleteSelected());
@@ -620,6 +621,14 @@
         byId("taskReminderRepeatHours").value = node.customProperties?.reminderRepeatHours || "";
         byId("taskEscalationAfterHours").value = node.customProperties?.escalationAfterHours || "";
         byId("taskEscalationOwner").value = node.customProperties?.escalationOwner || "";
+        byId("taskEscalationLevel2AfterHours").value = node.customProperties?.escalationLevel2AfterHours || "";
+        byId("taskEscalationLevel2Owners").value = node.customProperties?.escalationLevel2Owners || "";
+        byId("taskEscalationLevel3AfterHours").value = node.customProperties?.escalationLevel3AfterHours || "";
+        byId("taskEscalationLevel3Owners").value = node.customProperties?.escalationLevel3Owners || "";
+        escalationRecipientControls().forEach(control => {
+            byId(control.entryId).value = "";
+            renderEscalationRecipients(control);
+        });
         byId("taskRequired").checked = String(node.customProperties?.required ?? "true").toLowerCase() !== "false";
         byId("taskEnabled").checked = String(node.customProperties?.enabled ?? "true").toLowerCase() !== "false";
         byId("newNodeComment").value = "";
@@ -690,6 +699,72 @@
                 remove.className = "btn-close";
                 remove.setAttribute("aria-label", `Remove ${email}`);
                 remove.dataset.removeAssignee = email;
+                badge.append(remove);
+            }
+            list.append(badge);
+        });
+    }
+
+    function escalationRecipientControls() {
+        return [
+            { entryId: "taskEscalationEntry", addId: "addTaskEscalationRecipient", ownersId: "taskEscalationOwner", listId: "taskEscalationList" },
+            { entryId: "taskEscalationLevel2Entry", addId: "addTaskEscalationLevel2Recipient", ownersId: "taskEscalationLevel2Owners", listId: "taskEscalationLevel2List" },
+            { entryId: "taskEscalationLevel3Entry", addId: "addTaskEscalationLevel3Recipient", ownersId: "taskEscalationLevel3Owners", listId: "taskEscalationLevel3List" }
+        ];
+    }
+
+    function setupEscalationRecipientControls() {
+        escalationRecipientControls().forEach(control => {
+            const add = () => addEscalationRecipient(control);
+            byId(control.addId).addEventListener("click", add);
+            byId(control.entryId).addEventListener("change", add);
+            byId(control.entryId).addEventListener("keydown", event => {
+                if (!["Enter", ",", ";"].includes(event.key)) return;
+                event.preventDefault();
+                add();
+            });
+            byId(control.listId).addEventListener("click", event => {
+                const removeButton = event.target.closest("[data-remove-escalation-recipient]");
+                if (!removeButton) return;
+                setEscalationRecipients(control, parseAssigneeEmails(byId(control.ownersId).value)
+                    .filter(email => email !== removeButton.dataset.removeEscalationRecipient));
+            });
+        });
+    }
+
+    function addEscalationRecipient(control) {
+        const input = byId(control.entryId);
+        const email = input.value.trim().toLowerCase();
+        if (!email) return;
+        if (!isValidEmail(email)) {
+            showToast("Enter a valid email address.");
+            input.focus();
+            return;
+        }
+        setEscalationRecipients(control, [...parseAssigneeEmails(byId(control.ownersId).value), email]);
+        input.value = "";
+        input.focus();
+    }
+
+    function setEscalationRecipients(control, emails) {
+        byId(control.ownersId).value = [...new Set(emails)].join("; ");
+        renderEscalationRecipients(control);
+        updateSelectedNode();
+    }
+
+    function renderEscalationRecipients(control) {
+        const list = byId(control.listId);
+        list.replaceChildren();
+        parseAssigneeEmails(byId(control.ownersId).value).forEach(email => {
+            const badge = document.createElement("span");
+            badge.className = "badge rounded-pill text-bg-light border d-inline-flex align-items-center gap-1";
+            badge.append(document.createTextNode(email));
+            if (canEdit && !presentationMode) {
+                const remove = document.createElement("button");
+                remove.type = "button";
+                remove.className = "btn-close";
+                remove.setAttribute("aria-label", `Remove ${email}`);
+                remove.dataset.removeEscalationRecipient = email;
                 badge.append(remove);
             }
             list.append(badge);
@@ -827,6 +902,10 @@
                 reminderRepeatHours: byId("taskReminderRepeatHours").value,
                 escalationAfterHours: byId("taskEscalationAfterHours").value,
                 escalationOwner: byId("taskEscalationOwner").value,
+                escalationLevel2AfterHours: byId("taskEscalationLevel2AfterHours").value,
+                escalationLevel2Owners: byId("taskEscalationLevel2Owners").value,
+                escalationLevel3AfterHours: byId("taskEscalationLevel3AfterHours").value,
+                escalationLevel3Owners: byId("taskEscalationLevel3Owners").value,
                 required: String(byId("taskRequired").checked),
                 enabled: String(byId("taskEnabled").checked)
             });

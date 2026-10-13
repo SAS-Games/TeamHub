@@ -16,6 +16,10 @@ public sealed class WorkflowStepDefinition
     public double? ReminderRepeatHours { get; set; }
     public double? EscalationAfterHours { get; set; }
     public string? EscalationOwner { get; set; }
+    public double? EscalationLevel2AfterHours { get; set; }
+    public string? EscalationLevel2Owners { get; set; }
+    public double? EscalationLevel3AfterHours { get; set; }
+    public string? EscalationLevel3Owners { get; set; }
     public bool Required { get; set; }
     public bool Enabled { get; set; }
     public int SortOrder { get; set; }
