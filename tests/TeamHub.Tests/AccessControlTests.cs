@@ -149,11 +149,13 @@ public sealed class AccessControlTests
         await users.SetPermissionsAsync([
             new(TeamHubModules.Milestones, TeamHubUserTypes.Registered, AccessLevel.Create),
             new(TeamHubModules.UserManagement, TeamHubUserTypes.Privileged, AccessLevel.FullAccess),
+            new(TeamHubModules.Administration, TeamHubUserTypes.Privileged, AccessLevel.FullAccess),
             new(TeamHubModules.Home, TeamHubUserTypes.Admin, AccessLevel.NoAccess)
         ]);
 
         (await users.GetAccessLevelAsync(TeamHubModules.Milestones, TeamHubUserTypes.Registered)).Should().Be(AccessLevel.Create);
         (await users.GetAccessLevelAsync(TeamHubModules.UserManagement, TeamHubUserTypes.Privileged)).Should().Be(AccessLevel.NoAccess);
+        (await users.GetAccessLevelAsync(TeamHubModules.Administration, TeamHubUserTypes.Privileged)).Should().Be(AccessLevel.NoAccess);
         (await users.GetAccessLevelAsync(TeamHubModules.Home, TeamHubUserTypes.Admin)).Should().Be(AccessLevel.FullAccess);
     }
 
@@ -229,6 +231,53 @@ public sealed class AccessControlTests
         (await users.GetAccessLevelAsync(module, TeamHubUserTypes.Registered, allowed.Id)).Should().Be(AccessLevel.Edit);
         (await users.ListUserPermissionsAsync()).Should().ContainSingle(item =>
             item.AuthorizedUserId == blocked.Id && item.Module == module);
+    }
+
+    [Fact]
+    public async Task StandardModule_PerUserOverrideSupersedesUserTypeAccessAndCanReturnToInheritance()
+    {
+        await using var host = await AccessTestHost.CreateAsync();
+        using var scope = host.Services.CreateScope();
+        var users = scope.ServiceProvider.GetRequiredService<IUserAccessService>();
+        var user = await users.SaveUserAsync(new SaveAuthorizedUserRequest(
+            null, "ai-user@example.com", null, "AI User", TeamHubUserTypes.Registered, true, "password123"), "admin@example.com");
+
+        (await users.GetAccessLevelAsync(TeamHubModules.FlowDesigner, TeamHubUserTypes.Registered, user.Id))
+            .Should().Be(AccessLevel.Edit);
+
+        await users.SetUserPermissionsAsync([
+            new(user.Id, TeamHubModules.FlowDesigner, AccessLevel.Create)
+        ]);
+
+        (await users.GetAccessLevelAsync(TeamHubModules.FlowDesigner, TeamHubUserTypes.Registered, user.Id))
+            .Should().Be(AccessLevel.Create);
+
+        await users.SetUserPermissionsAsync([
+            new(user.Id, TeamHubModules.FlowDesigner, null)
+        ]);
+
+        (await users.GetAccessLevelAsync(TeamHubModules.FlowDesigner, TeamHubUserTypes.Registered, user.Id))
+            .Should().Be(AccessLevel.Edit);
+    }
+
+    [Fact]
+    public async Task PerUserOverride_CannotGrantAdministrationAccess()
+    {
+        await using var host = await AccessTestHost.CreateAsync();
+        using var scope = host.Services.CreateScope();
+        var users = scope.ServiceProvider.GetRequiredService<IUserAccessService>();
+        var user = await users.SaveUserAsync(new SaveAuthorizedUserRequest(
+            null, "restricted@example.com", null, "Restricted User", TeamHubUserTypes.Privileged, true, "password123"), "admin@example.com");
+
+        await users.SetUserPermissionsAsync([
+            new(user.Id, TeamHubModules.Administration, AccessLevel.FullAccess),
+            new(user.Id, TeamHubModules.UserManagement, AccessLevel.FullAccess),
+            new(user.Id, TeamHubModules.AccessManagement, AccessLevel.FullAccess)
+        ]);
+
+        (await users.GetAccessLevelAsync(TeamHubModules.Administration, TeamHubUserTypes.Privileged, user.Id))
+            .Should().Be(AccessLevel.NoAccess);
+        (await users.ListUserPermissionsAsync()).Should().NotContain(item => item.AuthorizedUserId == user.Id);
     }
 
     [Fact]

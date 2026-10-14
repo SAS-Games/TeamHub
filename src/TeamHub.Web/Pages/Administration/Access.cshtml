@@ -10,7 +10,7 @@
     <div>
         <div class="eyebrow">Admin Portal</div>
         <h1>Access Management</h1>
-        <p>Configure default access by user type and individual access for restricted custom Team tabs.</p>
+        <p>Configure default access by user type and override access for individual authorized users.</p>
     </div>
     <div class="d-flex gap-2">
         <a class="btn btn-outline-secondary" asp-page="/Configuration/Index">Admin Portal</a>
@@ -78,14 +78,14 @@
     </form>
 </section>
 
-@if (Model.CustomTabModules.Count > 0)
+@if (Model.UserOverrideModules.Count > 0)
 {
     var userInputIndex = 0;
     <section class="content-section">
-        <div class="section-heading"><div><span>Individual overrides</span><h2>Custom Tab Access by User</h2></div></div>
+        <div class="section-heading"><div><span>Individual overrides</span><h2>Module Access by User</h2></div></div>
         <div class="section-body pb-3">
-            <p class="text-secondary mb-1">Use this matrix when a tab contains restricted information. An individual setting overrides the user's category setting for that tab. Administrators always retain Full Access.</p>
-            <p class="text-secondary mb-0">For an allow-list, keep the Registered and Privileged settings at No Access above, then grant Read Only or Edit only to the required email addresses here.</p>
+            <p class="text-secondary mb-1">An individual setting overrides the user's category setting for that module. Select “Use user type setting” to remove the override. Administrators always retain Full Access.</p>
+            <p class="text-secondary mb-0">For an allow-list, keep the Registered and Privileged settings at No Access above, then grant access only to the required users here. Administration and access-management modules cannot be overridden.</p>
         </div>
         @if (Model.AuthorizedUsers.Count == 0)
         {
@@ -100,7 +100,7 @@
                         <tr>
                             <th>User</th>
                             <th>User type</th>
-                            @foreach (var module in Model.CustomTabModules)
+                            @foreach (var module in Model.UserOverrideModules)
                             {
                                 <th>@module.Label</th>
                             }
@@ -112,7 +112,7 @@
                             <tr>
                                 <td><strong>@user.DisplayName</strong><small class="d-block text-secondary">@user.UserId</small>@if (!string.IsNullOrWhiteSpace(user.Gid)) { <small class="d-block text-secondary">GID: @user.Gid</small> }</td>
                                 <td>@user.UserType</td>
-                                @foreach (var module in Model.CustomTabModules)
+                                @foreach (var module in Model.UserOverrideModules)
                                 {
                                     var selected = Model.GetUserLevel(module.Key, user.Id);
                                     var inherited = Model.GetLevel(module.Key, user.UserType);
@@ -121,9 +121,10 @@
                                         <input type="hidden" name="UserInput[@userInputIndex].Module" value="@module.Key" />
                                         <select class="form-select form-select-sm" name="UserInput[@userInputIndex].AccessLevel" aria-label="@module.Label access for @user.UserId">
                                             <option value="" selected="@(!selected.HasValue)">Use user type setting (@inherited.ToDisplayName())</option>
-                                            <option value="@AccessLevel.NoAccess" selected="@(selected == AccessLevel.NoAccess)">No Access</option>
-                                            <option value="@AccessLevel.ReadOnly" selected="@(selected == AccessLevel.ReadOnly)">Read Only</option>
-                                            <option value="@AccessLevel.Edit" selected="@(selected == AccessLevel.Edit)">Edit</option>
+                                            @foreach (var option in Model.GetUserAccessLevels(module.Key))
+                                            {
+                                                <option value="@option" selected="@(selected == option)">@option.ToDisplayName()</option>
+                                            }
                                         </select>
                                     </td>
                                     userInputIndex++;

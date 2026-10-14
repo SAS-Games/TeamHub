@@ -386,10 +386,12 @@ internal sealed class UserAccessService(
             .Select(item => item.Id)
             .ToHashSetAsync(cancellationToken);
         var validModules = await context.ModulePermissions.AsNoTracking()
-            .Where(item => item.Module.StartsWith(CustomTeamTabModulePrefix))
             .Select(item => item.Module)
             .Distinct()
-            .ToHashSetAsync(cancellationToken);
+            .ToListAsync(cancellationToken);
+        var overridableModules = validModules
+            .Where(IsUserOverrideAllowed)
+            .ToHashSet(StringComparer.Ordinal);
         var stored = await context.UserModulePermissions.ToListAsync(cancellationToken);
         var byKey = stored.ToDictionary(
             item => item.AuthorizedUserId + "|" + item.Module,
@@ -398,7 +400,7 @@ internal sealed class UserAccessService(
         foreach (var input in permissions)
         {
             if (!validUsers.Contains(input.AuthorizedUserId)
-                || !validModules.Contains(input.Module))
+                || !overridableModules.Contains(input.Module))
                 continue;
             var key = input.AuthorizedUserId + "|" + input.Module;
             if (!input.AccessLevel.HasValue)
@@ -407,7 +409,7 @@ internal sealed class UserAccessService(
                 continue;
             }
 
-            var level = NormalizeUserOverride(input.AccessLevel.Value);
+            var level = NormalizeUserOverride(input.Module, input.AccessLevel.Value);
             if (!byKey.TryGetValue(key, out var entity))
             {
                 entity = new UserModulePermissionEntity
@@ -433,8 +435,9 @@ internal sealed class UserAccessService(
         CancellationToken cancellationToken = default)
     {
         if (userType == TeamHubUserTypes.Admin) return AccessLevel.FullAccess;
+        if (IsAdministrativeModule(module)) return AccessLevel.NoAccess;
         await using var context = await contextFactory.CreateDbContextAsync(cancellationToken);
-        if (authorizedUserId.HasValue)
+        if (authorizedUserId.HasValue && IsUserOverrideAllowed(module))
         {
             var userOverride = await context.UserModulePermissions.AsNoTracking()
                 .Where(item => item.AuthorizedUserId == authorizedUserId.Value && item.Module == module)
@@ -579,16 +582,26 @@ internal sealed class UserAccessService(
     private static AccessLevel NormalizePermission(string module, string userType, AccessLevel requested)
     {
         if (userType == TeamHubUserTypes.Admin) return AccessLevel.FullAccess;
-        if (module is TeamHubModules.UserManagement or TeamHubModules.AccessManagement)
-            return AccessLevel.NoAccess;
+        if (IsAdministrativeModule(module)) return AccessLevel.NoAccess;
         return Enum.IsDefined(requested) ? requested : AccessLevel.NoAccess;
     }
 
-    private static AccessLevel NormalizeUserOverride(AccessLevel requested) => requested switch
+    private static bool IsAdministrativeModule(string module) =>
+        module is TeamHubModules.Administration
+            or TeamHubModules.UserManagement
+            or TeamHubModules.AccessManagement;
+
+    private static bool IsUserOverrideAllowed(string module) => !IsAdministrativeModule(module);
+
+    private static AccessLevel NormalizeUserOverride(string module, AccessLevel requested)
     {
-        AccessLevel.NoAccess or AccessLevel.ReadOnly or AccessLevel.Edit => requested,
-        _ => throw new ArgumentException("Per-user custom tab access must be No Access, Read Only, or Edit.")
-    };
+        if (!Enum.IsDefined(requested))
+            throw new ArgumentException("Select a valid per-user access level.");
+        if (module.StartsWith(CustomTeamTabModulePrefix, StringComparison.Ordinal)
+            && requested is not (AccessLevel.NoAccess or AccessLevel.ReadOnly or AccessLevel.Edit))
+            throw new ArgumentException("Per-user custom tab access must be No Access, Read Only, or Edit.");
+        return requested;
+    }
 
     private static async Task EnsureAnotherActiveAdminAsync(AccessControlDbContext context, Guid excludedId, CancellationToken cancellationToken)
     {
