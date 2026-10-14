@@ -81,6 +81,17 @@ Only the assigned reviewer can edit their row; administrators can edit any row.
 The service enforces ownership independently of the UI and uses a version
 concurrency token to reject stale updates.
 
+New reviews start with empty feedback even when a Jira ticket is reused.
+Administrators can use Restore feedback from Jira on a published review to
+preview and explicitly select prior TeamHub feedback by assigned reviewer email.
+Only empty, unlinked rows can be restored. The preview uses each reviewer's
+personal Jira access, retains all matching candidates for explicit selection,
+and skips unsupported image/link content instead of silently losing it.
+Protected selections expire after 15 minutes; confirmation re-reads Jira and
+checks the ticket, assignments, content and row versions before an atomic import.
+Restoration stores the chosen Jira comment ID without changing Jira. The next
+reviewer save updates that same comment. Ordinary Jira comments are not imported.
+
 When a review has a Jira ticket, saving a row creates or updates one Jira
 comment authored through that reviewer's personal Jira credential. The
 comment body uses bold Jira-wiki titles for Reviewer, Reviewer email, Session

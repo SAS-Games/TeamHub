@@ -945,12 +945,227 @@ public sealed class MilestoneReviewTests : IAsyncLifetime
         (await denied.OnGetCommentsAsync("SIEHP-1206", CancellationToken.None)).Should().BeOfType<ForbidResult>();
     }
 
+    [Fact]
+    public async Task RestorePreviewImportsSelectedJiraFeedbackAndNextSaveUpdatesSameComment()
+    {
+        await service.CreateDraftAsync(new("Test", "Alpha", "", "SIEHP-1206", [reviewerOne]), "admin");
+        await service.PublishDraftAsync("admin");
+        var current = (await service.GetCurrentAsync())!;
+        var oldFeedbackId = Guid.NewGuid();
+        var comments = new StubCommentService
+        {
+            Items = [RestoreComment("41", oldFeedbackId), RestoreComment("42", Guid.NewGuid())]
+        };
+        var model = CreateModel(service, true, comments);
+        SetRole(model, TeamHubUserTypes.Admin);
+        model.ReviewId = current.Id;
+        (await model.OnPostPreviewRestoreAsync(CancellationToken.None)).Should().BeOfType<PageResult>();
+        model.RestorePreview.Should().HaveCount(2);
+        comments.LastQuery!.RequestingUserId.Should().Be("reviewer.one@example.com");
+        comments.LastQuery.AllowPrivilegedDefaultCredential.Should().BeFalse();
+        (await service.GetCurrentAsync())!.Feedback.Single().WhatGood.Should().BeEmpty();
+        model.RestoreSelections = [model.RestorePreview.Single(item => item.CommentId == "41").Token];
+        (await model.OnPostRestoreAsync(CancellationToken.None)).Should().BeOfType<RedirectToPageResult>();
+        dbContext.ChangeTracker.Clear();
+        var restored = (await service.GetCurrentAsync())!.Feedback.Single();
+        restored.SessionDetails.Should().Be("PC");
+        restored.WhatGood.Should().Be("**Great**");
+        restored.NeedImprovements.Should().Be("Improve");
+        restored.AdditionalFeedback.Should().Be("Art");
+        restored.JiraCommentId.Should().Be("41");
+        restored.Version.Should().Be(1);
+        commentPublisher.Requests.Should().BeEmpty();
+        await service.SaveFeedbackAsync(new(current.Id, restored.Id, restored.Version,
+            restored.SessionDetails, "Edited", restored.NeedImprovements, restored.AdditionalFeedback), reviewerOne, false);
+        commentPublisher.Requests.Single().CommentId.Should().Be("41");
+        commentPublisher.Requests.Single().FeedbackId.Should().Be(restored.Id);
+    }
+
+    [Theory]
+    [InlineData("email")]
+    [InlineData("marker")]
+    [InlineData("sections")]
+    [InlineData("image")]
+    [InlineData("link")]
+    [InlineData("multiple-markers")]
+    public async Task RestorePreviewRejectsUnmatchedOrUnsupportedComments(string invalid)
+    {
+        await service.CreateDraftAsync(new("Test", "Alpha", "", "SIEHP-1206", [reviewerOne]), "admin");
+        await service.PublishDraftAsync("admin");
+        var comment = RestoreComment("41", Guid.NewGuid());
+        var text = comment.Parts.Single().Text;
+        comment = invalid switch
+        {
+            "email" => comment with { Parts = [new("text", text.Replace("reviewer.one@example.com", "another@example.com"))] },
+            "marker" => comment with { Parts = [new("text", text.Replace("TeamHub Milestone Review Feedback:", "Unmanaged:"))] },
+            "sections" => comment with { Parts = [new("text", text.Replace("Session Details", "Unknown"))] },
+            "multiple-markers" => comment with { Parts = [new("text", text + "\n" + text)] },
+            _ => comment with { Parts = [new("text", text), new(invalid, "attachment")] }
+        };
+        var model = CreateModel(service, true, new StubCommentService { Items = [comment] });
+        SetRole(model, TeamHubUserTypes.Admin);
+        model.ReviewId = (await service.GetCurrentAsync())!.Id;
+        await model.OnPostPreviewRestoreAsync(CancellationToken.None);
+        model.RestorePreview.Should().BeEmpty();
+        model.RestoreWarnings.Should().ContainSingle();
+    }
+
+    [Theory]
+    [InlineData("tampered")]
+    [InlineData("jira-changed")]
+    [InlineData("local-changed")]
+    [InlineData("ticket-changed")]
+    [InlineData("archived")]
+    [InlineData("duplicate")]
+    public async Task RestoreRejectsStaleOrInvalidSelectionsWithoutOverwritingFeedback(string scenario)
+    {
+        await service.CreateDraftAsync(new("Test", "Alpha", "", "SIEHP-1206", [reviewerOne]), "admin");
+        await service.PublishDraftAsync("admin");
+        var current = (await service.GetCurrentAsync())!;
+        var comments = new StubCommentService { Items = [RestoreComment("41", Guid.NewGuid())] };
+        var model = CreateModel(service, true, comments);
+        SetRole(model, TeamHubUserTypes.Admin);
+        model.ReviewId = current.Id;
+        await model.OnPostPreviewRestoreAsync(CancellationToken.None);
+        var token = model.RestorePreview.Single().Token;
+        model.RestoreSelections = [token];
+        switch (scenario)
+        {
+            case "tampered": model.RestoreSelections = ["not-a-token"]; break;
+            case "jira-changed": comments.Items = []; break;
+            case "duplicate": model.RestoreSelections = [token, token]; break;
+            case "local-changed":
+                var row = current.Feedback.Single();
+                await service.SaveFeedbackAsync(new(current.Id, row.Id, row.Version, "", "Existing", "", ""), reviewerOne, false);
+                break;
+            case "ticket-changed":
+                await service.UpdateAsync(current.Id, new("Test", "Alpha", "", "SIEHP-1207", [reviewerOne]), true);
+                break;
+            case "archived": await service.ArchiveAsync(current.Id, true); break;
+        }
+        await model.OnPostRestoreAsync(CancellationToken.None);
+        model.ErrorMessage.Should().NotBeNullOrWhiteSpace();
+        dbContext.ChangeTracker.Clear();
+        var saved = scenario == "archived"
+            ? (await service.GetHistoryAsync()).Single() : (await service.GetCurrentAsync())!;
+        saved.Feedback.Single().WhatGood.Should().Be(scenario == "local-changed" ? "Existing" : "");
+    }
+
+    [Fact]
+    public async Task RestoreActionsRequireAdminAndPersonalJiraAccess()
+    {
+        var denied = CreateModel(service, true);
+        SetRole(denied, TeamHubUserTypes.Registered);
+        (await denied.OnPostPreviewRestoreAsync(CancellationToken.None)).Should().BeOfType<ForbidResult>();
+        (await denied.OnPostRestoreAsync(CancellationToken.None)).Should().BeOfType<ForbidResult>();
+        var restore = () => service.RestoreFeedbackAsync([], false);
+        await restore.Should().ThrowAsync<UnauthorizedAccessException>();
+        await service.CreateDraftAsync(new("Test", "Alpha", "", "SIEHP-1206", [reviewerOne]), "admin");
+        await service.PublishDraftAsync("admin");
+        var model = CreateModel(service, true, new StubCommentService { Error = new StudioJiraCommentException("No personal credential") });
+        SetRole(model, TeamHubUserTypes.Admin);
+        model.ReviewId = (await service.GetCurrentAsync())!.Id;
+        await model.OnPostPreviewRestoreAsync(CancellationToken.None);
+        model.RestorePreview.Should().BeEmpty();
+        model.RestoreWarnings.Single().Should().Contain("personal Jira connection");
+    }
+
+    [Fact]
+    public async Task RestorePreviewUnderstandsRetrievedBoldHeadingsAndSkipsNonemptyRows()
+    {
+        await service.CreateDraftAsync(new("Test", "Alpha", "", "SIEHP-1206", [reviewerOne, reviewerTwo]), "admin");
+        await service.PublishDraftAsync("admin");
+        var current = (await service.GetCurrentAsync())!;
+        var row = current.Feedback.Single(item => item.ReviewerId == reviewerTwo);
+        await service.SaveFeedbackAsync(new(current.Id, row.Id, row.Version, "", "Existing", "", ""), reviewerTwo, false);
+        var comment = RestoreComment("41", Guid.NewGuid());
+        using var body = System.Text.Json.JsonDocument.Parse(
+            System.Text.Json.JsonSerializer.Serialize(comment.Parts.Single().Text));
+        var formatted = comment with { Parts = JiraCommentBodyParser.Parse(body.RootElement, []) };
+        var model = CreateModel(service, true, new StubCommentService { Items = [formatted] });
+        SetRole(model, TeamHubUserTypes.Admin);
+        model.ReviewId = current.Id;
+        await model.OnPostPreviewRestoreAsync(CancellationToken.None);
+        model.RestorePreview.Should().ContainSingle().Which.WhatGood.Should().Be("**Great**");
+        model.RestoreWarnings.Single().Should().Contain("will not be overwritten");
+    }
+
+    [Fact]
+    public async Task RestoreServiceCommitsAllSelectedRowsOrNone()
+    {
+        await service.CreateDraftAsync(new("Test", "Alpha", "", "SIEHP-1206", [reviewerOne, reviewerTwo]), "admin");
+        await service.PublishDraftAsync("admin");
+        var current = (await service.GetCurrentAsync())!;
+        var first = current.Feedback.Single(item => item.ReviewerId == reviewerOne);
+        var second = current.Feedback.Single(item => item.ReviewerId == reviewerTwo);
+        var requests = new[]
+        {
+            new RestoreMilestoneReviewFeedbackRequest(current.Id, "SIEHP-1206", first.Id, first.Version,
+                "41", "PC", "Good", "", ""),
+            new RestoreMilestoneReviewFeedbackRequest(current.Id, "SIEHP-1206", second.Id, second.Version + 1,
+                "42", "", "Good", "", "")
+        };
+        var invalid = () => service.RestoreFeedbackAsync(requests, true);
+        await invalid.Should().ThrowAsync<InvalidOperationException>();
+        dbContext.ChangeTracker.Clear();
+        (await service.GetCurrentAsync())!.Feedback.Should().OnlyContain(item => item.WhatGood == "" && item.JiraCommentId == null);
+        requests[1] = requests[1] with { Version = second.Version };
+        await service.RestoreFeedbackAsync(requests, true);
+        dbContext.ChangeTracker.Clear();
+        (await service.GetCurrentAsync())!.Feedback.Should().OnlyContain(item => item.WhatGood == "Good" && item.Version == 1);
+        commentPublisher.Requests.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task RestoreRejectsExpiredProtectedPreview()
+    {
+        await service.CreateDraftAsync(new("Test", "Alpha", "", "SIEHP-1206", [reviewerOne]), "admin");
+        await service.PublishDraftAsync("admin");
+        var protection = new Microsoft.AspNetCore.DataProtection.EphemeralDataProtectionProvider();
+        var model = CreateModel(service, true,
+            new StubCommentService { Items = [RestoreComment("41", Guid.NewGuid())] }, protection);
+        SetRole(model, TeamHubUserTypes.Admin);
+        model.ReviewId = (await service.GetCurrentAsync())!.Id;
+        await model.OnPostPreviewRestoreAsync(CancellationToken.None);
+        var protector = protection.CreateProtector("TeamHub.MilestoneReview.Restore.v1");
+        var token = System.Text.Json.Nodes.JsonNode.Parse(
+            Microsoft.AspNetCore.DataProtection.DataProtectionCommonExtensions.Unprotect(protector, model.RestorePreview.Single().Token))!;
+        var expires = token["Expires"]!.GetValue<DateTimeOffset>();
+        expires.Should().BeCloseTo(DateTimeOffset.UtcNow.AddMinutes(15), TimeSpan.FromSeconds(5));
+        token["Expires"] = DateTimeOffset.UtcNow.AddSeconds(-1);
+        model.RestoreSelections = [Microsoft.AspNetCore.DataProtection.DataProtectionCommonExtensions.Protect(protector, token.ToJsonString())];
+        await model.OnPostRestoreAsync(CancellationToken.None);
+        model.ErrorMessage.Should().Contain("expired");
+        (await service.GetCurrentAsync())!.Feedback.Single().JiraCommentId.Should().BeNull();
+    }
+
+    private static StudioJiraComment RestoreComment(string commentId, Guid oldFeedbackId) =>
+        new(commentId, "Reviewer One", DateTimeOffset.UtcNow, null, [new("text", $"""
+            *Reviewer*: Reviewer One
+            *Reviewer email*: reviewer.one@example.com
+
+            *Session Details*
+            PC
+
+            *What's Good*
+            **Great**
+
+            *Needs Improvement*
+            Improve
+
+            *Additional Feedback*
+            Art
+
+            [TeamHub Milestone Review Feedback: {oldFeedbackId:D}]
+            """)]);
+
     private static MilestoneReviewModel CreateModel(IMilestoneReviewService reviewService, bool allowed,
-        StubCommentService? comments = null) =>
+        StubCommentService? comments = null, Microsoft.AspNetCore.DataProtection.IDataProtectionProvider? protection = null) =>
         new(reviewService,
             new StubUserDirectory([]),
             new StubAccess(allowed),
             comments ?? new StubCommentService(),
+            protection ?? new Microsoft.AspNetCore.DataProtection.EphemeralDataProtectionProvider(),
             new TeamHub.Web.Formatting.SafeMarkdownRenderer(),
             NullLogger<MilestoneReviewModel>.Instance)
         {
@@ -969,11 +1184,14 @@ public sealed class MilestoneReviewTests : IAsyncLifetime
 
     private sealed class StubCommentService : IStudioJiraCommentService
     {
+        public IReadOnlyList<StudioJiraComment> Items { get; set; } = [];
+        public Exception? Error { get; set; }
         public StudioJiraCommentQuery? LastQuery { get; private set; }
         public Task<StudioJiraCommentResult> GetCommentsAsync(StudioJiraCommentQuery query, CancellationToken cancellationToken = default)
         {
             LastQuery = query;
-            return Task.FromResult(new StudioJiraCommentResult(query.TicketId, "https://jira.example.test", false, []));
+            if (Error is not null) throw Error;
+            return Task.FromResult(new StudioJiraCommentResult(query.TicketId, "https://jira.example.test", false, Items));
         }
 
         public Task<StudioJiraCommentImage> GetImageAsync(StudioJiraCommentQuery query, string commentId, string attachmentId, CancellationToken cancellationToken = default)

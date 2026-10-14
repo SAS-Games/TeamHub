@@ -51,6 +51,10 @@ public sealed record SaveMilestoneReviewFeedbackRequest(
     string NeedImprovements,
     string AdditionalFeedback);
 
+public sealed record RestoreMilestoneReviewFeedbackRequest(
+    Guid ReviewId, string TicketId, Guid FeedbackId, int Version, string CommentId,
+    string SessionDetails, string WhatGood, string NeedImprovements, string AdditionalFeedback);
+
 public interface IMilestoneReviewUserDirectory
 {
     Task<IReadOnlyList<MilestoneReviewUser>> GetActiveUsersAsync(CancellationToken cancellationToken = default);
@@ -99,6 +103,10 @@ public interface IMilestoneReviewService
         CancellationToken cancellationToken = default);
     Task ArchiveAsync(Guid reviewId, bool isAdmin, CancellationToken cancellationToken = default);
     Task DeleteAsync(Guid reviewId, bool isAdmin, CancellationToken cancellationToken = default);
+    Task RestoreFeedbackAsync(
+        IReadOnlyList<RestoreMilestoneReviewFeedbackRequest> requests,
+        bool isAdmin,
+        CancellationToken cancellationToken = default);
     Task SaveFeedbackAsync(
         SaveMilestoneReviewFeedbackRequest request,
         Guid actorId,

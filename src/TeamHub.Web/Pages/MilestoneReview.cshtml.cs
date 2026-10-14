@@ -1,5 +1,7 @@
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using System.Security.Cryptography;
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
 using TeamHub.Authentication;
@@ -7,6 +9,7 @@ using TeamHub.MilestoneReview;
 using TeamHub.Studio;
 using TeamHub.Web.AccessControl;
 using TeamHub.Web.Formatting;
+using TeamHub.Web.Reviews;
 using ReviewSnapshot = TeamHub.MilestoneReview.MilestoneReview;
 
 namespace TeamHub.Web.Pages;
@@ -16,9 +19,24 @@ public sealed partial class MilestoneReviewModel(
     IMilestoneReviewUserDirectory reviewUsers,
     ICurrentAccessService access,
     IStudioJiraCommentService comments,
+    IDataProtectionProvider protection,
     ISafeMarkdownRenderer markdown,
     ILogger<MilestoneReviewModel> logger) : PageModel
 {
+    private readonly IDataProtector restoreProtector = protection.CreateProtector("TeamHub.MilestoneReview.Restore.v1");
+
+    [BindProperty]
+    public List<string> RestoreSelections { get; set; } = [];
+
+    public List<JiraFeedbackRestorePreview> RestorePreview { get; } = [];
+    public List<string> RestoreWarnings { get; } = [];
+    public bool ShowRestorePreview { get; private set; }
+
+    public sealed record JiraFeedbackRestorePreview(
+        string Reviewer, string Email, string CommentId, DateTimeOffset Created,
+        string SessionDetails, string WhatGood, string NeedImprovements, string AdditionalFeedback, string Token);
+    private sealed record RestoreToken(RestoreMilestoneReviewFeedbackRequest Request, DateTimeOffset Expires);
+
     [BindProperty]
     public string? ProjectName { get; set; }
 
@@ -114,6 +132,113 @@ public sealed partial class MilestoneReviewModel(
             await LoadAsync(cancellationToken);
             return Page();
         }
+    }
+
+    public async Task<IActionResult> OnPostPreviewRestoreAsync(CancellationToken cancellationToken)
+    {
+        if (!IsAdmin) return Forbid();
+        await LoadAsync(cancellationToken);
+        ShowRestorePreview = true;
+        if (CurrentReview?.Id != ReviewId || string.IsNullOrWhiteSpace(CurrentReview.JiraTicketId))
+        {
+            ModelState.AddModelError(string.Empty, "Select the current published review with a Jira ticket.");
+            return Page();
+        }
+        foreach (var reviewer in CurrentReview.AssignedReviewers)
+        {
+            var row = CurrentReview.Feedback.Single(item => item.ReviewerId == reviewer.Id);
+            if (!string.IsNullOrWhiteSpace(row.SessionDetails + row.WhatGood + row.NeedImprovements + row.AdditionalFeedback)
+                || row.JiraCommentId is not null)
+            {
+                RestoreWarnings.Add($"{reviewer.DisplayName}: existing feedback will not be overwritten.");
+                continue;
+            }
+            try
+            {
+                var result = await comments.GetCommentsAsync(new(null, CurrentReview.JiraTicketId, reviewer.UserId, false),
+                    cancellationToken);
+                var count = RestorePreview.Count;
+                foreach (var comment in result.Comments)
+                {
+                    var values = JiraMilestoneFeedbackParser.Parse(comment, reviewer.UserId);
+                    if (values is null) continue;
+                    var request = new RestoreMilestoneReviewFeedbackRequest(CurrentReview.Id, CurrentReview.JiraTicketId,
+                        row.Id, row.Version, comment.Id, values[0], values[1], values[2], values[3]);
+                    var token = restoreProtector.Protect(JsonSerializer.Serialize(
+                        new RestoreToken(request, DateTimeOffset.UtcNow.AddMinutes(15))));
+                    RestorePreview.Add(new(reviewer.DisplayName, reviewer.UserId, comment.Id, comment.Created,
+                        values[0], values[1], values[2], values[3], token));
+                }
+                if (RestorePreview.Count == count)
+                    RestoreWarnings.Add($"{reviewer.DisplayName}: no matching, supported TeamHub feedback comment was found. Comments with images or links must be reviewed manually using Show Jira Comments.");
+            }
+            catch (Exception exception) when (exception is StudioJiraCommentException or HttpRequestException
+                or JsonException or InvalidOperationException or KeyNotFoundException or RegexMatchTimeoutException)
+            {
+                logger.LogWarning(exception, "Jira feedback restoration preview failed for reviewer {ReviewerId}.", reviewer.Id);
+                RestoreWarnings.Add($"{reviewer.DisplayName}: could not load feedback. Check their personal Jira connection and ticket access, then retry.");
+            }
+            catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+            {
+                RestoreWarnings.Add($"{reviewer.DisplayName}: Jira timed out. Reopen the preview to retry.");
+            }
+        }
+        return Page();
+    }
+
+    public async Task<IActionResult> OnPostRestoreAsync(CancellationToken cancellationToken)
+    {
+        if (!IsAdmin) return Forbid();
+        try
+        {
+            var current = await reviews.GetCurrentAsync(cancellationToken);
+            if (current?.Id != ReviewId || string.IsNullOrWhiteSpace(current.JiraTicketId))
+                throw new InvalidOperationException("The published review changed. Reopen the restore preview.");
+            var requests = new List<RestoreMilestoneReviewFeedbackRequest>();
+            foreach (var selection in RestoreSelections.Where(value => !string.IsNullOrWhiteSpace(value)))
+            {
+                var token = JsonSerializer.Deserialize<RestoreToken>(restoreProtector.Unprotect(selection))
+                    ?? throw new InvalidOperationException("The restore selection is invalid.");
+                var request = token.Request;
+                if (token.Expires < DateTimeOffset.UtcNow || request.ReviewId != current.Id
+                    || !string.Equals(request.TicketId, current.JiraTicketId, StringComparison.OrdinalIgnoreCase))
+                    throw new InvalidOperationException("The restore preview expired or the review changed. Reopen the preview.");
+                var row = current.Feedback.SingleOrDefault(item => item.Id == request.FeedbackId)
+                    ?? throw new InvalidOperationException("The feedback row changed. Reopen the preview.");
+                var reviewer = current.AssignedReviewers.SingleOrDefault(item => item.Id == row.ReviewerId)
+                    ?? throw new InvalidOperationException("The contributor selection changed. Reopen the preview.");
+                var result = await comments.GetCommentsAsync(new(null, current.JiraTicketId, reviewer.UserId, false),
+                    cancellationToken);
+                var comment = result.Comments.SingleOrDefault(item => item.Id == request.CommentId);
+                var values = comment is null ? null : JiraMilestoneFeedbackParser.Parse(comment, reviewer.UserId);
+                if (values is null || !values.SequenceEqual(new[]
+                    { request.SessionDetails, request.WhatGood, request.NeedImprovements, request.AdditionalFeedback }))
+                    throw new InvalidOperationException("A selected Jira comment changed or is no longer accessible. Reopen the preview.");
+                requests.Add(request);
+            }
+            await reviews.RestoreFeedbackAsync(requests, IsAdmin, cancellationToken);
+            StatusMessage = $"Restored feedback for {requests.Count} reviewer(s). No Jira comments were changed.";
+        }
+        catch (Exception exception) when (exception is CryptographicException or JsonException)
+        {
+            logger.LogWarning(exception, "Invalid Jira feedback restore selection.");
+            ErrorMessage = "The restore selection is invalid. Reopen the preview and try again.";
+        }
+        catch (Exception exception) when (exception is ArgumentException or InvalidOperationException
+            or StudioJiraCommentException)
+        {
+            ErrorMessage = exception.Message;
+        }
+        catch (HttpRequestException exception)
+        {
+            logger.LogWarning(exception, "Jira feedback restoration failed.");
+            ErrorMessage = "Jira could not be reached. No feedback was restored; reopen the preview and try again.";
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            ErrorMessage = "Jira timed out. No feedback was restored; reopen the preview and try again.";
+        }
+        return RedirectToPage();
     }
 
     public async Task<IActionResult> OnPostCreateDraftAsync(CancellationToken cancellationToken)

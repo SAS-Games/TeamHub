@@ -106,6 +106,13 @@ else
                 <small class="text-secondary">Published @Model.CurrentReview.PublishedAt?.ToLocalTime().ToString("g")</small>
                 @if (Model.IsAdmin)
                 {
+                    @if (!string.IsNullOrWhiteSpace(Model.CurrentReview.JiraTicketId))
+                    {
+                        <form method="post" asp-page-handler="PreviewRestore">
+                            <input type="hidden" name="ReviewId" value="@Model.CurrentReview.Id" />
+                            <button type="submit" class="btn btn-sm btn-outline-primary">Restore feedback from Jira</button>
+                        </form>
+                    }
                     <a asp-page="/MilestoneReview" asp-route-editReviewId="@Model.CurrentReview.Id"
                        class="btn btn-sm btn-outline-primary">Edit Review</a>
                     <form method="post" asp-page-handler="Archive"
@@ -121,6 +128,52 @@ else
                 }
             </div>
         </div>
+            @if (Model.IsAdmin && Model.ShowRestorePreview)
+            {
+                <div class="section-body border-bottom">
+                    <h3 class="h5">Restore feedback preview</h3>
+                    <p>Select one comment per reviewer. Only empty rows can be restored. Comments must contain a TeamHub feedback identifier and matching reviewer email; other Jira comments are not imported. This does not change Jira comments. The preview expires after 15 minutes.</p>
+                    @foreach (var warning in Model.RestoreWarnings)
+                    {
+                        <div class="alert alert-warning">@warning</div>
+                    }
+                    @if (Model.RestorePreview.Count > 0)
+                    {
+                        <form method="post" asp-page-handler="Restore">
+                            <input type="hidden" name="ReviewId" value="@Model.CurrentReview.Id" />
+                            @{
+                                var groups = Model.RestorePreview.GroupBy(item => item.Email).ToList();
+                            }
+                            @for (var index = 0; index < groups.Count; index++)
+                            {
+                                var group = groups[index];
+                                <fieldset class="border rounded p-3 mb-3">
+                                    <legend class="float-none w-auto h6">@group.First().Reviewer (@group.Key)</legend>
+                                    <label class="d-block mb-2"><input type="radio" name="RestoreSelections[@index]" value="" checked /> Do not restore this reviewer</label>
+                                    @foreach (var candidate in group)
+                                    {
+                                        <div class="border-top pt-2 mt-2">
+                                            <label><input type="radio" name="RestoreSelections[@index]" value="@candidate.Token" /> Comment @candidate.CommentId — @candidate.Created.ToLocalTime().ToString("g")</label>
+                                            <div class="row g-3 mt-1">
+                                                <div class="col-md-6"><h4 class="h6">Session Details</h4><safe-markdown text="@candidate.SessionDetails"></safe-markdown></div>
+                                                <div class="col-md-6"><h4 class="h6">What's Good</h4><safe-markdown text="@candidate.WhatGood"></safe-markdown></div>
+                                                <div class="col-md-6"><h4 class="h6">Needs Improvement</h4><safe-markdown text="@candidate.NeedImprovements"></safe-markdown></div>
+                                                <div class="col-md-6"><h4 class="h6">Additional Feedback</h4><safe-markdown text="@candidate.AdditionalFeedback"></safe-markdown></div>
+                                            </div>
+                                        </div>
+                                    }
+                                </fieldset>
+                            }
+                            <button class="btn btn-primary" type="submit">Confirm Restore</button>
+                            <a asp-page="/MilestoneReview" class="btn btn-outline-secondary">Cancel</a>
+                        </form>
+                    }
+                    else
+                    {
+                        <p>No feedback is available to restore.</p>
+                    }
+                </div>
+            }
         @if (!string.IsNullOrWhiteSpace(Model.CurrentReview.Description))
         {
             <div class="section-body border-bottom">

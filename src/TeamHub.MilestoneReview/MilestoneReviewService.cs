@@ -254,6 +254,53 @@ public sealed partial class MilestoneReviewService(
             throw new InvalidOperationException("The published or archived review was not found. Reload the page.");
     }
 
+    public async Task RestoreFeedbackAsync(IReadOnlyList<RestoreMilestoneReviewFeedbackRequest> requests,
+        bool isAdmin, CancellationToken cancellationToken = default)
+    {
+        if (!isAdmin) throw new UnauthorizedAccessException("Only administrators can restore feedback from Jira.");
+        if (requests.Count == 0 || requests.Select(item => item.ReviewId).Distinct().Count() != 1
+            || requests.Select(item => item.FeedbackId).Distinct().Count() != requests.Count
+            || requests.Select(item => item.CommentId).Distinct().Count() != requests.Count)
+            throw new ArgumentException("Select one Jira comment per feedback row.");
+        await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
+        var review = await dbContext.Reviews.AsNoTracking().SingleOrDefaultAsync(
+            item => item.Id == requests[0].ReviewId && item.Status == MilestoneReviewStatus.Published, cancellationToken)
+            ?? throw new InvalidOperationException("Only the current published review can receive restored feedback.");
+        var assigned = await dbContext.Assignments.Where(item => item.ReviewId == review.Id)
+            .Select(item => item.ReviewerId).ToListAsync(cancellationToken);
+        var rows = await dbContext.Feedback.Where(item => item.ReviewId == review.Id).ToListAsync(cancellationToken);
+        foreach (var request in requests)
+        {
+            var row = rows.SingleOrDefault(item => item.Id == request.FeedbackId)
+                ?? throw new InvalidOperationException("The feedback row no longer exists. Reload the restore preview.");
+            if (!string.Equals(review.JiraTicketId, request.TicketId, StringComparison.OrdinalIgnoreCase)
+                || !assigned.Contains(row.ReviewerId) || row.Version != request.Version
+                || !string.IsNullOrWhiteSpace(row.SessionDetails + row.WhatGood + row.NeedImprovements + row.AdditionalFeedback)
+                || row.JiraCommentId is not null)
+                throw new InvalidOperationException("The review or feedback changed, or the row is not empty. Reload the restore preview.");
+            if (string.IsNullOrWhiteSpace(request.CommentId) || request.CommentId.Length > 30
+                || !request.CommentId.All(char.IsAsciiDigit))
+                throw new ArgumentException("The Jira comment ID is invalid.");
+            row.SessionDetails = Bounded(request.SessionDetails, 20000, "Session Details");
+            row.WhatGood = Bounded(request.WhatGood, 20000, "What's Good");
+            row.NeedImprovements = Bounded(request.NeedImprovements, 20000, "Needs Improvement");
+            row.AdditionalFeedback = Bounded(request.AdditionalFeedback, 20000, "Additional Feedback");
+            row.JiraCommentId = request.CommentId;
+            row.JiraSyncError = null;
+            row.Version++;
+            row.UpdatedAt = DateTimeOffset.UtcNow;
+        }
+        try
+        {
+            await dbContext.SaveChangesAsync(cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+        }
+        catch (DbUpdateConcurrencyException exception)
+        {
+            throw new InvalidOperationException("Feedback changed during restoration. Reload the preview.", exception);
+        }
+    }
+
     public async Task SaveFeedbackAsync(
         SaveMilestoneReviewFeedbackRequest request,
         Guid actorId,
