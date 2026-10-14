@@ -45,12 +45,18 @@ public sealed class AccessModel(
     {
         await users.SetUserPermissionsAsync(UserInput.Select(item =>
             new UserModulePermissionRecord(item.AuthorizedUserId, item.Module, item.AccessLevel)).ToList(), cancellationToken);
-        StatusMessage = "Per-user custom tab access saved.";
+        StatusMessage = "Per-user access overrides saved.";
         return RedirectToPage();
     }
 
     public AccessLevel GetLevel(string module, string userType) =>
-        Permissions.GetValueOrDefault(Key(module, userType), AccessLevel.NoAccess);
+        userType == TeamHubUserTypes.Admin
+            ? AccessLevel.FullAccess
+            : module is TeamHubModules.Administration
+                or TeamHubModules.UserManagement
+                or TeamHubModules.AccessManagement
+                ? AccessLevel.NoAccess
+                : Permissions.GetValueOrDefault(Key(module, userType), AccessLevel.NoAccess);
 
     public IReadOnlyList<AccessLevel> GetAccessLevels(string module) =>
         module.StartsWith(CustomTeamTabAccess.ModulePrefix, StringComparison.Ordinal)
@@ -60,12 +66,21 @@ public sealed class AccessModel(
     public AccessLevel? GetUserLevel(string module, Guid authorizedUserId) =>
         UserPermissions.GetValueOrDefault(UserKey(module, authorizedUserId));
 
-    public IReadOnlyList<ModuleOption> CustomTabModules =>
-        Modules.Where(module => module.Key.StartsWith(CustomTeamTabAccess.ModulePrefix, StringComparison.Ordinal)).ToList();
+    public IReadOnlyList<ModuleOption> UserOverrideModules =>
+        Modules.Where(module => module.Key is not (TeamHubModules.Administration
+            or TeamHubModules.UserManagement
+            or TeamHubModules.AccessManagement)).ToList();
+
+    public IReadOnlyList<AccessLevel> GetUserAccessLevels(string module) =>
+        module.StartsWith(CustomTeamTabAccess.ModulePrefix, StringComparison.Ordinal)
+            ? [AccessLevel.NoAccess, AccessLevel.ReadOnly, AccessLevel.Edit]
+            : AccessLevels;
 
     public bool IsLocked(string module, string userType) =>
         userType == TeamHubUserTypes.Admin
-        || module is TeamHubModules.UserManagement or TeamHubModules.AccessManagement;
+        || module is TeamHubModules.Administration
+            or TeamHubModules.UserManagement
+            or TeamHubModules.AccessManagement;
 
     private async Task LoadAsync(CancellationToken cancellationToken)
     {

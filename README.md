@@ -166,7 +166,7 @@ The Admin Portal also contains **Authorized Users** and **Access Management**:
 
 - The Authorized User List is the source of truth for TeamHub access. Admins can add, update, activate/deactivate, or remove Registered, Privileged, and Admin users.
 - Only active, pre-authorized Registered users can complete self-registration. Privileged and Admin users can be provisioned with a temporary password or recognized through a configured organization authentication provider.
-- Access Management assigns No Access, Read Only, Create, Edit, Delete, or Full Access to each supported module for Guest, Registered, Privileged, and Admin users. These permissions are enforced in both the UI and request pipeline.
+- Access Management assigns No Access, Read Only, Create, Edit, Delete, or Full Access to each supported module for Guest, Registered, Privileged, and Admin users. Active Registered and Privileged users can also receive individual module overrides; Administration, User Management, and Access Management remain Admin-only. These permissions are enforced in both the UI and request pipeline.
 - New Razor Page areas are discovered automatically at startup using their first folder or page-name segment. Missing permission rows are created with No Access for Guest, Registered, and Privileged users and Full Access for Admin, then shown automatically in Access Management.
 - Existing `WorkflowUsers` settings are imported once as bootstrap users for backward compatibility. Subsequent user and permission changes are stored in `src/TeamHub.Web/data/access.db`.
 
