@@ -253,11 +253,19 @@ internal sealed partial class JiraStudioCommentService(
             || (query.StudioId is not null && string.IsNullOrWhiteSpace(query.StudioId))
             || string.IsNullOrWhiteSpace(query.TicketId) || !TicketKey().IsMatch(query.TicketId))
             throw new StudioJiraCommentException("Select a valid ticket and sign in to view comments.");
-        var mappings = await GetIssueMappingsAsync(query, cancellationToken);
         var settings = await configuration.GetSettingsAsync(cancellationToken);
         if (!settings.JiraEnabled || !Uri.TryCreate(settings.JiraBaseUrl, UriKind.Absolute, out var baseUri)
             || baseUri.Scheme is not ("https" or "http") || baseUri.UserInfo.Length != 0)
             throw new StudioJiraCommentException("Jira integration is disabled or its base URL is not configured.");
+        var mappings = query.StudioId is null
+            ? Array.Empty<StudioAtlassianMapping>()
+            : await GetIssueMappingsAsync(query.StudioId, settings, cancellationToken);
+        if (query.StudioId is null)
+        {
+            var prefix = query.TicketId[..query.TicketId.LastIndexOf('-')];
+            if (!settings.JiraDefaultProjectKeys.Contains(prefix, StringComparer.OrdinalIgnoreCase))
+                throw new StudioJiraCommentException("This Jira project is not enabled for Milestone Review. Add its project key under Configuration > Jira & Confluence > Jira Access.");
+        }
         AtlassianResolvedCredential? credential;
         try
         {
@@ -281,13 +289,19 @@ internal sealed partial class JiraStudioCommentService(
         var root = document.RootElement;
         var fields = root.GetProperty("fields");
         var projectKey = fields.GetProperty("project").GetProperty("key").GetString();
-        var components = fields.GetProperty("components").EnumerateArray()
-            .Select(component => component.GetProperty("name").GetString()).ToHashSet(StringComparer.OrdinalIgnoreCase);
-        if (!mappings.Any(mapping => mapping.JiraProjectKeys.Contains(projectKey, StringComparer.OrdinalIgnoreCase)
-            && components.Contains(mapping.JiraStudioComponent)))
-            throw new StudioJiraCommentException(query.StudioId is null
-                ? "This ticket does not belong to any active studio's configured Jira scope. Check its project and studio component."
-                : "This ticket does not belong to the selected studio's configured Jira scope.");
+        if (query.StudioId is null)
+        {
+            if (!settings.JiraDefaultProjectKeys.Contains(projectKey, StringComparer.OrdinalIgnoreCase))
+                throw new StudioJiraCommentException("This ticket's Jira project is not enabled for Milestone Review.");
+        }
+        else
+        {
+            var components = fields.GetProperty("components").EnumerateArray()
+                .Select(component => component.GetProperty("name").GetString()).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            if (!mappings.Any(mapping => mapping.JiraProjectKeys.Contains(projectKey, StringComparer.OrdinalIgnoreCase)
+                && components.Contains(mapping.JiraStudioComponent)))
+                throw new StudioJiraCommentException("This ticket does not belong to the selected studio's configured Jira scope.");
+        }
         var attachments = fields.GetProperty("attachment").EnumerateArray().Select(item => new JiraCommentAttachment(
             item.GetProperty("id").GetString() ?? "",
             item.GetProperty("filename").GetString() ?? "",
@@ -297,30 +311,16 @@ internal sealed partial class JiraStudioCommentService(
     }
 
     private async Task<IReadOnlyList<StudioAtlassianMapping>> GetIssueMappingsAsync(
-        StudioJiraCommentQuery query, CancellationToken cancellationToken)
+        string studioId, AtlassianIntegrationSettings settings, CancellationToken cancellationToken)
     {
-        if (query.StudioId is not null)
-        {
-            var studio = await studioDirectory.GetStudioAsync(query.StudioId, cancellationToken);
-            if (studio is null || !studio.IsActive)
-                throw new StudioJiraCommentException("The selected studio is not active.");
-            var mapping = await configuration.GetStudioMappingAsync(query.StudioId, cancellationToken);
-            if (mapping is null || mapping.JiraProjectKeys.Count == 0 || string.IsNullOrWhiteSpace(mapping.JiraStudioComponent))
-                throw new StudioJiraCommentException("The selected studio does not have a complete Jira mapping.");
-            return [mapping];
-        }
-
-        // Ticket-only requests are scoped by the actual Jira project and components, not a unique project prefix.
-        var activeIds = (await studioDirectory.GetStudiosAsync(cancellationToken))
-            .Where(studio => studio.IsActive).Select(studio => studio.Id).ToHashSet(StringComparer.OrdinalIgnoreCase);
-        var prefix = query.TicketId[..query.TicketId.LastIndexOf('-')];
-        var mappings = (await configuration.ListStudioMappingsAsync(cancellationToken))
-            .Where(mapping => activeIds.Contains(mapping.StudioId)
-                && mapping.JiraProjectKeys.Contains(prefix, StringComparer.OrdinalIgnoreCase)
-                && !string.IsNullOrWhiteSpace(mapping.JiraStudioComponent)).ToList();
-        if (mappings.Count == 0)
-            throw new StudioJiraCommentException("The Jira ticket project is not mapped to an active studio.");
-        return mappings;
+        var studio = await studioDirectory.GetStudioAsync(studioId, cancellationToken);
+        if (studio is null || !studio.IsActive)
+            throw new StudioJiraCommentException("The selected studio is not active.");
+        var mapping = await configuration.GetStudioMappingAsync(studioId, cancellationToken);
+        mapping = mapping?.WithDefaultProjectKeys(settings);
+        if (mapping is null || mapping.JiraProjectKeys.Count == 0 || string.IsNullOrWhiteSpace(mapping.JiraStudioComponent))
+            throw new StudioJiraCommentException("The selected studio does not have a complete Jira mapping.");
+        return [mapping];
     }
 
     private async Task<JsonDocument> GetJsonAsync(string url, AtlassianResolvedCredential credential, CancellationToken cancellationToken)

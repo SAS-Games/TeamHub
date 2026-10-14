@@ -11,6 +11,7 @@ public sealed class AtlassianIntegrationSettings
     public string JiraSearchApiPath { get; set; } = "/rest/api/2/search";
     public int JiraMaxResults { get; set; } = 100;
     public string JiraDefaultSupportComponent { get; set; } = "StudioSupport";
+    public IReadOnlyList<string> JiraDefaultProjectKeys { get; set; } = [];
     public bool ConfluenceEnabled { get; set; }
     public string ConfluenceBaseUrl { get; set; } = string.Empty;
     public string ConfluenceContentApiPath { get; set; } = "/rest/api/content";
@@ -28,6 +29,16 @@ public sealed class StudioAtlassianMapping
     public string JiraStudioComponent { get; set; } = string.Empty;
     public string JiraSupportComponent { get; set; } = string.Empty;
     public string ConfluenceStudioIdentifier { get; set; } = string.Empty;
+
+    public StudioAtlassianMapping WithDefaultProjectKeys(AtlassianIntegrationSettings settings) =>
+        JiraProjectKeys.Count > 0 ? this : new StudioAtlassianMapping
+        {
+            StudioId = StudioId,
+            JiraProjectKeys = settings.JiraDefaultProjectKeys,
+            JiraStudioComponent = JiraStudioComponent,
+            JiraSupportComponent = JiraSupportComponent,
+            ConfluenceStudioIdentifier = ConfluenceStudioIdentifier
+        };
 }
 
 public sealed record AtlassianConnectionStatus(
@@ -103,6 +114,12 @@ internal sealed class SqliteAtlassianConfigurationService : IAtlassianConfigurat
         ArgumentNullException.ThrowIfNull(settings);
         var jiraBaseUrl = NormalizeBaseUrl(settings.JiraBaseUrl, settings.JiraEnabled, "Jira");
         var confluenceBaseUrl = NormalizeBaseUrl(settings.ConfluenceBaseUrl, settings.ConfluenceEnabled, "Confluence");
+        var defaultKeys = settings.JiraDefaultProjectKeys
+            .Select(key => key.Trim().ToUpperInvariant()).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        if (defaultKeys.Any(key => key.Length == 0 || !char.IsAsciiLetter(key[0])
+            || key.Any(character => !char.IsAsciiLetterOrDigit(character) && character != '_'))
+            || string.Join(",", defaultKeys).Length > 2048)
+            throw new ArgumentException("Default Jira project keys must be valid project keys, such as SIEHP, and no longer than 2,048 characters in total.");
 
         var record = await dbContext.AtlassianIntegrationSettings.SingleOrDefaultAsync(item => item.Id == 1, cancellationToken);
         if (record is null)
@@ -116,6 +133,7 @@ internal sealed class SqliteAtlassianConfigurationService : IAtlassianConfigurat
         record.JiraSearchApiPath = NormalizeApiPath(settings.JiraSearchApiPath, "/rest/api/2/search");
         record.JiraMaxResults = Math.Clamp(settings.JiraMaxResults, 1, 1000);
         record.JiraDefaultSupportComponent = settings.JiraDefaultSupportComponent?.Trim() ?? string.Empty;
+        record.JiraDefaultProjectKeys = string.Join(",", defaultKeys);
         record.ConfluenceEnabled = settings.ConfluenceEnabled;
         record.ConfluenceBaseUrl = confluenceBaseUrl;
         record.ConfluenceContentApiPath = NormalizeApiPath(settings.ConfluenceContentApiPath, "/rest/api/content");
@@ -428,6 +446,7 @@ internal sealed class SqliteAtlassianConfigurationService : IAtlassianConfigurat
         JiraSearchApiPath = record.JiraSearchApiPath,
         JiraMaxResults = record.JiraMaxResults,
         JiraDefaultSupportComponent = record.JiraDefaultSupportComponent,
+        JiraDefaultProjectKeys = ParseProjectKeys(record.JiraDefaultProjectKeys),
         ConfluenceEnabled = record.ConfluenceEnabled,
         ConfluenceBaseUrl = record.ConfluenceBaseUrl,
         ConfluenceContentApiPath = record.ConfluenceContentApiPath,

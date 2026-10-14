@@ -337,9 +337,8 @@ public sealed class StudioJiraCommentTests
     }
 
     [Theory]
-    [InlineData("AnotherStudio", "SUP")]
     [InlineData("StudioB", "UNMAPPED")]
-    public async Task TicketOnlyRequestsRejectUnmatchedActualProjectOrComponentBeforeReadingOrWritingComments(
+    public async Task TicketOnlyRequestsRejectUnmatchedActualProjectBeforeReadingOrWritingComments(
         string component, string project)
     {
         var calls = new List<string>();
@@ -351,24 +350,21 @@ public sealed class StudioJiraCommentTests
         await host.ConfigureSharedProjectAsync();
         var query = host.Query with { StudioId = null };
         var read = () => host.Service.GetCommentsAsync(query);
-        await read.Should().ThrowAsync<StudioJiraCommentException>().WithMessage("*configured Jira scope*");
+        await read.Should().ThrowAsync<StudioJiraCommentException>().WithMessage("*not enabled*");
         var write = () => host.Service.UpsertMilestoneReviewCommentAsync(new(
             query.TicketId, query.RequestingUserId, Guid.NewGuid(), "42",
             "Project", "Milestone", "Reviewer", "", "", "", ""));
-        await write.Should().ThrowAsync<StudioJiraCommentException>().WithMessage("*configured Jira scope*");
+        await write.Should().ThrowAsync<StudioJiraCommentException>().WithMessage("*not enabled*");
         calls.Should().Equal("/rest/api/2/issue/SUP-1", "/rest/api/2/issue/SUP-1");
     }
 
     [Fact]
-    public async Task TicketOnlyRequestsRejectInactiveMappingsAndMissingProjectBeforeNetworkRequest()
+    public async Task TicketOnlyRequestsRejectUnconfiguredProjectBeforeNetworkRequest()
     {
         var calls = 0;
         await using var host = await Host.CreateAsync(_ => { calls++; return Json(IssueJson); });
         var unmapped = () => host.Service.GetCommentsAsync(host.Query with { StudioId = null, TicketId = "UNMAPPED-1" });
-        await unmapped.Should().ThrowAsync<StudioJiraCommentException>().WithMessage("*not mapped*");
-        await host.DeactivateStudioAsync();
-        var inactive = () => host.Service.GetCommentsAsync(host.Query with { StudioId = null });
-        await inactive.Should().ThrowAsync<StudioJiraCommentException>().WithMessage("*not mapped*");
+        await unmapped.Should().ThrowAsync<StudioJiraCommentException>().WithMessage("*not enabled*");
         calls.Should().Be(0);
     }
 
@@ -388,6 +384,100 @@ public sealed class StudioJiraCommentTests
         await denied.Should().ThrowAsync<StudioJiraCommentException>().WithMessage("*credential*");
         (await host.Service.GetCommentsAsync(query with { AllowPrivilegedDefaultCredential = true }))
             .IsUsingSharedCredential.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task MilestoneSyncAndPreviewUseAllowedProjectWithoutComponentsOrActiveStudios()
+    {
+        var writes = 0;
+        await using var host = await Host.CreateAsync(request =>
+        {
+            if (request.Method == HttpMethod.Post || request.Method == HttpMethod.Put)
+            {
+                writes++;
+                return Json("""{"id":"42"}""");
+            }
+            if (request.RequestUri!.AbsolutePath.EndsWith("/comment"))
+                return Json($$"""{"total":1,"comments":[{{CommentJson}}]}""");
+            if (request.RequestUri.AbsolutePath.EndsWith("/comment/10")) return Json(CommentJson);
+            if (request.RequestUri.AbsolutePath.Contains("/secure/attachment/")) return Png();
+            return Json(IssueJson.Replace("SUP", "SIEHP").Replace("\"components\":[{\"name\":\"StudioA\"}],", ""));
+        });
+        await host.ConfigureReviewProjectKeysAsync([" siehp ", "SIEHP"]);
+        await host.DeactivateStudioAsync();
+        var query = host.Query with { StudioId = null, TicketId = "SIEHP-1206" };
+        (await host.Service.GetCommentsAsync(query)).Comments.Should().ContainSingle();
+        (await host.Service.GetImageAsync(query, "10", "11")).ContentType.Should().Be("image/png");
+        var result = await host.Service.UpsertMilestoneReviewCommentAsync(new(
+            query.TicketId, query.RequestingUserId, Guid.NewGuid(), "42",
+            "Test", "Alpha", "Reviewer", "PC", "Good", "", ""));
+        result.CommentId.Should().Be("42");
+        writes.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task EmptyReviewProjectKeysDenyMilestoneAccessWithoutAStudioMappingFallback()
+    {
+        var calls = 0;
+        await using var host = await Host.CreateAsync(_ => { calls++; return Json(IssueJson); });
+        await host.ConfigureReviewProjectKeysAsync([]);
+        var read = () => host.Service.GetCommentsAsync(host.Query with { StudioId = null });
+        await read.Should().ThrowAsync<StudioJiraCommentException>().WithMessage("*Configuration > Jira & Confluence*");
+        var write = () => host.Service.UpsertMilestoneReviewCommentAsync(new(
+            "SUP-1", host.Query.RequestingUserId, Guid.NewGuid(), null, "Test", "Alpha", "Reviewer", "", "", "", ""));
+        await write.Should().ThrowAsync<StudioJiraCommentException>().WithMessage("*Configuration > Jira & Confluence*");
+        calls.Should().Be(0);
+    }
+
+    [Theory]
+    [InlineData("SIEHP-1206")]
+    [InlineData("SIE HP")]
+    [InlineData("../SIEHP")]
+    public async Task ReviewProjectSettingsRejectInvalidKeys(string key)
+    {
+        await using var host = await Host.CreateAsync(_ => Json(IssueJson));
+        var save = () => host.ConfigureReviewProjectKeysAsync([key]);
+        await save.Should().ThrowAsync<ArgumentException>();
+    }
+
+    [Fact]
+    public async Task ReviewProjectKeysPersistNormalizeAndSurviveExistingDatabaseUpgrade()
+    {
+        await using var host = await Host.CreateAsync(_ => Json(IssueJson));
+        await host.VerifyProjectKeyPersistenceAndUpgradeAsync();
+    }
+
+    [Fact]
+    public async Task StudioCommentsAndImagesInheritDefaultsAndKeepComponentChecksAndExplicitOverrides()
+    {
+        var calls = 0;
+        await using var host = await Host.CreateAsync(request =>
+        {
+            calls++;
+            if (request.RequestUri!.AbsolutePath.Contains("/secure/attachment/")) return Png();
+            if (request.RequestUri.AbsolutePath.EndsWith("/comment/10")) return Json(CommentJson);
+            if (request.RequestUri.AbsolutePath.EndsWith("/comment"))
+                return Json($$"""{"total":1,"comments":[{{CommentJson}}]}""");
+            return Json(IssueJson);
+        });
+        await host.ConfigureStudioKeysAsync([]);
+        (await host.Service.GetCommentsAsync(host.Query)).Comments.Should().ContainSingle();
+        (await host.Service.GetImageAsync(host.Query, "10", "11")).ContentType.Should().Be("image/png");
+        await host.ConfigureReviewProjectKeysAsync(["OTHER"]);
+        var defaultChanged = () => host.Service.GetCommentsAsync(host.Query);
+        await defaultChanged.Should().ThrowAsync<StudioJiraCommentException>().WithMessage("*configured Jira scope*");
+        await host.ConfigureStudioKeysAsync(["SUP"]);
+        (await host.Service.GetCommentsAsync(host.Query)).Comments.Should().ContainSingle();
+        await host.ConfigureReviewProjectKeysAsync(["SUP"]);
+        await host.ConfigureStudioKeysAsync(["OVERRIDE"]);
+        var explicitOverride = () => host.Service.GetCommentsAsync(host.Query);
+        await explicitOverride.Should().ThrowAsync<StudioJiraCommentException>().WithMessage("*configured Jira scope*");
+        await host.ConfigureStudioKeysAsync([]);
+        await host.ConfigureReviewProjectKeysAsync([]);
+        var before = calls;
+        var missing = () => host.Service.GetCommentsAsync(host.Query);
+        await missing.Should().ThrowAsync<StudioJiraCommentException>().WithMessage("*complete Jira mapping*");
+        calls.Should().Be(before);
     }
 
     [Fact]
@@ -520,6 +610,55 @@ public sealed class StudioJiraCommentTests
             await scope.ServiceProvider.GetRequiredService<IAtlassianConfigurationService>().SaveStudioMappingsAsync([
                 new StudioAtlassianMapping { StudioId = query.StudioId!, JiraProjectKeys = [projectKey], JiraStudioComponent = "StudioA" },
                 new StudioAtlassianMapping { StudioId = second.Id, JiraProjectKeys = [projectKey], JiraStudioComponent = "StudioB" }]);
+            await ConfigureReviewProjectKeysAsync([projectKey]);
+        }
+        public async Task ConfigureReviewProjectKeysAsync(IReadOnlyList<string> keys)
+        {
+            var configuration = scope.ServiceProvider.GetRequiredService<IAtlassianConfigurationService>();
+            var settings = await configuration.GetSettingsAsync();
+            settings.JiraDefaultProjectKeys = keys;
+            await configuration.SaveSettingsAsync(settings);
+        }
+        public async Task ConfigureStudioKeysAsync(IReadOnlyList<string> keys)
+        {
+            var configuration = scope.ServiceProvider.GetRequiredService<IAtlassianConfigurationService>();
+            var mapping = (await configuration.GetStudioMappingAsync(query.StudioId!))!;
+            mapping.JiraProjectKeys = keys;
+            await configuration.SaveStudioMappingsAsync([mapping]);
+        }
+        public async Task VerifyProjectKeyPersistenceAndUpgradeAsync()
+        {
+            await ConfigureReviewProjectKeysAsync([" siehp ", "SIEHP", "Other"]);
+            await using (var fresh = provider.CreateAsyncScope())
+            {
+                var configuration = fresh.ServiceProvider.GetRequiredService<IAtlassianConfigurationService>();
+                (await configuration.GetSettingsAsync()).JiraDefaultProjectKeys.Should().Equal("SIEHP", "OTHER");
+            }
+            await using (var connection = new SqliteConnection($"Data Source={path}"))
+            {
+                await connection.OpenAsync();
+                await using var command = connection.CreateCommand();
+                command.CommandText = "ALTER TABLE AtlassianIntegrationSettings RENAME COLUMN JiraDefaultProjectKeys TO JiraMilestoneReviewProjectKeys;";
+                await command.ExecuteNonQueryAsync();
+            }
+            await using var upgraded = provider.CreateAsyncScope();
+            var initializer = upgraded.ServiceProvider.GetRequiredService<IStudioDatabaseInitializer>();
+            await initializer.InitializeAsync();
+            await initializer.InitializeAsync();
+            var settings = await upgraded.ServiceProvider.GetRequiredService<IAtlassianConfigurationService>().GetSettingsAsync();
+            settings.JiraDefaultProjectKeys.Should().Equal("SIEHP", "OTHER");
+            settings.JiraBaseUrl.Should().Be("https://jira.example.test");
+            await using (var connection = new SqliteConnection($"Data Source={path}"))
+            {
+                await connection.OpenAsync();
+                await using var command = connection.CreateCommand();
+                command.CommandText = "ALTER TABLE AtlassianIntegrationSettings DROP COLUMN JiraDefaultProjectKeys;";
+                await command.ExecuteNonQueryAsync();
+            }
+            await using var older = provider.CreateAsyncScope();
+            await older.ServiceProvider.GetRequiredService<IStudioDatabaseInitializer>().InitializeAsync();
+            (await older.ServiceProvider.GetRequiredService<IAtlassianConfigurationService>().GetSettingsAsync())
+                .JiraDefaultProjectKeys.Should().BeEmpty();
         }
         public static async Task<Host> CreateAsync(Func<HttpRequestMessage, HttpResponseMessage> respond)
         {
@@ -541,7 +680,8 @@ public sealed class StudioJiraCommentTests
             var atlassian = scope.ServiceProvider.GetRequiredService<IAtlassianConfigurationService>();
             await atlassian.SaveSettingsAsync(new AtlassianIntegrationSettings
             {
-                JiraEnabled = true, JiraBaseUrl = "https://jira.example.test"
+                JiraEnabled = true, JiraBaseUrl = "https://jira.example.test",
+                JiraDefaultProjectKeys = ["SUP"]
             });
             await atlassian.SaveStudioMappingsAsync([
                 new StudioAtlassianMapping { StudioId = studio.Id, JiraProjectKeys = ["SUP"], JiraStudioComponent = "StudioA" }]);

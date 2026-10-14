@@ -121,6 +121,7 @@ internal sealed class AtlassianIntegrationSettingsRecord
     public string JiraSearchApiPath { get; set; } = "/rest/api/2/search";
     public int JiraMaxResults { get; set; } = 100;
     public string JiraDefaultSupportComponent { get; set; } = "StudioSupport";
+    public string JiraDefaultProjectKeys { get; set; } = string.Empty;
     public bool ConfluenceEnabled { get; set; }
     public string ConfluenceBaseUrl { get; set; } = string.Empty;
     public string ConfluenceContentApiPath { get; set; } = "/rest/api/content";
@@ -258,6 +259,7 @@ internal sealed class StudioDbContext(DbContextOptions<StudioDbContext> options)
             entity.Property(x => x.JiraBaseUrl).HasMaxLength(2048);
             entity.Property(x => x.JiraSearchApiPath).HasMaxLength(512);
             entity.Property(x => x.JiraDefaultSupportComponent).HasMaxLength(256);
+            entity.Property(x => x.JiraDefaultProjectKeys).HasMaxLength(2048).HasDefaultValue(string.Empty);
             entity.Property(x => x.ConfluenceBaseUrl).HasMaxLength(2048);
             entity.Property(x => x.ConfluenceContentApiPath).HasMaxLength(512);
             entity.Property(x => x.ConfluenceSpaceKey).HasMaxLength(256);
@@ -462,6 +464,23 @@ internal sealed class SqliteStudioDatabaseInitializer(
                 );
                 """, cancellationToken);
 
+            if (!await MainColumnExistsAsync(connection, "AtlassianIntegrationSettings", "JiraDefaultProjectKeys", cancellationToken))
+            {
+                if (await MainColumnExistsAsync(connection, "AtlassianIntegrationSettings", "JiraMilestoneReviewProjectKeys", cancellationToken))
+                {
+                    await dbContext.Database.ExecuteSqlRawAsync("""
+                        ALTER TABLE AtlassianIntegrationSettings
+                        RENAME COLUMN JiraMilestoneReviewProjectKeys TO JiraDefaultProjectKeys;
+                        """, cancellationToken);
+                }
+                else
+                {
+                    await dbContext.Database.ExecuteSqlRawAsync("""
+                        ALTER TABLE AtlassianIntegrationSettings
+                        ADD COLUMN JiraDefaultProjectKeys TEXT NOT NULL DEFAULT '';
+                        """, cancellationToken);
+                }
+            }
             if (!await MainColumnExistsAsync(connection, "AtlassianIntegrationSettings", "DefaultJiraTokenProtected", cancellationToken))
             {
                 await dbContext.Database.ExecuteSqlRawAsync("""

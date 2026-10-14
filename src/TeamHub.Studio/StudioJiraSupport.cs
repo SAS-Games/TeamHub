@@ -163,6 +163,7 @@ internal sealed class JiraStudioTicketService(
         {
             return NotConfigured("This studio does not have a Jira mapping. Ask an administrator to configure it.");
         }
+        mapping = mapping.WithDefaultProjectKeys(settings);
         if (mapping.JiraProjectKeys.Count == 0)
         {
             return NotConfigured("No Jira project key is configured for this studio.");
@@ -220,6 +221,7 @@ internal sealed class JiraStudioTicketService(
 
         var mappings = (await configurationService.ListStudioMappingsAsync(cancellationToken))
             .Where(mapping => studioIds.Contains(mapping.StudioId, StringComparer.OrdinalIgnoreCase))
+            .Select(mapping => mapping.WithDefaultProjectKeys(settings))
             .ToDictionary(mapping => mapping.StudioId, StringComparer.OrdinalIgnoreCase);
         var validMappings = new List<StudioAtlassianMapping>();
         foreach (var studioId in studioIds)

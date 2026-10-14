@@ -36,6 +36,12 @@
                         <span asp-validation-for="Settings.JiraBaseUrl" class="text-danger"></span>
                     </div>
                     <div class="row g-3">
+                        <div class="col-12">
+                            <label asp-for="Settings.JiraDefaultProjectKeys" class="form-label">Default Jira project key(s)</label>
+                            <input asp-for="Settings.JiraDefaultProjectKeys" class="form-control" placeholder="SIEHP" />
+                            <span asp-validation-for="Settings.JiraDefaultProjectKeys" class="text-danger"></span>
+                            <div class="form-text">Separate multiple keys with commas. Used for studios whose Jira project key(s) are blank, and as the allowed projects for milestone feedback, comments, and images. Milestone reviews do not require studio components; their Project Name is a display field, not a Jira project key.</div>
+                        </div>
                         <div class="col-md-8">
                             <label asp-for="Settings.JiraSearchApiPath" class="form-label">Search API path</label>
                             <input asp-for="Settings.JiraSearchApiPath" class="form-control" />
@@ -195,6 +201,7 @@
                         <div class="col-md-3">
                             <label asp-for="Mappings[index].JiraProjectKeys" class="form-label">Jira project key(s)</label>
                             <input asp-for="Mappings[index].JiraProjectKeys" class="form-control" placeholder="GAME, TOOLS" />
+                            <div class="form-text">Leave blank to use Default Jira project key(s). Enter keys here to override the defaults for this studio.</div>
                             <div class="form-text">Use the ticket prefix: GDS-123 means project key GDS. Separate multiple keys with commas.</div>
                         </div>
                         <div class="col-md-3">

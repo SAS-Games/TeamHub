@@ -46,6 +46,7 @@ public sealed class AtlassianModel(
                 JiraSearchApiPath = Settings.JiraSearchApiPath ?? string.Empty,
                 JiraMaxResults = Settings.JiraMaxResults,
                 JiraDefaultSupportComponent = Settings.JiraDefaultSupportComponent ?? string.Empty,
+                JiraDefaultProjectKeys = ParseProjectKeys(Settings.JiraDefaultProjectKeys),
                 ConfluenceEnabled = Settings.ConfluenceEnabled,
                 ConfluenceBaseUrl = Settings.ConfluenceBaseUrl ?? string.Empty,
                 ConfluenceContentApiPath = Settings.ConfluenceContentApiPath ?? string.Empty,
@@ -105,6 +106,7 @@ public sealed class AtlassianModel(
             JiraSearchApiPath = settings.JiraSearchApiPath,
             JiraMaxResults = settings.JiraMaxResults,
             JiraDefaultSupportComponent = settings.JiraDefaultSupportComponent,
+            JiraDefaultProjectKeys = string.Join(", ", settings.JiraDefaultProjectKeys),
             ConfluenceEnabled = settings.ConfluenceEnabled,
             ConfluenceBaseUrl = settings.ConfluenceBaseUrl,
             ConfluenceContentApiPath = settings.ConfluenceContentApiPath,
@@ -185,6 +187,7 @@ public sealed class AtlassianModel(
         [StringLength(512)] public string? JiraSearchApiPath { get; set; } = "/rest/api/2/search";
         [Range(1, 1000)] public int JiraMaxResults { get; set; } = 100;
         [StringLength(256)] public string? JiraDefaultSupportComponent { get; set; } = "StudioSupport";
+        [StringLength(2048)] public string? JiraDefaultProjectKeys { get; set; }
         public bool ConfluenceEnabled { get; set; }
         [StringLength(2048)] public string? ConfluenceBaseUrl { get; set; }
         [StringLength(512)] public string? ConfluenceContentApiPath { get; set; } = "/rest/api/content";

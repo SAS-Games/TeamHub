@@ -88,8 +88,18 @@ Team Hub stores the returned comment ID. Shared/read-only Jira credentials are
 rejected for this write operation. Feedback is persisted locally first; a Jira
 failure is recorded on the row and surfaced to the reviewer for retry. Jira
 projects may be shared by multiple studios. Ticket-only milestone sync, comment
-previews and images validate the actual ticket project and components against
-active studio mappings rather than requiring a unique project-prefix mapping.
+previews and images validate the ticket prefix and actual Jira project against
+the shared Default Jira project key(s) configured under Jira Access.
+They do not require studio mappings or components. The review's Project Name
+is display metadata, not a Jira project key. An empty allowed-key list denies
+milestone Jira access; credentials and Jira's own ticket permissions still apply.
+Blank per-studio Jira project keys inherit these defaults for ticket queries,
+batch Support Summary queries, comments, and images; explicit studio keys
+override rather than merge with defaults. Studio component checks still apply
+to studio-scoped requests. Inheritance is resolved at read time and does not
+populate saved studio fields, so future default changes affect inheriting studios.
+The initializer renames the previous milestone-only project-key column while
+preserving its saved values.
 Support Summary keeps its explicit studio scope. Both paths use the same Jira
 comment service and credential/image protections.
 

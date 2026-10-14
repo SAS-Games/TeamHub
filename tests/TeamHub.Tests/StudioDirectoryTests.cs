@@ -11,6 +11,70 @@ namespace TeamHub.Tests;
 
 public sealed class StudioDirectoryTests
 {
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(false, true)]
+    [InlineData(true, false)]
+    [InlineData(true, true)]
+    public async Task JiraTicketQueriesInheritDefaultsOnlyWhenStudioKeysAreBlank(bool batch, bool explicitKeys)
+    {
+        var dbPath = Path.Combine(Path.GetTempPath(), $"teamhub-default-projects-{Guid.NewGuid():N}.db");
+        var queries = new List<string>();
+        var handler = new StubHttpMessageHandler(request =>
+        {
+            queries.Add(Uri.UnescapeDataString(request.RequestUri!.Query));
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent("""{"startAt":0,"total":0,"issues":[]}""", Encoding.UTF8, "application/json")
+            };
+        });
+        try
+        {
+            await using var provider = CreateServices(dbPath, jiraHandler: handler);
+            await using var scope = provider.CreateAsyncScope();
+            await scope.ServiceProvider.GetRequiredService<IStudioDatabaseInitializer>().InitializeAsync();
+            var directory = scope.ServiceProvider.GetRequiredService<IStudioDirectoryService>();
+            var configuration = scope.ServiceProvider.GetRequiredService<IAtlassianConfigurationService>();
+            var studio = await directory.SaveStudioAsync(new StudioDetails { StudioName = "Studio", ProjectName = "Test" });
+            await configuration.SaveSettingsAsync(new AtlassianIntegrationSettings
+            {
+                JiraEnabled = true, JiraBaseUrl = "https://jira.example.test", JiraDefaultProjectKeys = ["SIEHP", "TOOLS"]
+            });
+            await configuration.SaveStudioMappingsAsync([new StudioAtlassianMapping
+            {
+                StudioId = studio.Id, JiraProjectKeys = explicitKeys ? ["OVERRIDE"] : [], JiraStudioComponent = "StudioA"
+            }]);
+            await configuration.SaveUserTokensAsync("person@example.com", "synthetic-token", null);
+            var service = scope.ServiceProvider.GetRequiredService<IStudioJiraTicketService>();
+            StudioJiraTicketResult result;
+            if (batch)
+                result = (await service.GetTicketsForStudiosAsync(new StudioJiraTicketBatchQuery
+                {
+                    StudioIds = [studio.Id], RequestingUserId = "person@example.com", ActiveSprintOnly = false
+                }))[studio.Id];
+            else
+                result = await service.GetTicketsAsync(new StudioJiraTicketQuery
+                {
+                    StudioId = studio.Id, RequestingUserId = "person@example.com", ActiveSprintOnly = false
+                });
+            result.IsConfigured.Should().BeTrue();
+            result.Message.Should().BeNullOrEmpty();
+            queries.Should().ContainSingle();
+            if (explicitKeys)
+                queries[0].Should().Contain("OVERRIDE").And.NotContain("SIEHP").And.NotContain("TOOLS");
+            else
+                queries[0].Should().Contain("SIEHP").And.Contain("TOOLS");
+            var stored = (await configuration.GetStudioMappingAsync(studio.Id))!;
+            stored.JiraProjectKeys.Should().Equal(explicitKeys ? ["OVERRIDE"] : Array.Empty<string>());
+            (await configuration.ListStudioMappingsAsync()).Single().JiraProjectKeys.Should().Equal(stored.JiraProjectKeys);
+        }
+        finally
+        {
+            SqliteConnection.ClearAllPools();
+            File.Delete(dbPath);
+        }
+    }
+
     [Fact]
     public void JiraTicketQuery_ReturnsOnlyTasksAndStories()
     {
