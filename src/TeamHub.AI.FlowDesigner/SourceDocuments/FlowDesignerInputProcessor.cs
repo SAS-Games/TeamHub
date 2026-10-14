@@ -1,4 +1,4 @@
-using Microsoft.Extensions.Options;
+using TeamHub.AI.Contracts;
 using TeamHub.AI.FlowDesigner.Contracts;
 
 namespace TeamHub.AI.FlowDesigner.SourceDocuments;
@@ -7,7 +7,7 @@ internal sealed record PreparedFlowDesignerInput(
     string Prompt,
     IReadOnlyList<FlowDesignerSourceDocument> SourceDocuments);
 
-internal sealed class FlowDesignerInputProcessor(IOptions<AiFlowDesignerOptions> options)
+internal sealed class FlowDesignerInputProcessor
 {
     private static readonly HashSet<string> SupportedMediaTypes = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -16,10 +16,11 @@ internal sealed class FlowDesignerInputProcessor(IOptions<AiFlowDesignerOptions>
         "text/x-markdown"
     };
 
-    public PreparedFlowDesignerInput Prepare(CreateFlowDiagramDraftRequest request)
+    public PreparedFlowDesignerInput Prepare(
+        CreateFlowDiagramDraftRequest request,
+        AiFlowDesignerOptions settings)
     {
         ArgumentNullException.ThrowIfNull(request);
-        var settings = options.Value;
         var prompt = request.Prompt?.Trim() ?? string.Empty;
         if (prompt.Length == 0)
         {

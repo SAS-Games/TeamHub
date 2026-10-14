@@ -1,5 +1,6 @@
 using System.Net;
 using System.Text;
+using System.Text.Json;
 using FluentAssertions;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -20,6 +21,7 @@ public sealed class AiModelProviderTests
         registry.GetRequired("ollama").Key.Should().Be(AiModelProviderKeys.Ollama);
         registry.GetRequired("LLAMACPP").Key.Should().Be(AiModelProviderKeys.LlamaCpp);
         registry.GetRequired("OPENAICOMPATIBLE").Key.Should().Be(AiModelProviderKeys.OpenAiCompatible);
+        registry.GetRequired("PFBAIGATEWAY").Key.Should().Be(AiModelProviderKeys.PfbAiGateway);
     }
 
     [Fact]
@@ -125,6 +127,134 @@ public sealed class AiModelProviderTests
         result.Provider.Should().Be(AiModelProviderKeys.OpenAiCompatible);
     }
 
+    [Fact]
+    public async Task Pfb_gateway_health_uses_portal_catalog_and_jwt_bearer_authentication()
+    {
+        var handler = new StubHttpMessageHandler(request =>
+        {
+            request.RequestUri.Should().Be("https://ai-gateway.example/portal/pfb/models");
+            request.Headers.Authorization!.Scheme.Should().Be("Bearer");
+            request.Headers.Authorization.Parameter.Should().Be("test-jwt");
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(
+                    """{"models":[{"id":"gpt-5-nano","cost_tier":"low"}]}""",
+                    Encoding.UTF8,
+                    "application/json")
+            };
+        });
+        var provider = new PfbAiGatewayModelProvider(
+            new StubHttpClientFactory(handler),
+            new TokenCredentialAccessor("test-jwt"));
+
+        var result = await provider.CheckHealthAsync(PfbSettings());
+
+        result.IsAvailable.Should().BeTrue();
+        result.IsModelAvailable.Should().BeTrue();
+        result.Provider.Should().Be(AiModelProviderKeys.PfbAiGateway);
+    }
+
+    [Fact]
+    public async Task Pfb_gateway_model_catalog_includes_metadata_for_the_configuration_picker()
+    {
+        var handler = new StubHttpMessageHandler(_ => JsonResponse(
+            """{"models":[{"id":"gpt-5-nano","cost_tier":"low","type":"chat","endpoints":["/pfb/common/v1/chat/completions"]},{"model_id":"claude-sonnet","costTier":"high","endpoint":"/pfb/common/v1/chat/completions"}]}"""));
+        var provider = new PfbAiGatewayModelProvider(
+            new StubHttpClientFactory(handler),
+            new TokenCredentialAccessor("test-jwt"));
+
+        var models = await provider.GetModelsAsync(PfbSettings());
+
+        models.Select(model => model.Id).Should().Equal("claude-sonnet", "gpt-5-nano");
+        models.Single(model => model.Id == "gpt-5-nano").CostTier.Should().Be("low");
+        models.Single(model => model.Id == "gpt-5-nano").Endpoints
+            .Should().ContainSingle("/pfb/common/v1/chat/completions");
+        models.Single(model => model.Id == "claude-sonnet").CostTier.Should().Be("high");
+    }
+
+    [Fact]
+    public async Task Pfb_gateway_common_chat_uses_gateway_route_and_returns_structured_content()
+    {
+        var handler = new StubHttpMessageHandler(request =>
+        {
+            request.RequestUri.Should().Be("https://ai-gateway.example/pfb/common/v1/chat/completions");
+            request.Headers.Authorization!.Parameter.Should().Be("test-jwt");
+            using var payload = JsonDocument.Parse(request.Content!.ReadAsStringAsync().GetAwaiter().GetResult());
+            payload.RootElement.GetProperty("model").GetString().Should().Be("gpt-5-nano");
+            payload.RootElement.TryGetProperty("response_format", out _).Should().BeFalse();
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(
+                    """{"id":"request-1","choices":[{"message":{"role":"assistant","content":"```json\n{\"answer\":true}\n```"}}]}""",
+                    Encoding.UTF8,
+                    "application/json")
+            };
+        });
+        var provider = new PfbAiGatewayModelProvider(
+            new StubHttpClientFactory(handler),
+            new TokenCredentialAccessor("test-jwt"));
+        using var schema = JsonDocument.Parse("""{"type":"object"}""");
+
+        var result = await provider.GenerateStructuredAsync(
+            PfbSettings(),
+            new AiStructuredGenerationRequest(
+                "Return JSON.",
+                "Create the result.",
+                schema.RootElement.Clone(),
+                1000));
+
+        result.Content.Should().Be("{\"answer\":true}");
+        result.Provider.Should().Be(AiModelProviderKeys.PfbAiGateway);
+    }
+
+    [Fact]
+    public async Task Pfb_gateway_open_ai_chat_sends_the_json_schema()
+    {
+        var handler = new StubHttpMessageHandler(request =>
+        {
+            request.RequestUri.Should().Be("https://ai-gateway.example/pfb/openai/v1/chat/completions");
+            using var payload = JsonDocument.Parse(request.Content!.ReadAsStringAsync().GetAwaiter().GetResult());
+            payload.RootElement.GetProperty("response_format").GetProperty("type").GetString()
+                .Should().Be("json_schema");
+            return JsonResponse("""{"choices":[{"message":{"role":"assistant","content":"{\"answer\":true}"}}]}""");
+        });
+        var provider = new PfbAiGatewayModelProvider(
+            new StubHttpClientFactory(handler),
+            new TokenCredentialAccessor("test-jwt"));
+        using var schema = JsonDocument.Parse("""{"type":"object"}""");
+        var settings = PfbSettings() with { ApiMode = PfbAiGatewayModelProvider.OpenAiChatMode };
+
+        var result = await provider.GenerateStructuredAsync(
+            settings,
+            new AiStructuredGenerationRequest("Return JSON.", "Create it.", schema.RootElement.Clone()));
+
+        result.Content.Should().Be("{\"answer\":true}");
+    }
+
+    [Fact]
+    public async Task Pfb_gateway_open_ai_responses_reads_output_text()
+    {
+        var handler = new StubHttpMessageHandler(request =>
+        {
+            request.RequestUri.Should().Be("https://ai-gateway.example/pfb/openai/v1/responses");
+            using var payload = JsonDocument.Parse(request.Content!.ReadAsStringAsync().GetAwaiter().GetResult());
+            payload.RootElement.GetProperty("text").GetProperty("format").GetProperty("type").GetString()
+                .Should().Be("json_schema");
+            return JsonResponse("""{"id":"response-1","output_text":"{\"answer\":true}"}""");
+        });
+        var provider = new PfbAiGatewayModelProvider(
+            new StubHttpClientFactory(handler),
+            new TokenCredentialAccessor("test-jwt"));
+        using var schema = JsonDocument.Parse("""{"type":"object"}""");
+        var settings = PfbSettings() with { ApiMode = PfbAiGatewayModelProvider.OpenAiResponsesMode };
+
+        var result = await provider.GenerateStructuredAsync(
+            settings,
+            new AiStructuredGenerationRequest("Return JSON.", "Create it.", schema.RootElement.Clone()));
+
+        result.Content.Should().Be("{\"answer\":true}");
+    }
+
     private static StubHttpMessageHandler CreateHealthyHandler(
         string expectedModelsEndpoint,
         string model) => new(request =>
@@ -138,6 +268,20 @@ public sealed class AiModelProviderTests
                 "application/json")
         };
     });
+
+    private static AiProviderSettings PfbSettings() => new(
+        AiModelProviderKeys.PfbAiGateway,
+        new Uri("https://ai-gateway.example"),
+        "gpt-5-nano",
+        0.2,
+        TimeSpan.FromSeconds(5),
+        "TEAMHUB_AI_PROVIDER_API_KEY",
+        PfbAiGatewayModelProvider.CommonChatMode);
+
+    private static HttpResponseMessage JsonResponse(string json) => new(HttpStatusCode.OK)
+    {
+        Content = new StringContent(json, Encoding.UTF8, "application/json")
+    };
 
     private static ServiceCollection CreateServices(
         HttpMessageHandler? handler = null,
@@ -182,6 +326,13 @@ public sealed class AiModelProviderTests
         public ValueTask<string?> GetCredentialAsync(
             AiProviderSettings settings,
             CancellationToken cancellationToken = default) => ValueTask.FromResult<string?>(null);
+    }
+
+    private sealed class TokenCredentialAccessor(string token) : IAiProviderCredentialAccessor
+    {
+        public ValueTask<string?> GetCredentialAsync(
+            AiProviderSettings settings,
+            CancellationToken cancellationToken = default) => ValueTask.FromResult<string?>(token);
     }
 
     private sealed class StubHttpClientFactory(HttpMessageHandler handler) : IHttpClientFactory

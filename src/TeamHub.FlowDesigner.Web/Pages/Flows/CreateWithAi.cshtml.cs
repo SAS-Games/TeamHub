@@ -4,7 +4,6 @@ using System.Text.Json;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
-using Microsoft.Extensions.Options;
 using TeamHub.AI.Contracts;
 using TeamHub.AI.FlowDesigner.Contracts;
 using TeamHub.FlowDesigner.Core.Contracts;
@@ -16,7 +15,7 @@ public sealed class CreateWithAiModel(
     IFlowHierarchyService hierarchies,
     IFlowSerializer serializer,
     IFlowPermissionService permissions,
-    IOptions<AiFlowDesignerOptions> options,
+    IAiConfigurationService aiConfiguration,
     IDataProtectionProvider dataProtection) : PageModel
 {
     private readonly IDataProtector draftProtector =
@@ -34,16 +33,18 @@ public sealed class CreateWithAiModel(
     public string? ProtectedDraft { get; set; }
 
     public FlowDiagramGenerationDraft? Preview { get; private set; }
-    public bool IsEnabled => options.Value.Enabled;
+    public bool IsEnabled { get; private set; }
 
-    public IActionResult OnGet()
+    public async Task<IActionResult> OnGetAsync(CancellationToken cancellationToken)
     {
+        IsEnabled = (await aiConfiguration.GetAsync(cancellationToken)).FlowDesigner.Enabled;
         if (!IsEnabled) return NotFound();
         return permissions.CanCreate() ? Page() : Forbid();
     }
 
     public async Task<IActionResult> OnPostGenerateAsync(CancellationToken cancellationToken)
     {
+        IsEnabled = (await aiConfiguration.GetAsync(cancellationToken)).FlowDesigner.Enabled;
         if (!IsEnabled) return NotFound();
         if (!permissions.CanCreate()) return Forbid();
 
@@ -98,6 +99,7 @@ public sealed class CreateWithAiModel(
 
     public async Task<IActionResult> OnPostConfirmAsync(CancellationToken cancellationToken)
     {
+        IsEnabled = (await aiConfiguration.GetAsync(cancellationToken)).FlowDesigner.Enabled;
         if (!IsEnabled) return NotFound();
         if (!permissions.CanCreate()) return Forbid();
         if (string.IsNullOrWhiteSpace(ProtectedDraft))

@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using TeamHub.AI.Application;
 using TeamHub.AI.Contracts;
 using TeamHub.AI.ModelProviders;
@@ -11,6 +12,28 @@ public static class AiServiceCollectionExtensions
     internal const string HttpClientName = "TeamHub.AI";
 
     public static IServiceCollection AddTeamHubAi(
+        this IServiceCollection services,
+        IConfiguration configuration)
+    {
+        services.AddTeamHubAiConfiguration(configuration);
+
+        services.AddHttpClient(HttpClientName, client =>
+        {
+            client.Timeout = Timeout.InfiniteTimeSpan;
+        });
+        services.TryAddScoped<IAiProviderCredentialAccessor>(provider =>
+            provider.GetRequiredService<IAiConfigurationService>());
+        services.AddScoped<IAiModelProvider, OllamaModelProvider>();
+        services.AddScoped<IAiModelProvider, LlamaCppModelProvider>();
+        services.AddScoped<IAiModelProvider, OpenAiCompatibleModelProvider>();
+        services.AddScoped<IAiModelProvider, PfbAiGatewayModelProvider>();
+        services.AddScoped<IAiModelProviderRegistry, AiModelProviderRegistry>();
+        services.AddScoped<IAiModelService, AiModelService>();
+
+        return services;
+    }
+
+    public static IServiceCollection AddTeamHubAiConfiguration(
         this IServiceCollection services,
         IConfiguration configuration)
     {
@@ -32,16 +55,11 @@ public static class AiServiceCollectionExtensions
                 "AI:TimeoutSeconds must be between 1 and 1800.")
             .ValidateOnStart();
 
-        services.AddHttpClient(HttpClientName, client =>
-        {
-            client.Timeout = Timeout.InfiniteTimeSpan;
-        });
-        services.AddSingleton<IAiProviderCredentialAccessor, EnvironmentAiProviderCredentialAccessor>();
-        services.AddSingleton<IAiModelProvider, OllamaModelProvider>();
-        services.AddSingleton<IAiModelProvider, LlamaCppModelProvider>();
-        services.AddSingleton<IAiModelProvider, OpenAiCompatibleModelProvider>();
-        services.AddSingleton<IAiModelProviderRegistry, AiModelProviderRegistry>();
-        services.AddSingleton<IAiModelService, AiModelService>();
+        services.AddOptions<AiFlowDesignerOptions>()
+            .Bind(configuration.GetSection(AiFlowDesignerOptions.SectionName));
+        services.AddOptions<AiReportGeneratorOptions>()
+            .Bind(configuration.GetSection(AiReportGeneratorOptions.SectionName));
+        services.TryAddScoped<IAiConfigurationService, OptionsAiConfigurationService>();
 
         return services;
     }

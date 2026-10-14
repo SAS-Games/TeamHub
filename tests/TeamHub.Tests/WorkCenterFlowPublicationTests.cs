@@ -94,6 +94,28 @@ public sealed class WorkCenterFlowPublicationTests
         configuration.SavedDraft.Should().BeNull();
     }
 
+    [Fact]
+    public async Task Publish_PreservesMultipleRecipientsAcrossEscalationLevels()
+    {
+        var configuration = new RecordingWorkflowConfigurationService();
+        var publisher = new WorkCenterFlowPublicationService(configuration, AdminContext());
+        var flow = OnboardingFlow();
+        var task = flow.Nodes.Single(node => node.Id == "approval");
+        task.CustomProperties["escalationAfterHours"] = "4";
+        task.CustomProperties["escalationOwner"] = "lead@company.com; manager@company.com";
+        task.CustomProperties["escalationLevel2AfterHours"] = "24";
+        task.CustomProperties["escalationLevel2Owners"] = "director@company.com";
+
+        var result = await publisher.PublishAsync(flow);
+
+        result.Success.Should().BeTrue();
+        var saved = configuration.SavedDraft!.Steps.Single(step => step.StepKey == "PIC_UAT_APPROVAL");
+        saved.EscalationAfterHours.Should().Be(4);
+        saved.EscalationOwner.Should().Be("lead@company.com; manager@company.com");
+        saved.EscalationLevel2AfterHours.Should().Be(24);
+        saved.EscalationLevel2Owners.Should().Be("director@company.com");
+    }
+
 
     [Fact]
     public async Task Publish_RequiresAdminRole()

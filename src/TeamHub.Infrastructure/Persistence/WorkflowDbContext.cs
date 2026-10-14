@@ -15,6 +15,7 @@ public sealed class WorkflowDbContext(DbContextOptions<WorkflowDbContext> option
     public DbSet<NotificationLog> NotificationLogs => Set<NotificationLog>();
     public DbSet<NotificationOutboxItem> NotificationOutbox => Set<NotificationOutboxItem>();
     public DbSet<EmailNotificationSettingsRecord> EmailNotificationSettings => Set<EmailNotificationSettingsRecord>();
+    public DbSet<AiConfigurationRecord> AiConfiguration => Set<AiConfigurationRecord>();
     public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
     public DbSet<WorkflowDraftDefinition> WorkflowDraftDefinitions => Set<WorkflowDraftDefinition>();
     public DbSet<WorkflowDraftStepDefinition> WorkflowDraftStepDefinitions => Set<WorkflowDraftStepDefinition>();
@@ -133,6 +134,13 @@ public sealed class WorkflowDbContext(DbContextOptions<WorkflowDbContext> option
             e.Property(x => x.DefaultCc).HasMaxLength(2000);
             e.Property(x => x.DefaultBcc).HasMaxLength(2000);
             e.Property(x => x.CompletionRecipient).HasMaxLength(320);
+        });
+
+        modelBuilder.Entity<AiConfigurationRecord>(e =>
+        {
+            e.ToTable("AiConfiguration");
+            e.Property(x => x.SettingsJson).IsRequired();
+            e.Property(x => x.UpdatedBy).HasMaxLength(320);
         });
 
         modelBuilder.Entity<AuditLog>(e =>

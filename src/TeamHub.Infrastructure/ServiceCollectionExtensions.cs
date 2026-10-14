@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using TeamHub.Application.Interfaces;
+using TeamHub.AI.Contracts;
 using TeamHub.Infrastructure.Options;
 using TeamHub.Infrastructure.Persistence;
 using TeamHub.Infrastructure.Scheduling;
@@ -32,6 +33,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<INotificationRecipientResolver, PassthroughNotificationRecipientResolver>();
         services.AddScoped<INotificationService, SmtpNotificationService>();
         services.AddScoped<IEmailOutboxProcessor, SmtpEmailOutboxProcessor>();
+        services.AddScoped<IAiConfigurationService, AiConfigurationService>();
         services.AddScoped<IWorkflowDatabaseInitializer, WorkflowDatabaseInitializer>();
         services.AddSingleton<IClock, SystemClock>();
 

@@ -1,4 +1,3 @@
-using Microsoft.Extensions.Options;
 using TeamHub.AI.Contracts;
 using TeamHub.AI.FlowDesigner.Contracts;
 using TeamHub.AI.FlowDesigner.SourceDocuments;
@@ -11,18 +10,19 @@ internal sealed class FlowDiagramGenerationWorkflow(
     FlowDesignerInputProcessor inputProcessor,
     FlowDiagramPromptBuilder promptBuilder,
     GeneratedFlowDiagramParser parser,
-    IOptions<AiFlowDesignerOptions> options) : IFlowDiagramGenerationWorkflow
+    IAiConfigurationService configuration) : IFlowDiagramGenerationWorkflow
 {
     public async Task<FlowDiagramGenerationDraft> CreateDraftAsync(
         CreateFlowDiagramDraftRequest request,
         CancellationToken cancellationToken = default)
     {
-        if (!options.Value.Enabled)
+        var options = (await configuration.GetAsync(cancellationToken)).FlowDesigner;
+        if (!options.Enabled)
         {
             throw new FlowDiagramGenerationException("AI Flow Designer is disabled.");
         }
 
-        var input = inputProcessor.Prepare(request);
+        var input = inputProcessor.Prepare(request, options);
         var health = await modelService.CheckHealthAsync(cancellationToken);
         if (!health.IsAvailable)
         {
@@ -38,15 +38,15 @@ internal sealed class FlowDiagramGenerationWorkflow(
 
         var modelRequest = promptBuilder.Build(
             input,
-            options.Value.MaximumOutputTokens,
-            options.Value.MaximumDiagrams,
-            options.Value.MaximumHierarchyDepth);
+            options.MaximumOutputTokens,
+            options.MaximumDiagrams,
+            options.MaximumHierarchyDepth);
         var generation = await modelService.GenerateStructuredAsync(modelRequest, cancellationToken);
         var parsed = parser.Parse(
             generation,
             input.SourceDocuments.Select(document => document.Id).ToList(),
-            options.Value.MaximumDiagrams,
-            options.Value.MaximumHierarchyDepth);
+            options.MaximumDiagrams,
+            options.MaximumHierarchyDepth);
 
         return new FlowDiagramGenerationDraft(
             parsed.Diagram,

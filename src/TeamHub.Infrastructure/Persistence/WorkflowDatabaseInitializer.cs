@@ -40,6 +40,14 @@ internal sealed class WorkflowDatabaseInitializer(WorkflowDbContext dbContext) :
                 UpdatedAtUtc TEXT NOT NULL
             );
 
+            CREATE TABLE IF NOT EXISTS AiConfiguration (
+                Id INTEGER NOT NULL CONSTRAINT PK_AiConfiguration PRIMARY KEY,
+                SettingsJson TEXT NOT NULL,
+                CredentialProtected TEXT NULL,
+                UpdatedAtUtc TEXT NOT NULL,
+                UpdatedBy TEXT NOT NULL
+            );
+
             INSERT OR IGNORE INTO EmailNotificationSettings (
                 Id, Enabled, Host, Port, Username, PasswordProtected, FromAddress, UseSsl,
                 DefaultCc, DefaultBcc, CompletionRecipient, MaxDeliveryAttempts, RetryDelayMinutes,
@@ -117,20 +125,22 @@ internal sealed class WorkflowDatabaseInitializer(WorkflowDbContext dbContext) :
             .Where(step => !step.Assignees.Any())
             .ToListAsync(cancellationToken);
 
+        var legacyAssignees = new List<WorkflowStepAssignee>();
         foreach (var step in stepsWithoutAssignees)
         {
             foreach (var email in WorkflowAssigneeEmails.Parse(step.Owner))
             {
-                step.Assignees.Add(new WorkflowStepAssignee
+                legacyAssignees.Add(new WorkflowStepAssignee
                 {
-                    WorkflowStepInstance = step,
+                    WorkflowStepInstanceId = step.Id,
                     Email = email
                 });
             }
         }
 
-        if (stepsWithoutAssignees.Count > 0)
+        if (legacyAssignees.Count > 0)
         {
+            dbContext.WorkflowStepAssignees.AddRange(legacyAssignees);
             await dbContext.SaveChangesAsync(cancellationToken);
         }
     }

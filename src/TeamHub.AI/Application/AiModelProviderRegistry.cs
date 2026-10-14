@@ -29,23 +29,30 @@ internal sealed class AiModelProviderRegistry : IAiModelProviderRegistry
 }
 
 internal sealed class AiModelService(
-    IOptionsMonitor<AiRuntimeOptions> options,
+    IAiConfigurationService configuration,
     IAiModelProviderRegistry providers) : IAiModelService
 {
-    public Task<AiProviderHealthResult> CheckHealthAsync(CancellationToken cancellationToken = default)
+    public async Task<AiProviderHealthResult> CheckHealthAsync(CancellationToken cancellationToken = default)
     {
-        var current = options.CurrentValue;
-        return providers.GetRequired(current.Provider)
+        var current = (await configuration.GetAsync(cancellationToken)).Runtime;
+        return await providers.GetRequired(current.Provider)
             .CheckHealthAsync(current.ToProviderSettings(), cancellationToken);
     }
 
-    public Task<AiStructuredGenerationResult> GenerateStructuredAsync(
+    public async Task<AiProviderHealthResult> TestConnectionAsync(CancellationToken cancellationToken = default)
+    {
+        var current = (await configuration.GetAsync(cancellationToken)).Runtime;
+        return await providers.GetRequired(current.Provider)
+            .TestConnectionAsync(current.ToProviderSettings(), cancellationToken);
+    }
+
+    public async Task<AiStructuredGenerationResult> GenerateStructuredAsync(
         AiStructuredGenerationRequest request,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
-        var current = options.CurrentValue;
-        return providers.GetRequired(current.Provider)
+        var current = (await configuration.GetAsync(cancellationToken)).Runtime;
+        return await providers.GetRequired(current.Provider)
             .GenerateStructuredAsync(current.ToProviderSettings(), request, cancellationToken);
     }
 }
