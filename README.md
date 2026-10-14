@@ -66,7 +66,7 @@ Email delivery is configured by an administrator under **Configuration > Email S
 
 ## Local AI runtime
 
-Administrators configure AI under **Configuration > AI Services**. The page selects the provider and model, manages the encrypted provider credential, tests connectivity, and enables AI-assisted features without restarting Team Hub. Team Hub supports `Ollama`, `LlamaCpp`, a generic `OpenAICompatible` provider, and the Sony PFB AI Gateway. PFB uses JWT bearer authentication, discovers models through `/portal/pfb/models`, and supports its common chat, OpenAI chat-completions, and OpenAI Responses routes. Values in `appsettings.json` are bootstrap defaults used until an administrator saves database-backed settings.
+Administrators configure AI under **Configuration > AI Services**. The page selects the provider and model, manages the encrypted provider credential, tests connectivity, and enables AI-assisted features without restarting Team Hub. Team Hub supports `Ollama`, `LlamaCpp`, a generic `OpenAICompatible` provider, and the Sony PFB AI Gateway. PFB uses JWT bearer authentication, discovers models through `/portal/pfb/models`, and supports its common chat, OpenAI chat-completions, and OpenAI Responses routes. New installations use safe built-in defaults until an administrator saves database-backed settings; no AI section is required in `appsettings.json`.
 
 ### Jira comment preview
 

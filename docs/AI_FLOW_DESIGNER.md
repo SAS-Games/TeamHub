@@ -48,7 +48,7 @@ The first backend slice is available in `src/TeamHub.AI.FlowDesigner`:
 - Strict output parsing and evidence-reference checks.
 - Mapping to existing Flow Designer node types, `customProperties.notes`, `output_N` / `input_N` connector pins, and `top-bottom` port layout.
 - Deterministic draft layout followed by `IFlowValidator` validation.
-- Disabled-by-default production registration under `AI:FlowDesigner`; the local Development profile enables it for testing.
+- Disabled by default until an administrator enables it under **Configuration > AI Services**.
 - A Flow Designer **Create with AI** page for up to 10 pasted sources, generated-node/connection preview, warnings, and evidence.
 - A protected full-hierarchy preview and explicit confirmation through the existing `IFlowHierarchyService`.
 - Bounded root/child generation with one-parent ownership, no orphans or cycles, and defaults of 12 diagrams and four hierarchy levels.
