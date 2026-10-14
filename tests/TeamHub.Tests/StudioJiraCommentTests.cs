@@ -289,6 +289,108 @@ public sealed class StudioJiraCommentTests
     }
 
     [Fact]
+    public async Task MilestoneFeedbackSyncsSharedProjectTicketUsingItsActualStudioComponent()
+    {
+        var writes = new List<string>();
+        await using var host = await Host.CreateAsync(request =>
+        {
+            request.Headers.Authorization!.Parameter.Should().Be("personal-test-token");
+            if (request.Method == HttpMethod.Put || request.Method == HttpMethod.Post)
+            {
+                writes.Add(request.RequestUri!.AbsolutePath);
+                return Json("""{"id":"42"}""");
+            }
+            if (request.RequestUri!.AbsolutePath.EndsWith("/comment"))
+                return Json("""{"total":0,"comments":[]}""");
+            return Json(IssueJson.Replace("SUP", "SIEHP").Replace("StudioA", "StudioB"));
+        });
+        await host.ConfigureSharedProjectAsync("SIEHP");
+        var feedback = new StudioJiraMilestoneReviewCommentRequest(
+            "SIEHP-1206", host.Query.RequestingUserId, Guid.NewGuid(), null,
+            "Project", "Milestone", "Reviewer", "PC", "Good", "Improve", "Art");
+        var created = await host.Service.UpsertMilestoneReviewCommentAsync(feedback);
+        var updated = await host.Service.UpsertMilestoneReviewCommentAsync(feedback with { CommentId = created.CommentId });
+        updated.CommentId.Should().Be("42");
+        writes.Should().Equal("/rest/api/2/issue/SIEHP-1206/comment", "/rest/api/2/issue/SIEHP-1206/comment/42");
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task TicketOnlyPreviewsAndImagesWorkWhenProjectIsSharedAcrossStudios(bool image)
+    {
+        await using var host = await Host.CreateAsync(request =>
+        {
+            if (request.RequestUri!.AbsolutePath.Contains("/secure/attachment/")) return Png();
+            if (request.RequestUri.AbsolutePath.EndsWith("/comment/10")) return Json(CommentJson);
+            if (request.RequestUri.AbsolutePath.EndsWith("/comment")) return Json($$"""{"total":1,"comments":[{{CommentJson}}]}""");
+            return Json(IssueJson.Replace("SUP", "SIEHP").Replace("StudioA", "StudioB"));
+        });
+        await host.ConfigureSharedProjectAsync("SIEHP");
+        var query = host.Query with { StudioId = null, TicketId = "SIEHP-1206" };
+        if (image)
+            (await host.Service.GetImageAsync(query, "10", "11")).ContentType.Should().Be("image/png");
+        else
+            (await host.Service.GetCommentsAsync(query)).Comments.Should().ContainSingle().Which.Id.Should().Be("10");
+        var wrongStudio = () => host.Service.GetCommentsAsync(query with { StudioId = host.Query.StudioId });
+        await wrongStudio.Should().ThrowAsync<StudioJiraCommentException>().WithMessage("*selected studio*scope*");
+    }
+
+    [Theory]
+    [InlineData("AnotherStudio", "SUP")]
+    [InlineData("StudioB", "UNMAPPED")]
+    public async Task TicketOnlyRequestsRejectUnmatchedActualProjectOrComponentBeforeReadingOrWritingComments(
+        string component, string project)
+    {
+        var calls = new List<string>();
+        await using var host = await Host.CreateAsync(request =>
+        {
+            calls.Add(request.RequestUri!.AbsolutePath);
+            return Json(IssueJson.Replace("SUP", project).Replace("StudioA", component));
+        });
+        await host.ConfigureSharedProjectAsync();
+        var query = host.Query with { StudioId = null };
+        var read = () => host.Service.GetCommentsAsync(query);
+        await read.Should().ThrowAsync<StudioJiraCommentException>().WithMessage("*configured Jira scope*");
+        var write = () => host.Service.UpsertMilestoneReviewCommentAsync(new(
+            query.TicketId, query.RequestingUserId, Guid.NewGuid(), "42",
+            "Project", "Milestone", "Reviewer", "", "", "", ""));
+        await write.Should().ThrowAsync<StudioJiraCommentException>().WithMessage("*configured Jira scope*");
+        calls.Should().Equal("/rest/api/2/issue/SUP-1", "/rest/api/2/issue/SUP-1");
+    }
+
+    [Fact]
+    public async Task TicketOnlyRequestsRejectInactiveMappingsAndMissingProjectBeforeNetworkRequest()
+    {
+        var calls = 0;
+        await using var host = await Host.CreateAsync(_ => { calls++; return Json(IssueJson); });
+        var unmapped = () => host.Service.GetCommentsAsync(host.Query with { StudioId = null, TicketId = "UNMAPPED-1" });
+        await unmapped.Should().ThrowAsync<StudioJiraCommentException>().WithMessage("*not mapped*");
+        await host.DeactivateStudioAsync();
+        var inactive = () => host.Service.GetCommentsAsync(host.Query with { StudioId = null });
+        await inactive.Should().ThrowAsync<StudioJiraCommentException>().WithMessage("*not mapped*");
+        calls.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task TicketOnlyPreviewsRetainExplicitSharedReadOnlyCredentialGrant()
+    {
+        await using var host = await Host.CreateAsync(request =>
+        {
+            request.Headers.Authorization!.Parameter.Should().Be("shared-test-token");
+            return Json(request.RequestUri!.AbsolutePath.EndsWith("/comment")
+                ? """{"total":0,"comments":[]}""" : IssueJson.Replace("StudioA", "StudioB"));
+        });
+        await host.ConfigureSharedProjectAsync();
+        await host.ConfigureSharedAccessAsync();
+        var query = host.Query with { StudioId = null };
+        var denied = () => host.Service.GetCommentsAsync(query);
+        await denied.Should().ThrowAsync<StudioJiraCommentException>().WithMessage("*credential*");
+        (await host.Service.GetCommentsAsync(query with { AllowPrivilegedDefaultCredential = true }))
+            .IsUsingSharedCredential.Should().BeTrue();
+    }
+
+    [Fact]
     public void WikiBody_RendersExternalImagesAsLinksAndNeverRendersRawHtml()
     {
         using var body = JsonDocument.Parse(JsonSerializer.Serialize(
@@ -404,9 +506,20 @@ public sealed class StudioJiraCommentTests
         public async Task DeactivateStudioAsync()
         {
             var directory = scope.ServiceProvider.GetRequiredService<IStudioDirectoryService>();
-            var studio = await directory.GetStudioAsync(query.StudioId);
+            var studio = await directory.GetStudioAsync(query.StudioId!);
             studio!.IsActive = false;
             await directory.SaveStudioAsync(studio);
+        }
+        public async Task ConfigureSharedProjectAsync(string projectKey = "SUP")
+        {
+            var directory = scope.ServiceProvider.GetRequiredService<IStudioDirectoryService>();
+            var second = await directory.SaveStudioAsync(new StudioDetails
+            {
+                StudioName = "Studio B", ProjectName = "Project", IsActive = true
+            });
+            await scope.ServiceProvider.GetRequiredService<IAtlassianConfigurationService>().SaveStudioMappingsAsync([
+                new StudioAtlassianMapping { StudioId = query.StudioId!, JiraProjectKeys = [projectKey], JiraStudioComponent = "StudioA" },
+                new StudioAtlassianMapping { StudioId = second.Id, JiraProjectKeys = [projectKey], JiraStudioComponent = "StudioB" }]);
         }
         public static async Task<Host> CreateAsync(Func<HttpRequestMessage, HttpResponseMessage> respond)
         {

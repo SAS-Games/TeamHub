@@ -6,7 +6,7 @@ using System.Text.RegularExpressions;
 namespace TeamHub.Studio;
 
 public sealed record StudioJiraCommentQuery(
-    string StudioId, string TicketId, string RequestingUserId, bool AllowPrivilegedDefaultCredential);
+    string? StudioId, string TicketId, string RequestingUserId, bool AllowPrivilegedDefaultCredential);
 
 public sealed record StudioJiraCommentPart(string Kind, string Text, string? Url = null, string? AttachmentId = null);
 public sealed record StudioJiraComment(
@@ -136,35 +136,10 @@ internal sealed partial class JiraStudioCommentService(
             || request.FeedbackId == Guid.Empty)
             throw new StudioJiraCommentException("A valid Jira ticket, reviewer, and feedback row are required.");
 
-        var prefix = request.TicketId[..request.TicketId.LastIndexOf('-')];
-        var candidates = new List<string>();
-        foreach (var studio in (await studioDirectory.GetStudiosAsync(cancellationToken)).Where(item => item.IsActive))
-        {
-            var mapping = await configuration.GetStudioMappingAsync(studio.Id, cancellationToken);
-            if (mapping is not null
-                && mapping.JiraProjectKeys.Contains(prefix, StringComparer.OrdinalIgnoreCase)
-                && !string.IsNullOrWhiteSpace(mapping.JiraStudioComponent))
-                candidates.Add(studio.Id);
-        }
-        if (candidates.Count != 1)
-            throw new StudioJiraCommentException(candidates.Count == 0
-                ? "The Jira ticket project is not mapped to an active studio."
-                : "The Jira ticket project maps to multiple studios. Configure a unique project mapping before syncing feedback.");
-
-        IssueContext context;
-        try
-        {
-            context = await GetIssueContextAsync(
-                new StudioJiraCommentQuery(candidates[0], request.TicketId, request.RequestingUserId, false),
-                cancellationToken,
-                requirePersonalWriteCredential: true);
-        }
-        catch (StudioJiraCommentException)
-        {
-            throw;
-        }
-        if (context.Credential.IsShared || context.Credential.IsReadOnly)
-            throw new StudioJiraCommentException("Milestone feedback requires your personal Jira connection with permission to create and edit comments. Shared read-only access cannot be used.");
+        var context = await GetIssueContextAsync(
+            new StudioJiraCommentQuery(null, request.TicketId, request.RequestingUserId, false),
+            cancellationToken,
+            requirePersonalWriteCredential: true);
 
         var marker = $"[TeamHub Milestone Review Feedback: {request.FeedbackId:D}]";
         if (!string.IsNullOrWhiteSpace(request.CommentId) && !NumericId().IsMatch(request.CommentId))
@@ -274,19 +249,15 @@ internal sealed partial class JiraStudioCommentService(
         CancellationToken cancellationToken,
         bool requirePersonalWriteCredential = false)
     {
-        if (string.IsNullOrWhiteSpace(query.RequestingUserId) || string.IsNullOrWhiteSpace(query.StudioId)
+        if (string.IsNullOrWhiteSpace(query.RequestingUserId)
+            || (query.StudioId is not null && string.IsNullOrWhiteSpace(query.StudioId))
             || string.IsNullOrWhiteSpace(query.TicketId) || !TicketKey().IsMatch(query.TicketId))
             throw new StudioJiraCommentException("Select a valid ticket and sign in to view comments.");
-        var studio = await studioDirectory.GetStudioAsync(query.StudioId, cancellationToken);
-        if (studio is null || !studio.IsActive)
-            throw new StudioJiraCommentException("The selected studio is not active.");
+        var mappings = await GetIssueMappingsAsync(query, cancellationToken);
         var settings = await configuration.GetSettingsAsync(cancellationToken);
         if (!settings.JiraEnabled || !Uri.TryCreate(settings.JiraBaseUrl, UriKind.Absolute, out var baseUri)
             || baseUri.Scheme is not ("https" or "http") || baseUri.UserInfo.Length != 0)
             throw new StudioJiraCommentException("Jira integration is disabled or its base URL is not configured.");
-        var mapping = await configuration.GetStudioMappingAsync(query.StudioId, cancellationToken);
-        if (mapping is null || mapping.JiraProjectKeys.Count == 0 || string.IsNullOrWhiteSpace(mapping.JiraStudioComponent))
-            throw new StudioJiraCommentException("The selected studio does not have a complete Jira mapping.");
         AtlassianResolvedCredential? credential;
         try
         {
@@ -301,6 +272,8 @@ internal sealed partial class JiraStudioCommentService(
             throw new StudioJiraCommentException(requirePersonalWriteCredential
                 ? "Milestone feedback requires your personal Jira connection with permission to create and edit comments."
                 : "No Jira credential is available. Connect your account in My Atlassian Connection or ask an administrator to grant shared read-only access.");
+        if (requirePersonalWriteCredential && (credential.IsShared || credential.IsReadOnly))
+            throw new StudioJiraCommentException("Milestone feedback requires your personal Jira connection with permission to create and edit comments. Shared read-only access cannot be used.");
         var baseUrl = settings.JiraBaseUrl.TrimEnd('/');
         var issueUrl = $"{baseUrl}/rest/api/2/issue/{Uri.EscapeDataString(query.TicketId)}";
         using var document = await GetJsonAsync(
@@ -308,17 +281,46 @@ internal sealed partial class JiraStudioCommentService(
         var root = document.RootElement;
         var fields = root.GetProperty("fields");
         var projectKey = fields.GetProperty("project").GetProperty("key").GetString();
-        var componentMatches = fields.GetProperty("components").EnumerateArray()
-            .Any(component => string.Equals(component.GetProperty("name").GetString(),
-                mapping.JiraStudioComponent, StringComparison.OrdinalIgnoreCase));
-        if (!mapping.JiraProjectKeys.Contains(projectKey, StringComparer.OrdinalIgnoreCase) || !componentMatches)
-            throw new StudioJiraCommentException("This ticket does not belong to the selected studio's configured Jira scope.");
+        var components = fields.GetProperty("components").EnumerateArray()
+            .Select(component => component.GetProperty("name").GetString()).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        if (!mappings.Any(mapping => mapping.JiraProjectKeys.Contains(projectKey, StringComparer.OrdinalIgnoreCase)
+            && components.Contains(mapping.JiraStudioComponent)))
+            throw new StudioJiraCommentException(query.StudioId is null
+                ? "This ticket does not belong to any active studio's configured Jira scope. Check its project and studio component."
+                : "This ticket does not belong to the selected studio's configured Jira scope.");
         var attachments = fields.GetProperty("attachment").EnumerateArray().Select(item => new JiraCommentAttachment(
             item.GetProperty("id").GetString() ?? "",
             item.GetProperty("filename").GetString() ?? "",
             item.GetProperty("content").GetString() ?? "",
             item.GetProperty("mimeType").GetString() ?? "")).ToList();
         return new IssueContext(baseUrl, issueUrl, credential, attachments);
+    }
+
+    private async Task<IReadOnlyList<StudioAtlassianMapping>> GetIssueMappingsAsync(
+        StudioJiraCommentQuery query, CancellationToken cancellationToken)
+    {
+        if (query.StudioId is not null)
+        {
+            var studio = await studioDirectory.GetStudioAsync(query.StudioId, cancellationToken);
+            if (studio is null || !studio.IsActive)
+                throw new StudioJiraCommentException("The selected studio is not active.");
+            var mapping = await configuration.GetStudioMappingAsync(query.StudioId, cancellationToken);
+            if (mapping is null || mapping.JiraProjectKeys.Count == 0 || string.IsNullOrWhiteSpace(mapping.JiraStudioComponent))
+                throw new StudioJiraCommentException("The selected studio does not have a complete Jira mapping.");
+            return [mapping];
+        }
+
+        // Ticket-only requests are scoped by the actual Jira project and components, not a unique project prefix.
+        var activeIds = (await studioDirectory.GetStudiosAsync(cancellationToken))
+            .Where(studio => studio.IsActive).Select(studio => studio.Id).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var prefix = query.TicketId[..query.TicketId.LastIndexOf('-')];
+        var mappings = (await configuration.ListStudioMappingsAsync(cancellationToken))
+            .Where(mapping => activeIds.Contains(mapping.StudioId)
+                && mapping.JiraProjectKeys.Contains(prefix, StringComparer.OrdinalIgnoreCase)
+                && !string.IsNullOrWhiteSpace(mapping.JiraStudioComponent)).ToList();
+        if (mappings.Count == 0)
+            throw new StudioJiraCommentException("The Jira ticket project is not mapped to an active studio.");
+        return mappings;
     }
 
     private async Task<JsonDocument> GetJsonAsync(string url, AtlassianResolvedCredential credential, CancellationToken cancellationToken)

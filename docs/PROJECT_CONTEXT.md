@@ -87,7 +87,11 @@ feedback ID marker provides safe retry reconciliation if Jira succeeds before
 Team Hub stores the returned comment ID. Shared/read-only Jira credentials are
 rejected for this write operation. Feedback is persisted locally first; a Jira
 failure is recorded on the row and surfaced to the reviewer for retry. Jira
-comment history remains a future read-only feature.
+projects may be shared by multiple studios. Ticket-only milestone sync, comment
+previews and images validate the actual ticket project and components against
+active studio mappings rather than requiring a unique project-prefix mapping.
+Support Summary keeps its explicit studio scope. Both paths use the same Jira
+comment service and credential/image protections.
 
 The separate SQLite database initializer adds new Jira/reviewer columns to
 existing Milestone Review databases without replacing their persisted reviews.

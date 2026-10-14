@@ -16,8 +16,6 @@ public sealed partial class MilestoneReviewModel(
     IMilestoneReviewUserDirectory reviewUsers,
     ICurrentAccessService access,
     IStudioJiraCommentService comments,
-    IStudioDirectoryService studioDirectory,
-    IAtlassianConfigurationService configuration,
     ISafeMarkdownRenderer markdown,
     ILogger<MilestoneReviewModel> logger) : PageModel
 {
@@ -333,29 +331,8 @@ public sealed partial class MilestoneReviewModel(
         if (string.IsNullOrWhiteSpace(ticketId) || !TicketKey().IsMatch(ticketId))
             return JiraFailure("Select a valid Jira ticket.", StatusCodes.Status400BadRequest);
 
-        var prefix = ticketId[..ticketId.LastIndexOf('-')];
-        var candidates = new List<string>();
-        foreach (var studio in (await studioDirectory.GetStudiosAsync(cancellationToken)).Where(item => item.IsActive))
-        {
-            var mapping = await configuration.GetStudioMappingAsync(studio.Id, cancellationToken);
-            if (mapping is not null
-                && mapping.JiraProjectKeys.Contains(prefix, StringComparer.OrdinalIgnoreCase)
-                && !string.IsNullOrWhiteSpace(mapping.JiraStudioComponent))
-            {
-                candidates.Add(studio.Id);
-            }
-        }
-        if (candidates.Count != 1)
-        {
-            return JiraFailure(candidates.Count == 0
-                ? "The Jira ticket project is not mapped to an active studio."
-                : "The Jira ticket project maps to multiple studios. Configure a unique project mapping before viewing comments.",
-                StatusCodes.Status400BadRequest);
-        }
-
-        var studioId = candidates[0];
         var query = new StudioJiraCommentQuery(
-            studioId, ticketId, User.Identity?.Name ?? "", User.IsInRole(TeamHubUserTypes.Privileged));
+            null, ticketId, User.Identity?.Name ?? "", User.IsInRole(TeamHubUserTypes.Privileged));
         try
         {
             if (isImage)

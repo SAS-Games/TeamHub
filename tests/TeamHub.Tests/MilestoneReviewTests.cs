@@ -919,13 +919,38 @@ public sealed class MilestoneReviewTests : IAsyncLifetime
         json.StatusCode.Should().Be(404);
     }
 
-    private static MilestoneReviewModel CreateModel(IMilestoneReviewService reviewService, bool allowed) =>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task MilestoneJiraPreviewDelegatesTicketScopeResolutionToSharedService(bool image)
+    {
+        var comments = new StubCommentService();
+        var model = CreateModel(service, true, comments);
+        model.HttpContext.User = new System.Security.Claims.ClaimsPrincipal(
+            new System.Security.Claims.ClaimsIdentity([
+                new System.Security.Claims.Claim(System.Security.Claims.ClaimTypes.Name, "reader@example.com"),
+                new System.Security.Claims.Claim(System.Security.Claims.ClaimTypes.Role, TeamHubUserTypes.Privileged)
+            ], "Test"));
+        var result = image
+            ? await model.OnGetImageAsync("SIEHP-1206", "10", "11", CancellationToken.None)
+            : await model.OnGetCommentsAsync("SIEHP-1206", CancellationToken.None);
+        if (image) result.Should().BeOfType<FileContentResult>();
+        else result.Should().BeOfType<JsonResult>();
+        comments.LastQuery!.StudioId.Should().BeNull();
+        comments.LastQuery.TicketId.Should().Be("SIEHP-1206");
+        comments.LastQuery.RequestingUserId.Should().Be("reader@example.com");
+        comments.LastQuery.AllowPrivilegedDefaultCredential.Should().BeTrue();
+        model.Response.Headers.CacheControl.ToString().Should().Be("no-store");
+        var denied = CreateModel(service, false, new StubCommentService());
+        (await denied.OnGetCommentsAsync("SIEHP-1206", CancellationToken.None)).Should().BeOfType<ForbidResult>();
+    }
+
+    private static MilestoneReviewModel CreateModel(IMilestoneReviewService reviewService, bool allowed,
+        StubCommentService? comments = null) =>
         new(reviewService,
             new StubUserDirectory([]),
             new StubAccess(allowed),
-            new StubCommentService(),
-            new StubStudioDirectory(),
-            new StubConfigurationService(),
+            comments ?? new StubCommentService(),
             new TeamHub.Web.Formatting.SafeMarkdownRenderer(),
             NullLogger<MilestoneReviewModel>.Instance)
         {
@@ -944,55 +969,21 @@ public sealed class MilestoneReviewTests : IAsyncLifetime
 
     private sealed class StubCommentService : IStudioJiraCommentService
     {
-        public Task<StudioJiraCommentResult> GetCommentsAsync(StudioJiraCommentQuery query, CancellationToken cancellationToken = default) =>
-            Task.FromResult(new StudioJiraCommentResult(query.TicketId, "https://jira.example.test", false, []));
+        public StudioJiraCommentQuery? LastQuery { get; private set; }
+        public Task<StudioJiraCommentResult> GetCommentsAsync(StudioJiraCommentQuery query, CancellationToken cancellationToken = default)
+        {
+            LastQuery = query;
+            return Task.FromResult(new StudioJiraCommentResult(query.TicketId, "https://jira.example.test", false, []));
+        }
 
-        public Task<StudioJiraCommentImage> GetImageAsync(StudioJiraCommentQuery query, string commentId, string attachmentId, CancellationToken cancellationToken = default) =>
-            Task.FromResult(new StudioJiraCommentImage([], "image/png"));
+        public Task<StudioJiraCommentImage> GetImageAsync(StudioJiraCommentQuery query, string commentId, string attachmentId, CancellationToken cancellationToken = default)
+        {
+            LastQuery = query;
+            return Task.FromResult(new StudioJiraCommentImage([], "image/png"));
+        }
 
         public Task<StudioJiraMilestoneReviewCommentResult> UpsertMilestoneReviewCommentAsync(StudioJiraMilestoneReviewCommentRequest request, CancellationToken cancellationToken = default) =>
             Task.FromResult(new StudioJiraMilestoneReviewCommentResult("42"));
     }
 
-    private sealed class StubStudioDirectory : IStudioDirectoryService
-    {
-        public Task<IReadOnlyList<StudioDetails>> GetStudiosAsync(CancellationToken cancellationToken = default) =>
-            Task.FromResult<IReadOnlyList<StudioDetails>>([]);
-        public Task<StudioDetails?> GetStudioAsync(string id, CancellationToken cancellationToken = default) =>
-            Task.FromResult<StudioDetails?>(null);
-        public Task<StudioDetails> SaveStudioAsync(StudioDetails studio, CancellationToken cancellationToken = default) =>
-            Task.FromResult(studio);
-        public Task DeleteStudioAsync(string id, CancellationToken cancellationToken = default) =>
-            Task.CompletedTask;
-    }
-
-    private sealed class StubConfigurationService : IAtlassianConfigurationService
-    {
-        public Task<AtlassianIntegrationSettings> GetSettingsAsync(CancellationToken cancellationToken = default) =>
-            Task.FromResult(new AtlassianIntegrationSettings());
-        public Task SaveSettingsAsync(AtlassianIntegrationSettings settings, CancellationToken cancellationToken = default) =>
-            Task.CompletedTask;
-        public Task<IReadOnlyList<StudioAtlassianMapping>> ListStudioMappingsAsync(CancellationToken cancellationToken = default) =>
-            Task.FromResult<IReadOnlyList<StudioAtlassianMapping>>([]);
-        public Task<StudioAtlassianMapping?> GetStudioMappingAsync(string studioId, CancellationToken cancellationToken = default) =>
-            Task.FromResult<StudioAtlassianMapping?>(null);
-        public Task SaveStudioMappingsAsync(IReadOnlyCollection<StudioAtlassianMapping> mappings, CancellationToken cancellationToken = default) =>
-            Task.CompletedTask;
-        public Task<AtlassianConnectionStatus> GetConnectionStatusAsync(string userId, CancellationToken cancellationToken = default) =>
-            Task.FromResult(new AtlassianConnectionStatus(false, null, false, null));
-        public Task SaveUserTokensAsync(string userId, string? jiraToken, string? confluenceToken, bool removeJiraToken = false, bool removeConfluenceToken = false, CancellationToken cancellationToken = default) =>
-            Task.CompletedTask;
-        public Task<AtlassianDefaultCredentialStatus> GetDefaultCredentialStatusAsync(CancellationToken cancellationToken = default) =>
-            Task.FromResult(new AtlassianDefaultCredentialStatus(false, false));
-        public Task SaveDefaultTokensAsync(string? jiraToken, string? confluenceToken, bool removeJiraToken = false, bool removeConfluenceToken = false, CancellationToken cancellationToken = default) =>
-            Task.CompletedTask;
-        public Task<IReadOnlyList<AtlassianPrivilegedAccess>> ListPrivilegedAccessAsync(CancellationToken cancellationToken = default) =>
-            Task.FromResult<IReadOnlyList<AtlassianPrivilegedAccess>>([]);
-        public Task SavePrivilegedAccessAsync(IReadOnlyCollection<AtlassianPrivilegedAccess> access, CancellationToken cancellationToken = default) =>
-            Task.CompletedTask;
-        public Task MoveUserTokensAsync(string currentUserId, string newUserId, CancellationToken cancellationToken = default) =>
-            Task.CompletedTask;
-        public Task DeleteUserTokensAsync(string userId, CancellationToken cancellationToken = default) =>
-            Task.CompletedTask;
-    }
 }
