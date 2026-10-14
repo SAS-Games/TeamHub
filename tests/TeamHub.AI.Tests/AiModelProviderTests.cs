@@ -13,6 +13,24 @@ namespace TeamHub.AI.Tests;
 public sealed class AiModelProviderTests
 {
     [Fact]
+    public async Task Missing_ai_configuration_uses_safe_built_in_defaults()
+    {
+        var configuration = new ConfigurationBuilder().Build();
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddTeamHubAi(configuration);
+        using var provider = services.BuildServiceProvider();
+
+        var snapshot = await provider.GetRequiredService<IAiConfigurationService>().GetAsync();
+
+        snapshot.Runtime.Provider.Should().Be(AiModelProviderKeys.Ollama);
+        snapshot.Runtime.ToProviderSettings().Endpoint.Should().Be("http://127.0.0.1:11434/");
+        snapshot.Runtime.ToProviderSettings().Model.Should().Be("qwen3:8b");
+        snapshot.Runtime.OfflineOnly.Should().BeTrue();
+        snapshot.FlowDesigner.Enabled.Should().BeFalse();
+    }
+
+    [Fact]
     public void Registry_selects_provider_case_insensitively()
     {
         using var services = CreateServices().BuildServiceProvider();
