@@ -18,20 +18,28 @@ This section supersedes the earlier report proposal below **for Weekly Work
 Summary only**. The remaining sections retain the historical broader-report
 design; they do not describe the currently implemented summary.
 
-- Entry point: Support Summary, Generate Weekly Work Summary.
+- Entry point: the bottom **AI Reports** section on Support Summary, using the
+  **Weekly Work Summary** button. This section currently contains only this report;
+  Weekly Support Summary and other report types remain future additions.
 - Select Weekly, a month and a week, then apply the page filters with Search.
 - Source: the selected Monday-Friday week's original Confluence HPGDS Support
   **and Notes** for all active studios. Search does not narrow generation.
 - Exclude Studio Work, WMD Support, Action Items, Jira, milestones and effort
   before inference. Studio identities and source page IDs/versions remain
   server-controlled, outside model-editable content.
-- Preview: exactly **Studio | Support Activity**, combining support and notes
+- Preview: a scrollable modal, like Jira comments, with Copy Report and exactly
+  **Studio | Support Activity**, combining support and notes
   into clear short statements in simple, management-friendly English.
-- Access: Studio Support Read Only plus existing AI Reports Create or higher,
-  granted through role defaults/per-user overrides in the access matrix.
-  Admins have Full Access. The POST checks permissions independently of UI.
-- Enable using `AI:ReportGenerator:Enabled=true`; disabled by default to preserve
-  existing deployments. Shared provider/model settings are unchanged.
+- Access: **AI Reports Create or higher**, with existing Studio Support Read Only
+  access. Administrators have Full Access through the existing permission resolver;
+  non-admin access-matrix grants also permit generation. Both section visibility
+  and the POST require the report-generation feature flag; server-side checks
+  enforce this independently of the UI.
+- Enable Weekly Work Summary under **Configuration > AI Services > Report Generator**.
+  Support Summary uses the same database-backed provider, model, and encrypted
+  credential as Flow Designer. Bootstrap defaults come from `AI:ReportGenerator`
+  until AI settings are saved. Report enablement, source/output limits, prompt
+  path, and concurrency changes apply to new requests without restarting.
 - The isolated `IWeeklyWorkSummaryWorkflow` is implemented in Report Generator;
   a web adapter owns source fetching. No changes to planning persistence,
   existing Confluence parsing, shared AI providers or Flow Designer workflows.
@@ -76,6 +84,15 @@ The build copied the Markdown prompt into the web output. Mocked browser tests
 verified formatted/text clipboard representations, multiline/escaped content,
 denied/unavailable clipboard guidance and hiding Copy Report after a failed
 generation. No live AI inference or native document/email paste was performed.
+
+AI Reports UI correction: the section is now last on Support Summary, after
+Employee Effort Distribution, with a single Weekly Work Summary button.
+It is hidden without AI Reports Create access or Studio Support Read Only access,
+and whenever Report Generator is disabled in AI Services. Non-admin matrix grants permit
+generation; administrators retain Full Access. The permission/feature checks
+are enforced in both page handlers and the source adapter. Report results,
+coverage warnings, errors and Copy Report appear inside the modal preview.
+Closing the modal cancels pending generation and clears the preview.
 
 ## Historical broader-report proposal (not yet implemented)
 

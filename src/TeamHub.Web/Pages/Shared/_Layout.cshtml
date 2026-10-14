@@ -185,7 +185,7 @@
     </header>
     <div class="@pageContainerClass teamhub-page-frame">
         <main role="main" class="pb-3">
-            @if (isReadOnlyPage && User.Identity?.IsAuthenticated == true)
+            @if (isReadOnlyPage && currentModule != TeamHubModules.MilestoneReview && User.Identity?.IsAuthenticated == true)
             {
                 <div class="alert alert-light border small" role="status">You have read-only access to this module.</div>
             }

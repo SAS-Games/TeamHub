@@ -20,65 +20,41 @@
 {
     <div class="alert alert-danger mt-3">@Model.ErrorMessage</div>
 }
+<div asp-validation-summary="ModelOnly" class="text-danger mb-3"></div>
 
 @if (Model.IsAdmin)
 {
-    @if (Model.Draft is null)
+    @if (Model.EditingReview is not null)
+    {
+        <section class="content-section">
+            <div class="section-heading"><div><span>Edit review</span><h2>Milestone Details</h2></div></div>
+            <form method="post" asp-page-handler="Edit" asp-route-editReviewId="@Model.EditingReview.Id" class="section-body">
+                <input type="hidden" asp-for="ReviewId" />
+                <partial name="_MilestoneReviewDetails" model="Model" />
+                <div class="d-flex gap-2 mt-3">
+                    <button type="submit" class="btn btn-primary">Save Changes</button>
+                    <a asp-page="/MilestoneReview" asp-route-editReviewId="" class="btn btn-outline-secondary">Cancel</a>
+                </div>
+            </form>
+        </section>
+    }
+    @if (Model.Draft is null && Model.EditingReview is null)
     {
         <button class="btn btn-outline-primary mb-3" type="button" data-bs-toggle="collapse"
                 data-bs-target="#create-milestone-review" aria-expanded="false" aria-controls="create-milestone-review">
             Create New Milestone Review
         </button>
-        <div class="collapse" id="create-milestone-review">
+        <div class="collapse @(!ViewData.ModelState.IsValid ? "show" : "")" id="create-milestone-review">
             <section class="content-section">
             <div class="section-heading"><div><span>New review</span><h2>Milestone Details</h2></div></div>
             <form method="post" asp-page-handler="CreateDraft" class="section-body">
-                <div asp-validation-summary="ModelOnly" class="text-danger mb-3"></div>
-                <div class="row g-3">
-                    <div class="col-md-6">
-                        <label asp-for="ProjectName" class="form-label">Project Name</label>
-                        <input asp-for="ProjectName" class="form-control" maxlength="160" required />
-                        <span asp-validation-for="ProjectName" class="text-danger"></span>
-                    </div>
-                    <div class="col-md-6">
-                        <label asp-for="MilestoneName" class="form-label">Milestone Name</label>
-                        <input asp-for="MilestoneName" class="form-control" maxlength="160" required />
-                        <span asp-validation-for="MilestoneName" class="text-danger"></span>
-                    </div>
-                    <div class="col-12">
-                        <label asp-for="Description" class="form-label">Description</label>
-                        <textarea asp-for="Description" class="form-control" rows="3" maxlength="4000"></textarea>
-                        <partial name="_MarkdownHelp" />
-                    </div>
-                    <div class="col-12">
-                        <label asp-for="JiraTicketId" class="form-label">Jira Ticket ID (optional)</label>
-                        <input asp-for="JiraTicketId" class="form-control" maxlength="64" placeholder="e.g. GAME-123" />
-                        <div class="form-text">When provided, each reviewer’s save creates or updates that reviewer’s comment on this ticket. Reviewers need their own Jira connection with comment edit permission.</div>
-                    </div>
-                    <div class="col-12">
-                        <label class="form-label">Feedback contributors</label>
-                        <div class="border rounded p-2" role="group" aria-label="Feedback contributors">
-                            @foreach (var reviewer in Model.AvailableReviewers)
-                            {
-                                <label class="d-flex align-items-center gap-2 border-bottom py-2 px-1">
-                                    <input class="form-check-input mt-0" type="checkbox" name="ReviewerIds" value="@reviewer.Id" />
-                                    <span class="flex-grow-1">
-                                        <strong class="d-block">@reviewer.DisplayName</strong>
-                                        <small class="text-secondary">@reviewer.UserId</small>
-                                    </span>
-                                    <span class="small text-secondary">Can review</span>
-                                </label>
-                            }
-                        </div>
-                        <div class="form-text">Check “Can review” to include a user. Selected users can edit only their own row; all page readers can view every row.</div>
-                    </div>
-                </div>
+                <partial name="_MilestoneReviewDetails" model="Model" />
                 <button type="submit" class="btn btn-primary mt-3">Create Draft</button>
             </form>
             </section>
         </div>
     }
-    else
+    else if (Model.Draft is not null && Model.EditingReview is null)
     {
         <section class="content-section">
             <div class="section-heading"><div><span>Not visible to reviewers yet</span><h2>Draft: @Model.Draft.ProjectName — @Model.Draft.MilestoneName</h2></div></div>
@@ -92,6 +68,7 @@
                 <form method="post" class="d-inline">
                     <button asp-page-handler="Publish" type="submit" class="btn btn-primary">Publish Review</button>
                 </form>
+                <a asp-page="/MilestoneReview" asp-route-editReviewId="@Model.Draft.Id" class="btn btn-outline-primary">Edit Review</a>
                 <form method="post" class="d-inline" onsubmit="return confirm('Discard this unpublished draft?')">
                     <button asp-page-handler="DiscardDraft" type="submit" class="btn btn-outline-danger">Discard Draft</button>
                 </form>
@@ -129,6 +106,8 @@ else
                 <small class="text-secondary">Published @Model.CurrentReview.PublishedAt?.ToLocalTime().ToString("g")</small>
                 @if (Model.IsAdmin)
                 {
+                    <a asp-page="/MilestoneReview" asp-route-editReviewId="@Model.CurrentReview.Id"
+                       class="btn btn-sm btn-outline-primary">Edit Review</a>
                     <form method="post" asp-page-handler="Archive"
                           onsubmit="return confirm('Archive this review? Feedback will be preserved in Review History and can no longer be edited.')">
                         <input type="hidden" name="ReviewId" value="@Model.CurrentReview.Id" />

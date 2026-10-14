@@ -574,6 +574,246 @@ public sealed class MilestoneReviewTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task AdminCanEditDraftDetailsAndPublishUpdatedContributors()
+    {
+        var draft = (await service.CreateDraftAsync(
+            new("Project", "Milestone", "", null, [reviewerOne]), "admin@example.com"))!;
+        await service.UpdateAsync(draft.Id,
+            new(" Updated Project ", " Updated Milestone ", "**Updated description**", "GAME-123", [reviewerTwo]), true);
+        dbContext.ChangeTracker.Clear();
+        var saved = (await service.GetDraftAsync())!;
+        saved.ProjectName.Should().Be("Updated Project");
+        saved.MilestoneName.Should().Be("Updated Milestone");
+        saved.Description.Should().Be("**Updated description**");
+        saved.JiraTicketId.Should().Be("GAME-123");
+        saved.CreatedAt.Should().Be(draft.CreatedAt);
+        saved.Status.Should().Be(MilestoneReviewStatus.Draft);
+        saved.Feedback.Should().BeEmpty();
+        saved.AssignedReviewers.Should().ContainSingle().Which.Id.Should().Be(reviewerTwo);
+        await service.PublishDraftAsync("admin@example.com");
+        (await service.GetCurrentAsync())!.Feedback.Should().ContainSingle().Which.ReviewerId.Should().Be(reviewerTwo);
+    }
+
+    [Fact]
+    public async Task PublishedEditPreservesFeedbackAndRevokesRemovedContributorsWithoutDeletingTheirRows()
+    {
+        await CreateAndPublishAsync([reviewerOne]);
+        var current = (await service.GetCurrentAsync())!;
+        var row = current.Feedback.Single();
+        await service.SaveFeedbackAsync(new(current.Id, row.Id, row.Version, "PC", "**Good**", "Improve", "Art"),
+            reviewerOne, false);
+        var savedRow = (await service.GetCurrentAsync())!.Feedback.Single();
+        await service.UpdateAsync(current.Id, new("Updated", "M2", "New description", null, [reviewerTwo]), true);
+        dbContext.ChangeTracker.Clear();
+        var edited = (await service.GetCurrentAsync())!;
+        edited.PublishedAt.Should().Be(current.PublishedAt);
+        edited.CreatedAt.Should().Be(current.CreatedAt);
+        edited.Feedback.Should().HaveCount(2);
+        edited.Feedback.Single(item => item.ReviewerId == reviewerOne).Should().Be(savedRow);
+        edited.AssignedReviewers.Should().ContainSingle().Which.Id.Should().Be(reviewerTwo);
+        var unauthorized = () => service.SaveFeedbackAsync(
+            new(current.Id, savedRow.Id, savedRow.Version, "", "Changed", "", ""), reviewerOne, false);
+        await unauthorized.Should().ThrowAsync<UnauthorizedAccessException>();
+        var added = edited.Feedback.Single(item => item.ReviewerId == reviewerTwo);
+        await service.SaveFeedbackAsync(new(current.Id, added.Id, added.Version, "PS5", "", "", ""), reviewerTwo, false);
+        await service.UpdateAsync(current.Id, new("Updated", "M2", "", null, [reviewerOne, reviewerTwo]), true);
+        var restored = (await service.GetCurrentAsync())!;
+        restored.Feedback.Should().HaveCount(2);
+        restored.Feedback.Single(item => item.ReviewerId == reviewerOne).Should().Be(savedRow);
+    }
+
+    [Theory]
+    [InlineData("GAME-456")]
+    [InlineData(null)]
+    public async Task ChangingJiraTicketPreservesFeedbackAndResetsCommentIdentityUntilNextSave(string? ticket)
+    {
+        await service.CreateDraftAsync(new("Project", "Milestone", "", "GAME-123", [reviewerOne]), "admin@example.com");
+        await service.PublishDraftAsync("admin@example.com");
+        var current = (await service.GetCurrentAsync())!;
+        var row = current.Feedback.Single();
+        await service.SaveFeedbackAsync(new(current.Id, row.Id, row.Version, "PC", "Good", "", ""), reviewerOne, false);
+        var saved = (await service.GetCurrentAsync())!.Feedback.Single();
+        saved.JiraCommentId.Should().Be("42");
+        await service.UpdateAsync(current.Id, new("New project", "M2", "", ticket, [reviewerOne]), true);
+        var edited = (await service.GetCurrentAsync())!.Feedback.Single();
+        edited.Id.Should().Be(saved.Id);
+        edited.WhatGood.Should().Be("Good");
+        edited.JiraCommentId.Should().BeNull();
+        edited.JiraSyncError.Should().BeNull();
+        edited.Version.Should().Be(saved.Version + 1);
+        commentPublisher.Requests.Should().ContainSingle();
+        var stale = () => service.SaveFeedbackAsync(new(current.Id, edited.Id, saved.Version, "", "", "", ""),
+            reviewerOne, false);
+        await stale.Should().ThrowAsync<InvalidOperationException>().WithMessage("*changed by another user*");
+        await service.SaveFeedbackAsync(new(current.Id, edited.Id, edited.Version, "PC", "Good", "", ""), reviewerOne, false);
+        if (ticket is null)
+            commentPublisher.Requests.Should().ContainSingle();
+        else
+        {
+            commentPublisher.Requests.Should().HaveCount(2);
+            var request = commentPublisher.Requests.Last();
+            request.TicketId.Should().Be(ticket);
+            request.CommentId.Should().BeNull();
+            request.ProjectName.Should().Be("New project");
+            request.MilestoneName.Should().Be("M2");
+        }
+    }
+
+    [Fact]
+    public async Task EditRejectsNonAdminArchivedAndMissingReviews()
+    {
+        await CreateAndPublishAsync([reviewerOne]);
+        var current = (await service.GetCurrentAsync())!;
+        var details = new CreateMilestoneReviewRequest("Changed", "Changed", "", null, [reviewerTwo]);
+        var denied = () => service.UpdateAsync(current.Id, details, false);
+        await denied.Should().ThrowAsync<UnauthorizedAccessException>();
+        await service.ArchiveAsync(current.Id, true);
+        foreach (var id in new[] { current.Id, Guid.NewGuid(), Guid.Empty })
+        {
+            var invalid = () => service.UpdateAsync(id, details, true);
+            await invalid.Should().ThrowAsync<InvalidOperationException>();
+        }
+        (await service.GetHistoryAsync()).Single().ProjectName.Should().Be(current.ProjectName);
+    }
+
+    [Fact]
+    public async Task EditingDetailsWithSameTicketKeepsExistingCommentAndUpdatesItOnNextSave()
+    {
+        await service.CreateDraftAsync(new("Project", "Milestone", "", "GAME-123", [reviewerOne]), "admin@example.com");
+        await service.PublishDraftAsync("admin@example.com");
+        var current = (await service.GetCurrentAsync())!;
+        var row = current.Feedback.Single();
+        await service.SaveFeedbackAsync(new(current.Id, row.Id, row.Version, "", "Good", "", ""), reviewerOne, false);
+        var saved = (await service.GetCurrentAsync())!.Feedback.Single();
+        await service.UpdateAsync(current.Id, new("Edited", "M2", "Details", "GAME-123", [reviewerOne]), true);
+        (await service.GetCurrentAsync())!.Feedback.Single().Should().Be(saved);
+        commentPublisher.Requests.Should().ContainSingle();
+        await service.SaveFeedbackAsync(new(current.Id, saved.Id, saved.Version, "", "Good", "", ""), reviewerOne, false);
+        commentPublisher.Requests.Last().CommentId.Should().Be(saved.JiraCommentId);
+        commentPublisher.Requests.Last().ProjectName.Should().Be("Edited");
+        commentPublisher.Requests.Last().MilestoneName.Should().Be("M2");
+    }
+
+    [Fact]
+    public async Task ExistingInactiveContributorCanBeRetainedButCannotBeNewlyAssigned()
+    {
+        await CreateAndPublishAsync([reviewerOne]);
+        var current = (await service.GetCurrentAsync())!;
+        var limitedDirectoryService = new MilestoneReviewService(dbContext,
+            new StubUserDirectory([new(reviewerTwo, "Reviewer Two", "reviewer.two@example.com", true, true)]),
+            commentPublisher);
+        await limitedDirectoryService.UpdateAsync(current.Id, new("Updated", "M2", "", null, [reviewerOne, reviewerTwo]), true);
+        (await service.GetCurrentAsync())!.AssignedReviewers.Should().HaveCount(2);
+        await limitedDirectoryService.UpdateAsync(current.Id, new("Updated", "M2", "", null, [reviewerTwo]), true);
+        var invalid = () => limitedDirectoryService.UpdateAsync(current.Id,
+            new("Updated", "M2", "", null, [reviewerOne, reviewerTwo]), true);
+        await invalid.Should().ThrowAsync<ArgumentException>().WithMessage("*inactive or unavailable*");
+    }
+
+    [Fact]
+    public async Task AdminEditPageRejectsArchivedOrDeletedReviewLinks()
+    {
+        await CreateAndPublishAsync([reviewerOne]);
+        var current = (await service.GetCurrentAsync())!;
+        await service.ArchiveAsync(current.Id, true);
+        foreach (var id in new[] { current.Id, Guid.NewGuid() })
+        {
+            var model = CreateModel(service, true);
+            SetRole(model, TeamHubUserTypes.Admin);
+            model.EditReviewId = id;
+            (await model.OnGetAsync(CancellationToken.None)).Should().BeOfType<RedirectToPageResult>();
+            model.EditingReview.Should().BeNull();
+            model.ErrorMessage.Should().Contain("cannot be edited");
+            model.ReviewId = id;
+            model.ProjectName = "Edited";
+            model.MilestoneName = "M2";
+            model.ReviewerIds = [reviewerOne];
+            (await model.OnPostEditAsync(CancellationToken.None)).Should().BeOfType<PageResult>();
+            model.ModelState.IsValid.Should().BeFalse();
+        }
+    }
+
+    [Theory]
+    [InlineData("empty")]
+    [InlineData("duplicate")]
+    [InlineData("unavailable")]
+    [InlineData("ticket")]
+    [InlineData("project")]
+    [InlineData("milestone")]
+    [InlineData("description")]
+    public async Task EditRejectsInvalidDetailsWithoutChangingReview(string invalid)
+    {
+        await CreateAndPublishAsync([reviewerOne]);
+        var current = (await service.GetCurrentAsync())!;
+        var details = new CreateMilestoneReviewRequest("Changed", "Changed", "", null, [reviewerOne]);
+        details = invalid switch
+        {
+            "empty" => details with { ReviewerIds = [] },
+            "duplicate" => details with { ReviewerIds = [reviewerOne, reviewerOne] },
+            "unavailable" => details with { ReviewerIds = [Guid.NewGuid()] },
+            "ticket" => details with { JiraTicketId = "not-a-ticket" },
+            "project" => details with { ProjectName = " " },
+            "milestone" => details with { MilestoneName = new string('x', 161) },
+            _ => details with { Description = new string('x', 4001) }
+        };
+        var save = () => service.UpdateAsync(current.Id, details, true);
+        await save.Should().ThrowAsync<ArgumentException>();
+        dbContext.ChangeTracker.Clear();
+        var reloaded = (await service.GetCurrentAsync())!;
+        reloaded.ProjectName.Should().Be(current.ProjectName);
+        reloaded.AssignedReviewers.Should().Equal(current.AssignedReviewers);
+    }
+
+    [Theory]
+    [InlineData(TeamHubUserTypes.Registered)]
+    [InlineData(TeamHubUserTypes.Privileged)]
+    public async Task EditHandlersRejectNonAdmins(string role)
+    {
+        var model = CreateModel(service, true);
+        SetRole(model, role);
+        model.EditReviewId = Guid.NewGuid();
+        (await model.OnGetAsync(CancellationToken.None)).Should().BeOfType<ForbidResult>();
+        (await model.OnPostEditAsync(CancellationToken.None)).Should().BeOfType<ForbidResult>();
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task AdminEditPageLoadsExistingDetailsAndPreservesInvalidInput(bool published)
+    {
+        var draft = (await service.CreateDraftAsync(
+            new("Project", "Milestone", "**Description**", "GAME-123", [reviewerOne]), "admin@example.com"))!;
+        if (published) await service.PublishDraftAsync("admin@example.com");
+        var model = CreateModel(service, true);
+        SetRole(model, TeamHubUserTypes.Admin);
+        model.EditReviewId = draft.Id;
+        (await model.OnGetAsync(CancellationToken.None)).Should().BeOfType<PageResult>();
+        model.EditingReview!.Id.Should().Be(draft.Id);
+        model.ProjectName.Should().Be("Project");
+        model.MilestoneName.Should().Be("Milestone");
+        model.Description.Should().Be("**Description**");
+        model.JiraTicketId.Should().Be("GAME-123");
+        model.ReviewerIds.Should().Equal(reviewerOne);
+        model.AvailableReviewers.Should().Contain(item => item.Id == reviewerOne);
+        model.ProjectName = "Edited";
+        model.JiraTicketId = "invalid";
+        (await model.OnPostEditAsync(CancellationToken.None)).Should().BeOfType<PageResult>();
+        model.ModelState.IsValid.Should().BeFalse();
+        model.ProjectName.Should().Be("Edited");
+        model.EditingReview.Should().NotBeNull();
+        model.ModelState.Clear();
+        model.JiraTicketId = null;
+        (await model.OnPostEditAsync(CancellationToken.None)).Should().BeOfType<RedirectToPageResult>();
+        var saved = published ? await service.GetCurrentAsync() : await service.GetDraftAsync();
+        saved!.ProjectName.Should().Be("Edited");
+    }
+
+    private static void SetRole(MilestoneReviewModel model, string role) =>
+        model.HttpContext.User = new System.Security.Claims.ClaimsPrincipal(
+            new System.Security.Claims.ClaimsIdentity(
+                [new System.Security.Claims.Claim(System.Security.Claims.ClaimTypes.Role, role)], "Test"));
+
+    [Fact]
     public async Task OnGetFeedbackAsync_ReturnsFormattedJsonForLocalMilestoneFeedback()
     {
         await CreateAndPublishAsync([reviewerOne]);

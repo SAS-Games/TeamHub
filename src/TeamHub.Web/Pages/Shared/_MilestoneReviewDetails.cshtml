@@ -1,0 +1,42 @@
+@model TeamHub.Web.Pages.MilestoneReviewModel
+
+<div class="row g-3">
+    <div class="col-md-6">
+        <label asp-for="ProjectName" class="form-label">Project Name</label>
+        <input asp-for="ProjectName" class="form-control" maxlength="160" required />
+        <span asp-validation-for="ProjectName" class="text-danger"></span>
+    </div>
+    <div class="col-md-6">
+        <label asp-for="MilestoneName" class="form-label">Milestone</label>
+        <input asp-for="MilestoneName" class="form-control" maxlength="160" required />
+        <span asp-validation-for="MilestoneName" class="text-danger"></span>
+    </div>
+    <div class="col-12">
+        <label asp-for="Description" class="form-label">Description</label>
+        <textarea asp-for="Description" class="form-control" rows="3" maxlength="4000"></textarea>
+        <partial name="_MarkdownHelp" />
+    </div>
+    <div class="col-12">
+        <label asp-for="JiraTicketId" class="form-label">Jira Ticket ID (optional)</label>
+        <input asp-for="JiraTicketId" class="form-control" maxlength="64" placeholder="e.g. GAME-123" />
+        <div class="form-text">Each reviewer's save creates or updates their comment on this ticket. Reviewers need their own Jira connection with comment edit permission. Changing the ticket leaves old comments untouched; existing feedback syncs to the new ticket on each reviewer's next save.</div>
+    </div>
+    <div class="col-12">
+        <label class="form-label">Feedback contributors</label>
+        <div class="border rounded p-2" role="group" aria-label="Feedback contributors">
+            @foreach (var reviewer in Model.AvailableReviewers)
+            {
+                <label class="d-flex align-items-center gap-2 border-bottom py-2 px-1">
+                    <input class="form-check-input mt-0" type="checkbox" name="ReviewerIds" value="@reviewer.Id"
+                           checked="@Model.ReviewerIds.Contains(reviewer.Id)" />
+                    <span class="flex-grow-1">
+                        <strong class="d-block">@reviewer.DisplayName</strong>
+                        <small class="text-secondary">@reviewer.UserId</small>
+                    </span>
+                    <span class="small text-secondary">Can review</span>
+                </label>
+            }
+        </div>
+        <div class="form-text">Selected users can edit only their own row; all page readers can view every row. Removing a contributor preserves their existing feedback as read-only for that user.</div>
+    </div>
+</div>

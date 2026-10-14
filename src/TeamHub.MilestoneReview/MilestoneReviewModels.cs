@@ -92,6 +92,11 @@ public interface IMilestoneReviewService
         CancellationToken cancellationToken = default);
     Task<MilestoneReview?> PublishDraftAsync(string actor, CancellationToken cancellationToken = default);
     Task DiscardDraftAsync(CancellationToken cancellationToken = default);
+    Task UpdateAsync(
+        Guid reviewId,
+        CreateMilestoneReviewRequest request,
+        bool isAdmin,
+        CancellationToken cancellationToken = default);
     Task ArchiveAsync(Guid reviewId, bool isAdmin, CancellationToken cancellationToken = default);
     Task DeleteAsync(Guid reviewId, bool isAdmin, CancellationToken cancellationToken = default);
     Task SaveFeedbackAsync(

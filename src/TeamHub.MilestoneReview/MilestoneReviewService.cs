@@ -87,16 +87,7 @@ public sealed partial class MilestoneReviewService(
         string actor,
         CancellationToken cancellationToken = default)
     {
-        ArgumentNullException.ThrowIfNull(request);
-        ArgumentNullException.ThrowIfNull(request.ReviewerIds);
-        var projectName = Required(request.ProjectName, 160, "Project name");
-        var milestoneName = Required(request.MilestoneName, 160, "Milestone name");
-        var description = Bounded(request.Description, 4000, "Description");
-        var jiraTicketId = Bounded(request.JiraTicketId, 64, "Jira ticket ID");
-        if (!string.IsNullOrWhiteSpace(jiraTicketId) && !JiraTicketKey().IsMatch(jiraTicketId))
-            throw new ArgumentException("Jira ticket ID must use the project-key format, such as GAME-123.");
-        if (request.ReviewerIds.Count == 0)
-            throw new ArgumentException("Select at least one user who can provide feedback.");
+        var details = ValidateDetails(request);
         if (await dbContext.Reviews.AnyAsync(item => item.Status == MilestoneReviewStatus.Draft, cancellationToken))
             throw new InvalidOperationException("A milestone review draft already exists. Publish or remove it before creating another.");
 
@@ -104,16 +95,15 @@ public sealed partial class MilestoneReviewService(
         var byId = activeUsers.Where(user => user.IsActive && user.IsRegistered)
             .ToDictionary(user => user.Id);
         var reviewerIds = request.ReviewerIds.Distinct().ToList();
-        if (reviewerIds.Count != request.ReviewerIds.Count
-            || reviewerIds.Any(id => !byId.ContainsKey(id)))
+        if (reviewerIds.Any(id => !byId.ContainsKey(id)))
             throw new ArgumentException("The reviewer selection contains an inactive or unavailable user.");
 
         var review = new MilestoneReviewRecord
         {
-            ProjectName = projectName,
-            MilestoneName = milestoneName,
-            Description = description,
-            JiraTicketId = string.IsNullOrWhiteSpace(jiraTicketId) ? null : jiraTicketId,
+            ProjectName = details.ProjectName,
+            MilestoneName = details.MilestoneName,
+            Description = details.Description,
+            JiraTicketId = details.JiraTicketId,
             Status = MilestoneReviewStatus.Draft,
             CreatedBy = Required(actor, 320, "Creator"),
             CreatedAt = DateTimeOffset.UtcNow
@@ -189,6 +179,69 @@ public sealed partial class MilestoneReviewService(
             throw new InvalidOperationException("The published review was not found or has already been archived. Reload the page.");
     }
 
+    public async Task UpdateAsync(Guid reviewId, CreateMilestoneReviewRequest request, bool isAdmin,
+        CancellationToken cancellationToken = default)
+    {
+        if (!isAdmin)
+            throw new UnauthorizedAccessException("Only administrators can edit milestone review details.");
+        var details = ValidateDetails(request);
+        await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
+        var review = await dbContext.Reviews.SingleOrDefaultAsync(
+            item => item.Id == reviewId && (item.Status == MilestoneReviewStatus.Draft
+                || item.Status == MilestoneReviewStatus.Published), cancellationToken)
+            ?? throw new InvalidOperationException("The draft or published review was not found. Archived reviews cannot be edited.");
+        var assignments = await dbContext.Assignments.Where(item => item.ReviewId == reviewId)
+            .ToListAsync(cancellationToken);
+        var existingIds = assignments.Select(item => item.ReviewerId).ToHashSet();
+        var addedIds = details.ReviewerIds.Where(id => !existingIds.Contains(id)).ToList();
+        var activeUsers = await users.GetActiveUsersAsync(cancellationToken);
+        var byId = activeUsers.Where(user => user.IsActive && user.IsRegistered).ToDictionary(user => user.Id);
+        if (addedIds.Any(id => !byId.ContainsKey(id)))
+            throw new ArgumentException("The reviewer selection contains an inactive or unavailable user.");
+
+        var feedback = await dbContext.Feedback.Where(item => item.ReviewId == reviewId)
+            .ToListAsync(cancellationToken);
+        if (!string.Equals(review.JiraTicketId, details.JiraTicketId, StringComparison.OrdinalIgnoreCase))
+        {
+            foreach (var row in feedback)
+            {
+                row.JiraCommentId = null;
+                row.JiraSyncError = null;
+                row.Version++;
+            }
+        }
+        review.ProjectName = details.ProjectName;
+        review.MilestoneName = details.MilestoneName;
+        review.Description = details.Description;
+        review.JiraTicketId = details.JiraTicketId;
+        dbContext.Assignments.RemoveRange(assignments.Where(item => !details.ReviewerIds.Contains(item.ReviewerId)));
+        foreach (var id in addedIds)
+        {
+            var user = byId[id];
+            var displayName = Required(user.DisplayName, 160, "Reviewer display name");
+            var email = Required(user.UserId, 320, "Reviewer email");
+            dbContext.Assignments.Add(new MilestoneReviewAssignmentRecord
+            {
+                ReviewId = reviewId, ReviewerId = id, Reviewer = displayName, ReviewerUserId = email
+            });
+            if (review.Status == MilestoneReviewStatus.Published && feedback.All(item => item.ReviewerId != id))
+                dbContext.Feedback.Add(new MilestoneReviewFeedbackRecord
+                {
+                    ReviewId = reviewId, ReviewerId = id, Reviewer = displayName,
+                    ReviewerUserId = email, UpdatedAt = DateTimeOffset.UtcNow
+                });
+        }
+        try
+        {
+            await dbContext.SaveChangesAsync(cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+        }
+        catch (DbUpdateConcurrencyException exception)
+        {
+            throw new InvalidOperationException("Feedback changed while editing this review. Reload the page before saving again.", exception);
+        }
+    }
+
     public async Task DeleteAsync(Guid reviewId, bool isAdmin, CancellationToken cancellationToken = default)
     {
         if (!isAdmin)
@@ -218,7 +271,9 @@ public sealed partial class MilestoneReviewService(
         var feedback = await dbContext.Feedback.SingleOrDefaultAsync(
             item => item.Id == request.FeedbackId && item.ReviewId == request.ReviewId,
             cancellationToken) ?? throw new KeyNotFoundException("The feedback row was not found.");
-        if (!isAdmin && feedback.ReviewerId != actorId)
+        if (!isAdmin && (feedback.ReviewerId != actorId
+            || !await dbContext.Assignments.AnyAsync(
+                item => item.ReviewId == request.ReviewId && item.ReviewerId == actorId, cancellationToken)))
             throw new UnauthorizedAccessException("You can only update your own assigned feedback row.");
         if (feedback.Version != request.Version)
             throw new InvalidOperationException("This feedback row was changed by another user. Reload the page before saving again.");
@@ -298,6 +353,23 @@ public sealed partial class MilestoneReviewService(
         return new MilestoneReview(
             review.Id, review.ProjectName, review.MilestoneName, review.Description,
             review.Status, review.CreatedAt, review.PublishedAt, review.JiraTicketId, assignments, feedback);
+    }
+
+    private static CreateMilestoneReviewRequest ValidateDetails(CreateMilestoneReviewRequest request)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(request.ReviewerIds);
+        var project = Required(request.ProjectName, 160, "Project name");
+        var milestone = Required(request.MilestoneName, 160, "Milestone");
+        var description = Bounded(request.Description, 4000, "Description");
+        var ticket = Bounded(request.JiraTicketId, 64, "Jira ticket ID");
+        if (!string.IsNullOrWhiteSpace(ticket) && !JiraTicketKey().IsMatch(ticket))
+            throw new ArgumentException("Jira ticket ID must use the project-key format, such as GAME-123.");
+        if (request.ReviewerIds.Count == 0)
+            throw new ArgumentException("Select at least one user who can provide feedback.");
+        if (request.ReviewerIds.Distinct().Count() != request.ReviewerIds.Count)
+            throw new ArgumentException("The reviewer selection contains an inactive or unavailable user.");
+        return new(project, milestone, description, string.IsNullOrWhiteSpace(ticket) ? null : ticket, request.ReviewerIds);
     }
 
     private static string Required(string? value, int maxLength, string label)

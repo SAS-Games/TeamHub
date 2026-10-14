@@ -39,6 +39,9 @@ public sealed partial class MilestoneReviewModel(
     [BindProperty]
     public Guid ReviewId { get; set; }
 
+    [BindProperty(SupportsGet = true)]
+    public Guid? EditReviewId { get; set; }
+
     [BindProperty]
     public Guid FeedbackId { get; set; }
 
@@ -59,6 +62,7 @@ public sealed partial class MilestoneReviewModel(
 
     public ReviewSnapshot? CurrentReview { get; private set; }
     public ReviewSnapshot? Draft { get; private set; }
+    public ReviewSnapshot? EditingReview { get; private set; }
     public IReadOnlyList<ReviewSnapshot> HistoryReviews { get; private set; } = [];
     public IReadOnlyList<MilestoneReviewUser> AvailableReviewers { get; private set; } = [];
     public Guid? CurrentUserId { get; private set; }
@@ -70,21 +74,55 @@ public sealed partial class MilestoneReviewModel(
     [TempData]
     public string? ErrorMessage { get; set; }
 
-    public async Task OnGetAsync(CancellationToken cancellationToken) =>
+    public async Task<IActionResult> OnGetAsync(CancellationToken cancellationToken)
+    {
+        if (EditReviewId.HasValue && !IsAdmin) return Forbid();
         await LoadAsync(cancellationToken);
+        if (EditReviewId.HasValue)
+        {
+            if (EditingReview is null)
+            {
+                ErrorMessage = "The draft or published review was not found. Archived reviews cannot be edited.";
+                return RedirectToPage(new { editReviewId = (Guid?)null });
+            }
+            ReviewId = EditingReview.Id;
+            ProjectName = EditingReview.ProjectName;
+            MilestoneName = EditingReview.MilestoneName;
+            Description = EditingReview.Description;
+            JiraTicketId = EditingReview.JiraTicketId;
+            ReviewerIds = EditingReview.AssignedReviewers.Select(item => item.Id).ToList();
+        }
+        return Page();
+    }
+
+    public async Task<IActionResult> OnPostEditAsync(CancellationToken cancellationToken)
+    {
+        if (!IsAdmin) return Forbid();
+        EditReviewId = ReviewId;
+        if (!ValidateDetails())
+        {
+            await LoadAsync(cancellationToken);
+            return Page();
+        }
+        try
+        {
+            await reviews.UpdateAsync(ReviewId, DetailsRequest(), IsAdmin, cancellationToken);
+            StatusMessage = "Milestone review details updated. Existing feedback was preserved; Jira comments update on the next feedback save.";
+            return RedirectToPage(new { editReviewId = (Guid?)null });
+        }
+        catch (Exception exception) when (exception is ArgumentException or InvalidOperationException)
+        {
+            ModelState.AddModelError(string.Empty, exception.Message);
+            await LoadAsync(cancellationToken);
+            return Page();
+        }
+    }
 
     public async Task<IActionResult> OnPostCreateDraftAsync(CancellationToken cancellationToken)
     {
         if (!IsAdmin) return Forbid();
-        if (!ModelState.IsValid
-            || !ValidLength(ProjectName, 160)
-            || !ValidLength(MilestoneName, 160)
-            || !ValidLength(Description, 4000)
-            || !ValidLength(JiraTicketId, 64)
-            || string.IsNullOrWhiteSpace(ProjectName)
-            || string.IsNullOrWhiteSpace(MilestoneName))
+        if (!ValidateDetails())
         {
-            ModelState.AddModelError(string.Empty, "Project and milestone names are required. Check the maximum field lengths.");
             await LoadAsync(cancellationToken);
             return Page();
         }
@@ -92,8 +130,7 @@ public sealed partial class MilestoneReviewModel(
         try
         {
             await reviews.CreateDraftAsync(
-                new CreateMilestoneReviewRequest(ProjectName!, MilestoneName!, Description ?? string.Empty,
-                    JiraTicketId, ReviewerIds),
+                DetailsRequest(),
                 CurrentActor(),
                 cancellationToken);
             StatusMessage = "Milestone review draft created. Review the details and publish it when ready.";
@@ -359,7 +396,8 @@ public sealed partial class MilestoneReviewModel(
     private static partial Regex TicketKey();
 
     public bool CanEdit(MilestoneReviewFeedback feedback) =>
-        IsAdmin || CurrentUserId == feedback.ReviewerId;
+        IsAdmin || (CurrentUserId == feedback.ReviewerId
+            && CurrentReview?.AssignedReviewers.Any(item => item.Id == feedback.ReviewerId) == true);
 
     private async Task LoadAsync(CancellationToken cancellationToken)
     {
@@ -370,8 +408,29 @@ public sealed partial class MilestoneReviewModel(
         if (IsAdmin)
         {
             Draft = await reviews.GetDraftAsync(cancellationToken);
-            AvailableReviewers = await reviewUsers.GetActiveUsersAsync(cancellationToken);
+            EditingReview = new[] { Draft, CurrentReview }.FirstOrDefault(item => item?.Id == EditReviewId);
+            var available = (await reviewUsers.GetActiveUsersAsync(cancellationToken))
+                .Where(item => item.IsActive && item.IsRegistered).ToList();
+            foreach (var assigned in EditingReview?.AssignedReviewers ?? [])
+            {
+                if (available.All(item => item.Id != assigned.Id))
+                    available.Add(new(assigned.Id, assigned.DisplayName, assigned.UserId, false, true));
+            }
+            AvailableReviewers = available;
         }
+    }
+
+    private CreateMilestoneReviewRequest DetailsRequest() =>
+        new(ProjectName!, MilestoneName!, Description ?? string.Empty, JiraTicketId, ReviewerIds);
+
+    private bool ValidateDetails()
+    {
+        if (ModelState.IsValid && ValidLength(ProjectName, 160) && ValidLength(MilestoneName, 160)
+            && ValidLength(Description, 4000) && ValidLength(JiraTicketId, 64)
+            && !string.IsNullOrWhiteSpace(ProjectName) && !string.IsNullOrWhiteSpace(MilestoneName))
+            return true;
+        ModelState.AddModelError(string.Empty, "Project name and milestone are required. Check the maximum field lengths.");
+        return false;
     }
 
     private string CurrentActor() =>
