@@ -82,7 +82,11 @@ The service enforces ownership independently of the UI and uses a version
 concurrency token to reject stale updates.
 
 When a review has a Jira ticket, saving a row creates or updates one Jira
-comment authored through that reviewer's personal Jira credential. A stable
+comment authored through that reviewer's personal Jira credential. The
+comment body uses bold Jira-wiki titles for Reviewer, Reviewer email, Session
+Details, What's Good, Needs Improvement, and Additional Feedback, without the
+repeated review/project/milestone header. Jira previews render these titles
+bold using text-safe elements; feedback content and images remain intact. A stable
 feedback ID marker provides safe retry reconciliation if Jira succeeds before
 Team Hub stores the returned comment ID. Shared/read-only Jira credentials are
 rejected for this write operation. Feedback is persisted locally first; a Jira

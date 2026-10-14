@@ -223,22 +223,19 @@ internal sealed partial class JiraStudioCommentService(
     private static string BuildMilestoneReviewBody(
         StudioJiraMilestoneReviewCommentRequest request, string marker) =>
         $"""
-        Milestone Review Feedback
-        Project: {request.ProjectName}
-        Milestone: {request.MilestoneName}
-        Reviewer: {request.Reviewer}
-        Reviewer email: {request.RequestingUserId}
+        *Reviewer*: {request.Reviewer}
+        *Reviewer email*: {request.RequestingUserId}
 
-        Session Details
+        *Session Details*
         {request.SessionDetails}
 
-        What's Good
+        *What's Good*
         {request.WhatGood}
 
-        Needs Improvement
+        *Needs Improvement*
         {request.NeedImprovements}
 
-        Additional Feedback
+        *Additional Feedback*
         {request.AdditionalFeedback}
 
         {marker}

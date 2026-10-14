@@ -229,14 +229,22 @@ public sealed class StudioJiraCommentTests
             if (request.Method == HttpMethod.Post || request.Method == HttpMethod.Put)
             {
                 using var body = JsonDocument.Parse(request.Content!.ReadAsStringAsync().GetAwaiter().GetResult());
-                body.RootElement.GetProperty("body").GetString().Should().Contain("Reviewer email: reader@example.com");
+                body.RootElement.GetProperty("body").GetString().Should().Contain("*Reviewer email*: reader@example.com");
                 body.RootElement.GetProperty("body").GetString().Should().Contain($"[TeamHub Milestone Review Feedback: {feedbackId:D}]");
                 var text = body.RootElement.GetProperty("body").GetString();
-                text.Should().Contain($"Session Details{Environment.NewLine}PC, 1 hour");
-                text.Should().Contain($"What's Good{Environment.NewLine}Good");
-                text.Should().Contain($"Needs Improvement{Environment.NewLine}Improve");
-                text.Should().Contain($"Additional Feedback{Environment.NewLine}Art notes");
+                text.Should().StartWith($"*Reviewer*: Reviewer{Environment.NewLine}*Reviewer email*: reader@example.com");
+                text.Should().Contain($"*Session Details*{Environment.NewLine}PC, 1 hour");
+                text.Should().Contain($"*What's Good*{Environment.NewLine}Good");
+                text.Should().Contain($"*Needs Improvement*{Environment.NewLine}Improve");
+                text.Should().Contain($"*Additional Feedback*{Environment.NewLine}Art notes");
+                text.Should().NotContain("Project:").And.NotContain("Milestone:").And.NotStartWith("Milestone Review Feedback");
                 text.Should().NotContain("What's Bad");
+                using var formatted = JsonDocument.Parse(JsonSerializer.Serialize(text));
+                var parts = JiraCommentBodyParser.Parse(formatted.RootElement, []);
+                parts.Where(part => part.Kind == "strong").Select(part => part.Text).Should().Equal(
+                    "Reviewer", "Reviewer email", "Session Details", "What's Good", "Needs Improvement", "Additional Feedback");
+                string.Concat(parts.Select(part => part.Text)).Should().Contain("reader@example.com")
+                    .And.Contain("PC, 1 hour").And.Contain($"[TeamHub Milestone Review Feedback: {feedbackId:D}]");
                 return request.Method == HttpMethod.Post
                     ? Json("""{"id":"42"}""")
                     : new HttpResponseMessage(HttpStatusCode.NoContent);

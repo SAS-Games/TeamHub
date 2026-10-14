@@ -200,6 +200,10 @@
                             formatted.innerHTML = part.html;
                             body.dataset.copyText = part.text;
                             body.append(formatted);
+                        } else if (part.kind === "strong") {
+                            const strong = document.createElement("strong");
+                            strong.textContent = part.text;
+                            body.append(strong);
                         } else if (part.kind === "image") {
                             imageJobs.push(createImageJob(part, comment.id, button.dataset.commentsUrl, controller.signal, body));
                         } else if (part.kind === "link") {

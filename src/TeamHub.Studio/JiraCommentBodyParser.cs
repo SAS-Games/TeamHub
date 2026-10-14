@@ -18,6 +18,8 @@ internal static partial class JiraCommentBodyParser
                 if (match.Index > position) parts.Add(new("text", text[position..match.Index]));
                 if (match.Groups["image"].Success)
                     AddImage(parts, match.Groups["image"].Value.Split('|')[0].Trim(), attachments);
+                else if (match.Groups["heading"].Success)
+                    parts.Add(new("strong", match.Groups["heading"].Value));
                 else
                     parts.Add(SafeUrl(match.Groups["url"].Value)
                         ? new("link", match.Groups["label"].Value, match.Groups["url"].Value)
@@ -51,7 +53,9 @@ internal static partial class JiraCommentBodyParser
                     : default;
                 var href = link.ValueKind == JsonValueKind.Object
                     ? link.GetProperty("attrs").GetProperty("href").GetString() : null;
-                parts.Add(SafeUrl(href) ? new("link", text, href) : new("text", text));
+                var bold = marks.ValueKind == JsonValueKind.Array
+                    && marks.EnumerateArray().Any(mark => mark.GetProperty("type").GetString() == "strong");
+                parts.Add(SafeUrl(href) ? new("link", text, href) : new(bold ? "strong" : "text", text));
                 return;
             case "hardBreak":
                 parts.Add(new("text", "\n"));
@@ -102,7 +106,7 @@ internal static partial class JiraCommentBodyParser
     private static bool SafeUrl(string? value) => Uri.TryCreate(value, UriKind.Absolute, out var uri)
         && uri.Scheme is "https" or "http" && uri.UserInfo.Length == 0;
 
-    [GeneratedRegex(@"!(?<image>[^!\r\n]+)!|\[(?<label>[^\]\r\n]+)\|(?<url>https?://[^\]\s]+)\]",
-        RegexOptions.CultureInvariant, 1000)]
+    [GeneratedRegex(@"^\*(?<heading>Reviewer(?: email)?|Session Details|What's Good|Needs Improvement|Additional Feedback)\*|!(?<image>[^!\r\n]+)!|\[(?<label>[^\]\r\n]+)\|(?<url>https?://[^\]\s]+)\]",
+        RegexOptions.CultureInvariant | RegexOptions.Multiline, 1000)]
     private static partial Regex WikiMedia();
 }
