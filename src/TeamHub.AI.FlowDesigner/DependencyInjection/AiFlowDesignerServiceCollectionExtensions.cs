@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using TeamHub.AI.Contracts;
 using TeamHub.AI.FlowDesigner.Application;
 using TeamHub.AI.FlowDesigner.Contracts;
 using TeamHub.AI.FlowDesigner.SourceDocuments;
@@ -13,6 +14,7 @@ public static class AiFlowDesignerServiceCollectionExtensions
         this IServiceCollection services,
         IConfiguration configuration)
     {
+        services.AddTeamHubAiConfiguration(configuration);
         services.AddOptions<AiFlowDesignerOptions>()
             .Bind(configuration.GetSection(AiFlowDesignerOptions.SectionName))
             .Validate(options => options.MaximumSourceDocuments is >= 1 and <= 50,
@@ -29,10 +31,10 @@ public static class AiFlowDesignerServiceCollectionExtensions
                 "AI:FlowDesigner:MaximumHierarchyDepth must be between 1 and 6.")
             .ValidateOnStart();
 
-        services.AddSingleton<FlowDesignerInputProcessor>();
-        services.AddSingleton<FlowDiagramPromptBuilder>();
-        services.AddSingleton<GeneratedFlowDiagramParser>();
-        services.AddSingleton<IFlowDiagramGenerationWorkflow, FlowDiagramGenerationWorkflow>();
+        services.AddScoped<FlowDesignerInputProcessor>();
+        services.AddScoped<FlowDiagramPromptBuilder>();
+        services.AddScoped<GeneratedFlowDiagramParser>();
+        services.AddScoped<IFlowDiagramGenerationWorkflow, FlowDiagramGenerationWorkflow>();
         return services;
     }
 }

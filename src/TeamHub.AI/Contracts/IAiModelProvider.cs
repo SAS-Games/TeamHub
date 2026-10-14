@@ -10,9 +10,21 @@ public interface IAiModelProvider
         AiProviderSettings settings,
         CancellationToken cancellationToken = default);
 
+    Task<AiProviderHealthResult> TestConnectionAsync(
+        AiProviderSettings settings,
+        CancellationToken cancellationToken = default) =>
+        CheckHealthAsync(settings, cancellationToken);
+
     Task<AiStructuredGenerationResult> GenerateStructuredAsync(
         AiProviderSettings settings,
         AiStructuredGenerationRequest request,
+        CancellationToken cancellationToken = default);
+}
+
+public interface IAiModelCatalogProvider
+{
+    Task<IReadOnlyList<AiModelCatalogItem>> GetModelsAsync(
+        AiProviderSettings settings,
         CancellationToken cancellationToken = default);
 }
 
@@ -25,6 +37,8 @@ public interface IAiModelProviderRegistry
 public interface IAiModelService
 {
     Task<AiProviderHealthResult> CheckHealthAsync(CancellationToken cancellationToken = default);
+    Task<AiProviderHealthResult> TestConnectionAsync(CancellationToken cancellationToken = default) =>
+        CheckHealthAsync(cancellationToken);
     Task<AiStructuredGenerationResult> GenerateStructuredAsync(
         AiStructuredGenerationRequest request,
         CancellationToken cancellationToken = default);
@@ -43,6 +57,12 @@ public sealed record AiProviderHealthResult(
     string Model,
     bool IsModelAvailable,
     string Message);
+
+public sealed record AiModelCatalogItem(
+    string Id,
+    string ModelType,
+    string CostTier,
+    IReadOnlyList<string> Endpoints);
 
 public sealed record AiStructuredGenerationRequest(
     string SystemPrompt,

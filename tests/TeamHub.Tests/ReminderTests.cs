@@ -97,6 +97,62 @@ public class ReminderTests
         (await engine.RunReminderCycleAsync()).Should().Be(0);
     }
 
+    [Fact]
+    public async Task EscalationLevelsNotifyEveryRecipientOnceAtTheirConfiguredThresholds()
+    {
+        await using var context = CreateDbContext();
+        var clock = new TestClock(new DateTime(2026, 9, 4, 10, 0, 0, DateTimeKind.Utc));
+        var notification = new TestNotificationService();
+        var engine = new WorkflowEngineService(context, clock, notification);
+        var definition = new WorkflowDefinition
+        {
+            WorkflowKey = "ESCALATION_LEVELS",
+            Name = "Escalation levels",
+            Version = 1,
+            ConfigHash = "escalation-levels",
+            IsActive = true,
+            Enabled = true,
+            ImportedAtUtc = clock.UtcNow
+        };
+        definition.Steps.Add(new WorkflowStepDefinition
+        {
+            WorkflowDefinition = definition,
+            StepKey = "TASK",
+            Name = "Task",
+            Owner = "owner@x.com",
+            ExpectedDurationHours = 1,
+            EscalationAfterHours = 2,
+            EscalationOwner = "lead@x.com; manager@x.com",
+            EscalationLevel2AfterHours = 6,
+            EscalationLevel2Owners = "director@x.com",
+            Required = true,
+            Enabled = true,
+            SortOrder = 1
+        });
+        context.Add(definition);
+        await context.SaveChangesAsync();
+
+        await engine.StartWorkflowAsync(new StartWorkflowRequest
+        {
+            WorkflowKey = definition.WorkflowKey,
+            InstanceName = "Instance",
+            StartedBy = "admin"
+        });
+        notification.Messages.Clear();
+
+        clock.UtcNow = clock.UtcNow.AddHours(3);
+        (await engine.RunReminderCycleAsync()).Should().Be(2);
+        notification.Messages.Select(message => message.Recipient)
+            .Should().BeEquivalentTo("lead@x.com", "manager@x.com");
+
+        (await engine.RunReminderCycleAsync()).Should().Be(0);
+
+        clock.UtcNow = clock.UtcNow.AddHours(4);
+        (await engine.RunReminderCycleAsync()).Should().Be(1);
+        notification.Messages.Last().Recipient.Should().Be("director@x.com");
+        notification.Messages.Last().Subject.Should().Contain("level 2");
+    }
+
     private static WorkflowDbContext CreateDbContext()
     {
         var options = new DbContextOptionsBuilder<WorkflowDbContext>()
@@ -112,7 +168,12 @@ public class ReminderTests
 
     private sealed class TestNotificationService : INotificationService
     {
+        public List<NotificationMessage> Messages { get; } = [];
+
         public Task SendAsync(NotificationMessage message, CancellationToken cancellationToken = default)
-            => Task.CompletedTask;
+        {
+            Messages.Add(message);
+            return Task.CompletedTask;
+        }
     }
 }

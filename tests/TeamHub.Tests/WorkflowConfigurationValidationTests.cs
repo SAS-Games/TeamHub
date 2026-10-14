@@ -57,4 +57,39 @@ public class WorkflowConfigurationValidationTests
         var errors = WorkflowConfigurationService.ValidateDefinitions(defs);
         Assert.Contains(errors, e => e.Contains("circular", StringComparison.OrdinalIgnoreCase));
     }
+
+    [Fact]
+    public void RejectsEscalationLevelsThatAreMissingRecipientsOrOutOfOrder()
+    {
+        var definitions = new List<WorkflowDefinitionDto>
+        {
+            new()
+            {
+                WorkflowKey = "ESCALATION",
+                WorkflowName = "Escalation",
+                Enabled = true,
+                Steps =
+                {
+                    new WorkflowStepDefinitionDto
+                    {
+                        StepKey = "TASK",
+                        StepName = "Task",
+                        Owner = "owner@x.com",
+                        ExpectedDurationHours = 1,
+                        EscalationAfterHours = 8,
+                        EscalationOwner = "lead@x.com; manager@x.com",
+                        EscalationLevel2AfterHours = 4,
+                        Required = true,
+                        Enabled = true,
+                        SortOrder = 1
+                    }
+                }
+            }
+        };
+
+        var errors = WorkflowConfigurationService.ValidateDefinitions(definitions);
+
+        Assert.Contains(errors, error => error.Contains("level 2 needs at least one recipient", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(errors, error => error.Contains("level 2 must occur after level 1", StringComparison.OrdinalIgnoreCase));
+    }
 }

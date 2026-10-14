@@ -1,5 +1,5 @@
 using System.Security.Claims;
-using Microsoft.Extensions.Options;
+using TeamHub.AI.Contracts;
 using TeamHub.AI.ReportGenerator.Contracts;
 using TeamHub.Authentication;
 using TeamHub.Studio;
@@ -9,7 +9,6 @@ namespace TeamHub.Web.Reports;
 
 public interface IWeeklyWorkSummaryService
 {
-    bool IsEnabled { get; }
     Task<bool> CanGenerateAsync(CancellationToken cancellationToken = default);
     Task<WeeklyWorkSummaryPreview> GenerateAsync(
         DateOnly weekStart,
@@ -27,12 +26,10 @@ public sealed class WeeklyWorkSummaryService(
     IStudioDirectoryService studios,
     IStudioConfluenceUpdateService confluence,
     IWeeklyWorkSummaryWorkflow workflow,
-    IOptions<ReportGeneratorOptions> options) : IWeeklyWorkSummaryService
+    IAiConfigurationService configuration) : IWeeklyWorkSummaryService
 {
-    public bool IsEnabled => options.Value.Enabled;
-
     public async Task<bool> CanGenerateAsync(CancellationToken cancellationToken = default) =>
-        IsEnabled
+        (await configuration.GetAsync(cancellationToken)).ReportGenerator.Enabled
         && await access.CanAsync(TeamHubModules.AiReports, AccessLevel.Create, cancellationToken)
         && await access.CanAsync(TeamHubModules.StudioSupport, AccessLevel.ReadOnly, cancellationToken);
 
@@ -42,8 +39,8 @@ public sealed class WeeklyWorkSummaryService(
         ClaimsPrincipal user,
         CancellationToken cancellationToken = default)
     {
-        if (!IsEnabled)
-            throw new WeeklyWorkSummaryException("AI report generation is disabled. An administrator can enable AI:ReportGenerator:Enabled.");
+        if (!(await configuration.GetAsync(cancellationToken)).ReportGenerator.Enabled)
+            throw new WeeklyWorkSummaryException("AI report generation is disabled. An administrator can enable Report Generator in Configuration > AI Services.");
         if (!await CanGenerateAsync(cancellationToken))
             throw new UnauthorizedAccessException("AI Reports Create and Studio Support Read Only access are required to generate this report.");
         if (weekStart.DayOfWeek != DayOfWeek.Monday || weekEnd != weekStart.AddDays(4))

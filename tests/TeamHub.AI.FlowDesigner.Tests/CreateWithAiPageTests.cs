@@ -4,12 +4,12 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
 using Microsoft.AspNetCore.Mvc.ViewFeatures;
-using Microsoft.Extensions.Options;
 using TeamHub.AI.Contracts;
 using TeamHub.AI.FlowDesigner.Contracts;
 using TeamHub.FlowDesigner.Core.Contracts;
 using TeamHub.FlowDesigner.Core.Models;
 using TeamHub.FlowDesigner.Serialization;
+using TeamHub.FlowDesigner.Core.Validation;
 using TeamHub.FlowDesigner.Web.Pages.Flows;
 
 namespace TeamHub.AI.FlowDesigner.Tests;
@@ -17,19 +17,21 @@ namespace TeamHub.AI.FlowDesigner.Tests;
 public sealed class CreateWithAiPageTests
 {
     [Fact]
-    public void Disabled_feature_hides_the_create_with_ai_action()
+    public async Task Disabled_feature_hides_the_create_with_ai_action()
     {
         var model = new IndexModel(
-            null!,
-            null!,
+            new EmptyFlowService(),
+            new EmptyPublicationService(),
             new AllowCreatePermissionService(),
-            Options.Create(new AiFlowDesignerOptions { Enabled = false }));
+            new StubAiConfigurationService(false));
+
+        await model.OnGetAsync(CancellationToken.None);
 
         model.CanCreateWithAi.Should().BeFalse();
     }
 
     [Fact]
-    public void Disabled_feature_blocks_the_create_with_ai_page()
+    public async Task Disabled_feature_blocks_the_create_with_ai_page()
     {
         var model = CreatePageModel(
             new StubGenerationWorkflow(new FlowDiagramGenerationDraft(
@@ -37,7 +39,7 @@ public sealed class CreateWithAiPageTests
             new RecordingHierarchyService(),
             enabled: false);
 
-        model.OnGet().Should().BeOfType<NotFoundResult>();
+        (await model.OnGetAsync(CancellationToken.None)).Should().BeOfType<NotFoundResult>();
     }
 
     [Fact]
@@ -112,7 +114,7 @@ public sealed class CreateWithAiPageTests
             hierarchies,
             new SystemTextJsonFlowSerializer(),
             new AllowCreatePermissionService(),
-            Options.Create(new AiFlowDesignerOptions { Enabled = enabled }),
+            new StubAiConfigurationService(enabled),
             new EphemeralDataProtectionProvider());
         page.PageContext = new PageContext { HttpContext = new DefaultHttpContext() };
         page.TempData = new TempDataDictionary(page.HttpContext, new DictionaryTempDataProvider());
@@ -182,6 +184,53 @@ public sealed class CreateWithAiPageTests
         public bool CanUseDiagramType(DiagramType diagramType) => true;
         public bool CanManageTemplates() => false;
         public bool CanReviewPublications() => false;
+    }
+
+    private sealed class StubAiConfigurationService(bool enabled) : IAiConfigurationService
+    {
+        public Task<AiConfigurationSnapshot> GetAsync(CancellationToken cancellationToken = default) =>
+            Task.FromResult(new AiConfigurationSnapshot
+            {
+                FlowDesigner = new AiFlowDesignerOptions { Enabled = enabled }
+            });
+
+        public Task SaveAsync(SaveAiConfigurationRequest request, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+
+        public ValueTask<string?> GetCredentialAsync(
+            AiProviderSettings settings,
+            CancellationToken cancellationToken = default) => ValueTask.FromResult<string?>(null);
+    }
+
+    private sealed class EmptyFlowService : IFlowService
+    {
+        public Task<IReadOnlyList<FlowSummary>> ListAsync(CancellationToken cancellationToken = default) =>
+            Task.FromResult<IReadOnlyList<FlowSummary>>([]);
+        public Task<IReadOnlyList<FlowSummary>> ListLinkTargetsAsync(Guid sourceFlowId, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task<FlowDefinition?> GetAsync(Guid id, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task<FlowDefinition> CreateAsync(string name, string? description = null, DiagramType diagramType = DiagramType.StandardFlowchart, FlowTemplate template = FlowTemplate.Blank, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task<FlowValidationResult> SaveAsync(FlowDefinition flow, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task<NodeComment> AddNodeCommentAsync(Guid flowId, string nodeId, string body, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task RenameAsync(Guid id, string name, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task<FlowDefinition> DuplicateAsync(Guid id, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task DeleteAsync(Guid id, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+    }
+
+    private sealed class EmptyPublicationService : IFlowPublicationWorkflowService
+    {
+        public bool CanReview => false;
+        public Task<IReadOnlyList<PublishedFlowSummary>> ListPublishedAsync(CancellationToken cancellationToken = default) => Task.FromResult<IReadOnlyList<PublishedFlowSummary>>([]);
+        public Task<FlowPublicationRequestSummary> RequestAsync(Guid flowId, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task<FlowPublicationRequestSummary?> GetLatestRequestAsync(Guid flowId, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task<IReadOnlyList<FlowPublicationRequestSummary>> ListPendingAsync(CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task<FlowPublicationRequest?> GetRequestAsync(Guid requestId, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task<PublishedFlowSummary> ApproveAsync(Guid requestId, string? reviewNote, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task RejectAsync(Guid requestId, string reviewNote, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task<PublishedFlow?> GetPublishedBySourceAsync(Guid sourceFlowId, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task<IReadOnlyList<FlowSummary>> ListPublishedBundleAsync(Guid sourceFlowId, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task<FlowDefinition?> GetRequestDiagramAsync(Guid requestId, Guid flowId, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task<FlowDefinition> UpdatePublishedAsync(Guid sourceFlowId, FlowDefinition flow, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task<PublishedFlowSummary> DeletePublishedAsync(Guid sourceFlowId, CancellationToken cancellationToken = default) => throw new NotSupportedException();
     }
 
     private sealed class DictionaryTempDataProvider : ITempDataProvider

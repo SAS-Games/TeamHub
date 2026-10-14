@@ -29,23 +29,21 @@ In another PowerShell window:
 
 ## Select the Team Hub provider
 
-Team Hub keeps separate profiles for Ollama and llama.cpp. Change only the active
-provider:
+Sign in as an administrator and open **Configuration > AI Services**. Team Hub
+keeps separate profiles for Ollama, llama.cpp, and OpenAI-compatible servers.
+Select the active provider, save, and use **Save and test connection**. New AI
+requests use the saved configuration immediately.
 
-~~~text
-AI__Provider=LlamaCpp
-~~~
+The **Sony PFB AI Gateway** profile defaults to the organization gateway host.
+Paste an authorized JWT into the encrypted credential field, select the model
+and route assigned to that model, and clear **Offline-only** before testing.
+Team Hub reads the model catalog from `/portal/pfb/models` and never writes the
+JWT to JSON configuration or application logs.
 
-Switch back with:
-
-~~~text
-AI__Provider=Ollama
-~~~
-
-For local development, the same value can be changed in
-src/TeamHub.Web/appsettings.json. Restart Team Hub after switching. For IIS,
-set the environment variable on the Team Hub application pool and recycle the
-pool.
+`AI__Provider` and the other `AI__*` environment variables are bootstrap
+fallbacks only. They are used before an administrator first saves settings from
+the configuration page. After that, the database-backed settings take
+precedence.
 
 The llama.cpp profile defaults to http://127.0.0.1:8080 and model alias
 qwen3:8b. Override either value with:

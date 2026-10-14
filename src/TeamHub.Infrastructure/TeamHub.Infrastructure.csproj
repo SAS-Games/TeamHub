@@ -3,6 +3,7 @@
   <ItemGroup>
     <ProjectReference Include="..\TeamHub.Domain\TeamHub.Domain.csproj" />
     <ProjectReference Include="..\TeamHub.Application\TeamHub.Application.csproj" />
+    <ProjectReference Include="..\TeamHub.AI\TeamHub.AI.csproj" />
   </ItemGroup>
 
   <ItemGroup>

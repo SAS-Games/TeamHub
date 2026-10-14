@@ -1,0 +1,194 @@
+@page "/Configuration/AI"
+@model TeamHub.Web.Pages.Configuration.AIModel
+@using TeamHub.AI.Contracts
+@{
+    ViewData["Title"] = "AI Services";
+}
+
+<div class="page-hero">
+    <div>
+        <div class="eyebrow">Admin · Integrations</div>
+        <h1>AI Services</h1>
+        <p>Choose the model runtime used by Team Hub and control which AI-assisted features are available.</p>
+    </div>
+</div>
+
+@if (!string.IsNullOrWhiteSpace(Model.StatusMessage))
+{
+    <div class="alert alert-info" role="status">@Model.StatusMessage</div>
+}
+
+<form method="post">
+    <div asp-validation-summary="ModelOnly" class="text-danger mb-3"></div>
+
+    <section class="content-section mb-4">
+        <div class="section-heading"><div><span>Runtime</span><h2>Provider selection</h2></div></div>
+        <div class="p-4 row g-3">
+            <div class="col-12 col-lg-6">
+                <label asp-for="Settings.Provider" class="form-label">Active provider</label>
+                <select asp-for="Settings.Provider" class="form-select">
+                    <option value="@AiModelProviderKeys.Ollama">Ollama</option>
+                    <option value="@AiModelProviderKeys.LlamaCpp">llama.cpp</option>
+                    <option value="@AiModelProviderKeys.OpenAiCompatible">OpenAI-compatible</option>
+                    <option value="@AiModelProviderKeys.PfbAiGateway">Sony PFB AI Gateway</option>
+                </select>
+            </div>
+            <div class="col-6 col-lg-3">
+                <label asp-for="Settings.Temperature" class="form-label">Temperature</label>
+                <input asp-for="Settings.Temperature" class="form-control" step="0.1" />
+                <span asp-validation-for="Settings.Temperature" class="text-danger"></span>
+            </div>
+            <div class="col-6 col-lg-3">
+                <label asp-for="Settings.TimeoutSeconds" class="form-label">Timeout (seconds)</label>
+                <input asp-for="Settings.TimeoutSeconds" class="form-control" />
+                <span asp-validation-for="Settings.TimeoutSeconds" class="text-danger"></span>
+            </div>
+            <div class="col-12">
+                <div class="form-check">
+                    <input asp-for="Settings.OfflineOnly" class="form-check-input" />
+                    <label asp-for="Settings.OfflineOnly" class="form-check-label">Offline-only: require the active endpoint to use localhost or another loopback address</label>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section class="content-section mb-4">
+        <div class="section-heading"><div><span>Models</span><h2>Provider profiles</h2></div></div>
+        <div class="p-4">
+            <div class="row g-3 mb-4">
+                <div class="col-12"><h3 class="h5">Ollama</h3></div>
+                <div class="col-12 col-lg-8"><label asp-for="Settings.OllamaEndpoint" class="form-label">Endpoint</label><input asp-for="Settings.OllamaEndpoint" class="form-control" /><span asp-validation-for="Settings.OllamaEndpoint" class="text-danger"></span></div>
+                <div class="col-12 col-lg-4"><label asp-for="Settings.OllamaModel" class="form-label">Model</label><input asp-for="Settings.OllamaModel" class="form-control" /><span asp-validation-for="Settings.OllamaModel" class="text-danger"></span></div>
+            </div>
+            <div class="row g-3 mb-4">
+                <div class="col-12"><h3 class="h5">llama.cpp</h3></div>
+                <div class="col-12 col-lg-8"><label asp-for="Settings.LlamaCppEndpoint" class="form-label">Endpoint</label><input asp-for="Settings.LlamaCppEndpoint" class="form-control" /><span asp-validation-for="Settings.LlamaCppEndpoint" class="text-danger"></span></div>
+                <div class="col-12 col-lg-4"><label asp-for="Settings.LlamaCppModel" class="form-label">Model alias</label><input asp-for="Settings.LlamaCppModel" class="form-control" /><span asp-validation-for="Settings.LlamaCppModel" class="text-danger"></span></div>
+            </div>
+            <div class="row g-3">
+                <div class="col-12"><h3 class="h5">OpenAI-compatible</h3></div>
+                <div class="col-12 col-lg-8"><label asp-for="Settings.OpenAiCompatibleEndpoint" class="form-label">Endpoint</label><input asp-for="Settings.OpenAiCompatibleEndpoint" class="form-control" /><span asp-validation-for="Settings.OpenAiCompatibleEndpoint" class="text-danger"></span></div>
+                <div class="col-12 col-lg-4"><label asp-for="Settings.OpenAiCompatibleModel" class="form-label">Model</label><input asp-for="Settings.OpenAiCompatibleModel" class="form-control" /><span asp-validation-for="Settings.OpenAiCompatibleModel" class="text-danger"></span></div>
+            </div>
+            <hr class="my-4" />
+            <div class="row g-3">
+                <div class="col-12"><h3 class="h5">Sony PFB AI Gateway</h3><p class="text-secondary mb-0">Uses JWT bearer authentication and the organization gateway model catalog.</p></div>
+                <div class="col-12 col-lg-6"><label asp-for="Settings.PfbAiGatewayEndpoint" class="form-label">Gateway host</label><input asp-for="Settings.PfbAiGatewayEndpoint" class="form-control" /><span asp-validation-for="Settings.PfbAiGatewayEndpoint" class="text-danger"></span></div>
+                <div class="col-12 col-lg-3">
+                    <label asp-for="Settings.PfbAiGatewayModel" class="form-label">Model</label>
+                    <select asp-for="Settings.PfbAiGatewayModel" class="form-select">
+                        @if (!Model.PfbModels.Any(model => string.Equals(model.Id, Model.Settings.PfbAiGatewayModel, StringComparison.OrdinalIgnoreCase)))
+                        {
+                            <option value="@Model.Settings.PfbAiGatewayModel">@Model.Settings.PfbAiGatewayModel (configured)</option>
+                        }
+                        @foreach (var catalogModel in Model.PfbModels)
+                        {
+                            var label = string.IsNullOrWhiteSpace(catalogModel.CostTier)
+                                ? catalogModel.Id
+                                : $"{catalogModel.Id} [{catalogModel.CostTier}]";
+                            <option value="@catalogModel.Id">@label</option>
+                        }
+                    </select>
+                    <span asp-validation-for="Settings.PfbAiGatewayModel" class="text-danger"></span>
+                </div>
+                <div class="col-12 col-lg-3">
+                    <label asp-for="Settings.PfbAiGatewayApiMode" class="form-label">API route</label>
+                    <select asp-for="Settings.PfbAiGatewayApiMode" class="form-select">
+                        <option value="CommonChat">Common chat</option>
+                        <option value="OpenAiChat">OpenAI chat completions</option>
+                        <option value="OpenAiResponses">OpenAI responses</option>
+                    </select>
+                </div>
+                <div class="col-12">
+                    <div class="form-text">@Model.PfbModelCatalogMessage</div>
+                    <div class="form-text">Model discovery uses <code>/portal/pfb/models</code>. Remote gateway use requires Offline-only to be cleared. Reload this page to refresh the catalog.</div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section class="content-section mb-4">
+        <div class="section-heading"><div><span>Security</span><h2>Provider credential</h2></div></div>
+        <div class="p-4 row g-3">
+            <div class="col-12 col-lg-6">
+                <label asp-for="Credential" class="form-label">Replace API key or bearer token</label>
+                <input asp-for="Credential" class="form-control" autocomplete="new-password" placeholder="Leave blank to keep the existing credential" />
+                <div class="form-text">Stored encrypted with ASP.NET Core Data Protection and never displayed again.</div>
+            </div>
+            <div class="col-12 col-lg-6">
+                <label asp-for="Settings.CredentialEnvironmentVariable" class="form-label">Environment-variable fallback</label>
+                <input asp-for="Settings.CredentialEnvironmentVariable" class="form-control" />
+                <div class="form-text">Used only when no encrypted credential is stored.</div>
+            </div>
+            <div class="col-12">
+                <span class="badge @(Model.HasCredential ? "text-bg-success" : "text-bg-secondary")">@(Model.HasCredential ? "Credential configured" : "No credential configured")</span>
+                @if (Model.HasCredential)
+                {
+                    <div class="form-check mt-2"><input asp-for="RemoveCredential" class="form-check-input" /><label asp-for="RemoveCredential" class="form-check-label">Remove the stored credential</label></div>
+                }
+            </div>
+        </div>
+    </section>
+
+    <section class="content-section mb-4">
+        <div class="section-heading"><div><span>Feature</span><h2>Flow Designer</h2></div></div>
+        <div class="p-4 row g-3">
+            <div class="col-12"><div class="form-check"><input asp-for="Settings.FlowDesignerEnabled" class="form-check-input" /><label asp-for="Settings.FlowDesignerEnabled" class="form-check-label">Enable Create with AI</label></div></div>
+            <div class="col-6 col-lg-4"><label asp-for="Settings.MaximumSourceDocuments" class="form-label">Maximum source documents</label><input asp-for="Settings.MaximumSourceDocuments" class="form-control" /></div>
+            <div class="col-6 col-lg-4"><label asp-for="Settings.MaximumSourceCharacters" class="form-label">Maximum source characters</label><input asp-for="Settings.MaximumSourceCharacters" class="form-control" /></div>
+            <div class="col-6 col-lg-4"><label asp-for="Settings.MaximumPromptCharacters" class="form-label">Maximum prompt characters</label><input asp-for="Settings.MaximumPromptCharacters" class="form-control" /></div>
+            <div class="col-6 col-lg-4"><label asp-for="Settings.MaximumOutputTokens" class="form-label">Maximum output tokens</label><input asp-for="Settings.MaximumOutputTokens" class="form-control" /></div>
+            <div class="col-6 col-lg-4"><label asp-for="Settings.MaximumDiagrams" class="form-label">Maximum diagrams</label><input asp-for="Settings.MaximumDiagrams" class="form-control" /></div>
+            <div class="col-6 col-lg-4"><label asp-for="Settings.MaximumHierarchyDepth" class="form-label">Maximum hierarchy depth</label><input asp-for="Settings.MaximumHierarchyDepth" class="form-control" /></div>
+        </div>
+    </section>
+
+    <section class="content-section mb-4">
+        <div class="section-heading"><div><span>Support Summary</span><h2>Report Generator</h2></div></div>
+        <div class="p-4 row g-3">
+            <div class="col-12">
+                <div class="form-check">
+                    <input asp-for="Settings.ReportGeneratorEnabled" class="form-check-input" />
+                    <label asp-for="Settings.ReportGeneratorEnabled" class="form-check-label">Enable Weekly Work Summary</label>
+                </div>
+                <div class="form-text">Uses the shared provider, model, and credential above. Users also need AI Reports Create and Studio Support Read Only access.</div>
+            </div>
+            <div class="col-md-4">
+                <label asp-for="Settings.ReportMaximumConcurrentRequests" class="form-label">Maximum concurrent reports</label>
+                <input asp-for="Settings.ReportMaximumConcurrentRequests" class="form-control" />
+                <span asp-validation-for="Settings.ReportMaximumConcurrentRequests" class="text-danger"></span>
+            </div>
+            <div class="col-md-4">
+                <label asp-for="Settings.ReportMaximumSourceCharactersPerStudio" class="form-label">Maximum source characters per studio</label>
+                <input asp-for="Settings.ReportMaximumSourceCharactersPerStudio" class="form-control" />
+                <span asp-validation-for="Settings.ReportMaximumSourceCharactersPerStudio" class="text-danger"></span>
+            </div>
+            <div class="col-md-4">
+                <label asp-for="Settings.ReportMaximumOutputTokens" class="form-label">Maximum report output tokens</label>
+                <input asp-for="Settings.ReportMaximumOutputTokens" class="form-control" />
+                <span asp-validation-for="Settings.ReportMaximumOutputTokens" class="text-danger"></span>
+            </div>
+            <div class="col-12">
+                <label asp-for="Settings.WeeklyWorkSummaryPromptPath" class="form-label">Weekly Work Summary instruction file</label>
+                <input asp-for="Settings.WeeklyWorkSummaryPromptPath" class="form-control" />
+                <span asp-validation-for="Settings.WeeklyWorkSummaryPromptPath" class="text-danger"></span>
+                <div class="form-text">Relative paths resolve from the application directory. Instruction file changes are read for each report.</div>
+            </div>
+        </div>
+    </section>
+
+    @if (Model.UpdatedAtUtc.HasValue)
+    {
+        <p class="text-secondary small">Last changed by @Model.UpdatedBy at @Model.UpdatedAtUtc.Value.ToLocalTime().ToString("g").</p>
+    }
+
+    <div class="d-flex flex-wrap gap-2">
+        <button type="submit" asp-page-handler="Save" class="btn btn-primary">Save configuration</button>
+        <button type="submit" asp-page-handler="Test" class="btn btn-outline-primary">Save and test connection</button>
+        <a asp-page="/Configuration/Index" class="btn btn-outline-secondary">Back to Configuration</a>
+    </div>
+</form>
+
+@section Scripts {
+    <partial name="_ValidationScriptsPartial" />
+}

@@ -2,27 +2,38 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
-using Microsoft.Extensions.Options;
 using TeamHub.AI.Contracts;
 using TeamHub.AI.ReportGenerator.Contracts;
 using TeamHub.AI.ReportGenerator.Persistence;
 
 namespace TeamHub.AI.ReportGenerator.Application;
 
-internal sealed class ReportGenerationGate(IOptions<ReportGeneratorOptions> options) : IDisposable
+internal sealed class ReportGenerationGate
 {
-    public SemaphoreSlim Semaphore { get; } = new(
-        options.Value.MaximumConcurrentRequests,
-        options.Value.MaximumConcurrentRequests);
+    private readonly object sync = new();
+    private int activeRequests;
 
-    public void Dispose() => Semaphore.Dispose();
+    public bool TryEnter(int maximumConcurrentRequests)
+    {
+        lock (sync)
+        {
+            if (activeRequests >= maximumConcurrentRequests) return false;
+            activeRequests++;
+            return true;
+        }
+    }
+
+    public void Exit()
+    {
+        lock (sync) activeRequests--;
+    }
 }
 
 internal sealed partial class WeeklyWorkSummaryWorkflow(
     IAiModelService modelService,
     IAiReportRunRepository runs,
     ReportGenerationGate gate,
-    IOptions<ReportGeneratorOptions> options) : IWeeklyWorkSummaryWorkflow
+    IAiConfigurationService configuration) : IWeeklyWorkSummaryWorkflow
 {
     private static readonly JsonElement Schema = JsonSerializer.SerializeToElement(new
     {
@@ -40,7 +51,8 @@ internal sealed partial class WeeklyWorkSummaryWorkflow(
         WeeklyWorkSummaryRequest request,
         CancellationToken cancellationToken = default)
     {
-        if (!options.Value.Enabled)
+        var options = (await configuration.GetAsync(cancellationToken)).ReportGenerator;
+        if (!options.Enabled)
             throw new WeeklyWorkSummaryException("AI report generation is disabled.");
         if (request.WeekStart.DayOfWeek != DayOfWeek.Monday
             || request.WeekEnd != request.WeekStart.AddDays(4))
@@ -55,12 +67,13 @@ internal sealed partial class WeeklyWorkSummaryWorkflow(
             if (string.IsNullOrWhiteSpace(source.StudioId) || string.IsNullOrWhiteSpace(source.StudioName)
                 || string.IsNullOrWhiteSpace(source.HpgdsSupport + source.Notes))
                 throw new WeeklyWorkSummaryException("The weekly source contains an incomplete studio record.");
-            if (source.HpgdsSupport.Length + source.Notes.Length > options.Value.MaximumSourceCharactersPerStudio)
+            if (source.HpgdsSupport.Length + source.Notes.Length > options.MaximumSourceCharactersPerStudio)
                 throw new WeeklyWorkSummaryException(
                     $"The support activity for {source.StudioName} exceeds the configured AI source limit. No content was truncated.");
         }
 
-        if (!await gate.Semaphore.WaitAsync(0, cancellationToken))
+        cancellationToken.ThrowIfCancellationRequested();
+        if (!gate.TryEnter(options.MaximumConcurrentRequests))
             throw new WeeklyWorkSummaryException("AI report generation is busy. Please try again after the current report finishes.");
         try
         {
@@ -79,7 +92,7 @@ internal sealed partial class WeeklyWorkSummaryWorkflow(
                         prompt.Instructions,
                         JsonSerializer.Serialize(new { hpgdsSupport = source.HpgdsSupport, notes = source.Notes }),
                         Schema,
-                        options.Value.MaximumOutputTokens),
+                        options.MaximumOutputTokens),
                     cancellationToken);
                 var activity = ParseAndValidate(generation.Content, source);
                 rows.Add(new WeeklyWorkSummaryRow(source.StudioName, activity));
@@ -98,7 +111,7 @@ internal sealed partial class WeeklyWorkSummaryWorkflow(
         }
         finally
         {
-            gate.Semaphore.Release();
+            gate.Exit();
         }
     }
 

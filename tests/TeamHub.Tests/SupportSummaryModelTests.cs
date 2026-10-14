@@ -3,7 +3,7 @@ using FluentAssertions;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc.RazorPages;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.Extensions.Options;
+using TeamHub.AI.Contracts;
 using TeamHub.AI.ReportGenerator.Contracts;
 using TeamHub.Web.AccessControl;
 using TeamHub.Web.Reports;
@@ -413,7 +413,7 @@ public sealed class SupportSummaryModelTests
         var service = new WeeklyWorkSummaryService(
             new StubCurrentAccess(granted, userType: userType), new StubStudioDirectoryService([]),
             new StubConfluenceService(), new StubWeeklyWorkflow(),
-            Options.Create(new ReportGeneratorOptions { Enabled = enabled }));
+            new StubAiConfiguration(enabled));
         (await service.CanGenerateAsync()).Should().Be(expected);
     }
 
@@ -429,7 +429,7 @@ public sealed class SupportSummaryModelTests
             new StubCurrentAccess(allowed ? AccessLevel.Create : AccessLevel.ReadOnly,
                 userType: TeamHubUserTypes.Registered),
             new StubStudioDirectoryService([Studio("one", "One", "One", true)]),
-            confluence, workflow, Options.Create(new ReportGeneratorOptions { Enabled = enabled }));
+            confluence, workflow, new StubAiConfiguration(enabled));
         Func<Task> act = () => service.GenerateAsync(new DateOnly(2026, 8, 31), new DateOnly(2026, 9, 4),
             new ClaimsPrincipal());
         if (!allowed) await act.Should().ThrowAsync<UnauthorizedAccessException>();
@@ -439,12 +439,32 @@ public sealed class SupportSummaryModelTests
     }
 
     [Fact]
+    public async Task WeeklySummaryService_ReadsUpdatedConfigurationWithoutRecreatingTheService()
+    {
+        var configuration = new StubAiConfiguration(false);
+        var confluence = new StubConfluenceService();
+        var service = new WeeklyWorkSummaryService(
+            new StubCurrentAccess(AccessLevel.Create), new StubStudioDirectoryService([]),
+            confluence, new StubWeeklyWorkflow(), configuration);
+
+        (await service.CanGenerateAsync()).Should().BeFalse();
+        configuration.Snapshot.ReportGenerator.Enabled = true;
+        (await service.CanGenerateAsync()).Should().BeTrue();
+        configuration.Snapshot.ReportGenerator.Enabled = false;
+        (await service.CanGenerateAsync()).Should().BeFalse();
+        var generate = () => service.GenerateAsync(new DateOnly(2026, 8, 31), new DateOnly(2026, 9, 4),
+            new ClaimsPrincipal());
+        await generate.Should().ThrowAsync<WeeklyWorkSummaryException>().WithMessage("*Configuration > AI Services*");
+        confluence.LastQuery.Should().BeNull();
+    }
+
+    [Fact]
     public async Task WeeklySummaryService_DeniesMissingStudioSupportPermission()
     {
         var service = new WeeklyWorkSummaryService(
             new StubCurrentAccess(AccessLevel.Create, AccessLevel.NoAccess, TeamHubUserTypes.Registered),
             new StubStudioDirectoryService([]), new StubConfluenceService(), new StubWeeklyWorkflow(),
-            Options.Create(new ReportGeneratorOptions { Enabled = true }));
+            new StubAiConfiguration(true));
         (await service.CanGenerateAsync()).Should().BeFalse();
     }
 
@@ -458,7 +478,7 @@ public sealed class SupportSummaryModelTests
             new StubConfluenceService
             {
                 Result = new StudioConfluenceUpdateResult { IsConfigured = true, Message = "Confluence could not be read." }
-            }, workflow, Options.Create(new ReportGeneratorOptions { Enabled = true }));
+            }, workflow, new StubAiConfiguration(true));
         var act = () => service.GenerateAsync(new DateOnly(2026, 8, 31), new DateOnly(2026, 9, 4),
             new ClaimsPrincipal());
         await act.Should().ThrowAsync<WeeklyWorkSummaryException>().WithMessage("Confluence could not be read.");
@@ -536,7 +556,7 @@ public sealed class SupportSummaryModelTests
         var service = new WeeklyWorkSummaryService(
             new StubCurrentAccess(AccessLevel.Create, userType: role),
             new StubStudioDirectoryService([second, Studio("inactive", "Inactive", "Inactive", false), first]),
-            confluence, workflow, Options.Create(new ReportGeneratorOptions { Enabled = true }));
+            confluence, workflow, new StubAiConfiguration(true));
         var user = new ClaimsPrincipal(new ClaimsIdentity(
             [new Claim(ClaimTypes.Name, "reader@example.com"), new Claim(ClaimTypes.Role, role)], "Test"));
 
@@ -573,7 +593,7 @@ public sealed class SupportSummaryModelTests
                 Studio("present", "Present", "P", true),
                 Studio("empty", "Empty", "E", true),
                 Studio("missing", "Missing", "M", true)]),
-            confluence, workflow, Options.Create(new ReportGeneratorOptions { Enabled = true }));
+            confluence, workflow, new StubAiConfiguration(true));
         var preview = await service.GenerateAsync(new DateOnly(2026, 8, 31), new DateOnly(2026, 9, 4),
             new ClaimsPrincipal(new ClaimsIdentity([new Claim(ClaimTypes.Name, "reader")], "Test")));
         workflow.Request!.Sources.Should().ContainSingle().Which.StudioId.Should().Be("present");
@@ -603,6 +623,23 @@ public sealed class SupportSummaryModelTests
         }
     };
 
+    private sealed class StubAiConfiguration(bool enabled) : IAiConfigurationService
+    {
+        public AiConfigurationSnapshot Snapshot { get; set; } = new()
+        {
+            ReportGenerator = new AiReportGeneratorOptions { Enabled = enabled }
+        };
+
+        public Task<AiConfigurationSnapshot> GetAsync(CancellationToken cancellationToken = default) =>
+            Task.FromResult(Snapshot);
+
+        public Task SaveAsync(SaveAiConfigurationRequest request, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+
+        public ValueTask<string?> GetCredentialAsync(AiProviderSettings settings, CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult<string?>(null);
+    }
+
     private sealed class StubWeeklySummaryService : IWeeklyWorkSummaryService
     {
         public bool IsEnabled { get; set; } = true;
@@ -611,7 +648,7 @@ public sealed class SupportSummaryModelTests
         public DateOnly Start { get; private set; }
         public DateOnly End { get; private set; }
         public Exception? Error { get; set; }
-        public Task<bool> CanGenerateAsync(CancellationToken cancellationToken = default) => Task.FromResult(Allowed);
+        public Task<bool> CanGenerateAsync(CancellationToken cancellationToken = default) => Task.FromResult(IsEnabled && Allowed);
         public Task<WeeklyWorkSummaryPreview> GenerateAsync(DateOnly start, DateOnly end, ClaimsPrincipal user,
             CancellationToken cancellationToken = default)
         {

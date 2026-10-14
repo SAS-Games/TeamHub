@@ -66,6 +66,8 @@ Email delivery is configured by an administrator under **Configuration > Email S
 
 ## Local AI runtime
 
+Administrators configure AI under **Configuration > AI Services**. The page selects the provider and model, manages the encrypted provider credential, tests connectivity, and enables AI-assisted features without restarting Team Hub. Team Hub supports `Ollama`, `LlamaCpp`, a generic `OpenAICompatible` provider, and the Sony PFB AI Gateway. PFB uses JWT bearer authentication, discovers models through `/portal/pfb/models`, and supports its common chat, OpenAI chat-completions, and OpenAI Responses routes. Values in `appsettings.json` are bootstrap defaults used until an administrator saves database-backed settings.
+
 ### Jira comment preview
 
 In **Support Summary > Support Activity Tickets**, use **Latest Comments** to
@@ -90,7 +92,7 @@ use **Generate Weekly Work Summary**. The AI reads only that week's Confluence
 HPGDS Support and Notes for all active studios and produces a reviewable
 **Studio | Support Activity** table. Search does not narrow generation.
 
-Set `AI:ReportGenerator:Enabled=true` to enable the feature. Admins can generate;
+Enable **Weekly Work Summary** under **Configuration > AI Services > Report Generator**. Admins can generate;
 other users need **AI Reports: Create** or higher in the access matrix and
 **Studio Support: Read Only** or higher. Existing Confluence credentials remain
 required. Source records are never edited. Review the draft before sharing;
@@ -105,7 +107,6 @@ table for pasting into documents, email or spreadsheets.
 See [project context](docs/PROJECT_CONTEXT.md) and
 [AI reports](docs/AI_GENERATED_REPORTS.md) for boundaries and remaining scope.
 
-Team Hub supports `Ollama`, `LlamaCpp`, and a generic `OpenAICompatible` provider. Ollama and llama.cpp have separate endpoint/model profiles in `appsettings.json`; switch between them by changing only `AI:Provider` and restarting Team Hub.
 
 For an organization-approved llama.cpp deployment, see `scripts/ai/README.md`. The supplied scripts never download software or models, bind llama-server to loopback, optionally verify SHA-256 hashes, and validate that the configured model alias is available. The runtime binary and GGUF model must be obtained through the organization's approved software-distribution process.
 
@@ -178,6 +179,13 @@ Studio Configuration stores each studio's time zone and an ordered list of inter
 Jira and Confluence are configured from **Configuration → Jira & Confluence**. Admins manage the shared server URLs and API paths, per-studio Jira project/component mappings and Confluence table identifiers, one global Confluence Activities/year/month/weekly-page hierarchy, and optional default Bearer tokens; no API tokens are stored in JSON or application settings. The Studio Support area contains Jira Tickets and read-only Weekly Updates pages. Weekly Updates defaults to the current Monday–Friday page and can read each week touched by a selected date range, returning only the configured studio row. Jira component matching is exact apart from capitalization, so separators must match. Admins can grant active Privileged users Jira and Confluence read-only access through those encrypted default credentials. Other authorized users open **My Atlassian Connection** and supply their own Bearer API tokens. Personal and default tokens are encrypted with ASP.NET Core Data Protection before storage in `data/studio.db` and are never displayed after saving. Requests using shared credentials are explicitly read-only. Keep the `data/protection-keys` directory private and back it up with the database because stored tokens cannot be decrypted without those keys.
 
 Access Management uses cumulative levels: No Access, Read Only, Create, Edit, Delete, and Full Access. Studio Configuration uses explicit Create, Edit, and Delete handlers, hides actions the current user cannot perform, and enforces the same checks in middleware. Jira Tickets and Weekly Updates share the **Studio Support** permission. Existing **Studio Jira Tickets** permission records are migrated automatically without changing their configured levels.
+
+## Work Center workflow lifecycle
+
+The proposed end-to-end design for workflow drafts, reusable templates,
+publication, availability in Start New, runtime completion, history, permissions,
+and edge cases is documented in
+[docs/WORK_CENTER_WORKFLOW_LIFECYCLE.md](docs/WORK_CENTER_WORKFLOW_LIFECYCLE.md).
 
 ## Current POC Behavior
 

@@ -239,7 +239,92 @@ public sealed class WeeklyWorkSummaryWorkflowTests
     private static WeeklyWorkSummaryRequest Request(params WeeklyWorkSummarySource[] sources) =>
         new(new DateOnly(2026, 8, 31), new DateOnly(2026, 9, 4), "reader@example.com", sources);
 
-    private static ServiceProvider Services(StubModel model, StubRuns runs, bool enabled = true, string? promptPath = null)
+    [Fact]
+    public async Task Generate_UsesSavedEnablementLimitsAndPromptInsteadOfBootstrapDefaults()
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"teamhub-configured-prompt-{Guid.NewGuid():N}.md");
+        try
+        {
+            await File.WriteAllTextAsync(path, "Configured instructions");
+            var settings = new StubConfiguration
+            {
+                Snapshot = new AiConfigurationSnapshot
+                {
+                    ReportGenerator = new AiReportGeneratorOptions
+                    {
+                        Enabled = true,
+                        MaximumSourceCharactersPerStudio = 20,
+                        MaximumOutputTokens = 1234,
+                        WeeklyWorkSummaryPromptPath = path
+                    }
+                }
+            };
+            var model = new StubModel();
+            using var services = Services(model, new StubRuns(), enabled: false, savedSettings: settings);
+            var workflow = services.GetRequiredService<IWeeklyWorkSummaryWorkflow>();
+            var request = Request(new WeeklyWorkSummarySource("one", "First", "Reviewed build.", "", "page", 1));
+
+            (await workflow.GenerateAsync(request)).Rows.Should().ContainSingle();
+            model.Requests.Single().MaximumOutputTokens.Should().Be(1234);
+            model.Requests.Single().SystemPrompt.Should().Be("Configured instructions");
+            settings.Snapshot.ReportGenerator.MaximumSourceCharactersPerStudio = 5;
+            var tooLarge = () => workflow.GenerateAsync(request);
+            await tooLarge.Should().ThrowAsync<WeeklyWorkSummaryException>().WithMessage("*source limit*");
+            settings.Snapshot.ReportGenerator.Enabled = false;
+            var disabled = () => workflow.GenerateAsync(request);
+            await disabled.Should().ThrowAsync<WeeklyWorkSummaryException>().WithMessage("*disabled*");
+            model.Requests.Should().ContainSingle();
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    [Fact]
+    public async Task Generate_UpdatesSharedConcurrencyLimitWithoutRestartOrCancellingActiveReports()
+    {
+        var settings = new StubConfiguration
+        {
+            Snapshot = new AiConfigurationSnapshot
+            {
+                ReportGenerator = new AiReportGeneratorOptions { Enabled = true }
+            }
+        };
+        var model = new StubModel { Entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously) };
+        using var services = Services(model, new StubRuns(), savedSettings: settings);
+        using var firstScope = services.CreateScope();
+        using var secondScope = services.CreateScope();
+        var firstWorkflow = firstScope.ServiceProvider.GetRequiredService<IWeeklyWorkSummaryWorkflow>();
+        var secondWorkflow = secondScope.ServiceProvider.GetRequiredService<IWeeklyWorkSummaryWorkflow>();
+        var request = Request(new WeeklyWorkSummarySource("one", "First", "Reviewed build.", "", "page", 1));
+        using var firstCancellation = new CancellationTokenSource();
+        using var secondCancellation = new CancellationTokenSource();
+        var first = firstWorkflow.GenerateAsync(request, firstCancellation.Token);
+        await model.Entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        var busy = () => secondWorkflow.GenerateAsync(request);
+        await busy.Should().ThrowAsync<WeeklyWorkSummaryException>().WithMessage("*busy*");
+        settings.Snapshot.ReportGenerator.MaximumConcurrentRequests = 2;
+        model.Entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var second = secondWorkflow.GenerateAsync(request, secondCancellation.Token);
+        await model.Entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        settings.Snapshot.ReportGenerator.MaximumConcurrentRequests = 1;
+        await busy.Should().ThrowAsync<WeeklyWorkSummaryException>().WithMessage("*busy*");
+        first.IsCompleted.Should().BeFalse();
+        second.IsCompleted.Should().BeFalse();
+        firstCancellation.Cancel();
+        var cancelledFirst = () => first;
+        await cancelledFirst.Should().ThrowAsync<OperationCanceledException>();
+        await busy.Should().ThrowAsync<WeeklyWorkSummaryException>().WithMessage("*busy*");
+        secondCancellation.Cancel();
+        var cancelledSecond = () => second;
+        await cancelledSecond.Should().ThrowAsync<OperationCanceledException>();
+        model.Entered = null;
+        (await firstWorkflow.GenerateAsync(request)).Rows.Should().ContainSingle();
+    }
+
+    private static ServiceProvider Services(StubModel model, StubRuns runs, bool enabled = true,
+        string? promptPath = null, StubConfiguration? savedSettings = null)
     {
         var settings = new Dictionary<string, string?>
         {
@@ -249,9 +334,21 @@ public sealed class WeeklyWorkSummaryWorkflowTests
         var configuration = new ConfigurationBuilder().AddInMemoryCollection(settings).Build();
         var services = new ServiceCollection();
         services.AddReportGenerator(configuration);
+        if (savedSettings is not null) services.AddSingleton<IAiConfigurationService>(savedSettings);
         services.AddSingleton<IAiModelService>(model);
         services.AddSingleton<IAiReportRunRepository>(runs);
         return services.BuildServiceProvider();
+    }
+
+    private sealed class StubConfiguration : IAiConfigurationService
+    {
+        public AiConfigurationSnapshot Snapshot { get; set; } = new();
+        public Task<AiConfigurationSnapshot> GetAsync(CancellationToken cancellationToken = default) =>
+            Task.FromResult(Snapshot);
+        public Task SaveAsync(SaveAiConfigurationRequest request, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+        public ValueTask<string?> GetCredentialAsync(AiProviderSettings settings, CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult<string?>(null);
     }
 
     private sealed class StubModel : IAiModelService

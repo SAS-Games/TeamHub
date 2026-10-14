@@ -3,6 +3,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using TeamHub.AI.ReportGenerator.Contracts;
 using TeamHub.AI.ReportGenerator.Application;
+using TeamHub.AI.Contracts;
 using TeamHub.AI.ReportGenerator.Persistence;
 
 namespace TeamHub.AI.ReportGenerator;
@@ -13,8 +14,9 @@ public static class ReportGeneratorServiceCollectionExtensions
         this IServiceCollection services,
         IConfiguration configuration)
     {
-        services.AddOptions<ReportGeneratorOptions>()
-            .Bind(configuration.GetSection(ReportGeneratorOptions.SectionName))
+        services.AddTeamHubAiConfiguration(configuration);
+        services.AddOptions<AiReportGeneratorOptions>()
+            .Bind(configuration.GetSection(AiReportGeneratorOptions.SectionName))
             .Validate(options => options.MaximumConcurrentRequests is >= 1 and <= 16,
                 "AI:ReportGenerator:MaximumConcurrentRequests must be between 1 and 16.")
             .Validate(options => options.MaximumSourceCharactersPerStudio is >= 1 and <= 120000,
