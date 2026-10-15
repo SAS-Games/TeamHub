@@ -61,6 +61,9 @@ public sealed partial class MilestoneReviewModel(
     [BindProperty]
     public Guid FeedbackId { get; set; }
 
+    [BindProperty(SupportsGet = true)]
+    public Guid? EditFeedbackId { get; set; }
+
     [BindProperty]
     public int Version { get; set; }
 
@@ -82,6 +85,7 @@ public sealed partial class MilestoneReviewModel(
     public IReadOnlyList<ReviewSnapshot> HistoryReviews { get; private set; } = [];
     public IReadOnlyList<MilestoneReviewUser> AvailableReviewers { get; private set; } = [];
     public Guid? CurrentUserId { get; private set; }
+    public bool HasFeedbackEditAccess { get; private set; }
     public bool IsAdmin => User.IsInRole(TeamHubUserTypes.Admin);
 
     [TempData]
@@ -94,6 +98,11 @@ public sealed partial class MilestoneReviewModel(
     {
         if (EditReviewId.HasValue && !IsAdmin) return Forbid();
         await LoadAsync(cancellationToken);
+        if (EditFeedbackId.HasValue)
+        {
+            var feedback = CurrentReview?.Feedback.SingleOrDefault(item => item.Id == EditFeedbackId);
+            if (feedback is null || !CanEdit(feedback)) return Forbid();
+        }
         if (EditReviewId.HasValue)
         {
             if (EditingReview is null)
@@ -318,6 +327,8 @@ public sealed partial class MilestoneReviewModel(
 
     public async Task<IActionResult> OnPostSaveFeedbackAsync(CancellationToken cancellationToken)
     {
+        if (!await access.CanAsync(TeamHubModules.MilestoneReview, AccessLevel.Edit, cancellationToken))
+            return Forbid();
         var current = await access.GetCurrentAsync(cancellationToken);
         if (current.User is null)
             return Forbid();
@@ -498,13 +509,17 @@ public sealed partial class MilestoneReviewModel(
     private static partial Regex TicketKey();
 
     public bool CanEdit(MilestoneReviewFeedback feedback) =>
-        IsAdmin || (CurrentUserId == feedback.ReviewerId
-            && CurrentReview?.AssignedReviewers.Any(item => item.Id == feedback.ReviewerId) == true);
+        HasFeedbackEditAccess && (IsAdmin || (CurrentUserId == feedback.ReviewerId
+            && CurrentReview?.AssignedReviewers.Any(item => item.Id == feedback.ReviewerId) == true));
+
+    public bool IsEditingFeedback(MilestoneReviewFeedback feedback) =>
+        CanEdit(feedback) && (feedback.Version == 0 || EditFeedbackId == feedback.Id);
 
     private async Task LoadAsync(CancellationToken cancellationToken)
     {
         var current = await access.GetCurrentAsync(cancellationToken);
         CurrentUserId = current.User?.Id;
+        HasFeedbackEditAccess = await access.CanAsync(TeamHubModules.MilestoneReview, AccessLevel.Edit, cancellationToken);
         CurrentReview = await reviews.GetCurrentAsync(cancellationToken);
         HistoryReviews = await reviews.GetHistoryAsync(cancellationToken);
         if (IsAdmin)

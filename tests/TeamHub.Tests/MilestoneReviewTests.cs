@@ -1159,11 +1159,75 @@ public sealed class MilestoneReviewTests : IAsyncLifetime
             [TeamHub Milestone Review Feedback: {oldFeedbackId:D}]
             """)]);
 
+    [Theory]
+    [InlineData(AccessLevel.ReadOnly, false)]
+    [InlineData(AccessLevel.Create, false)]
+    [InlineData(AccessLevel.Edit, true)]
+    public async Task FeedbackEditingRequiresConfiguredEditAccess(AccessLevel level, bool canEdit)
+    {
+        await CreateAndPublishAsync([reviewerOne]);
+        var row = (await service.GetCurrentAsync())!.Feedback.Single();
+        var model = CreateModel(service, true, level: level, user: ReviewUser());
+
+        await model.OnGetAsync(CancellationToken.None);
+        model.CanEdit(row).Should().Be(canEdit);
+        model.IsEditingFeedback(row).Should().Be(canEdit);
+        model.EditFeedbackId = row.Id;
+        var result = await model.OnGetAsync(CancellationToken.None);
+        if (canEdit) result.Should().BeOfType<PageResult>();
+        else result.Should().BeOfType<ForbidResult>();
+
+        model.ReviewId = model.CurrentReview!.Id;
+        model.FeedbackId = row.Id;
+        model.Version = row.Version;
+        model.WhatGood = "Saved feedback";
+        var save = await model.OnPostSaveFeedbackAsync(CancellationToken.None);
+        if (canEdit) save.Should().BeOfType<RedirectToPageResult>();
+        else save.Should().BeOfType<ForbidResult>();
+        (await service.GetCurrentAsync())!.Feedback.Single().WhatGood.Should()
+            .Be(canEdit ? "Saved feedback" : "");
+    }
+
+    [Fact]
+    public async Task SavedFeedbackLocksUntilEditIsRequestedAndLocksAgainAfterSaving()
+    {
+        await CreateAndPublishAsync([reviewerOne, reviewerTwo]);
+        var current = (await service.GetCurrentAsync())!;
+        var row = current.Feedback.Single(item => item.ReviewerId == reviewerOne);
+        await service.SaveFeedbackAsync(new(current.Id, row.Id, row.Version, "PC", "Good", "", ""), reviewerOne, false);
+        var model = CreateModel(service, true, level: AccessLevel.Edit, user: ReviewUser());
+        await model.OnGetAsync(CancellationToken.None);
+        row = model.CurrentReview!.Feedback.Single(item => item.Id == row.Id);
+        model.CanEdit(row).Should().BeTrue();
+        model.IsEditingFeedback(row).Should().BeFalse();
+
+        model.EditFeedbackId = model.CurrentReview.Feedback.Single(item => item.ReviewerId == reviewerTwo).Id;
+        (await model.OnGetAsync(CancellationToken.None)).Should().BeOfType<ForbidResult>();
+        model.EditFeedbackId = row.Id;
+        (await model.OnGetAsync(CancellationToken.None)).Should().BeOfType<PageResult>();
+        model.IsEditingFeedback(row).Should().BeTrue();
+        model.ReviewId = current.Id;
+        model.FeedbackId = row.Id;
+        model.Version = row.Version;
+        model.WhatGood = "Updated";
+        (await model.OnPostSaveFeedbackAsync(CancellationToken.None)).Should().BeOfType<RedirectToPageResult>();
+
+        var reloaded = CreateModel(service, true, level: AccessLevel.Edit, user: ReviewUser());
+        await reloaded.OnGetAsync(CancellationToken.None);
+        var saved = reloaded.CurrentReview!.Feedback.Single(item => item.Id == row.Id);
+        saved.WhatGood.Should().Be("Updated");
+        reloaded.IsEditingFeedback(saved).Should().BeFalse();
+    }
+
+    private AuthorizedUserRecord ReviewUser() => new(reviewerOne, "reviewer.one@example.com", null,
+        "Reviewer One", TeamHubUserTypes.Registered, true, true, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow);
+
     private static MilestoneReviewModel CreateModel(IMilestoneReviewService reviewService, bool allowed,
-        StubCommentService? comments = null, Microsoft.AspNetCore.DataProtection.IDataProtectionProvider? protection = null) =>
+        StubCommentService? comments = null, Microsoft.AspNetCore.DataProtection.IDataProtectionProvider? protection = null,
+        AccessLevel? level = null, AuthorizedUserRecord? user = null) =>
         new(reviewService,
             new StubUserDirectory([]),
-            new StubAccess(allowed),
+            new StubAccess(allowed, level, user),
             comments ?? new StubCommentService(),
             protection ?? new Microsoft.AspNetCore.DataProtection.EphemeralDataProtectionProvider(),
             new TeamHub.Web.Formatting.SafeMarkdownRenderer(),
@@ -1172,14 +1236,14 @@ public sealed class MilestoneReviewTests : IAsyncLifetime
             PageContext = new PageContext { HttpContext = new DefaultHttpContext() }
         };
 
-    private sealed class StubAccess(bool allowed) : ICurrentAccessService
+    private sealed class StubAccess(bool allowed, AccessLevel? level = null, AuthorizedUserRecord? user = null) : ICurrentAccessService
     {
         public Task<bool> CanAsync(string module, AccessLevel required = AccessLevel.ReadOnly,
-            CancellationToken cancellationToken = default) => Task.FromResult(allowed);
+            CancellationToken cancellationToken = default) => Task.FromResult(allowed && (!level.HasValue || level.Value.Allows(required)));
         public Task<AccessLevel> GetAccessLevelAsync(string module, CancellationToken cancellationToken = default) =>
             Task.FromResult(allowed ? AccessLevel.ReadOnly : AccessLevel.NoAccess);
         public Task<CurrentAccessSnapshot> GetCurrentAsync(CancellationToken cancellationToken = default) =>
-            Task.FromResult(new CurrentAccessSnapshot(TeamHubUserTypes.Registered, null));
+            Task.FromResult(new CurrentAccessSnapshot(TeamHubUserTypes.Registered, user));
     }
 
     private sealed class StubCommentService : IStudioJiraCommentService

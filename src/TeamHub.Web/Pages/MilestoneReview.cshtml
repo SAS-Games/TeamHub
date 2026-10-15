@@ -193,36 +193,43 @@ else
                         <th scope="col">What's Good<div id="what-good-help" class="small fw-normal">Aspects enjoyed or found effective during play.</div></th>
                         <th scope="col">Needs Improvement<div id="needs-improvement-help" class="small fw-normal">Elements that need refinement, fixing, or felt frustrating during play.</div></th>
                         <th scope="col">Additional Feedback<div id="additional-feedback-help" class="small fw-normal">Feature or discipline-specific notes, if any.</div></th>
-                        <th scope="col">Actions</th>
                     </tr>
                 </thead>
                 <tbody>
                 @foreach (var feedback in Model.CurrentReview.Feedback)
                 {
                     var canEdit = Model.CanEdit(feedback);
+                    var isEditing = Model.IsEditingFeedback(feedback);
+                    var feedbackFormId = $"feedback-{feedback.Id}";
                     <tr>
-                        <td>@feedback.Reviewer</td>
-                        @{
-                            var feedbackFormId = $"feedback-{feedback.Id}";
-                        }
+                        <td>
+                            <div>@feedback.Reviewer</div>
+                            @if (canEdit)
+                            {
+                                <div class="d-flex flex-wrap gap-2 mt-2">
+                                    <form id="@feedbackFormId" method="post" asp-page-handler="SaveFeedback">
+                                        <input type="hidden" name="ReviewId" value="@Model.CurrentReview.Id" />
+                                        <input type="hidden" name="FeedbackId" value="@feedback.Id" />
+                                        <input type="hidden" name="Version" value="@feedback.Version" />
+                                        <button type="submit" class="btn btn-sm btn-outline-primary" disabled="@(!isEditing)" aria-label="Save feedback for @feedback.Reviewer">Save</button>
+                                    </form>
+                                    <form method="get" asp-page="/MilestoneReview">
+                                        <input type="hidden" name="EditFeedbackId" value="@feedback.Id" />
+                                        <button type="submit" class="btn btn-sm btn-outline-secondary" disabled="@isEditing" aria-label="Edit feedback for @feedback.Reviewer">Edit</button>
+                                    </form>
+                                </div>
+                            }
+                            @if (!string.IsNullOrWhiteSpace(feedback.JiraSyncError))
+                            {
+                                <div class="small text-danger mt-2" title="@feedback.JiraSyncError">Jira sync pending</div>
+                            }
+                        </td>
                         @if (canEdit)
                         {
-                            <td><textarea name="SessionDetails" form="@feedbackFormId" class="form-control" rows="4" maxlength="20000" aria-label="Session Details for @feedback.Reviewer" aria-describedby="session-details-help" placeholder="e.g. PC, 1 hour, levels 1-3">@feedback.SessionDetails</textarea></td>
-                            <td><textarea name="WhatGood" form="@feedbackFormId" class="form-control" rows="4" maxlength="20000" aria-label="What's Good for @feedback.Reviewer" aria-describedby="what-good-help" placeholder="What did you enjoy or find effective?">@feedback.WhatGood</textarea></td>
-                            <td><textarea name="NeedImprovements" form="@feedbackFormId" class="form-control" rows="4" maxlength="20000" aria-label="Needs Improvement for @feedback.Reviewer" aria-describedby="needs-improvement-help" placeholder="What needs refinement or fixing, or felt frustrating?">@feedback.NeedImprovements</textarea></td>
-                            <td><textarea name="AdditionalFeedback" form="@feedbackFormId" class="form-control" rows="4" maxlength="20000" aria-label="Additional Feedback for @feedback.Reviewer" aria-describedby="additional-feedback-help" placeholder="Optional feature or discipline-specific notes">@feedback.AdditionalFeedback</textarea></td>
-                            <td>
-                                @if (!string.IsNullOrWhiteSpace(feedback.JiraSyncError))
-                                {
-                                    <div class="small text-danger mb-1" title="@feedback.JiraSyncError">Jira sync pending</div>
-                                }
-                                <form id="@feedbackFormId" method="post" asp-page-handler="SaveFeedback">
-                                    <input type="hidden" name="ReviewId" value="@Model.CurrentReview.Id" />
-                                    <input type="hidden" name="FeedbackId" value="@feedback.Id" />
-                                    <input type="hidden" name="Version" value="@feedback.Version" />
-                                    <button type="submit" class="btn btn-sm btn-outline-primary">Save</button>
-                                </form>
-                            </td>
+                            <td><textarea name="SessionDetails" form="@feedbackFormId" class="form-control" rows="4" maxlength="20000" readonly="@(!isEditing)" aria-label="Session Details for @feedback.Reviewer" aria-describedby="session-details-help" placeholder="e.g. PC, 1 hour, levels 1-3">@feedback.SessionDetails</textarea></td>
+                            <td><textarea name="WhatGood" form="@feedbackFormId" class="form-control" rows="4" maxlength="20000" readonly="@(!isEditing)" aria-label="What's Good for @feedback.Reviewer" aria-describedby="what-good-help" placeholder="What did you enjoy or find effective?">@feedback.WhatGood</textarea></td>
+                            <td><textarea name="NeedImprovements" form="@feedbackFormId" class="form-control" rows="4" maxlength="20000" readonly="@(!isEditing)" aria-label="Needs Improvement for @feedback.Reviewer" aria-describedby="needs-improvement-help" placeholder="What needs refinement or fixing, or felt frustrating?">@feedback.NeedImprovements</textarea></td>
+                            <td><textarea name="AdditionalFeedback" form="@feedbackFormId" class="form-control" rows="4" maxlength="20000" readonly="@(!isEditing)" aria-label="Additional Feedback for @feedback.Reviewer" aria-describedby="additional-feedback-help" placeholder="Optional feature or discipline-specific notes">@feedback.AdditionalFeedback</textarea></td>
                         }
                         else
                         {
@@ -230,18 +237,12 @@ else
                             <td><safe-markdown class="milestone-review-text markdown-content" text="@feedback.WhatGood"></safe-markdown></td>
                             <td><safe-markdown class="milestone-review-text markdown-content" text="@feedback.NeedImprovements"></safe-markdown></td>
                             <td><safe-markdown class="milestone-review-text markdown-content" text="@feedback.AdditionalFeedback"></safe-markdown></td>
-                            <td>
-                                @if (!string.IsNullOrWhiteSpace(feedback.JiraSyncError))
-                                {
-                                    <span class="small text-danger" title="@feedback.JiraSyncError">Jira sync pending</span>
-                                }
-                            </td>
                         }
                     </tr>
                     @if (canEdit)
                     {
                         <tr>
-                            <td colspan="6">
+                            <td colspan="5">
                                 <details>
                                     <summary>Preview saved feedback for @feedback.Reviewer</summary>
                                     <div class="row g-3 mt-1">
