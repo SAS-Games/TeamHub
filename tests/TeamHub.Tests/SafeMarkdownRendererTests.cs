@@ -37,6 +37,14 @@ public sealed class SafeMarkdownRendererTests
     }
 
     [Fact]
+    public void RendersCombinedBoldAndItalicWithoutLeavingMarkers()
+    {
+        var html = _renderer.ToHtml("***Release ready***");
+
+        Assert.Equal("<p><strong><em>Release ready</em></strong></p>", html);
+    }
+
+    [Fact]
     public void RendersOnlySafeLinksAndEncodesRawHtml()
     {
         var markdown = "[Jira](https://jira.example.com/browse/TEAM-42)\n"

@@ -90,6 +90,52 @@ public sealed class StudioConfluenceUpdateTests
     }
 
     [Fact]
+    public void TableParser_DoesNotLeakMarkdownBoldMarkersFromSectionLabels()
+    {
+        const string body = """
+            <table><tbody><tr>
+              <td>BBG</td>
+              <td>
+                <p>**Studio Work:**</p>
+                <ul><li>Fixing localization bugs for TRC</li><li>Testing the game</li></ul>
+                <p>**HPGDS Support:**</p>
+                <ul><li>Support on HMD reset orientation</li></ul>
+                <p>**WMD Support:**</p>
+                <p>**Action Item:**</p>
+              </td>
+              <td></td>
+            </tr></tbody></table>
+            """;
+
+        StudioConfluenceTableParser.TryParse(body, "BBG", out var update).Should().BeTrue();
+
+        update.StudioWork.Should().Be(string.Join(Environment.NewLine,
+            "- Fixing localization bugs for TRC", "- Testing the game"));
+        update.HpgdsSupport.Should().Be("- Support on HMD reset orientation");
+        update.WmdSupport.Should().BeEmpty();
+        update.ActionItems.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void TableParser_PreservesCombinedBoldAndItalicContent()
+    {
+        const string body = """
+            <table><tbody><tr>
+              <td>BBG</td>
+              <td>
+                <p><strong>Studio Work:</strong></p>
+                <p><strong><em>Release ready</em></strong></p>
+              </td>
+              <td></td>
+            </tr></tbody></table>
+            """;
+
+        StudioConfluenceTableParser.TryParse(body, "BBG", out var update).Should().BeTrue();
+
+        update.StudioWork.Should().Be("***Release ready***");
+    }
+
+    [Fact]
     public void TableParser_PreservesParagraphListAndConfluenceTaskBoundaries()
     {
         const string body = """

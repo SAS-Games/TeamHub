@@ -918,7 +918,10 @@ internal static partial class StudioConfluenceTableParser
     [GeneratedRegex(@"<[^>]+>", RegexOptions.Singleline, 2000)]
     private static partial Regex TagRegex();
 
-    [GeneratedRegex(@"(Studio Work|HPGDS Support|WMD Support|Action Items?)\s*:\s*", RegexOptions.IgnoreCase, 2000)]
+    // Confluence labels can arrive as plain text or as Markdown bold after storage formatting
+    // has been preserved. Consume the optional Markdown wrapper with the label so it does not
+    // leak into the preceding or following section value.
+    [GeneratedRegex(@"\*{0,3}(Studio Work|HPGDS Support|WMD Support|Action Items?)\s*:\*{0,3}\s*", RegexOptions.IgnoreCase, 2000)]
     private static partial Regex SectionLabelRegex();
 
 }
