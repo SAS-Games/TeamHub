@@ -11,10 +11,18 @@ public sealed record StudioJiraCommentQuery(
 public sealed record StudioJiraCommentPart(string Kind, string Text, string? Url = null, string? AttachmentId = null);
 public sealed record StudioJiraComment(
     string Id, string Author, DateTimeOffset Created, DateTimeOffset? Updated,
-    IReadOnlyList<StudioJiraCommentPart> Parts);
+    IReadOnlyList<StudioJiraCommentPart> Parts, string Markdown = "");
 public sealed record StudioJiraCommentResult(
-    string TicketId, string TicketUrl, bool IsUsingSharedCredential, IReadOnlyList<StudioJiraComment> Comments);
+    string TicketId, string TicketUrl, bool IsUsingSharedCredential, IReadOnlyList<StudioJiraComment> Comments,
+    bool CanWriteComments = false);
 public sealed record StudioJiraCommentImage(byte[] Content, string ContentType);
+public sealed record SaveStudioJiraCommentRequest(
+    string StudioId,
+    string TicketId,
+    string RequestingUserId,
+    string? CommentId,
+    string Markdown);
+public sealed record SaveStudioJiraCommentResult(string CommentId);
 public sealed record StudioJiraMilestoneReviewCommentRequest(
     string TicketId,
     string RequestingUserId,
@@ -34,6 +42,8 @@ public interface IStudioJiraCommentService
     Task<StudioJiraCommentResult> GetCommentsAsync(StudioJiraCommentQuery query, CancellationToken cancellationToken = default);
     Task<StudioJiraCommentImage> GetImageAsync(
         StudioJiraCommentQuery query, string commentId, string attachmentId, CancellationToken cancellationToken = default);
+    Task<SaveStudioJiraCommentResult> SaveCommentAsync(
+        SaveStudioJiraCommentRequest request, CancellationToken cancellationToken = default);
     Task<StudioJiraMilestoneReviewCommentResult> UpsertMilestoneReviewCommentAsync(
         StudioJiraMilestoneReviewCommentRequest request, CancellationToken cancellationToken = default);
 }
@@ -76,7 +86,8 @@ internal sealed partial class JiraStudioCommentService(
                     $"{context.BaseUrl}/browse/{Uri.EscapeDataString(query.TicketId)}",
                     context.Credential.IsShared,
                     comments.Values.OrderByDescending(comment => comment.Created)
-                        .ThenByDescending(comment => comment.Id, StringComparer.Ordinal).ToList());
+                        .ThenByDescending(comment => comment.Id, StringComparer.Ordinal).ToList(),
+                    !context.Credential.IsShared && !context.Credential.IsReadOnly);
             if (items.GetArrayLength() == 0)
                 throw new StudioJiraCommentException("Jira stopped returning comments before the last page. Reopen the preview to try again.");
         }
@@ -126,6 +137,62 @@ internal sealed partial class JiraStudioCommentService(
         if (!HasImageSignature(bytes, contentType))
             throw new StudioJiraCommentException("Jira returned invalid image content. Open the comment in Jira.");
         return new StudioJiraCommentImage(bytes, contentType);
+    }
+
+    public async Task<SaveStudioJiraCommentResult> SaveCommentAsync(
+        SaveStudioJiraCommentRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(request.StudioId)
+            || string.IsNullOrWhiteSpace(request.RequestingUserId)
+            || !TicketKey().IsMatch(request.TicketId))
+            throw new StudioJiraCommentException("Select a valid studio and Jira ticket before saving a comment.");
+        if (string.IsNullOrWhiteSpace(request.Markdown))
+            throw new StudioJiraCommentException("Enter a Jira comment before saving.");
+        if (request.Markdown.Length > 20_000)
+            throw new StudioJiraCommentException("Jira comments must be 20,000 characters or fewer.");
+        if (!string.IsNullOrWhiteSpace(request.CommentId) && !NumericId().IsMatch(request.CommentId))
+            throw new StudioJiraCommentException("Select a valid Jira comment to edit.");
+
+        var context = await GetIssueContextAsync(
+            new StudioJiraCommentQuery(request.StudioId, request.TicketId, request.RequestingUserId, false),
+            cancellationToken,
+            requirePersonalWriteCredential: true);
+        var commentId = request.CommentId?.Trim();
+        var method = string.IsNullOrWhiteSpace(commentId) ? HttpMethod.Post : HttpMethod.Put;
+        var url = string.IsNullOrWhiteSpace(commentId)
+            ? $"{context.IssueUrl}/comment"
+            : $"{context.IssueUrl}/comment/{Uri.EscapeDataString(commentId)}";
+        using var httpRequest = JiraStudioTicketService.CreateJiraRequest(url, context.Credential);
+        httpRequest.Method = method;
+        httpRequest.Content = System.Net.Http.Json.JsonContent.Create(new
+        {
+            body = JiraCommentMarkdown.ToJiraWiki(request.Markdown.Trim())
+        });
+        using var response = await httpClient.SendAsync(httpRequest, cancellationToken);
+        if (!response.IsSuccessStatusCode)
+        {
+            var reason = response.StatusCode switch
+            {
+                HttpStatusCode.Unauthorized => "Jira rejected your personal credential. Update My Connections.",
+                HttpStatusCode.Forbidden => "Your Jira account does not have permission to add or edit this comment.",
+                HttpStatusCode.NotFound => "The Jira ticket or comment was not found or is no longer accessible.",
+                HttpStatusCode.Conflict => "The Jira comment changed before it could be saved. Reload the comments and try again.",
+                HttpStatusCode.TooManyRequests => "Jira temporarily limited comment updates. Please try again shortly.",
+                _ => $"Jira returned HTTP {(int)response.StatusCode} while saving the comment."
+            };
+            throw new StudioJiraCommentException(reason);
+        }
+
+        if (!string.IsNullOrWhiteSpace(commentId)) return new SaveStudioJiraCommentResult(commentId);
+        using var result = await JsonDocument.ParseAsync(
+            await response.Content.ReadAsStreamAsync(cancellationToken), cancellationToken: cancellationToken);
+        var createdId = result.RootElement.TryGetProperty("id", out var id)
+            ? id.ValueKind == JsonValueKind.String ? id.GetString() : id.ToString()
+            : null;
+        if (string.IsNullOrWhiteSpace(createdId) || !NumericId().IsMatch(createdId))
+            throw new StudioJiraCommentException("Jira created the comment but did not return a valid comment ID.");
+        return new SaveStudioJiraCommentResult(createdId);
     }
 
     public async Task<StudioJiraMilestoneReviewCommentResult> UpsertMilestoneReviewCommentAsync(
@@ -275,10 +342,10 @@ internal sealed partial class JiraStudioCommentService(
         }
         if (credential is null)
             throw new StudioJiraCommentException(requirePersonalWriteCredential
-                ? "Milestone feedback requires your personal Jira connection with permission to create and edit comments."
+                ? "Adding or editing Jira comments requires your personal Jira connection with comment permission."
                 : "No Jira credential is available. Connect your account in My Connections or ask an administrator to grant shared read-only access.");
         if (requirePersonalWriteCredential && (credential.IsShared || credential.IsReadOnly))
-            throw new StudioJiraCommentException("Milestone feedback requires your personal Jira connection with permission to create and edit comments. Shared read-only access cannot be used.");
+            throw new StudioJiraCommentException("Adding or editing Jira comments requires your personal Jira connection. Shared read-only access cannot be used.");
         var baseUrl = settings.JiraBaseUrl.TrimEnd('/');
         var issueUrl = $"{baseUrl}/rest/api/2/issue/{Uri.EscapeDataString(query.TicketId)}";
         using var document = await GetJsonAsync(
@@ -354,7 +421,8 @@ internal sealed partial class JiraStudioCommentService(
             && authorObject.TryGetProperty("displayName", out var name) ? name.GetString() : null;
         return new StudioJiraComment(id,
             author ?? "Unknown author", created, updated,
-            JiraCommentBodyParser.Parse(item.GetProperty("body"), attachments));
+            JiraCommentBodyParser.Parse(item.GetProperty("body"), attachments),
+            JiraCommentMarkdown.FromJira(item.GetProperty("body"), attachments));
     }
 
     private static DateTimeOffset ParseDate(string? value)

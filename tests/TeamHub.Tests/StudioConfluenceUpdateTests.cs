@@ -112,7 +112,7 @@ public sealed class StudioConfluenceUpdateTests
         StudioConfluenceTableParser.TryParse(body, "HDC", out var update).Should().BeTrue();
 
         update.StudioWork.Should().Be(
-            string.Join(Environment.NewLine, "Level design", "Gameplay fixes", "Animation setup"));
+            string.Join(Environment.NewLine, "Level design", "- Gameplay fixes", "- Animation setup"));
         update.HpgdsSupport.Should().Be("Investigate build");
         update.WmdSupport.Should().BeEmpty();
         update.ActionItems.Should().BeEmpty();
@@ -146,6 +146,41 @@ public sealed class StudioConfluenceUpdateTests
         StudioConfluenceTableParser.TryParse(updatedBody, "HDC", out var parsed).Should().BeTrue();
         parsed.StudioWork.Should().Be($"New <work>{Environment.NewLine}See [ticket](https://jira.example.test/browse/ABC-1)");
         parsed.Notes.Should().Be("Notes & risks");
+    }
+
+    [Fact]
+    public void TableParser_RoundTripsMarkdownThroughConfluenceStorage()
+    {
+        const string body = """
+            <table><tbody>
+              <tr><th>Studio</th><th>Overview</th><th>Notes</th></tr>
+              <tr><td>HDC</td><td><strong>Studio Work:</strong><br/>Old work</td><td>Old note</td></tr>
+            </tbody></table>
+            """;
+        const string markdown = """
+            ## Release status
+            **Ready** with [ticket](https://jira.example.test/browse/ABC-1)
+
+            - Smoke tested
+            - Signed off
+            """;
+
+        StudioConfluenceTableParser.TryReplace(
+            body, "HDC", markdown, "", "", "", "`release-candidate`", out var updatedBody)
+            .Should().BeTrue();
+
+        updatedBody.Should().Contain("<h2>Release status</h2>")
+            .And.Contain("<strong>Ready</strong>")
+            .And.Contain("<a href=\"https://jira.example.test/browse/ABC-1\">ticket</a>")
+            .And.Contain("<ul><li>Smoke tested</li><li>Signed off</li></ul>")
+            .And.Contain("<code>release-candidate</code>");
+        StudioConfluenceTableParser.TryParse(updatedBody, "HDC", out var parsed).Should().BeTrue();
+        parsed.StudioWork.Should().Contain("## Release status")
+            .And.Contain("**Ready**")
+            .And.Contain("[ticket](https://jira.example.test/browse/ABC-1)")
+            .And.Contain("- Smoke tested")
+            .And.Contain("- Signed off");
+        parsed.Notes.Should().Be("`release-candidate`");
     }
 
     [Fact]

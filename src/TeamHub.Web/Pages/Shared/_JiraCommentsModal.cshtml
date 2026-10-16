@@ -3,7 +3,7 @@
     <div class="modal-dialog modal-xl modal-dialog-scrollable">
         <div class="modal-content">
             <div class="modal-header">
-                <h2 class="modal-title fs-5" id="jira-comments-title" data-jira-comments-title>Latest Comments</h2>
+                <h2 class="modal-title fs-5" id="jira-comments-title" data-jira-comments-title>Jira Comments</h2>
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
             <div class="modal-body">
@@ -11,11 +11,21 @@
                 <div role="status" aria-live="polite" data-jira-comments-status></div>
                 <div class="alert alert-danger" role="alert" data-jira-comments-error hidden></div>
                 <div class="alert alert-secondary small" data-jira-comments-shared hidden>Using shared read-only Jira access.</div>
+                <form class="border rounded p-3 mb-3" data-jira-comment-composer hidden>
+                    @Html.AntiForgeryToken()
+                    <label class="form-label fw-semibold" for="jira-comment-body">Add a Jira comment</label>
+                    <textarea id="jira-comment-body" class="form-control" rows="5" maxlength="20000"
+                              placeholder="Write a comment using Markdown..." data-jira-comment-body></textarea>
+                    <div class="d-flex flex-wrap align-items-start justify-content-between gap-3 mt-2">
+                        <partial name="_MarkdownHelp" />
+                        <button type="submit" class="btn btn-primary" data-jira-comment-add>Add comment</button>
+                    </div>
+                </form>
                 <div data-jira-comments-content></div>
             </div>
             <div class="modal-footer">
                 <span class="small text-success me-auto" data-jira-comments-copy-status aria-live="polite"></span>
-                <button type="button" class="btn btn-outline-secondary" data-jira-comments-copy hidden>Copy Feedback</button>
+                <button type="button" class="btn btn-outline-secondary" data-jira-comments-copy hidden>Copy comments</button>
                 <a class="btn btn-outline-primary" data-jira-comments-open target="_blank" rel="noopener noreferrer" hidden>Open in Jira</a>
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
             </div>

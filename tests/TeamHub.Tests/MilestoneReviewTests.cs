@@ -1264,6 +1264,10 @@ public sealed class MilestoneReviewTests : IAsyncLifetime
             return Task.FromResult(new StudioJiraCommentImage([], "image/png"));
         }
 
+        public Task<SaveStudioJiraCommentResult> SaveCommentAsync(
+            SaveStudioJiraCommentRequest request, CancellationToken cancellationToken = default) =>
+            Task.FromResult(new SaveStudioJiraCommentResult(request.CommentId ?? "42"));
+
         public Task<StudioJiraMilestoneReviewCommentResult> UpsertMilestoneReviewCommentAsync(StudioJiraMilestoneReviewCommentRequest request, CancellationToken cancellationToken = default) =>
             Task.FromResult(new StudioJiraMilestoneReviewCommentResult("42"));
     }

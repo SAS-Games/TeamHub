@@ -481,7 +481,7 @@ else
                                         data-jira-comments
                                         data-ticket-id="@item.Ticket.TicketId"
                                         data-comments-url="@Url.Page("/SupportSummaryComments", new { studioId = item.Studio.Id, ticketId = item.Ticket.TicketId })">
-                                    Latest Comments
+                                    Jira Comments
                                 </button>
                             </td>
                         </tr>
@@ -629,7 +629,7 @@ else
                                         else
                                         {
                                             <td>
-                                                <div data-confluence-display>@ConfluenceUpdateHtml.Render(update.StudioWork, "No information provided.")</div>
+                                                <safe-markdown class="markdown-content" text="@(string.IsNullOrWhiteSpace(update.StudioWork) ? "No information provided." : update.StudioWork)" data-confluence-display></safe-markdown>
                                                 @if (canEditUpdate)
                                                 {
                                                     <textarea name="studioWork" form="@editFormId"
@@ -639,7 +639,7 @@ else
                                                 }
                                             </td>
                                             <td>
-                                                <div data-confluence-display>@ConfluenceUpdateHtml.Render(update.HpgdsSupport, "No information provided.")</div>
+                                                <safe-markdown class="markdown-content" text="@(string.IsNullOrWhiteSpace(update.HpgdsSupport) ? "No information provided." : update.HpgdsSupport)" data-confluence-display></safe-markdown>
                                                 @if (canEditUpdate)
                                                 {
                                                     <textarea name="hpgdsSupport" form="@editFormId"
@@ -649,7 +649,7 @@ else
                                                 }
                                             </td>
                                             <td>
-                                                <div data-confluence-display>@ConfluenceUpdateHtml.Render(update.WmdSupport, "No information provided.")</div>
+                                                <safe-markdown class="markdown-content" text="@(string.IsNullOrWhiteSpace(update.WmdSupport) ? "No information provided." : update.WmdSupport)" data-confluence-display></safe-markdown>
                                                 @if (canEditUpdate)
                                                 {
                                                     <textarea name="wmdSupport" form="@editFormId"
@@ -659,7 +659,7 @@ else
                                                 }
                                             </td>
                                             <td>
-                                                <div data-confluence-display>@ConfluenceUpdateHtml.Render(update.ActionItems, "No information provided.")</div>
+                                                <safe-markdown class="markdown-content" text="@(string.IsNullOrWhiteSpace(update.ActionItems) ? "No information provided." : update.ActionItems)" data-confluence-display></safe-markdown>
                                                 @if (canEditUpdate)
                                                 {
                                                     <textarea name="actionItems" form="@editFormId"
@@ -669,7 +669,7 @@ else
                                                 }
                                             </td>
                                             <td>
-                                                <div data-confluence-display>@ConfluenceUpdateHtml.Render(update.Notes, "No notes provided.")</div>
+                                                <safe-markdown class="markdown-content" text="@(string.IsNullOrWhiteSpace(update.Notes) ? "No notes provided." : update.Notes)" data-confluence-display></safe-markdown>
                                                 @if (canEditUpdate)
                                                 {
                                                     <textarea name="notes" form="@editFormId"

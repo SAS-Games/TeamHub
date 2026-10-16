@@ -2,6 +2,7 @@ using System.Net;
 using System.Security.Claims;
 using System.Text.Json;
 using FluentAssertions;
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
@@ -51,6 +52,8 @@ public sealed class StudioJiraCommentTests
         result.Comments[0].Created.Offset.Should().Be(TimeSpan.FromHours(5.5));
         result.Comments[0].Author.Should().Be("Asha");
         result.Comments[0].Parts.Should().Contain(part => part.Kind == "image" && part.AttachmentId == "11");
+        result.Comments[0].Markdown.Should().Be("Reviewed build.");
+        result.CanWriteComments.Should().BeTrue();
         result.TicketUrl.Should().Be("https://jira.example.test/browse/SUP-1");
     }
 
@@ -277,6 +280,44 @@ public sealed class StudioJiraCommentTests
             ("GET", "/rest/api/2/issue/SUP-1"),
             ("GET", "/rest/api/2/issue/SUP-1/comment"),
             ("PUT", "/rest/api/2/issue/SUP-1/comment/42"));
+    }
+
+    [Fact]
+    public async Task SaveComment_CreatesAndEditsMarkdownUsingPersonalCredential()
+    {
+        var writes = new List<(HttpMethod Method, string Body)>();
+        await using var host = await Host.CreateAsync(request =>
+        {
+            request.Headers.Authorization!.Parameter.Should().Be("personal-test-token");
+            if (request.Method == HttpMethod.Get) return Json(IssueJson);
+
+            using var payload = JsonDocument.Parse(request.Content!.ReadAsStringAsync().GetAwaiter().GetResult());
+            writes.Add((request.Method, payload.RootElement.GetProperty("body").GetString()!));
+            return request.Method == HttpMethod.Post
+                ? Json("""{"id":"42"}""")
+                : new HttpResponseMessage(HttpStatusCode.NoContent);
+        });
+        var request = new SaveStudioJiraCommentRequest(
+            host.Query.StudioId!, host.Query.TicketId, host.Query.RequestingUserId, null,
+            "# Build status\n**Ready** with [ticket](https://jira.example.test/browse/SUP-1)\n- Smoke tested");
+
+        var created = await host.Service.SaveCommentAsync(request);
+        var updated = await host.Service.SaveCommentAsync(request with
+        {
+            CommentId = created.CommentId,
+            Markdown = "Updated with `release-candidate`"
+        });
+
+        created.CommentId.Should().Be("42");
+        updated.CommentId.Should().Be("42");
+        writes.Should().HaveCount(2);
+        writes[0].Method.Should().Be(HttpMethod.Post);
+        writes[0].Body.Should().Contain("h1. Build status")
+            .And.Contain("*Ready*")
+            .And.Contain("[ticket|https://jira.example.test/browse/SUP-1]")
+            .And.Contain("* Smoke tested");
+        writes[1].Method.Should().Be(HttpMethod.Put);
+        writes[1].Body.Should().Be("Updated with {{release-candidate}}");
     }
 
     [Fact]
@@ -558,6 +599,22 @@ public sealed class StudioJiraCommentTests
     }
 
     [Fact]
+    public async Task CommentPage_SavesUsingServerIdentity()
+    {
+        var service = new StubComments();
+        var model = Page(service, true);
+        model.HttpContext.User = new ClaimsPrincipal(new ClaimsIdentity(
+            [new Claim(ClaimTypes.Name, "editor@example.com")], "Test"));
+
+        var response = await model.OnPostSaveAsync(
+            "studio", "SUP-1", "10", "**Updated**", CancellationToken.None);
+
+        response.Should().BeOfType<JsonResult>();
+        service.LastSave.Should().Be(new SaveStudioJiraCommentRequest(
+            "studio", "SUP-1", "editor@example.com", "10", "**Updated**"));
+    }
+
+    [Fact]
     public async Task CommentPage_SurfacesMalformedResponseWithoutExposingJiraPayload()
     {
         var model = Page(new StubComments { Error = new JsonException("sensitive upstream payload") }, true);
@@ -567,7 +624,8 @@ public sealed class StudioJiraCommentTests
     }
 
     private static SupportSummaryCommentsModel Page(StubComments service, bool allowed) =>
-        new(service, new StubAccess(allowed), NullLogger<SupportSummaryCommentsModel>.Instance)
+        new(service, new StubAccess(allowed), new TeamHub.Web.Formatting.SafeMarkdownRenderer(),
+            NullLogger<SupportSummaryCommentsModel>.Instance)
         {
             PageContext = new PageContext { HttpContext = new DefaultHttpContext() }
         };
@@ -676,7 +734,7 @@ public sealed class StudioJiraCommentTests
                 ["ConnectionStrings:StudioDb"] = $"Data Source={path}"
             }).Build();
             var services = new ServiceCollection();
-            services.AddDataProtection();
+            services.AddDataProtection().UseEphemeralDataProtectionProvider();
             services.AddStudioDirectory(configuration);
             services.AddHttpClient<IStudioJiraCommentService, JiraStudioCommentService>()
                 .ConfigurePrimaryHttpMessageHandler(() => new Handler(respond));
@@ -716,6 +774,7 @@ public sealed class StudioJiraCommentTests
         public int Calls { get; private set; }
         public Exception? Error { get; set; }
         public StudioJiraCommentQuery? LastQuery { get; private set; }
+        public SaveStudioJiraCommentRequest? LastSave { get; private set; }
         public Task<StudioJiraCommentResult> GetCommentsAsync(StudioJiraCommentQuery query, CancellationToken cancellationToken = default)
         {
             Calls++;
@@ -729,6 +788,14 @@ public sealed class StudioJiraCommentTests
             Calls++;
             if (Error is not null) throw Error;
             return Task.FromResult(new StudioJiraCommentImage([], "image/png"));
+        }
+        public Task<SaveStudioJiraCommentResult> SaveCommentAsync(
+            SaveStudioJiraCommentRequest request, CancellationToken cancellationToken = default)
+        {
+            Calls++;
+            LastSave = request;
+            if (Error is not null) throw Error;
+            return Task.FromResult(new SaveStudioJiraCommentResult(request.CommentId ?? "1"));
         }
         public Task<StudioJiraMilestoneReviewCommentResult> UpsertMilestoneReviewCommentAsync(
             StudioJiraMilestoneReviewCommentRequest request, CancellationToken cancellationToken = default) =>
