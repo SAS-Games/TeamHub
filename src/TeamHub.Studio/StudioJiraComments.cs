@@ -159,7 +159,7 @@ internal sealed partial class JiraStudioCommentService(
         {
             var reason = response.StatusCode switch
             {
-                HttpStatusCode.Unauthorized => "Jira rejected your personal credential. Update My Atlassian Connection.",
+                HttpStatusCode.Unauthorized => "Jira rejected your personal credential. Update My Connections.",
                 HttpStatusCode.Forbidden => "Your Jira account does not have permission to create or edit comments on this ticket.",
                 HttpStatusCode.NotFound => "The Jira ticket or feedback comment was not found or is no longer accessible.",
                 HttpStatusCode.TooManyRequests => "Jira temporarily limited comment updates. Please try again shortly.",
@@ -276,7 +276,7 @@ internal sealed partial class JiraStudioCommentService(
         if (credential is null)
             throw new StudioJiraCommentException(requirePersonalWriteCredential
                 ? "Milestone feedback requires your personal Jira connection with permission to create and edit comments."
-                : "No Jira credential is available. Connect your account in My Atlassian Connection or ask an administrator to grant shared read-only access.");
+                : "No Jira credential is available. Connect your account in My Connections or ask an administrator to grant shared read-only access.");
         if (requirePersonalWriteCredential && (credential.IsShared || credential.IsReadOnly))
             throw new StudioJiraCommentException("Milestone feedback requires your personal Jira connection with permission to create and edit comments. Shared read-only access cannot be used.");
         var baseUrl = settings.JiraBaseUrl.TrimEnd('/');

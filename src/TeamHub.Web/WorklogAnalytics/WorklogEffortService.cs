@@ -99,7 +99,7 @@ internal sealed class PythonWorklogEffortService(
         {
             throw new InvalidOperationException(allowPrivilegedDefaultCredential
                 ? "No Jira credential is available. Ask an administrator to grant your privileged account read-only Jira access, or add a personal token."
-                : "Your Jira token is not connected. Open My Atlassian Connection and add your Bearer API token.");
+                : "Your Jira token is not connected. Open My Connections and add your Bearer API token.");
         }
 
         var rootPath = Path.GetFullPath(settings.RootPath);

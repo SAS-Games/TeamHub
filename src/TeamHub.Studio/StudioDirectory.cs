@@ -167,6 +167,7 @@ internal sealed class AtlassianUserCredentialRecord
     public string NormalizedUserId { get; set; } = string.Empty;
     public string? JiraTokenProtected { get; set; }
     public string? ConfluenceTokenProtected { get; set; }
+    public string? PfbAiGatewayTokenProtected { get; set; }
     public DateTime? JiraConnectedAtUtc { get; set; }
     public DateTime? ConfluenceConnectedAtUtc { get; set; }
     public DateTime UpdatedAtUtc { get; set; } = DateTime.UtcNow;
@@ -635,6 +636,14 @@ internal sealed class SqliteStudioDatabaseInitializer(
                 CREATE UNIQUE INDEX IF NOT EXISTS IX_AtlassianUserCredentials_NormalizedUserId
                 ON AtlassianUserCredentials (NormalizedUserId);
                 """, cancellationToken);
+
+            await using (var command = dbContext.Database.GetDbConnection().CreateCommand())
+            {
+                command.CommandText = "SELECT COUNT(*) FROM pragma_table_info('AtlassianUserCredentials') WHERE name = 'PfbAiGatewayTokenProtected';";
+                if (Convert.ToInt32(await command.ExecuteScalarAsync(cancellationToken)) == 0)
+                    await dbContext.Database.ExecuteSqlRawAsync(
+                        "ALTER TABLE AtlassianUserCredentials ADD COLUMN PfbAiGatewayTokenProtected TEXT NULL;", cancellationToken);
+            }
 
             await MoveLegacyStudioTablesAsync(cancellationToken);
         }
@@ -1257,6 +1266,7 @@ public static class StudioDirectoryServiceCollectionExtensions
         services.AddScoped<SqliteAtlassianConfigurationService>();
         services.AddScoped<IAtlassianConfigurationService>(provider => provider.GetRequiredService<SqliteAtlassianConfigurationService>());
         services.AddScoped<IAtlassianCredentialAccessor>(provider => provider.GetRequiredService<SqliteAtlassianConfigurationService>());
+        services.AddScoped<IPfbAiGatewayUserCredentialService>(provider => provider.GetRequiredService<SqliteAtlassianConfigurationService>());
         services.AddHttpClient<IStudioJiraTicketService, JiraStudioTicketService>();
         services.AddHttpClient<IStudioJiraCommentService, JiraStudioCommentService>()
             .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false });

@@ -54,8 +54,8 @@ public sealed class AIModel(
                 Settings.ToRuntimeOptions(),
                 Settings.ToFlowDesignerOptions(),
                 Settings.ToReportGeneratorOptions(),
-                Credential,
-                RemoveCredential,
+                Settings.Provider == AiModelProviderKeys.PfbAiGateway ? null : Credential,
+                Settings.Provider != AiModelProviderKeys.PfbAiGateway && RemoveCredential,
                 User.Identity?.Name ?? "Administrator"), cancellationToken);
 
             if (!testConnection)

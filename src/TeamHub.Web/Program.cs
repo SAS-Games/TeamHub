@@ -102,6 +102,7 @@ builder.Services.AddScoped<IMilestoneReviewUserDirectory, TeamHubMilestoneReview
 builder.Services.AddScoped<IMilestoneReviewCommentPublisher, StudioMilestoneReviewCommentPublisher>();
 builder.Services.AddStudioDirectory(builder.Configuration);
 builder.Services.AddTeamHubAi(builder.Configuration);
+builder.Services.AddScoped<TeamHub.AI.Contracts.IAiProviderCredentialAccessor, TeamHub.Web.AI.PersonalAiProviderCredentialAccessor>();
 builder.Services.AddAiFlowDesigner(builder.Configuration);
 builder.Services.AddReportGenerator(builder.Configuration);
 builder.Services.AddScoped<IWeeklyWorkSummaryService, WeeklyWorkSummaryService>();

@@ -12,6 +12,54 @@ namespace TeamHub.Tests;
 
 public sealed class StudioDirectoryTests
 {
+    [Fact]
+    public async Task GatewayTokensArePersonalEncryptedAndPreserveAtlassianTokens()
+    {
+        var dbPath = Path.Combine(Path.GetTempPath(), $"teamhub-gateway-{Guid.NewGuid():N}.db");
+        try
+        {
+            await using var provider = CreateServices(dbPath);
+            await using var scope = provider.CreateAsyncScope();
+            var initializer = scope.ServiceProvider.GetRequiredService<IStudioDatabaseInitializer>();
+            await initializer.InitializeAsync();
+            var atlassian = scope.ServiceProvider.GetRequiredService<IAtlassianConfigurationService>();
+            var gateway = scope.ServiceProvider.GetRequiredService<IPfbAiGatewayUserCredentialService>();
+            await atlassian.SaveUserTokensAsync("one@example.com", "jira-test-token", "confluence-test-token");
+            await using var connection = new SqliteConnection($"Data Source={dbPath}");
+            await connection.OpenAsync();
+            await using var command = connection.CreateCommand();
+            command.CommandText = "ALTER TABLE AtlassianUserCredentials DROP COLUMN PfbAiGatewayTokenProtected;";
+            await command.ExecuteNonQueryAsync();
+            await initializer.InitializeAsync();
+            await initializer.InitializeAsync();
+            await gateway.SaveTokenAsync("one@example.com", "gateway-one");
+            await gateway.SaveTokenAsync("two@example.com", "gateway-two");
+            await gateway.SaveTokenAsync("one@example.com", " ");
+            (await gateway.GetTokenAsync("ONE@example.com")).Should().Be("gateway-one");
+            (await gateway.GetTokenAsync("two@example.com")).Should().Be("gateway-two");
+            (await gateway.GetTokenAsync("unknown@example.com")).Should().BeNull();
+            (await gateway.HasTokenAsync("one@example.com")).Should().BeTrue();
+            command.CommandText = "SELECT PfbAiGatewayTokenProtected FROM AtlassianUserCredentials WHERE UserId = 'one@example.com';";
+            ((string)(await command.ExecuteScalarAsync())!).Should().NotContain("gateway-one");
+            var credentials = scope.ServiceProvider.GetRequiredService<IAtlassianCredentialAccessor>();
+            (await credentials.ResolveJiraCredentialAsync("one@example.com", false))!.Token.Should().Be("jira-test-token");
+            (await credentials.ResolveConfluenceCredentialAsync("one@example.com", false))!.Token.Should().Be("confluence-test-token");
+            await atlassian.MoveUserTokensAsync("one@example.com", "renamed@example.com");
+            (await gateway.GetTokenAsync("one@example.com")).Should().BeNull();
+            (await gateway.GetTokenAsync("renamed@example.com")).Should().Be("gateway-one");
+            await gateway.SaveTokenAsync("renamed@example.com", null, removeToken: true);
+            (await gateway.HasTokenAsync("renamed@example.com")).Should().BeFalse();
+            (await credentials.ResolveJiraCredentialAsync("renamed@example.com", false))!.Token.Should().Be("jira-test-token");
+            await atlassian.DeleteUserTokensAsync("two@example.com");
+            (await gateway.GetTokenAsync("two@example.com")).Should().BeNull();
+        }
+        finally
+        {
+            SqliteConnection.ClearAllPools();
+            File.Delete(dbPath);
+        }
+    }
+
     [Theory]
     [InlineData(false, false)]
     [InlineData(false, true)]
