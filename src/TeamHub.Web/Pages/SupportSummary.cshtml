@@ -1,9 +1,13 @@
 @page "/SupportSummary"
 @model TeamHub.Web.Pages.SupportSummaryModel
+@using TeamHub.Authentication
 @using TeamHub.Web.Pages.Studio
+@using TeamHub.Web.AccessControl
+@inject ICurrentAccessService CurrentAccess
 @{
     ViewData["Title"] = "Support Summary";
     ViewData["PageWidth"] = "Full";
+    var canEditConfluence = await CurrentAccess.CanAsync(TeamHubModules.StudioSupport, AccessLevel.Edit, Model.HttpContext.RequestAborted);
 }
 
 <div class="page-hero">
@@ -543,7 +547,13 @@ else
             }
             @if (Model.ConfluenceResult.IsUsingSharedCredential)
             {
-                <div class="mx-4 mt-3 alert alert-secondary small">Shared Confluence access is read only. Weekly pages are not changed by this report.</div>
+                <div class="mx-4 mt-3 alert alert-secondary small">
+                    This report is displayed with shared read-only access.
+                    @if (canEditConfluence)
+                    {
+                        <text>To save an edit, connect your personal token in <a asp-page="/Profile/Atlassian" class="alert-link">My Atlassian Connection</a>.</text>
+                    }
+                </div>
             }
             @if (Model.ConfluenceResult.Updates.Count == 0)
             {
@@ -585,6 +595,54 @@ else
                                             <td>@ConfluenceUpdateHtml.Render(update.Notes, "No notes provided.")</td>
                                         }
                                     </tr>
+                                    @if (canEditConfluence && update.PageFound && update.StudioFound)
+                                    {
+                                        <tr class="table-light">
+                                            <td colspan="6" class="py-2">
+                                                <details>
+                                                    <summary class="btn btn-sm btn-outline-primary">Edit this update</summary>
+                                                    <form method="post" asp-page-handler="SaveConfluenceUpdate" class="mt-3">
+                                                        <input type="hidden" name="studioId" value="@update.StudioId" />
+                                                        <input type="hidden" name="pageId" value="@update.PageId" />
+                                                        <input type="hidden" name="weekStart" value="@update.WeekStart.ToString("yyyy-MM-dd")" />
+                                                        <input type="hidden" name="pageVersion" value="@update.PageVersion" />
+                                                        <input type="hidden" name="ReportPeriod" value="@Model.ReportPeriod" />
+                                                        <input type="hidden" name="Search" value="@Model.Search" />
+                                                        <input type="hidden" name="SelectedMonth" value="@Model.SelectedMonth" />
+                                                        <input type="hidden" name="Week" value="@Model.Week" />
+                                                        <input type="hidden" name="StartDate" value="@Model.StartDate?.ToString("yyyy-MM-dd")" />
+                                                        <input type="hidden" name="EndDate" value="@Model.EndDate?.ToString("yyyy-MM-dd")" />
+                                                        <div class="row g-3">
+                                                            <div class="col-12 col-xl">
+                                                                <label class="form-label">Studio Work</label>
+                                                                <textarea name="studioWork" class="form-control" rows="5" maxlength="20000">@update.StudioWork</textarea>
+                                                            </div>
+                                                            <div class="col-12 col-xl">
+                                                                <label class="form-label">HPGDS Support</label>
+                                                                <textarea name="hpgdsSupport" class="form-control" rows="5" maxlength="20000">@update.HpgdsSupport</textarea>
+                                                            </div>
+                                                            <div class="col-12 col-xl">
+                                                                <label class="form-label">WMD Support</label>
+                                                                <textarea name="wmdSupport" class="form-control" rows="5" maxlength="20000">@update.WmdSupport</textarea>
+                                                            </div>
+                                                            <div class="col-12 col-xl">
+                                                                <label class="form-label">Action Items</label>
+                                                                <textarea name="actionItems" class="form-control" rows="5" maxlength="20000">@update.ActionItems</textarea>
+                                                            </div>
+                                                            <div class="col-12 col-xl">
+                                                                <label class="form-label">Notes</label>
+                                                                <textarea name="notes" class="form-control" rows="5" maxlength="20000">@update.Notes</textarea>
+                                                            </div>
+                                                        </div>
+                                                        <div class="d-flex align-items-center justify-content-between gap-3 mt-3">
+                                                            <div class="form-text">Saving updates only this studio row on Confluence page version @update.PageVersion.</div>
+                                                            <button type="submit" class="btn btn-primary">Save to Confluence</button>
+                                                        </div>
+                                                    </form>
+                                                </details>
+                                            </td>
+                                        </tr>
+                                    }
                                 }
                                 </tbody>
                             </table>

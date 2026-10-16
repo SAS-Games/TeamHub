@@ -96,6 +96,48 @@ public sealed class SupportSummaryModel(
         });
     }
 
+    public async Task<IActionResult> OnPostSaveConfluenceUpdateAsync(
+        string studioId,
+        string pageId,
+        DateOnly weekStart,
+        int pageVersion,
+        string? studioWork,
+        string? hpgdsSupport,
+        string? wmdSupport,
+        string? actionItems,
+        string? notes,
+        CancellationToken cancellationToken)
+    {
+        UpdateStudioConfluenceResult result;
+        try
+        {
+            result = await confluenceUpdateService.UpdateAsync(
+                new UpdateStudioConfluenceCommand
+                {
+                    StudioId = studioId,
+                    RequestingUserId = User.Identity?.Name ?? string.Empty,
+                    PageId = pageId,
+                    WeekStart = weekStart,
+                    ExpectedPageVersion = pageVersion,
+                    StudioWork = studioWork ?? string.Empty,
+                    HpgdsSupport = hpgdsSupport ?? string.Empty,
+                    WmdSupport = wmdSupport ?? string.Empty,
+                    ActionItems = actionItems ?? string.Empty,
+                    Notes = notes ?? string.Empty
+                },
+                cancellationToken);
+        }
+        catch (HttpRequestException exception)
+        {
+            ErrorMessage = $"Confluence could not be reached: {exception.Message}";
+            return RedirectToConfluence();
+        }
+
+        if (result.Succeeded) StatusMessage = result.Message;
+        else ErrorMessage = result.Message;
+        return RedirectToConfluence();
+    }
+
     public async Task<IActionResult> OnPostSaveExpectedDeliveryAsync(
         Guid? id,
         string? projectName,
@@ -479,6 +521,20 @@ public sealed class SupportSummaryModel(
 
     private IActionResult RedirectToPlanningTable(string fragment) =>
         Redirect($"/SupportSummary#{fragment}");
+
+    private IActionResult RedirectToConfluence()
+    {
+        var query = new List<string>
+        {
+            $"ReportPeriod={Uri.EscapeDataString(ReportPeriod)}"
+        };
+        if (!string.IsNullOrWhiteSpace(Search)) query.Add($"Search={Uri.EscapeDataString(Search)}");
+        if (!string.IsNullOrWhiteSpace(SelectedMonth)) query.Add($"SelectedMonth={Uri.EscapeDataString(SelectedMonth)}");
+        if (Week.HasValue) query.Add($"Week={Week.Value.ToString(CultureInfo.InvariantCulture)}");
+        if (StartDate.HasValue) query.Add($"StartDate={StartDate.Value:yyyy-MM-dd}");
+        if (EndDate.HasValue) query.Add($"EndDate={EndDate.Value:yyyy-MM-dd}");
+        return Redirect($"/SupportSummary?{string.Join('&', query)}#confluence");
+    }
 
     private void SetReportRange()
     {
