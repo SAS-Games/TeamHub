@@ -102,46 +102,47 @@ public sealed class SupportSummaryModel(
         });
     }
 
-    public async Task<IActionResult> OnPostGenerateWeeklyWorkSummaryAsync(CancellationToken cancellationToken)
+    public async Task<IActionResult> OnPostSaveConfluenceUpdateAsync(
+        string studioId,
+        string pageId,
+        DateOnly weekStart,
+        int pageVersion,
+        string? studioWork,
+        string? hpgdsSupport,
+        string? wmdSupport,
+        string? actionItems,
+        string? notes,
+        CancellationToken cancellationToken)
     {
-        Response.Headers.CacheControl = "no-store";
-        if (!await weeklyWorkSummaryService.CanGenerateAsync(cancellationToken)) return Forbid();
-        if (!ModelState.IsValid
-            || !string.Equals(ReportPeriod, WeeklyPeriod, StringComparison.Ordinal)
-            || !DateOnly.TryParseExact($"{SelectedMonth}-01", "yyyy-MM-dd",
-                CultureInfo.InvariantCulture, DateTimeStyles.None, out var selectedMonth)
-            || selectedMonth == new DateOnly(9999, 12, 1)
-            || !Week.HasValue)
-            return WeeklySummaryError("Select a valid month and week in the Weekly summary period.");
-        var requestedWeek = Week;
-        SetReportRange();
-        if (Week != requestedWeek)
-            return WeeklySummaryError("The selected week does not exist in this month.");
+        UpdateStudioConfluenceResult result;
         try
         {
-            var preview = await weeklyWorkSummaryService.GenerateAsync(
-                StartDate!.Value, EndDate!.Value, User, cancellationToken);
-            return new JsonResult(new
-            {
-                rows = preview.Draft.Rows,
-                warnings = preview.Warnings,
-                provider = preview.Draft.Provider,
-                model = preview.Draft.Model
-            });
+            result = await confluenceUpdateService.UpdateAsync(
+                new UpdateStudioConfluenceCommand
+                {
+                    StudioId = studioId,
+                    RequestingUserId = User.Identity?.Name ?? string.Empty,
+                    PageId = pageId,
+                    WeekStart = weekStart,
+                    ExpectedPageVersion = pageVersion,
+                    StudioWork = studioWork ?? string.Empty,
+                    HpgdsSupport = hpgdsSupport ?? string.Empty,
+                    WmdSupport = wmdSupport ?? string.Empty,
+                    ActionItems = actionItems ?? string.Empty,
+                    Notes = notes ?? string.Empty
+                },
+                cancellationToken);
         }
-        catch (UnauthorizedAccessException)
+        catch (HttpRequestException exception)
         {
-            return Forbid();
+            ErrorMessage = $"Confluence could not be reached: {exception.Message}";
+            return RedirectToConfluence();
         }
-        catch (Exception exception) when (exception is WeeklyWorkSummaryException
-            or AiModelProviderException or HttpRequestException)
-        {
-            return WeeklySummaryError(exception.Message);
-        }
-    }
 
-    private static JsonResult WeeklySummaryError(string message) =>
-        new(new { error = message }) { StatusCode = StatusCodes.Status400BadRequest };
+        if (result.Succeeded) StatusMessage = result.Message;
+        else ErrorMessage = result.Message;
+        return RedirectToConfluence();
+    }
 
     public async Task<IActionResult> OnPostSaveExpectedDeliveryAsync(
         Guid? id,
@@ -526,6 +527,20 @@ public sealed class SupportSummaryModel(
 
     private IActionResult RedirectToPlanningTable(string fragment) =>
         Redirect($"/SupportSummary#{fragment}");
+
+    private IActionResult RedirectToConfluence()
+    {
+        var query = new List<string>
+        {
+            $"ReportPeriod={Uri.EscapeDataString(ReportPeriod)}"
+        };
+        if (!string.IsNullOrWhiteSpace(Search)) query.Add($"Search={Uri.EscapeDataString(Search)}");
+        if (!string.IsNullOrWhiteSpace(SelectedMonth)) query.Add($"SelectedMonth={Uri.EscapeDataString(SelectedMonth)}");
+        if (Week.HasValue) query.Add($"Week={Week.Value.ToString(CultureInfo.InvariantCulture)}");
+        if (StartDate.HasValue) query.Add($"StartDate={StartDate.Value:yyyy-MM-dd}");
+        if (EndDate.HasValue) query.Add($"EndDate={EndDate.Value:yyyy-MM-dd}");
+        return Redirect($"/SupportSummary?{string.Join('&', query)}#confluence");
+    }
 
     private void SetReportRange()
     {

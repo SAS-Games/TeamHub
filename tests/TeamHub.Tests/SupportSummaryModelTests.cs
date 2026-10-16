@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using FluentAssertions;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
 using Microsoft.AspNetCore.Mvc;
 using TeamHub.AI.Contracts;
@@ -17,6 +18,49 @@ namespace TeamHub.Tests;
 
 public sealed class SupportSummaryModelTests
 {
+    [Fact]
+    public async Task OnPostSaveConfluenceUpdateAsync_SendsPersonalEditAndReturnsToConfluenceSection()
+    {
+        var confluenceService = new StubConfluenceService();
+        var identity = new ClaimsIdentity([new Claim(ClaimTypes.Name, "editor@example.com")], "Test");
+        var model = new SupportSummaryModel(
+            new StubStudioDirectoryService([]),
+            new StubMilestoneService([]),
+            new StubJiraService(),
+            confluenceService,
+            new StubPlanningService(),
+            new StubWorklogEffortService())
+        {
+            ReportPeriod = SupportSummaryModel.CustomPeriod,
+            StartDate = new DateOnly(2026, 9, 14),
+            EndDate = new DateOnly(2026, 9, 18),
+            PageContext = new PageContext
+            {
+                HttpContext = new DefaultHttpContext { User = new ClaimsPrincipal(identity) }
+            }
+        };
+
+        var action = await model.OnPostSaveConfluenceUpdateAsync(
+            "studio-1",
+            "page-1",
+            new DateOnly(2026, 9, 14),
+            8,
+            "Work",
+            "HPGDS",
+            "WMD",
+            "Action",
+            "Notes",
+            CancellationToken.None);
+
+        confluenceService.LastUpdateCommand.Should().NotBeNull();
+        confluenceService.LastUpdateCommand!.RequestingUserId.Should().Be("editor@example.com");
+        confluenceService.LastUpdateCommand.PageId.Should().Be("page-1");
+        confluenceService.LastUpdateCommand.ExpectedPageVersion.Should().Be(8);
+        confluenceService.LastUpdateCommand.Notes.Should().Be("Notes");
+        model.StatusMessage.Should().Be("Saved.");
+        action.Should().BeOfType<RedirectResult>().Which.Url.Should().EndWith("#confluence");
+    }
+
     [Fact]
     public async Task OnGetAsync_LoadsCurrentWeekSupportAcrossAllActiveStudios()
     {
@@ -753,6 +797,7 @@ public sealed class SupportSummaryModelTests
     private sealed class StubConfluenceService : IStudioConfluenceUpdateService
     {
         public ConsolidatedStudioConfluenceUpdateQuery? LastQuery { get; private set; }
+        public UpdateStudioConfluenceCommand? LastUpdateCommand { get; private set; }
         public StudioConfluenceUpdateResult? Result { get; set; }
 
         public Task<StudioConfluenceUpdateResult> GetUpdatesAsync(
@@ -779,6 +824,14 @@ public sealed class SupportSummaryModelTests
                     })
                     .ToList()
             });
+        }
+
+        public Task<UpdateStudioConfluenceResult> UpdateAsync(
+            UpdateStudioConfluenceCommand command,
+            CancellationToken cancellationToken = default)
+        {
+            LastUpdateCommand = command;
+            return Task.FromResult(new UpdateStudioConfluenceResult(true, "Saved."));
         }
     }
 

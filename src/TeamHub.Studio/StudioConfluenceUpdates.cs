@@ -1,6 +1,8 @@
 using System.Globalization;
 using System.Net;
 using System.Net.Http.Headers;
+using System.Text;
+using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 
@@ -55,10 +57,27 @@ public sealed class StudioConfluenceWeeklyUpdate
     public string? Message { get; set; }
 }
 
+public sealed class UpdateStudioConfluenceCommand
+{
+    public string StudioId { get; set; } = string.Empty;
+    public string RequestingUserId { get; set; } = string.Empty;
+    public string PageId { get; set; } = string.Empty;
+    public DateOnly WeekStart { get; set; }
+    public int ExpectedPageVersion { get; set; }
+    public string StudioWork { get; set; } = string.Empty;
+    public string HpgdsSupport { get; set; } = string.Empty;
+    public string WmdSupport { get; set; } = string.Empty;
+    public string ActionItems { get; set; } = string.Empty;
+    public string Notes { get; set; } = string.Empty;
+}
+
+public sealed record UpdateStudioConfluenceResult(bool Succeeded, string Message, int? PageVersion = null);
+
 public interface IStudioConfluenceUpdateService
 {
     Task<StudioConfluenceUpdateResult> GetUpdatesAsync(StudioConfluenceUpdateQuery query, CancellationToken cancellationToken = default);
     Task<StudioConfluenceUpdateResult> GetConsolidatedUpdatesAsync(ConsolidatedStudioConfluenceUpdateQuery query, CancellationToken cancellationToken = default);
+    Task<UpdateStudioConfluenceResult> UpdateAsync(UpdateStudioConfluenceCommand command, CancellationToken cancellationToken = default);
 }
 
 internal sealed class ConfluenceStudioUpdateService(
@@ -67,6 +86,137 @@ internal sealed class ConfluenceStudioUpdateService(
     IAtlassianCredentialAccessor credentialAccessor) : IStudioConfluenceUpdateService
 {
     private const int MaximumRangeDays = 370;
+    private const int MaximumFieldLength = 20_000;
+
+    public async Task<UpdateStudioConfluenceResult> UpdateAsync(
+        UpdateStudioConfluenceCommand command,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(command.RequestingUserId))
+            return UpdateFailure("Sign in and connect your Confluence account before editing an update.");
+        if (string.IsNullOrWhiteSpace(command.StudioId)
+            || string.IsNullOrWhiteSpace(command.PageId)
+            || command.ExpectedPageVersion < 1
+            || command.WeekStart == default)
+            return UpdateFailure("The Confluence update reference is invalid. Refresh the report and try again.");
+        if (new[] { command.StudioWork, command.HpgdsSupport, command.WmdSupport, command.ActionItems, command.Notes }
+            .Any(value => value?.Length > MaximumFieldLength))
+            return UpdateFailure($"Each Confluence update field must be {MaximumFieldLength:N0} characters or fewer.");
+
+        var settings = await configurationService.GetSettingsAsync(cancellationToken);
+        if (!settings.ConfluenceEnabled || string.IsNullOrWhiteSpace(settings.ConfluenceBaseUrl))
+            return UpdateFailure("Confluence integration is not configured.");
+
+        var mapping = await configurationService.GetStudioMappingAsync(command.StudioId, cancellationToken);
+        if (mapping is null || string.IsNullOrWhiteSpace(mapping.ConfluenceStudioIdentifier))
+            return UpdateFailure("This studio does not have a Confluence table identifier.");
+
+        AtlassianResolvedCredential? credential;
+        try
+        {
+            // Writes must always use the person's own identity. Shared credentials are intentionally read only.
+            credential = await credentialAccessor.ResolveConfluenceCredentialAsync(
+                command.RequestingUserId,
+                allowPrivilegedDefault: false,
+                cancellationToken);
+        }
+        catch (InvalidOperationException exception)
+        {
+            return UpdateFailure(exception.Message);
+        }
+
+        if (credential is null)
+            return UpdateFailure("Connect your personal Confluence token from My Atlassian Connection before editing updates.");
+        if (credential.IsReadOnly || credential.IsShared)
+            return UpdateFailure("Shared Confluence credentials cannot edit weekly pages. Connect your personal token.");
+
+        var contentUri = BuildContentItemUri(settings, command.PageId);
+        using var getRequest = CreateAuthorizedRequest(HttpMethod.Get, $"{contentUri}?expand={Uri.EscapeDataString("body.storage,version,ancestors")}", credential.Token);
+        using var getResponse = await httpClient.SendAsync(getRequest, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+        if (!getResponse.IsSuccessStatusCode)
+            return UpdateFailure(BuildWriteHttpError(getResponse.StatusCode, getResponse.ReasonPhrase));
+
+        ConfluencePage page;
+        var isExpectedWeeklyPage = false;
+        try
+        {
+            await using var stream = await getResponse.Content.ReadAsStreamAsync(cancellationToken);
+            using var document = await JsonDocument.ParseAsync(stream, cancellationToken: cancellationToken);
+            var root = document.RootElement;
+            page = new ConfluencePage(
+                GetString(root, "id"),
+                GetString(root, "title"),
+                GetNestedString(root, "body", "storage", "value"),
+                string.Empty,
+                GetNestedInt(root, "version", "number"));
+            var weekEnd = command.WeekStart.AddDays(4);
+            var expectedTitle = StudioConfluencePageNaming.Format(settings.ConfluenceWeeklyTitlePattern, command.WeekStart, weekEnd);
+            isExpectedWeeklyPage = string.Equals(page.Title, expectedTitle, StringComparison.OrdinalIgnoreCase)
+                && new[] { command.WeekStart, weekEnd }.Any(anchor => MatchesAncestorPath(
+                    root,
+                    settings.ConfluenceParentPageId,
+                    StudioConfluencePageNaming.Format(settings.ConfluenceYearTitlePattern, command.WeekStart, weekEnd, anchor),
+                    StudioConfluencePageNaming.Format(settings.ConfluenceMonthTitlePattern, command.WeekStart, weekEnd, anchor)));
+        }
+        catch (JsonException)
+        {
+            return UpdateFailure("Confluence returned an unreadable page response. Refresh the report and try again.");
+        }
+        catch (FormatException)
+        {
+            return UpdateFailure("A configured Confluence page-title pattern contains an invalid date format.");
+        }
+
+        if (!string.Equals(page.Id, command.PageId, StringComparison.Ordinal) || string.IsNullOrWhiteSpace(page.Title) || page.Version < 1)
+            return UpdateFailure("Confluence returned incomplete page data. Refresh the report and try again.");
+        if (!isExpectedWeeklyPage)
+            return UpdateFailure("The selected page is no longer in the configured Confluence weekly-report hierarchy. Refresh the report and try again.");
+        if (page.Version != command.ExpectedPageVersion)
+            return UpdateFailure("This Confluence page changed after the report was loaded. Refresh the report, review the latest content, and apply your edit again.");
+
+        string updatedStorage;
+        try
+        {
+            if (!StudioConfluenceTableParser.TryReplace(
+                    page.StorageBody,
+                    mapping.ConfluenceStudioIdentifier,
+                    command.StudioWork,
+                    command.HpgdsSupport,
+                    command.WmdSupport,
+                    command.ActionItems,
+                    command.Notes,
+                    out updatedStorage))
+            {
+                return UpdateFailure($"The Confluence row for '{mapping.ConfluenceStudioIdentifier}' could not be updated. Confirm that the weekly page still has Studio, Overview, and Notes columns.");
+            }
+        }
+        catch (RegexMatchTimeoutException)
+        {
+            return UpdateFailure("The Confluence table was too complex to update safely.");
+        }
+
+        var nextVersion = page.Version + 1;
+        var payload = JsonSerializer.Serialize(new
+        {
+            id = page.Id,
+            type = "page",
+            title = page.Title,
+            version = new { number = nextVersion, message = $"Updated {mapping.ConfluenceStudioIdentifier} from Team Hub" },
+            body = new { storage = new { value = updatedStorage, representation = "storage" } }
+        });
+        using var putRequest = CreateAuthorizedRequest(HttpMethod.Put, contentUri, credential.Token);
+        putRequest.Content = new StringContent(payload, Encoding.UTF8, "application/json");
+        using var putResponse = await httpClient.SendAsync(putRequest, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+        if (!putResponse.IsSuccessStatusCode)
+        {
+            var message = putResponse.StatusCode == HttpStatusCode.Conflict
+                ? "Confluence rejected the save because the page changed. Refresh the report and apply your edit again."
+                : BuildWriteHttpError(putResponse.StatusCode, putResponse.ReasonPhrase);
+            return UpdateFailure(message);
+        }
+
+        return new UpdateStudioConfluenceResult(true, $"{mapping.ConfluenceStudioIdentifier} was updated in Confluence.", nextVersion);
+    }
 
     public async Task<StudioConfluenceUpdateResult> GetUpdatesAsync(
         StudioConfluenceUpdateQuery query,
@@ -469,6 +619,25 @@ internal sealed class ConfluenceStudioUpdateService(
         return $"{settings.ConfluenceBaseUrl.TrimEnd('/')}{settings.ConfluenceContentApiPath}?spaceKey={Uri.EscapeDataString(settings.ConfluenceSpaceKey)}&title={Uri.EscapeDataString(pageTitle)}&expand={expand}&limit=50";
     }
 
+    private static string BuildContentItemUri(AtlassianIntegrationSettings settings, string pageId) =>
+        $"{settings.ConfluenceBaseUrl.TrimEnd('/')}/{settings.ConfluenceContentApiPath.Trim('/')}/{Uri.EscapeDataString(pageId)}";
+
+    private static HttpRequestMessage CreateAuthorizedRequest(HttpMethod method, string uri, string token)
+    {
+        var request = new HttpRequestMessage(method, uri);
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+        request.Headers.TryAddWithoutValidation("X-Atlassian-Token", "no-check");
+        return request;
+    }
+
+    private static string BuildWriteHttpError(HttpStatusCode statusCode, string? reasonPhrase) =>
+        statusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden
+            ? "Confluence rejected the edit. Confirm that your personal token has permission to update the configured page."
+            : statusCode == HttpStatusCode.NotFound
+                ? "The Confluence page no longer exists or is no longer available to your account."
+                : $"Confluence returned {(int)statusCode} {reasonPhrase} while saving the update.";
+
     private static string BuildPageUrl(string baseUrl, string pageId, string webUiPath)
     {
         if (Uri.TryCreate(webUiPath, UriKind.Absolute, out var absolute)) return absolute.ToString();
@@ -506,6 +675,8 @@ internal sealed class ConfluenceStudioUpdateService(
 
     private static StudioConfluenceUpdateResult InvalidRange(string message) =>
         new() { IsConfigured = true, Message = message };
+
+    private static UpdateStudioConfluenceResult UpdateFailure(string message) => new(false, message);
 
     private static StudioConfluenceUpdateResult ReadFailure(
         string message,
@@ -616,6 +787,87 @@ internal static partial class StudioConfluenceTableParser
         return false;
     }
 
+    public static bool TryReplace(
+        string storageBody,
+        string studioIdentifier,
+        string? studioWork,
+        string? hpgdsSupport,
+        string? wmdSupport,
+        string? actionItems,
+        string? notes,
+        out string updatedStorageBody)
+    {
+        updatedStorageBody = storageBody;
+        if (string.IsNullOrWhiteSpace(storageBody) || string.IsNullOrWhiteSpace(studioIdentifier)) return false;
+
+        foreach (Match table in TableRegex().Matches(storageBody))
+        {
+            foreach (Match row in RowRegex().Matches(table.Groups[1].Value))
+            {
+                var cells = CellRegex().Matches(row.Groups[1].Value).Cast<Match>().ToList();
+                if (cells.Count < 3 || !string.Equals(ToText(cells[0].Groups[1].Value, null).Trim(), studioIdentifier.Trim(), StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                var overview = BuildOverviewStorage(studioWork, hpgdsSupport, wmdSupport, actionItems);
+                var notesStorage = BuildTextStorage(notes);
+                var rowContent = row.Groups[1].Value;
+                rowContent = ReplaceGroupValue(rowContent, cells[2].Groups[1], notesStorage);
+                rowContent = ReplaceGroupValue(rowContent, cells[1].Groups[1], overview);
+                var absoluteRowContentStart = table.Groups[1].Index + row.Groups[1].Index;
+                updatedStorageBody = string.Concat(
+                    storageBody.AsSpan(0, absoluteRowContentStart),
+                    rowContent,
+                    storageBody.AsSpan(absoluteRowContentStart + row.Groups[1].Length));
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static string ReplaceGroupValue(string source, Group group, string replacement) =>
+        string.Concat(source.AsSpan(0, group.Index), replacement, source.AsSpan(group.Index + group.Length));
+
+    private static string BuildOverviewStorage(string? studioWork, string? hpgdsSupport, string? wmdSupport, string? actionItems) =>
+        string.Concat(
+            "<p><strong>Studio Work:</strong><br/>", BuildTextStorage(studioWork), "</p>",
+            "<p><strong>HPGDS Support:</strong><br/>", BuildTextStorage(hpgdsSupport), "</p>",
+            "<p><strong>WMD Support:</strong><br/>", BuildTextStorage(wmdSupport), "</p>",
+            "<p><strong>Action Items:</strong><br/>", BuildTextStorage(actionItems), "</p>");
+
+    private static string BuildTextStorage(string? value)
+    {
+        var normalized = (value ?? string.Empty).Replace("\r\n", "\n", StringComparison.Ordinal).Replace('\r', '\n');
+        return string.Join("<br/>", normalized.Split('\n').Select(EncodeLineWithLinks));
+    }
+
+    private static string EncodeLineWithLinks(string line)
+    {
+        var output = new StringBuilder(line.Length);
+        var position = 0;
+        foreach (Match match in MarkdownLinkRegex().Matches(line))
+        {
+            output.Append(HtmlEncoder.Default.Encode(line[position..match.Index]));
+            var label = match.Groups[1].Value;
+            var href = match.Groups[2].Value;
+            if (Uri.TryCreate(href, UriKind.Absolute, out var uri)
+                && (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps))
+            {
+                output.Append("<a href=\"")
+                    .Append(HtmlEncoder.Default.Encode(uri.AbsoluteUri))
+                    .Append("\">")
+                    .Append(HtmlEncoder.Default.Encode(label))
+                    .Append("</a>");
+            }
+            else
+            {
+                output.Append(HtmlEncoder.Default.Encode(match.Value));
+            }
+            position = match.Index + match.Length;
+        }
+        output.Append(HtmlEncoder.Default.Encode(line[position..]));
+        return output.ToString();
+    }
+
     private static Dictionary<string, string> ParseOverviewSections(string overview)
     {
         var sections = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
@@ -700,4 +952,7 @@ internal static partial class StudioConfluenceTableParser
 
     [GeneratedRegex(@"(Studio Work|HPGDS Support|WMD Support|Action Items?)\s*:\s*", RegexOptions.IgnoreCase, 2000)]
     private static partial Regex SectionLabelRegex();
+
+    [GeneratedRegex(@"\[([^\]\r\n]+)\]\((https?://[^\s)]+)\)", RegexOptions.IgnoreCase, 2000)]
+    private static partial Regex MarkdownLinkRegex();
 }

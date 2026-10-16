@@ -1,4 +1,5 @@
 using FluentAssertions;
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -431,6 +432,106 @@ public sealed class StudioDirectoryTests
             result.Updates.Single(update => update.StudioId == hdc.Id).HpgdsSupport.Should().Be("HDC support");
             result.Updates.Single(update => update.StudioId == bbg.Id).WmdSupport.Should().Be("BBG support");
             result.UnconfiguredStudioIds.Should().Equal(unmapped.Id);
+        }
+        finally
+        {
+            SqliteConnection.ClearAllPools();
+            if (File.Exists(dbPath)) File.Delete(dbPath);
+        }
+    }
+
+    [Fact]
+    public async Task UpdateAsync_ReplacesMappedStudioRowAndPublishesNextConfluenceVersion()
+    {
+        var dbPath = Path.Combine(Path.GetTempPath(), $"teamhub-studio-{Guid.NewGuid():N}.db");
+        const string storageBody = """
+            <table><tbody>
+              <tr><th>Studio</th><th>Overview</th><th>Notes</th></tr>
+              <tr><td>BBG</td><td><strong>Studio Work:</strong><br/>Keep BBG</td><td>Keep note</td></tr>
+              <tr><td>HDC</td><td><strong>Studio Work:</strong><br/>Old work</td><td>Old note</td></tr>
+            </tbody></table>
+            """;
+        string? putPayload = null;
+        var handler = new StubHttpMessageHandler(request =>
+        {
+            request.Headers.Authorization?.Parameter.Should().Be("personal-confluence-token");
+            if (request.Method == HttpMethod.Get)
+            {
+                request.RequestUri!.AbsolutePath.Should().EndWith("/rest/api/content/weekly-1");
+                var page = JsonSerializer.Serialize(new
+                {
+                    id = "weekly-1",
+                    title = "14/09-18/09",
+                    ancestors = new[]
+                    {
+                        new { id = "100", title = "Activities" },
+                        new { id = "101", title = "2026" },
+                        new { id = "102", title = "9/2026" }
+                    },
+                    body = new { storage = new { value = storageBody } },
+                    version = new { number = 8 }
+                });
+                return new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent(page, Encoding.UTF8, "application/json")
+                };
+            }
+
+            request.Method.Should().Be(HttpMethod.Put);
+            putPayload = request.Content!.ReadAsStringAsync().GetAwaiter().GetResult();
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent("{}", Encoding.UTF8, "application/json")
+            };
+        });
+
+        try
+        {
+            await using var provider = CreateServices(dbPath, confluenceHandler: handler);
+            await using var scope = provider.CreateAsyncScope();
+            await scope.ServiceProvider.GetRequiredService<IStudioDatabaseInitializer>().InitializeAsync();
+            var directory = scope.ServiceProvider.GetRequiredService<IStudioDirectoryService>();
+            var configuration = scope.ServiceProvider.GetRequiredService<IAtlassianConfigurationService>();
+            var studio = await directory.SaveStudioAsync(new StudioDetails { StudioName = "HDC Studio", ProjectName = "Game" });
+            await configuration.SaveSettingsAsync(new AtlassianIntegrationSettings
+            {
+                ConfluenceEnabled = true,
+                ConfluenceBaseUrl = "https://confluence.example.test",
+                ConfluenceContentApiPath = "/rest/api/content",
+                ConfluenceSpaceKey = "WR",
+                ConfluenceParentPageId = "100"
+            });
+            await configuration.SaveStudioMappingsAsync([
+                new StudioAtlassianMapping { StudioId = studio.Id, ConfluenceStudioIdentifier = "HDC" }
+            ]);
+            await configuration.SaveUserTokensAsync("person@example.com", null, "personal-confluence-token");
+
+            var result = await scope.ServiceProvider.GetRequiredService<IStudioConfluenceUpdateService>().UpdateAsync(
+                new UpdateStudioConfluenceCommand
+                {
+                    StudioId = studio.Id,
+                    RequestingUserId = "person@example.com",
+                    PageId = "weekly-1",
+                    WeekStart = new DateOnly(2026, 9, 14),
+                    ExpectedPageVersion = 8,
+                    StudioWork = "New work",
+                    HpgdsSupport = "Support",
+                    WmdSupport = "Review",
+                    ActionItems = "Follow up",
+                    Notes = "New note"
+                });
+
+            result.Succeeded.Should().BeTrue();
+            result.PageVersion.Should().Be(9);
+            putPayload.Should().NotBeNull();
+            using var payload = JsonDocument.Parse(putPayload!);
+            payload.RootElement.GetProperty("version").GetProperty("number").GetInt32().Should().Be(9);
+            var updatedStorage = payload.RootElement.GetProperty("body").GetProperty("storage").GetProperty("value").GetString();
+            updatedStorage.Should().Contain("<td>BBG</td><td><strong>Studio Work:</strong><br/>Keep BBG</td><td>Keep note</td>");
+            StudioConfluenceTableParser.TryParse(updatedStorage!, "HDC", out var parsed).Should().BeTrue();
+            parsed.StudioWork.Should().Be("New work");
+            parsed.HpgdsSupport.Should().Be("Support");
+            parsed.Notes.Should().Be("New note");
         }
         finally
         {
@@ -1132,7 +1233,7 @@ public sealed class StudioDirectoryTests
             .Build();
 
         var services = new ServiceCollection();
-        services.AddDataProtection();
+        services.AddDataProtection().UseEphemeralDataProtectionProvider();
         services.AddStudioDirectory(configuration);
         if (confluenceHandler is not null)
         {

@@ -98,5 +98,10 @@ public sealed class WeeklyUpdatesModelTests
                 IsConfigured = true,
                 Updates = updates
             });
+
+        public Task<UpdateStudioConfluenceResult> UpdateAsync(
+            UpdateStudioConfluenceCommand command,
+            CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
     }
 }

@@ -119,6 +119,36 @@ public sealed class StudioConfluenceUpdateTests
     }
 
     [Fact]
+    public void TableParser_ReplaceUpdatesOnlyRequestedRowAndEncodesContent()
+    {
+        const string body = """
+            <table><tbody>
+              <tr><th>Studio</th><th>Overview</th><th>Notes</th></tr>
+              <tr><td>BBG</td><td><strong>Studio Work:</strong><br/>Keep me</td><td>BBG note</td></tr>
+              <tr><td>HDC</td><td><strong>Studio Work:</strong><br/>Old work</td><td>Old note</td></tr>
+            </tbody></table>
+            """;
+
+        var replaced = StudioConfluenceTableParser.TryReplace(
+            body,
+            "HDC",
+            "New <work>\nSee [ticket](https://jira.example.test/browse/ABC-1)",
+            "HPGDS",
+            "WMD",
+            "Follow up",
+            "Notes & risks",
+            out var updatedBody);
+
+        replaced.Should().BeTrue();
+        updatedBody.Should().Contain("<td>BBG</td><td><strong>Studio Work:</strong><br/>Keep me</td><td>BBG note</td>");
+        updatedBody.Should().Contain("New &lt;work&gt;<br/>See <a href=\"https://jira.example.test/browse/ABC-1\">ticket</a>");
+        updatedBody.Should().Contain("Notes &amp; risks");
+        StudioConfluenceTableParser.TryParse(updatedBody, "HDC", out var parsed).Should().BeTrue();
+        parsed.StudioWork.Should().Be($"New <work>{Environment.NewLine}See [ticket](https://jira.example.test/browse/ABC-1)");
+        parsed.Notes.Should().Be("Notes & risks");
+    }
+
+    [Fact]
     public void PageNaming_UsesBusinessWeekAndConfiguredHierarchyPatterns()
     {
         var selectedDate = new DateOnly(2026, 9, 16);
