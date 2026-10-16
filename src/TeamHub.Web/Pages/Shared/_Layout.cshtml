@@ -171,7 +171,7 @@
                     {
                         @if (await CurrentAccess.CanAsync(TeamHubModules.AtlassianConnection))
                         {
-                            <a class="btn btn-sm btn-outline-secondary me-2" asp-page="/Profile/Atlassian">My Atlassian Connection</a>
+                            <a class="btn btn-sm btn-outline-secondary me-2" asp-page="/Profile/Atlassian">My Connections</a>
                         }
                         <span class="navbar-text small text-secondary me-2">@(User.FindFirst(System.Security.Claims.ClaimTypes.GivenName)?.Value ?? User.Identity.Name)</span>
                     }

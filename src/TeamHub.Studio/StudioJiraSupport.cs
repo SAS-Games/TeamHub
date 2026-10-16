@@ -194,7 +194,7 @@ internal sealed class JiraStudioTicketService(
         }
         return NotConfigured(query.AllowPrivilegedDefaultCredential
             ? "No Jira credential is available. Ask an administrator to grant your privileged account read-only Jira access, or add a personal token."
-            : "Your Jira token is not connected. Open My Atlassian Connection and add your Bearer API token.");
+            : "Your Jira token is not connected. Open My Connections and add your Bearer API token.");
     }
 
     private async Task<IReadOnlyDictionary<string, StudioJiraTicketResult>> LoadTicketsForStudiosAsync(
@@ -261,7 +261,7 @@ internal sealed class JiraStudioTicketService(
         {
             var message = query.AllowPrivilegedDefaultCredential
                 ? "No Jira credential is available. Ask an administrator to grant your privileged account read-only Jira access, or add a personal token."
-                : "Your Jira token is not connected. Open My Atlassian Connection and add your Bearer API token.";
+                : "Your Jira token is not connected. Open My Connections and add your Bearer API token.";
             foreach (var mapping in validMappings) results[mapping.StudioId] = NotConfigured(message);
             return results;
         }
@@ -572,7 +572,7 @@ internal sealed class JiraStudioTicketService(
         {
             HttpStatusCode.Unauthorized => credential.IsShared
                 ? $"Jira rejected the shared read-only token while {operation}. Ask an administrator to update the default Jira credential."
-                : $"Jira rejected your personal token while {operation}. Update it from My Atlassian Connection.",
+                : $"Jira rejected your personal token while {operation}. Update it from My Connections.",
             HttpStatusCode.Forbidden => credential.IsShared
                 ? $"The shared Jira account does not have permission to use the Jira Software Agile API while {operation}."
                 : $"Your Jira account does not have permission to use the Jira Software Agile API while {operation}.",

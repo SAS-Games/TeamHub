@@ -58,7 +58,7 @@ else if (Model.Studio is not null)
         <div class="alert @(Model.TicketResult.IsConfigured ? "alert-warning" : "alert-info")">@Model.TicketResult.Message</div>
         @if (Model.TicketResult.Message.Contains("token", StringComparison.OrdinalIgnoreCase))
         {
-            <p><a class="btn btn-outline-primary" asp-page="/Profile/Atlassian">Open My Atlassian Connection</a></p>
+            <p><a class="btn btn-outline-primary" asp-page="/Profile/Atlassian">Open My Connections</a></p>
         }
     }
 

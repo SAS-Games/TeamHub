@@ -90,7 +90,14 @@ public interface IAtlassianCredentialAccessor
 
 public sealed record AtlassianResolvedCredential(string Token, bool IsShared, bool IsReadOnly);
 
-internal sealed class SqliteAtlassianConfigurationService : IAtlassianConfigurationService, IAtlassianCredentialAccessor
+public interface IPfbAiGatewayUserCredentialService
+{
+    Task<bool> HasTokenAsync(string userId, CancellationToken cancellationToken = default);
+    Task<string?> GetTokenAsync(string userId, CancellationToken cancellationToken = default);
+    Task SaveTokenAsync(string userId, string? token, bool removeToken = false, CancellationToken cancellationToken = default);
+}
+
+internal sealed class SqliteAtlassianConfigurationService : IAtlassianConfigurationService, IAtlassianCredentialAccessor, IPfbAiGatewayUserCredentialService
 {
     private const string TokenProtectorPurpose = "TeamHub.Atlassian.UserTokens.v1";
     private readonly StudioDbContext dbContext;
@@ -259,6 +266,36 @@ internal sealed class SqliteAtlassianConfigurationService : IAtlassianConfigurat
         }
 
         record.UserId = userId.Trim();
+        record.UpdatedAtUtc = DateTime.UtcNow;
+        await dbContext.SaveChangesAsync(cancellationToken);
+    }
+
+    public async Task<bool> HasTokenAsync(string userId, CancellationToken cancellationToken = default)
+    {
+        var normalizedUserId = NormalizeUserId(userId);
+        return await dbContext.AtlassianUserCredentials.AsNoTracking().AnyAsync(
+            item => item.NormalizedUserId == normalizedUserId && item.PfbAiGatewayTokenProtected != null
+                && item.PfbAiGatewayTokenProtected != "", cancellationToken);
+    }
+
+    public Task<string?> GetTokenAsync(string userId, CancellationToken cancellationToken = default) =>
+        GetTokenAsync(userId, record => record.PfbAiGatewayTokenProtected, cancellationToken);
+
+    public async Task SaveTokenAsync(string userId, string? token, bool removeToken = false,
+        CancellationToken cancellationToken = default)
+    {
+        var normalizedUserId = NormalizeUserId(userId);
+        if (token?.Length > 4096) throw new ArgumentException("The gateway token must not exceed 4,096 characters.");
+        if (!removeToken && string.IsNullOrWhiteSpace(token)) return;
+        var record = await dbContext.AtlassianUserCredentials
+            .SingleOrDefaultAsync(item => item.NormalizedUserId == normalizedUserId, cancellationToken);
+        if (record is null)
+        {
+            if (removeToken) return;
+            record = new AtlassianUserCredentialRecord { UserId = userId.Trim(), NormalizedUserId = normalizedUserId };
+            dbContext.AtlassianUserCredentials.Add(record);
+        }
+        record.PfbAiGatewayTokenProtected = removeToken ? null : tokenProtector.Protect(token!.Trim());
         record.UpdatedAtUtc = DateTime.UtcNow;
         await dbContext.SaveChangesAsync(cancellationToken);
     }
@@ -435,7 +472,7 @@ internal sealed class SqliteAtlassianConfigurationService : IAtlassianConfigurat
         }
         catch (CryptographicException)
         {
-            throw new InvalidOperationException("The stored Atlassian credential cannot be decrypted. Re-enter the token on your Atlassian connection page.");
+            throw new InvalidOperationException("The stored personal credential cannot be decrypted. Re-enter the token on My Connections.");
         }
     }
 

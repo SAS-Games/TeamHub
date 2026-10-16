@@ -107,6 +107,15 @@
         </div>
     </section>
 
+    @if (Model.Settings.Provider == AiModelProviderKeys.PfbAiGateway)
+    {
+        <section class="content-section mb-4">
+            <div class="section-heading"><div><span>Security</span><h2>Personal gateway credential</h2></div></div>
+            <div class="p-4"><a asp-page="/Profile/Atlassian" class="btn btn-outline-primary">My Connections</a></div>
+        </section>
+    }
+    else
+    {
     <section class="content-section mb-4">
         <div class="section-heading"><div><span>Security</span><h2>Provider credential</h2></div></div>
         <div class="p-4 row g-3">
@@ -129,6 +138,7 @@
             </div>
         </div>
     </section>
+    }
 
     <section class="content-section mb-4">
         <div class="section-heading"><div><span>Feature</span><h2>Flow Designer</h2></div></div>
@@ -151,7 +161,7 @@
                     <input asp-for="Settings.ReportGeneratorEnabled" class="form-check-input" />
                     <label asp-for="Settings.ReportGeneratorEnabled" class="form-check-label">Enable Weekly Work Summary</label>
                 </div>
-                <div class="form-text">Uses the shared provider, model, and credential above. Users also need AI Reports Create and Studio Support Read Only access.</div>
+                <div class="form-text">Uses the configured provider and model. Sony PFB AI Gateway uses your personal token from My Connections. Users also need AI Reports Create and Studio Support Read Only access.</div>
             </div>
             <div class="col-md-4">
                 <label asp-for="Settings.ReportMaximumConcurrentRequests" class="form-label">Maximum concurrent reports</label>

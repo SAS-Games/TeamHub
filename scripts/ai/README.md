@@ -35,8 +35,11 @@ Select the active provider, save, and use **Save and test connection**. New AI
 requests use the saved configuration immediately.
 
 The **Sony PFB AI Gateway** profile defaults to the organization gateway host.
-Paste an authorized JWT into the encrypted credential field, select the model
-and route assigned to that model, and clear **Offline-only** before testing.
+Save your authorized JWT under **My Connections > Sony PFB AI Gateway**. In
+**Configuration > AI Services**, select the model and route assigned to that
+model, and clear **Offline-only** before testing. Every gateway request uses
+the signed-in user's token, including model discovery and connection tests;
+shared AI credentials and environment-variable fallbacks are not used.
 Team Hub reads the model catalog from `/portal/pfb/models` and never writes the
 JWT to JSON configuration or application logs.
 

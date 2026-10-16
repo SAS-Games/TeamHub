@@ -13,11 +13,82 @@ using TeamHub.AI.Contracts;
 using TeamHub.Infrastructure.Persistence;
 using TeamHub.Infrastructure.Services;
 using TeamHub.Web.Pages.Configuration;
+using TeamHub.Studio;
+using TeamHub.Web.AI;
+using System.Security.Claims;
 
 namespace TeamHub.Tests;
 
 public sealed class AiConfigurationTests
 {
+    [Fact]
+    public async Task GatewayUsesOnlyTheAuthenticatedUsersPersonalToken()
+    {
+        await using var context = CreateDbContext();
+        using var defaults = CreateOptions();
+        var configuration = new AiConfigurationService(context, new EphemeralDataProtectionProvider(),
+            defaults.GetRequiredService<IOptionsMonitor<AiRuntimeOptions>>(),
+            defaults.GetRequiredService<IOptionsMonitor<AiFlowDesignerOptions>>(),
+            defaults.GetRequiredService<IOptionsMonitor<AiReportGeneratorOptions>>());
+        await configuration.SaveAsync(new(new(), new(), new(), "shared-token", false, "admin"));
+        var personal = new PersonalGatewayCredentials();
+        await personal.SaveTokenAsync("one@example.com", "one-token");
+        await personal.SaveTokenAsync("two@example.com", "two-token");
+        var http = new HttpContextAccessor { HttpContext = new DefaultHttpContext() };
+        var accessor = new PersonalAiProviderCredentialAccessor(http, personal, configuration);
+        var settings = new AiRuntimeOptions
+        {
+            Provider = AiModelProviderKeys.PfbAiGateway, OfflineOnly = false,
+            Endpoint = "https://gateway.example.test", Model = "gateway-model"
+        }.ToProviderSettings();
+        http.HttpContext.User = SignedIn("one@example.com");
+        (await accessor.GetCredentialAsync(settings)).Should().Be("one-token");
+        http.HttpContext.User = SignedIn("two@example.com");
+        (await accessor.GetCredentialAsync(settings)).Should().Be("two-token");
+        http.HttpContext.User = SignedIn("missing@example.com");
+        var missing = async () => await accessor.GetCredentialAsync(settings);
+        await missing.Should().ThrowAsync<InvalidOperationException>().WithMessage("*My Connections*");
+        http.HttpContext.User = new ClaimsPrincipal(new ClaimsIdentity([new Claim(ClaimTypes.Name, "one@example.com")]));
+        await missing.Should().ThrowAsync<InvalidOperationException>();
+        http.HttpContext = null;
+        await missing.Should().ThrowAsync<InvalidOperationException>();
+    }
+
+    [Theory]
+    [InlineData(AiModelProviderKeys.Ollama)]
+    [InlineData(AiModelProviderKeys.LlamaCpp)]
+    [InlineData(AiModelProviderKeys.OpenAiCompatible)]
+    public async Task OtherProvidersRetainSharedCredentialResolution(string providerKey)
+    {
+        await using var context = CreateDbContext();
+        using var defaults = CreateOptions();
+        var configuration = new AiConfigurationService(context, new EphemeralDataProtectionProvider(),
+            defaults.GetRequiredService<IOptionsMonitor<AiRuntimeOptions>>(),
+            defaults.GetRequiredService<IOptionsMonitor<AiFlowDesignerOptions>>(),
+            defaults.GetRequiredService<IOptionsMonitor<AiReportGeneratorOptions>>());
+        await configuration.SaveAsync(new(new(), new(), new(), "shared-token", false, "admin"));
+        var accessor = new PersonalAiProviderCredentialAccessor(new HttpContextAccessor(), new PersonalGatewayCredentials(), configuration);
+        var settings = new AiRuntimeOptions { Provider = providerKey }.ToProviderSettings();
+        (await accessor.GetCredentialAsync(settings)).Should().Be("shared-token");
+    }
+
+    private static ClaimsPrincipal SignedIn(string userId) =>
+        new(new ClaimsIdentity([new Claim(ClaimTypes.Name, userId)], "Test"));
+
+    private sealed class PersonalGatewayCredentials : IPfbAiGatewayUserCredentialService
+    {
+        private readonly Dictionary<string, string?> tokens = new(StringComparer.OrdinalIgnoreCase);
+        public Task<bool> HasTokenAsync(string userId, CancellationToken cancellationToken = default) =>
+            Task.FromResult(tokens.TryGetValue(userId, out var token) && !string.IsNullOrWhiteSpace(token));
+        public Task<string?> GetTokenAsync(string userId, CancellationToken cancellationToken = default) =>
+            Task.FromResult(tokens.GetValueOrDefault(userId));
+        public Task SaveTokenAsync(string userId, string? token, bool removeToken = false, CancellationToken cancellationToken = default)
+        {
+            tokens[userId] = removeToken ? null : token;
+            return Task.CompletedTask;
+        }
+    }
+
     [Fact]
     public async Task Saved_settings_override_bootstrap_defaults_and_encrypt_the_credential()
     {
@@ -140,6 +211,14 @@ public sealed class AiConfigurationTests
         await page.OnPostSaveAsync(CancellationToken.None);
         (await configuration.GetAsync()).ReportGenerator.Enabled.Should().BeFalse();
         (await configuration.GetAsync()).FlowDesigner.Enabled.Should().BeTrue();
+
+        page.Settings.Provider = AiModelProviderKeys.PfbAiGateway;
+        page.Settings.OfflineOnly = false;
+        page.Credential = "must-not-replace-shared-token";
+        page.RemoveCredential = true;
+        (await page.OnPostSaveAsync(CancellationToken.None)).Should().BeOfType<RedirectToPageResult>();
+        (await configuration.GetCredentialAsync(new AiRuntimeOptions().ToProviderSettings()))
+            .Should().Be("synthetic-provider-key");
     }
 
     [Theory]

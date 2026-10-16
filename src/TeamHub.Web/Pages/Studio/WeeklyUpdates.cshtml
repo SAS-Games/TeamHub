@@ -67,7 +67,7 @@ else
         <div class="alert @(Model.UpdateResult.IsConfigured ? "alert-warning" : "alert-info")">@Model.UpdateResult.Message</div>
         @if (Model.UpdateResult.Message.Contains("token", StringComparison.OrdinalIgnoreCase))
         {
-            <p><a class="btn btn-outline-primary" asp-page="/Profile/Atlassian">Open My Atlassian Connection</a></p>
+            <p><a class="btn btn-outline-primary" asp-page="/Profile/Atlassian">Open My Connections</a></p>
         }
     }
 

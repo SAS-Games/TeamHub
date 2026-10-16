@@ -118,7 +118,7 @@ internal sealed class ConfluenceStudioUpdateService(
         {
             return NotConfigured(query.AllowPrivilegedDefaultCredential
                 ? "No Confluence credential is available. Ask an administrator to grant your privileged account read-only Confluence access, or add a personal token."
-                : "Your Confluence token is not connected. Open My Atlassian Connection and add your Bearer API token.");
+                : "Your Confluence token is not connected. Open My Connections and add your Bearer API token.");
         }
 
         var updates = new List<StudioConfluenceWeeklyUpdate>();
@@ -235,7 +235,7 @@ internal sealed class ConfluenceStudioUpdateService(
         {
             return NotConfigured(query.AllowPrivilegedDefaultCredential
                 ? "No Confluence credential is available. Ask an administrator to grant your privileged account read-only Confluence access, or add a personal token."
-                : "Your Confluence token is not connected. Open My Atlassian Connection and add your Bearer API token.");
+                : "Your Confluence token is not connected. Open My Connections and add your Bearer API token.");
         }
 
         var updates = new List<StudioConfluenceWeeklyUpdate>();
@@ -293,7 +293,7 @@ internal sealed class ConfluenceStudioUpdateService(
             var message = response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden
                 ? credential.IsShared
                     ? "Confluence rejected the shared read-only token. Ask an administrator to update the default Confluence credential."
-                    : "Confluence rejected your personal token. Update it from My Atlassian Connection and confirm that your account can access the configured space."
+                    : "Confluence rejected your personal token. Update it from My Connections and confirm that your account can access the configured space."
                 : $"Confluence returned {(int)response.StatusCode} {response.ReasonPhrase}. Check the Confluence URL, API path, and space configuration.";
             return ([], message);
         }
@@ -381,7 +381,7 @@ internal sealed class ConfluenceStudioUpdateService(
             var message = response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden
                 ? credential.IsShared
                     ? "Confluence rejected the shared read-only token. Ask an administrator to update the default Confluence credential."
-                    : "Confluence rejected your personal token. Update it from My Atlassian Connection and confirm that your account can access the configured space."
+                    : "Confluence rejected your personal token. Update it from My Connections and confirm that your account can access the configured space."
                 : $"Confluence returned {(int)response.StatusCode} {response.ReasonPhrase}. Check the Confluence URL, API path, and space configuration.";
             return (update, message);
         }

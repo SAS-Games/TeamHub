@@ -1,14 +1,14 @@
 @page "/Profile/Atlassian"
 @model TeamHub.Web.Pages.Profile.AtlassianModel
 @{
-    ViewData["Title"] = "My Atlassian Connection";
+    ViewData["Title"] = "My Connections";
 }
 
 <div class="page-hero">
     <div>
         <div class="eyebrow">Personal credentials</div>
-        <h1>My Atlassian Connection</h1>
-        <p>Connect Jira and Confluence as yourself so reads and future updates are performed with your identity and permissions.</p>
+        <h1>My Connections</h1>
+        <p>Personal credentials for Jira, Confluence, and Sony PFB AI Gateway.</p>
     </div>
 </div>
 
@@ -57,6 +57,25 @@
                         <div class="form-check mt-3">
                             <input asp-for="Input.RemoveConfluenceToken" class="form-check-input" />
                             <label asp-for="Input.RemoveConfluenceToken" class="form-check-label">Remove my saved Confluence token</label>
+                        </div>
+                    }
+                </div>
+            </section>
+        </div>
+        <div class="col-12 col-lg-6">
+            <section class="content-section h-100 m-0">
+                <div class="section-heading">
+                    <div><span>@(Model.HasGatewayToken ? "Connected" : "Not connected")</span><h2>Sony PFB AI Gateway</h2></div>
+                </div>
+                <div class="section-body">
+                    <label asp-for="Input.PfbAiGatewayToken" class="form-label">API or bearer token</label>
+                    <input asp-for="Input.PfbAiGatewayToken" class="form-control" autocomplete="new-password" placeholder="Leave empty to keep the current token" />
+                    <span asp-validation-for="Input.PfbAiGatewayToken" class="text-danger"></span>
+                    @if (Model.HasGatewayToken)
+                    {
+                        <div class="form-check mt-3">
+                            <input asp-for="Input.RemovePfbAiGatewayToken" class="form-check-input" />
+                            <label asp-for="Input.RemovePfbAiGatewayToken" class="form-check-label">Remove my saved gateway token</label>
                         </div>
                     }
                 </div>
