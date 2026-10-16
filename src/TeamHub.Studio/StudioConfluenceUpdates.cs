@@ -2,7 +2,6 @@ using System.Globalization;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Text;
-using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 
@@ -829,44 +828,12 @@ internal static partial class StudioConfluenceTableParser
 
     private static string BuildOverviewStorage(string? studioWork, string? hpgdsSupport, string? wmdSupport, string? actionItems) =>
         string.Concat(
-            "<p><strong>Studio Work:</strong><br/>", BuildTextStorage(studioWork), "</p>",
-            "<p><strong>HPGDS Support:</strong><br/>", BuildTextStorage(hpgdsSupport), "</p>",
-            "<p><strong>WMD Support:</strong><br/>", BuildTextStorage(wmdSupport), "</p>",
-            "<p><strong>Action Items:</strong><br/>", BuildTextStorage(actionItems), "</p>");
+            "<p><strong>Studio Work:</strong></p>", BuildTextStorage(studioWork),
+            "<p><strong>HPGDS Support:</strong></p>", BuildTextStorage(hpgdsSupport),
+            "<p><strong>WMD Support:</strong></p>", BuildTextStorage(wmdSupport),
+            "<p><strong>Action Items:</strong></p>", BuildTextStorage(actionItems));
 
-    private static string BuildTextStorage(string? value)
-    {
-        var normalized = (value ?? string.Empty).Replace("\r\n", "\n", StringComparison.Ordinal).Replace('\r', '\n');
-        return string.Join("<br/>", normalized.Split('\n').Select(EncodeLineWithLinks));
-    }
-
-    private static string EncodeLineWithLinks(string line)
-    {
-        var output = new StringBuilder(line.Length);
-        var position = 0;
-        foreach (Match match in MarkdownLinkRegex().Matches(line))
-        {
-            output.Append(HtmlEncoder.Default.Encode(line[position..match.Index]));
-            var label = match.Groups[1].Value;
-            var href = match.Groups[2].Value;
-            if (Uri.TryCreate(href, UriKind.Absolute, out var uri)
-                && (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps))
-            {
-                output.Append("<a href=\"")
-                    .Append(HtmlEncoder.Default.Encode(uri.AbsoluteUri))
-                    .Append("\">")
-                    .Append(HtmlEncoder.Default.Encode(label))
-                    .Append("</a>");
-            }
-            else
-            {
-                output.Append(HtmlEncoder.Default.Encode(match.Value));
-            }
-            position = match.Index + match.Length;
-        }
-        output.Append(HtmlEncoder.Default.Encode(line[position..]));
-        return output.ToString();
-    }
+    private static string BuildTextStorage(string? value) => ConfluenceMarkdown.ToStorage(value);
 
     private static Dictionary<string, string> ParseOverviewSections(string overview)
     {
@@ -894,6 +861,7 @@ internal static partial class StudioConfluenceTableParser
     private static string ToText(string html, string? confluenceBaseUrl)
     {
         var text = AnchorRegex().Replace(html, match => ToLinkText(match, confluenceBaseUrl));
+        text = ConfluenceMarkdown.PreserveStorageFormatting(text);
         text = BreakRegex().Replace(text, "\n");
         text = BlockBoundaryRegex().Replace(text, "\n");
         text = TagRegex().Replace(text, string.Empty);
@@ -953,6 +921,4 @@ internal static partial class StudioConfluenceTableParser
     [GeneratedRegex(@"(Studio Work|HPGDS Support|WMD Support|Action Items?)\s*:\s*", RegexOptions.IgnoreCase, 2000)]
     private static partial Regex SectionLabelRegex();
 
-    [GeneratedRegex(@"\[([^\]\r\n]+)\]\((https?://[^\s)]+)\)", RegexOptions.IgnoreCase, 2000)]
-    private static partial Regex MarkdownLinkRegex();
 }

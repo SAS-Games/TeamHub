@@ -11,6 +11,9 @@
     const subtitle = modalElement.querySelector("[data-jira-comments-subtitle]");
     const copyButton = modalElement.querySelector("[data-jira-comments-copy]");
     const copyStatus = modalElement.querySelector("[data-jira-comments-copy-status]");
+    const composer = modalElement.querySelector("[data-jira-comment-composer]");
+    const composerBody = modalElement.querySelector("[data-jira-comment-body]");
+    const addButton = modalElement.querySelector("[data-jira-comment-add]");
     let pending;
     let imageUrls = [];
 
@@ -19,6 +22,9 @@
         for (const url of imageUrls) URL.revokeObjectURL(url);
         imageUrls = [];
         content.replaceChildren();
+        if (composer) composer.hidden = true;
+        if (composerBody) composerBody.value = "";
+        if (composer) composer.onsubmit = null;
         if (copyButton) copyButton.hidden = true;
         if (copyStatus) copyStatus.textContent = "";
     };
@@ -131,13 +137,14 @@
             const controller = new AbortController();
             pending = controller;
             const ticketId = button.dataset.ticketId;
+            const commentsUrl = button.dataset.commentsUrl;
             const modalTitle = button.dataset.modalTitle;
             title.textContent = modalTitle
                 ? (ticketId ? `${modalTitle} (${ticketId})` : modalTitle)
-                : (ticketId ? `${ticketId} - Latest Comments` : "Provided Feedback");
+                : (ticketId ? `${ticketId} - Jira Comments` : "Provided Feedback");
             if (subtitle) {
                 subtitle.textContent = ticketId
-                    ? "Newest comments first, ordered by creation time. Only comments visible to your Jira account are included."
+                    ? "Add comments or edit them using Markdown. Newest comments are shown first."
                     : "Feedback recorded for this milestone review.";
             }
             status.textContent = ticketId ? "Loading comments from Jira..." : "Loading feedback...";
@@ -147,12 +154,116 @@
             if (copyButton) copyButton.hidden = true;
             if (copyStatus) copyStatus.textContent = "";
             modal.show();
-            try {
-                const result = await readResponse(await fetch(button.dataset.commentsUrl, {
-                    signal: controller.signal,
-                    headers: { Accept: "application/json" }
-                }));
-                if (controller.signal.aborted) return;
+
+            const saveComment = async (commentId, body, submitButton) => {
+                const originalText = submitButton.textContent;
+                submitButton.disabled = true;
+                submitButton.textContent = "Saving...";
+                error.hidden = true;
+                try {
+                    const url = new URL(commentsUrl, location.href);
+                    url.searchParams.set("handler", "Save");
+                    const formData = new URLSearchParams();
+                    const token = composer?.querySelector('input[name="__RequestVerificationToken"]')?.value;
+                    if (token) formData.set("__RequestVerificationToken", token);
+                    if (commentId) formData.set("commentId", commentId);
+                    formData.set("body", body);
+                    await readResponse(await fetch(url, {
+                        method: "POST",
+                        signal: controller.signal,
+                        headers: {
+                            Accept: "application/json",
+                            "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8"
+                        },
+                        body: formData
+                    }));
+                    if (composerBody) composerBody.value = "";
+                    await loadComments();
+                } catch (failure) {
+                    if (controller.signal.aborted) return;
+                    error.textContent = failure instanceof Error ? failure.message : "The Jira comment could not be saved.";
+                    error.hidden = false;
+                } finally {
+                    submitButton.disabled = false;
+                    submitButton.textContent = originalText;
+                }
+            };
+
+            const addLegacyParts = (comment, body, imageJobs) => {
+                for (const part of comment.parts || []) {
+                    if (!ticketId && part.kind === "markdown" && typeof part.html === "string") {
+                        const formatted = document.createElement("div");
+                        formatted.className = "markdown-content";
+                        formatted.innerHTML = part.html;
+                        body.dataset.copyText = part.text;
+                        body.append(formatted);
+                    } else if (part.kind === "strong") {
+                        const strong = document.createElement("strong");
+                        strong.textContent = part.text;
+                        body.append(strong);
+                    } else if (part.kind === "image") {
+                        imageJobs.push(createImageJob(part, comment.id, commentsUrl, controller.signal, body));
+                    } else if (part.kind === "link") {
+                        const link = document.createElement("a");
+                        link.href = safeUrl(part.url);
+                        link.textContent = part.text;
+                        link.target = "_blank";
+                        link.rel = "noopener noreferrer";
+                        body.append(link);
+                    } else {
+                        body.append(document.createTextNode(part.text));
+                    }
+                }
+            };
+
+            const addEditor = (article, comment, body) => {
+                const edit = document.createElement("button");
+                edit.type = "button";
+                edit.className = "btn btn-sm btn-outline-primary mt-2";
+                edit.textContent = "Edit comment";
+                const editor = document.createElement("div");
+                editor.className = "mt-3 d-none";
+                const textarea = document.createElement("textarea");
+                textarea.className = "form-control";
+                textarea.rows = 5;
+                textarea.maxLength = 20000;
+                textarea.value = comment.bodyMarkdown || "";
+                textarea.setAttribute("aria-label", `Edit comment by ${comment.author}`);
+                const hint = document.createElement("div");
+                hint.className = "form-text";
+                hint.textContent = "Markdown formatting is supported.";
+                const actions = document.createElement("div");
+                actions.className = "d-flex gap-2 mt-2";
+                const discard = document.createElement("button");
+                discard.type = "button";
+                discard.className = "btn btn-sm btn-outline-secondary";
+                discard.textContent = "Discard";
+                const save = document.createElement("button");
+                save.type = "button";
+                save.className = "btn btn-sm btn-primary";
+                save.textContent = "Save";
+                actions.append(discard, save);
+                editor.append(textarea, hint, actions);
+                article.append(edit, editor);
+                edit.addEventListener("click", () => {
+                    body.classList.add("d-none");
+                    edit.classList.add("d-none");
+                    editor.classList.remove("d-none");
+                    textarea.focus();
+                });
+                discard.addEventListener("click", () => {
+                    textarea.value = comment.bodyMarkdown || "";
+                    editor.classList.add("d-none");
+                    body.classList.remove("d-none");
+                    edit.classList.remove("d-none");
+                });
+                save.addEventListener("click", () => saveComment(comment.id, textarea.value, save));
+            };
+
+            const renderComments = async result => {
+                for (const url of imageUrls) URL.revokeObjectURL(url);
+                imageUrls = [];
+                content.replaceChildren();
                 if (result.ticketUrl) {
                     open.href = safeUrl(result.ticketUrl);
                     open.hidden = false;
@@ -160,6 +271,7 @@
                     open.hidden = true;
                 }
                 shared.hidden = !result.isUsingSharedCredential;
+                if (composer) composer.hidden = !ticketId || !result.canWriteComments;
                 if (result.comments && result.comments.length) {
                     status.textContent = ticketId
                         ? `${result.comments.length} comment(s)`
@@ -171,8 +283,9 @@
                         : "No feedback was recorded for this review.";
                     if (copyButton) copyButton.hidden = true;
                 }
+
                 const imageJobs = [];
-                for (const comment of result.comments) {
+                for (const comment of result.comments || []) {
                     const article = document.createElement("article");
                     article.className = "border rounded p-3 mb-3";
                     const heading = document.createElement("h3");
@@ -187,36 +300,24 @@
                     }
                     const body = document.createElement("div");
                     body.setAttribute("data-comment-body", "");
-                    body.style.whiteSpace = "pre-wrap";
                     body.style.overflowWrap = "anywhere";
                     article.append(heading, date, body);
                     content.append(article);
-                    for (const part of comment.parts) {
-                        if (!ticketId && part.kind === "markdown" && typeof part.html === "string") {
-                            const formatted = document.createElement("div");
-                            formatted.className = "markdown-content";
-                            formatted.style.whiteSpace = "normal";
-                            // Local feedback HTML is generated by the server's SafeMarkdownRenderer.
-                            formatted.innerHTML = part.html;
-                            body.dataset.copyText = part.text;
-                            body.append(formatted);
-                        } else if (part.kind === "strong") {
-                            const strong = document.createElement("strong");
-                            strong.textContent = part.text;
-                            body.append(strong);
-                        } else if (part.kind === "image") {
-                            imageJobs.push(createImageJob(part, comment.id, button.dataset.commentsUrl, controller.signal, body));
-                        } else if (part.kind === "link") {
-                            const link = document.createElement("a");
-                            link.href = safeUrl(part.url);
-                            link.textContent = part.text;
-                            link.target = "_blank";
-                            link.rel = "noopener noreferrer";
-                            body.append(link);
-                        } else {
-                            body.append(document.createTextNode(part.text));
+                    if (ticketId && typeof comment.bodyHtml === "string") {
+                        body.className = "markdown-content";
+                        body.dataset.copyText = comment.bodyMarkdown || "";
+                        // This HTML is produced by the server's SafeMarkdownRenderer.
+                        body.innerHTML = comment.bodyHtml;
+                        for (const part of comment.parts || []) {
+                            if (part.kind === "image") {
+                                imageJobs.push(createImageJob(part, comment.id, commentsUrl, controller.signal, body));
+                            }
                         }
+                    } else {
+                        body.style.whiteSpace = "pre-wrap";
+                        addLegacyParts(comment, body, imageJobs);
                     }
+                    if (ticketId && result.canWriteComments) addEditor(article, comment, body);
                 }
                 let nextImage = 0;
                 await Promise.all(Array.from({ length: Math.min(4, imageJobs.length) }, async () => {
@@ -224,6 +325,27 @@
                         await imageJobs[nextImage++]();
                     }
                 }));
+            };
+
+            const loadComments = async () => {
+                status.textContent = ticketId ? "Loading comments from Jira..." : "Loading feedback...";
+                error.hidden = true;
+                const result = await readResponse(await fetch(commentsUrl, {
+                    signal: controller.signal,
+                    headers: { Accept: "application/json" }
+                }));
+                if (!controller.signal.aborted) await renderComments(result);
+            };
+
+            if (composer) {
+                composer.onsubmit = async event => {
+                    event.preventDefault();
+                    await saveComment(null, composerBody?.value || "", addButton);
+                };
+            }
+
+            try {
+                await loadComments();
             } catch (failure) {
                 if (controller.signal.aborted) return;
                 status.textContent = "";

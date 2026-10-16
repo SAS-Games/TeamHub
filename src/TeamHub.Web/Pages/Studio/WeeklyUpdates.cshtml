@@ -135,11 +135,11 @@ else
                                                 }
                                                 else
                                                 {
-                                                    <td class="text-break" style="white-space: pre-wrap;">@ConfluenceUpdateHtml.Render(update.StudioWork, "No information provided.")</td>
-                                                    <td class="text-break" style="white-space: pre-wrap;">@ConfluenceUpdateHtml.Render(update.HpgdsSupport, "No information provided.")</td>
-                                                    <td class="text-break" style="white-space: pre-wrap;">@ConfluenceUpdateHtml.Render(update.WmdSupport, "No information provided.")</td>
-                                                    <td class="text-break" style="white-space: pre-wrap;">@ConfluenceUpdateHtml.Render(update.ActionItems, "No information provided.")</td>
-                                                    <td class="text-break" style="white-space: pre-wrap;">@ConfluenceUpdateHtml.Render(update.Notes, "No notes provided.")</td>
+                                                    <td class="text-break"><safe-markdown class="markdown-content" text="@(string.IsNullOrWhiteSpace(update.StudioWork) ? "No information provided." : update.StudioWork)"></safe-markdown></td>
+                                                    <td class="text-break"><safe-markdown class="markdown-content" text="@(string.IsNullOrWhiteSpace(update.HpgdsSupport) ? "No information provided." : update.HpgdsSupport)"></safe-markdown></td>
+                                                    <td class="text-break"><safe-markdown class="markdown-content" text="@(string.IsNullOrWhiteSpace(update.WmdSupport) ? "No information provided." : update.WmdSupport)"></safe-markdown></td>
+                                                    <td class="text-break"><safe-markdown class="markdown-content" text="@(string.IsNullOrWhiteSpace(update.ActionItems) ? "No information provided." : update.ActionItems)"></safe-markdown></td>
+                                                    <td class="text-break"><safe-markdown class="markdown-content" text="@(string.IsNullOrWhiteSpace(update.Notes) ? "No notes provided." : update.Notes)"></safe-markdown></td>
                                                 }
                                             </tr>
                                         }
@@ -171,11 +171,11 @@ else
                 {
                     <div class="section-body">
                         <div class="row g-3">
-                            <div class="col-12 col-lg-6"><div class="border rounded-3 p-3 h-100"><h3 class="h6">Studio Work</h3><div class="text-break" style="white-space: pre-wrap;">@ConfluenceUpdateHtml.Render(update.StudioWork, "No information provided.")</div></div></div>
-                            <div class="col-12 col-lg-6"><div class="border rounded-3 p-3 h-100"><h3 class="h6">HPGDS Support</h3><div class="text-break" style="white-space: pre-wrap;">@ConfluenceUpdateHtml.Render(update.HpgdsSupport, "No information provided.")</div></div></div>
-                            <div class="col-12 col-lg-6"><div class="border rounded-3 p-3 h-100"><h3 class="h6">WMD Support</h3><div class="text-break" style="white-space: pre-wrap;">@ConfluenceUpdateHtml.Render(update.WmdSupport, "No information provided.")</div></div></div>
-                            <div class="col-12 col-lg-6"><div class="border rounded-3 p-3 h-100"><h3 class="h6">Action Items</h3><div class="text-break" style="white-space: pre-wrap;">@ConfluenceUpdateHtml.Render(update.ActionItems, "No information provided.")</div></div></div>
-                            <div class="col-12"><div class="border rounded-3 p-3"><h3 class="h6">Notes</h3><div class="text-break" style="white-space: pre-wrap;">@ConfluenceUpdateHtml.Render(update.Notes, "No notes provided.")</div></div></div>
+                            <div class="col-12 col-lg-6"><div class="border rounded-3 p-3 h-100"><h3 class="h6">Studio Work</h3><safe-markdown class="markdown-content text-break" text="@(string.IsNullOrWhiteSpace(update.StudioWork) ? "No information provided." : update.StudioWork)"></safe-markdown></div></div>
+                            <div class="col-12 col-lg-6"><div class="border rounded-3 p-3 h-100"><h3 class="h6">HPGDS Support</h3><safe-markdown class="markdown-content text-break" text="@(string.IsNullOrWhiteSpace(update.HpgdsSupport) ? "No information provided." : update.HpgdsSupport)"></safe-markdown></div></div>
+                            <div class="col-12 col-lg-6"><div class="border rounded-3 p-3 h-100"><h3 class="h6">WMD Support</h3><safe-markdown class="markdown-content text-break" text="@(string.IsNullOrWhiteSpace(update.WmdSupport) ? "No information provided." : update.WmdSupport)"></safe-markdown></div></div>
+                            <div class="col-12 col-lg-6"><div class="border rounded-3 p-3 h-100"><h3 class="h6">Action Items</h3><safe-markdown class="markdown-content text-break" text="@(string.IsNullOrWhiteSpace(update.ActionItems) ? "No information provided." : update.ActionItems)"></safe-markdown></div></div>
+                            <div class="col-12"><div class="border rounded-3 p-3"><h3 class="h6">Notes</h3><safe-markdown class="markdown-content text-break" text="@(string.IsNullOrWhiteSpace(update.Notes) ? "No notes provided." : update.Notes)"></safe-markdown></div></div>
                         </div>
                     </div>
                 }

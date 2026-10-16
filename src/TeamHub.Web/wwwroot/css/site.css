@@ -185,6 +185,8 @@ body {
 .support-summary-confluence { min-width: 1200px; }
 .support-summary-confluence th { min-width: 170px; }
 .support-summary-confluence td { min-width: 220px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.support-summary-confluence-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.support-summary-confluence-editor { min-width: 200px; min-height: 150px; resize: vertical; white-space: pre-wrap; }
 .support-effort-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 22px; }
 .support-effort-card { min-width: 0; padding: 20px; background: #f8faf8; border: 1px solid #d9e1dc; border-radius: 8px; }
 .support-effort-card h3 { margin: 0; font-size: 1.1rem; }
