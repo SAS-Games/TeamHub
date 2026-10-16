@@ -117,6 +117,32 @@ public sealed class StudioConfluenceUpdateTests
     }
 
     [Fact]
+    public void TableParser_RemovesOrphanBoldDelimitersLeftByLegacySectionHeadings()
+    {
+        const string body = """
+            <table><tbody><tr>
+              <td>BBG</td>
+              <td>
+                <p>**Studio Work:</p>
+                <ul><li>Fixing localization bugs for TRC</li><li>Testing the game</li></ul>
+                <p>**</p>
+                <p>**HPGDS Support:</p>
+                <p>**</p>
+                <ul><li>Support on HMD reset orientation</li></ul>
+              </td>
+              <td>**</td>
+            </tr></tbody></table>
+            """;
+
+        StudioConfluenceTableParser.TryParse(body, "BBG", out var update).Should().BeTrue();
+
+        update.StudioWork.Should().Be(string.Join(Environment.NewLine,
+            "- Fixing localization bugs for TRC", "- Testing the game"));
+        update.HpgdsSupport.Should().Be("- Support on HMD reset orientation");
+        update.Notes.Should().BeEmpty();
+    }
+
+    [Fact]
     public void TableParser_PreservesCombinedBoldAndItalicContent()
     {
         const string body = """

@@ -779,7 +779,7 @@ internal static partial class StudioConfluenceTableParser
                     sections.GetValueOrDefault("HPGDS Support", string.Empty),
                     sections.GetValueOrDefault("WMD Support", string.Empty),
                     sections.GetValueOrDefault("Action Items", string.Empty),
-                    cells.Count > 2 ? cells[2] : string.Empty);
+                    cells.Count > 2 ? RemoveOrphanMarkdownDelimiters(cells[2]) : string.Empty);
                 return true;
             }
         }
@@ -845,10 +845,18 @@ internal static partial class StudioConfluenceTableParser
             var valueStart = match.Index + match.Length;
             var valueEnd = index + 1 < matches.Count ? matches[index + 1].Index : overview.Length;
             var label = NormalizeLabel(match.Groups[1].Value);
-            sections[label] = overview[valueStart..valueEnd].Trim();
+            sections[label] = RemoveOrphanMarkdownDelimiters(overview[valueStart..valueEnd]);
         }
         return sections;
     }
+
+    // A heading that was converted from Confluence formatting can leave its opening or closing
+    // Markdown delimiter on a line by itself. It is not content and should not be rendered.
+    private static string RemoveOrphanMarkdownDelimiters(string value) =>
+        string.Join(Environment.NewLine, value.Replace("\r", string.Empty, StringComparison.Ordinal)
+            .Split('\n', StringSplitOptions.TrimEntries)
+            .Where(line => !OrphanMarkdownDelimiterRegex().IsMatch(line)))
+            .Trim();
 
     private static string NormalizeLabel(string value) => value.Trim().ToUpperInvariant() switch
     {
@@ -923,5 +931,8 @@ internal static partial class StudioConfluenceTableParser
     // leak into the preceding or following section value.
     [GeneratedRegex(@"\*{0,3}(Studio Work|HPGDS Support|WMD Support|Action Items?)\s*:\*{0,3}\s*", RegexOptions.IgnoreCase, 2000)]
     private static partial Regex SectionLabelRegex();
+
+    [GeneratedRegex(@"^\s*\*{2,3}\s*$", RegexOptions.CultureInvariant, 2000)]
+    private static partial Regex OrphanMarkdownDelimiterRegex();
 
 }
