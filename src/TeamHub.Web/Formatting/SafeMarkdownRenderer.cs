@@ -144,6 +144,7 @@ public sealed partial class SafeMarkdownRenderer : ISafeMarkdownRenderer
         });
 
         var html = HtmlEncoder.Default.Encode(source);
+        html = BoldItalicRegex().Replace(html, "<strong><em>$1</em></strong>");
         html = BoldRegex().Replace(html, "<strong>$1</strong>");
         html = HighlightRegex().Replace(html, "<mark>$1</mark>");
         html = StrikethroughRegex().Replace(html, "<del>$1</del>");
@@ -183,6 +184,9 @@ public sealed partial class SafeMarkdownRenderer : ISafeMarkdownRenderer
 
     [GeneratedRegex(@"\[([^\]\r\n]+)\]\(([^)\s]+)\)")]
     private static partial Regex LinkRegex();
+
+    [GeneratedRegex(@"\*\*\*(.+?)\*\*\*")]
+    private static partial Regex BoldItalicRegex();
 
     [GeneratedRegex(@"\*\*(.+?)\*\*")]
     private static partial Regex BoldRegex();

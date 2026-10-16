@@ -97,6 +97,8 @@ internal static partial class ConfluenceMarkdown
     public static string PreserveStorageFormatting(string html)
     {
         html = SectionLabel().Replace(html, match => $"{match.Groups[1].Value}:");
+        html = StrongEmphasis().Replace(html, match => $"***{match.Groups[1].Value}***");
+        html = EmphasisStrong().Replace(html, match => $"***{match.Groups[1].Value}***");
         html = Strong().Replace(html, match => $"**{match.Groups[1].Value}**");
         html = Emphasis().Replace(html, match => $"*{match.Groups[1].Value}*");
         html = Deleted().Replace(html, match => $"~~{match.Groups[1].Value}~~");
@@ -139,6 +141,8 @@ internal static partial class ConfluenceMarkdown
                 || uri.UserInfo.Length != 0 || uri.Scheme is not ("http" or "https")) return match.Value;
             return Protect($"<a href=\"{HtmlEncoder.Default.Encode(uri.AbsoluteUri)}\">{HtmlEncoder.Default.Encode(match.Groups[1].Value)}</a>");
         });
+        source = BoldItalic().Replace(source, match =>
+            Protect($"<strong><em>{HtmlEncoder.Default.Encode(match.Groups[1].Value)}</em></strong>"));
         source = Bold().Replace(source, match => Protect($"<strong>{HtmlEncoder.Default.Encode(match.Groups[1].Value)}</strong>"));
         source = Highlight().Replace(source, match => Protect($"<mark>{HtmlEncoder.Default.Encode(match.Groups[1].Value)}</mark>"));
         source = Strike().Replace(source, match => Protect($"<del>{HtmlEncoder.Default.Encode(match.Groups[1].Value)}</del>"));
@@ -161,6 +165,8 @@ internal static partial class ConfluenceMarkdown
     private static partial Regex InlineCode();
     [GeneratedRegex(@"\[([^\]\r\n]+)\]\((https?://[^)\s]+)\)", RegexOptions.IgnoreCase)]
     private static partial Regex Link();
+    [GeneratedRegex(@"\*\*\*(.+?)\*\*\*")]
+    private static partial Regex BoldItalic();
     [GeneratedRegex(@"\*\*(.+?)\*\*")]
     private static partial Regex Bold();
     [GeneratedRegex(@"==(.+?)==")]
@@ -172,6 +178,10 @@ internal static partial class ConfluenceMarkdown
 
     [GeneratedRegex(@"<strong\b[^>]*>\s*(Studio Work|HPGDS Support|WMD Support|Action Items?)\s*:\s*</strong>", RegexOptions.IgnoreCase)]
     private static partial Regex SectionLabel();
+    [GeneratedRegex(@"<strong\b[^>]*>\s*<em\b[^>]*>(.*?)</em>\s*</strong>", RegexOptions.IgnoreCase | RegexOptions.Singleline)]
+    private static partial Regex StrongEmphasis();
+    [GeneratedRegex(@"<em\b[^>]*>\s*<strong\b[^>]*>(.*?)</strong>\s*</em>", RegexOptions.IgnoreCase | RegexOptions.Singleline)]
+    private static partial Regex EmphasisStrong();
     [GeneratedRegex(@"<strong\b[^>]*>(.*?)</strong>", RegexOptions.IgnoreCase | RegexOptions.Singleline)]
     private static partial Regex Strong();
     [GeneratedRegex(@"<em\b[^>]*>(.*?)</em>", RegexOptions.IgnoreCase | RegexOptions.Singleline)]
