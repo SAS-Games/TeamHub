@@ -209,12 +209,12 @@
                 </div>
                 <div class="table-responsive mb-4">
                     <table class="table styled-table align-middle">
-                        <thead><tr><th>Step Key</th><th>Name</th><th>Owner</th><th>Hours</th><th>Depends On</th><th>Escalations</th><th>Flags</th><th>Actions</th></tr></thead>
+                        <thead><tr><th>Task ID (generated)</th><th>Name</th><th>Owner</th><th>Due date</th><th>Depends On</th><th>Escalations</th><th>Flags</th><th>Actions</th></tr></thead>
                         <tbody data-steps data-prefix="Input.Steps">
                         @for (var index = 0; index < Model.Input.Steps.Count; index++)
                         {
                             <tr data-row>
-                                <td><input asp-for="Input.Steps[index].StepKey" class="form-control" data-field="StepKey" /></td>
+                                <td><input asp-for="Input.Steps[index].StepKey" class="form-control" data-field="StepKey" readonly tabindex="-1" /></td>
                                 <td>
                                     <input asp-for="Input.Steps[index].StepName" class="form-control mb-2" data-field="StepName" />
                                     <textarea asp-for="Input.Steps[index].Description" class="form-control" rows="2" data-field="Description" placeholder="Description"></textarea>
@@ -225,7 +225,9 @@
                                     <div class="form-text">Select a registered email or enter valid emails separated by semicolons.</div>
                                 </td>
                                 <td>
-                                    <input asp-for="Input.Steps[index].ExpectedDurationHours" type="number" min="0" step="0.5" class="form-control" data-field="ExpectedDurationHours" />
+                                    <input type="date" class="form-control" data-due-date aria-label="Due date" />
+                                    <input asp-for="Input.Steps[index].ExpectedDurationHours" type="hidden" data-field="ExpectedDurationHours" />
+                                    <div class="form-text">Converted to hours from now. Each run gets that duration from task start.</div>
                                     <input asp-for="Input.Steps[index].ReminderAfterHours" type="number" min="0" step="0.5" class="form-control mt-2" data-field="ReminderAfterHours" placeholder="Reminder" />
                                 </td>
                                 <td><input asp-for="Input.Steps[index].DependsOnCsv" class="form-control" data-field="DependsOnCsv" placeholder="STEP_A, STEP_B" /></td>
@@ -312,13 +314,22 @@
                 const row = document.createElement("tr");
                 row.dataset.row = "";
                 row.innerHTML = `<td></td><td></td><td></td><td></td><td></td><td></td><td></td><td class="studio-actions"></td>`;
-                row.children[0].append(makeInput(prefix, index, "StepKey"));
+                const stepKey = makeInput(prefix, index, "StepKey");
+                stepKey.readOnly = true;
+                stepKey.tabIndex = -1;
+                row.children[0].append(stepKey);
                 row.children[1].append(makeInput(prefix, index, "StepName"), makeInput(prefix, index, "Description", { multiline: true, placeholder: "Description" }));
                 const owner = makeInput(prefix, index, "Owner", { placeholder: "email1@example.com; email2@example.com" });
                 owner.setAttribute("list", "registeredWorkflowEmails");
                 row.children[2].append(owner, makeInput(prefix, index, "OwnerType", { type: "hidden", value: "Email" }));
                 row.children[2].insertAdjacentHTML("beforeend", "<div class=\"form-text\">Select or enter valid emails separated by semicolons.</div>");
-                row.children[3].append(makeInput(prefix, index, "ExpectedDurationHours", { type: "number", value: "0" }), makeInput(prefix, index, "ReminderAfterHours", { type: "number", placeholder: "Reminder" }));
+                const dueDate = document.createElement("input");
+                dueDate.type = "date";
+                dueDate.className = "form-control";
+                dueDate.dataset.dueDate = "";
+                dueDate.setAttribute("aria-label", "Due date");
+                dueDate.min = dateFromHours(0);
+                row.children[3].append(dueDate, makeInput(prefix, index, "ExpectedDurationHours", { type: "hidden", value: "24" }), makeInput(prefix, index, "ReminderAfterHours", { type: "number", placeholder: "Reminder" }));
                 row.children[4].append(makeInput(prefix, index, "DependsOnCsv", { placeholder: "STEP_A, STEP_B" }));
                 row.children[5].append(makeInput(prefix, index, "EscalationAfterHours", { type: "number", placeholder: "Level 1 hours" }), makeInput(prefix, index, "EscalationOwner", { placeholder: "Level 1 emails" }), makeInput(prefix, index, "EscalationLevel2AfterHours", { type: "number", placeholder: "Level 2 hours" }), makeInput(prefix, index, "EscalationLevel2Owners", { placeholder: "Level 2 emails" }), makeInput(prefix, index, "EscalationLevel3AfterHours", { type: "number", placeholder: "Level 3 hours" }), makeInput(prefix, index, "EscalationLevel3Owners", { placeholder: "Level 3 emails" }));
                 row.children[5].querySelectorAll("input:not([type='number'])").forEach(input => input.setAttribute("list", "registeredWorkflowEmails"));
@@ -326,6 +337,7 @@
                 row.children[7].append(makeInput(prefix, index, "Remove", { type: "hidden", value: "false" }));
                 row.children[7].insertAdjacentHTML("beforeend", `<button type="button" class="btn btn-sm btn-outline-danger" data-remove-row>Remove</button>`);
                 body.append(row);
+                dueDate.value = dateFromHours(24);
             };
 
             document.addEventListener("click", (event) => {
@@ -339,6 +351,51 @@
                     const body = removeButton.closest("tbody[data-steps]");
                     removeButton.closest("tr[data-row]")?.remove();
                     reindex(body);
+                }
+            });
+
+            const toTaskId = (name) => name.trim().toUpperCase().replace(/[^A-Z0-9]+/g, "_").replace(/^_+|_+$/g, "");
+            const dateFromHours = (hours) => {
+                const date = new Date(Date.now() + Number(hours || 0) * 3600000);
+                return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+            };
+            const hoursUntilEndOfDate = (value) => {
+                if (!value) return null;
+                const [year, month, day] = value.split("-").map(Number);
+                const due = new Date(year, month - 1, day, 23, 59, 59, 999);
+                return Number.isFinite(due.getTime()) && due.getTime() > Date.now()
+                    ? (due.getTime() - Date.now()) / 3600000
+                    : null;
+            };
+            document.querySelectorAll("tr[data-row]").forEach(row => {
+                const date = row.querySelector("[data-due-date]");
+                const duration = row.querySelector("[data-field='ExpectedDurationHours']");
+                if (date && duration) {
+                    date.min = dateFromHours(0);
+                    date.value = dateFromHours(duration.value);
+                }
+            });
+            document.addEventListener("input", (event) => {
+                const row = event.target.closest("tr[data-row]");
+                if (!row) return;
+                if (event.target.matches("[data-due-date]")) {
+                    const duration = hoursUntilEndOfDate(event.target.value);
+                    if (duration !== null) row.querySelector("[data-field='ExpectedDurationHours']").value = String(duration);
+                    return;
+                }
+                if (["EscalationAfterHours", "EscalationLevel2AfterHours", "EscalationLevel3AfterHours"].includes(event.target.dataset.field)) {
+                    const first = row.querySelector("[data-field='EscalationAfterHours']");
+                    const second = row.querySelector("[data-field='EscalationLevel2AfterHours']");
+                    const third = row.querySelector("[data-field='EscalationLevel3AfterHours']");
+                    if (first.value !== "" && second.value !== "" && Number(second.value) <= Number(first.value)) second.value = String(Number(first.value) + 0.5);
+                    if (second.value !== "" && third.value !== "" && Number(third.value) <= Number(second.value)) third.value = String(Number(second.value) + 0.5);
+                    return;
+                }
+                if (event.target.dataset.field !== "StepName") return;
+                const key = row?.querySelector("[data-field='StepKey']");
+                if (key && (!key.value || key.dataset.generated === "true")) {
+                    key.value = toTaskId(event.target.value);
+                    key.dataset.generated = "true";
                 }
             });
 

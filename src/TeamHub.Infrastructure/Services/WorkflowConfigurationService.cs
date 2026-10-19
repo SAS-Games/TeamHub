@@ -299,19 +299,6 @@ public sealed class WorkflowConfigurationService(
                 {
                     errors.Add($"Workflow {workflow.WorkflowKey}: Step {step.StepKey} escalation level 3 requires level 2.");
                 }
-                if (step.EscalationAfterHours.HasValue
-                    && step.EscalationLevel2AfterHours.HasValue
-                    && step.EscalationLevel2AfterHours.Value <= step.EscalationAfterHours.Value)
-                {
-                    errors.Add($"Workflow {workflow.WorkflowKey}: Step {step.StepKey} escalation level 2 must occur after level 1.");
-                }
-                if (step.EscalationLevel2AfterHours.HasValue
-                    && step.EscalationLevel3AfterHours.HasValue
-                    && step.EscalationLevel3AfterHours.Value <= step.EscalationLevel2AfterHours.Value)
-                {
-                    errors.Add($"Workflow {workflow.WorkflowKey}: Step {step.StepKey} escalation level 3 must occur after level 2.");
-                }
-
                 foreach (var dependency in step.DependsOn)
                 {
                     if (!stepKeys.Contains(dependency))
@@ -543,12 +530,18 @@ public sealed class WorkflowConfigurationService(
     private static IEnumerable<WorkflowDraftStepDefinition> CreateDraftSteps(Guid draftId, IEnumerable<WorkflowDraftStepDto> steps)
     {
         var sortOrder = 1;
+        var usedKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var step in steps.Where(HasStepValue))
         {
+            var baseKey = NormalizeKey(string.IsNullOrWhiteSpace(step.StepKey) ? step.StepName : step.StepKey);
+            if (string.IsNullOrWhiteSpace(baseKey)) baseKey = "TASK";
+            var stepKey = baseKey;
+            for (var suffix = 2; !usedKeys.Add(stepKey); suffix++) stepKey = $"{baseKey}_{suffix}";
+            var level2 = NextEscalationDelay(step.EscalationAfterHours, step.EscalationLevel2AfterHours);
             yield return new WorkflowDraftStepDefinition
             {
                 WorkflowDraftDefinitionId = draftId,
-                StepKey = NormalizeKey(step.StepKey),
+                StepKey = stepKey,
                 Name = step.StepName.Trim(),
                 Description = string.IsNullOrWhiteSpace(step.Description) ? null : step.Description.Trim(),
                 OwnerType = "Email",
@@ -559,9 +552,9 @@ public sealed class WorkflowConfigurationService(
                 ReminderRepeatHours = step.ReminderRepeatHours,
                 EscalationAfterHours = step.EscalationAfterHours,
                 EscalationOwner = FormatEmails(step.EscalationOwner),
-                EscalationLevel2AfterHours = step.EscalationLevel2AfterHours,
+                EscalationLevel2AfterHours = level2,
                 EscalationLevel2Owners = FormatEmails(step.EscalationLevel2Owners),
-                EscalationLevel3AfterHours = step.EscalationLevel3AfterHours,
+                EscalationLevel3AfterHours = NextEscalationDelay(level2, step.EscalationLevel3AfterHours),
                 EscalationLevel3Owners = FormatEmails(step.EscalationLevel3Owners),
                 Required = step.Required,
                 Enabled = step.Enabled,
@@ -570,6 +563,11 @@ public sealed class WorkflowConfigurationService(
             sortOrder++;
         }
     }
+
+    private static double? NextEscalationDelay(double? previous, double? current) =>
+        previous.HasValue && current.HasValue && current.Value <= previous.Value
+            ? previous.Value + 0.5
+            : current;
 
     private static bool HasStepValue(WorkflowDraftStepDto step)
         => !string.IsNullOrWhiteSpace(step.StepKey)

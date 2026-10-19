@@ -1171,11 +1171,12 @@ public sealed class MilestoneReviewTests : IAsyncLifetime
 
         await model.OnGetAsync(CancellationToken.None);
         model.CanEdit(row).Should().Be(canEdit);
-        model.IsEditingFeedback(row).Should().Be(canEdit);
+        model.IsEditingFeedback(row).Should().BeFalse();
         model.EditFeedbackId = row.Id;
         var result = await model.OnGetAsync(CancellationToken.None);
         if (canEdit) result.Should().BeOfType<PageResult>();
         else result.Should().BeOfType<ForbidResult>();
+        model.IsEditingFeedback(row).Should().Be(canEdit);
 
         model.ReviewId = model.CurrentReview!.Id;
         model.FeedbackId = row.Id;
