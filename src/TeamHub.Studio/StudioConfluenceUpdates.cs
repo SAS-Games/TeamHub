@@ -854,9 +854,16 @@ internal static partial class StudioConfluenceTableParser
     // Markdown delimiter on a line by itself. It is not content and should not be rendered.
     private static string RemoveOrphanMarkdownDelimiters(string value) =>
         string.Join(Environment.NewLine, value.Replace("\r", string.Empty, StringComparison.Ordinal)
-            .Split('\n', StringSplitOptions.TrimEntries)
+            .Split('\n')
+            .Select(NormalizeContentLine)
             .Where(line => !OrphanMarkdownDelimiterRegex().IsMatch(line)))
             .Trim();
+
+    private static string NormalizeContentLine(string line)
+    {
+        var trimmedEnd = line.TrimEnd();
+        return MarkdownListItemRegex().IsMatch(trimmedEnd) ? trimmedEnd : trimmedEnd.TrimStart();
+    }
 
     private static string NormalizeLabel(string value) => value.Trim().ToUpperInvariant() switch
     {
@@ -875,7 +882,8 @@ internal static partial class StudioConfluenceTableParser
         text = TagRegex().Replace(text, string.Empty);
         text = WebUtility.HtmlDecode(text).Replace('\u00a0', ' ');
         var lines = text.Replace("\r", string.Empty, StringComparison.Ordinal)
-            .Split('\n', StringSplitOptions.TrimEntries)
+            .Split('\n')
+            .Select(NormalizeContentLine)
             .Where(line => !string.IsNullOrWhiteSpace(line));
         return string.Join(Environment.NewLine, lines);
     }
@@ -934,5 +942,8 @@ internal static partial class StudioConfluenceTableParser
 
     [GeneratedRegex(@"^\s*\*{2,3}\s*$", RegexOptions.CultureInvariant, 2000)]
     private static partial Regex OrphanMarkdownDelimiterRegex();
+
+    [GeneratedRegex(@"^\s*(?:[-+*]|\d+\.)\s+", RegexOptions.CultureInvariant, 2000)]
+    private static partial Regex MarkdownListItemRegex();
 
 }

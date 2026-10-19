@@ -162,6 +162,68 @@ public sealed class StudioConfluenceUpdateTests
     }
 
     [Fact]
+    public void TableParser_PreservesNestedConfluenceLists()
+    {
+        const string body = """
+            <table><tbody><tr>
+              <td>BBG</td>
+              <td>
+                <p><strong>Studio Work:</strong></p>
+                <ul>
+                  <li>Submitted DevDay build.
+                    <ul><li>They have defaulted to Pre-Alpha build submission.</li></ul>
+                  </li>
+                  <li>Studio has requested support with PS5 testing.
+                    <ul>
+                      <li>PS5 access is limited.</li>
+                      <li>They need help spotting issues in the build.</li>
+                    </ul>
+                  </li>
+                </ul>
+              </td>
+              <td></td>
+            </tr></tbody></table>
+            """;
+
+        StudioConfluenceTableParser.TryParse(body, "BBG", out var update).Should().BeTrue();
+
+        update.StudioWork.Should().Be(string.Join(Environment.NewLine,
+            "- Submitted DevDay build.",
+            "  - They have defaulted to Pre-Alpha build submission.",
+            "- Studio has requested support with PS5 testing.",
+            "  - PS5 access is limited.",
+            "  - They need help spotting issues in the build."));
+    }
+
+    [Fact]
+    public void TableParser_PreservesSiblingNestedConfluenceLists()
+    {
+        const string body = """
+            <table><tbody><tr>
+              <td>BBG</td>
+              <td>
+                <p><strong>Studio Work:</strong></p>
+                <ul>
+                  <li>Submitted DevDay build.</li>
+                  <ul><li>They have defaulted to Pre-Alpha build submission.</li></ul>
+                  <li>Studio has requested support with PS5 testing.</li>
+                  <ul><li>PS5 access is limited.</li></ul>
+                </ul>
+              </td>
+              <td></td>
+            </tr></tbody></table>
+            """;
+
+        StudioConfluenceTableParser.TryParse(body, "BBG", out var update).Should().BeTrue();
+
+        update.StudioWork.Should().Be(string.Join(Environment.NewLine,
+            "- Submitted DevDay build.",
+            "  - They have defaulted to Pre-Alpha build submission.",
+            "- Studio has requested support with PS5 testing.",
+            "  - PS5 access is limited."));
+    }
+
+    [Fact]
     public void TableParser_PreservesParagraphListAndConfluenceTaskBoundaries()
     {
         const string body = """

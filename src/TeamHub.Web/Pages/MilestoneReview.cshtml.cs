@@ -513,7 +513,7 @@ public sealed partial class MilestoneReviewModel(
             && CurrentReview?.AssignedReviewers.Any(item => item.Id == feedback.ReviewerId) == true));
 
     public bool IsEditingFeedback(MilestoneReviewFeedback feedback) =>
-        CanEdit(feedback) && (feedback.Version == 0 || EditFeedbackId == feedback.Id);
+        CanEdit(feedback) && EditFeedbackId == feedback.Id;
 
     private async Task LoadAsync(CancellationToken cancellationToken)
     {

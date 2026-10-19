@@ -45,6 +45,18 @@ public sealed class SafeMarkdownRendererTests
     }
 
     [Fact]
+    public void RendersNestedLists()
+    {
+        var html = _renderer.ToHtml("- Submitted DevDay build.\n"
+            + "  - They have defaulted to Pre-Alpha build submission.\n"
+            + "- Studio requested PS5 testing.\n"
+            + "  - PS5 access is limited.\n"
+            + "  - They need help spotting issues.");
+
+        Assert.Equal("<ul><li>Submitted DevDay build.<ul><li>They have defaulted to Pre-Alpha build submission.</li></ul></li><li>Studio requested PS5 testing.<ul><li>PS5 access is limited.</li><li>They need help spotting issues.</li></ul></li></ul>", html);
+    }
+
+    [Fact]
     public void RendersOnlySafeLinksAndEncodesRawHtml()
     {
         var markdown = "[Jira](https://jira.example.com/browse/TEAM-42)\n"

@@ -106,19 +106,151 @@ internal static partial class ConfluenceMarkdown
         html = Code().Replace(html, match => $"`{match.Groups[1].Value}`");
         html = HeadingElement().Replace(html, match =>
             $"\n{new string('#', int.Parse(match.Groups[1].Value))} {match.Groups[2].Value}\n");
-        html = OrderedListElement().Replace(html, match =>
-        {
-            var number = 0;
-            return "\n" + ListItem().Replace(match.Groups[1].Value,
-                item => $"{++number}. {item.Groups[1].Value}\n") + "\n";
-        });
-        html = UnorderedListElement().Replace(html, match =>
-            "\n" + ListItem().Replace(match.Groups[1].Value,
-                item => $"- {item.Groups[1].Value}\n") + "\n");
+        html = ConvertListsToMarkdown(html);
         html = BlockquoteElement().Replace(html, match =>
             $"\n> {match.Groups[1].Value.Trim()}\n");
         return html;
     }
+
+    private static string ConvertListsToMarkdown(string html)
+    {
+        var output = new StringBuilder();
+        var position = 0;
+        while (true)
+        {
+            var start = ListElementStart().Match(html, position);
+            if (!start.Success)
+            {
+                output.Append(html, position, html.Length - position);
+                return output.ToString();
+            }
+
+            output.Append(html, position, start.Index - position);
+            if (!TryRenderList(html, start, 0, out var markdown, out var end))
+            {
+                output.Append(start.Value);
+                position = start.Index + start.Length;
+                continue;
+            }
+
+            output.Append('\n').Append(markdown).Append('\n');
+            position = end;
+        }
+    }
+
+    private static bool TryRenderList(
+        string source,
+        Match start,
+        int nestingLevel,
+        out string markdown,
+        out int end)
+    {
+        markdown = string.Empty;
+        end = start.Index;
+        if (!TryReadElement(source, start, ListElementTag(), out var content, out end)) return false;
+
+        var ordered = string.Equals(start.Groups["tag"].Value, "ol", StringComparison.OrdinalIgnoreCase);
+        var output = new StringBuilder();
+        var position = 0;
+        var itemNumber = 0;
+        while (true)
+        {
+            var itemStart = ListItemTag().Match(content, position);
+            var siblingNestedStart = ListElementStart().Match(content, position);
+            if (siblingNestedStart.Success && (!itemStart.Success || siblingNestedStart.Index < itemStart.Index))
+            {
+                if (!TryRenderList(content, siblingNestedStart, nestingLevel + 1, out var nestedMarkdown, out var nestedEnd)) return false;
+                output.Append(nestedMarkdown).Append('\n');
+                position = nestedEnd;
+                continue;
+            }
+            if (!itemStart.Success) break;
+            if (itemStart.Groups["closing"].Success)
+            {
+                position = itemStart.Index + itemStart.Length;
+                continue;
+            }
+            if (!TryReadElement(content, itemStart, ListItemTag(), out var itemContent, out var itemEnd)) return false;
+
+            var itemText = new StringBuilder();
+            var nestedPosition = 0;
+            while (true)
+            {
+                var nestedStart = ListElementStart().Match(itemContent, nestedPosition);
+                if (!nestedStart.Success)
+                {
+                    itemText.Append(itemContent, nestedPosition, itemContent.Length - nestedPosition);
+                    break;
+                }
+
+                itemText.Append(itemContent, nestedPosition, nestedStart.Index - nestedPosition);
+                if (!TryRenderList(itemContent, nestedStart, nestingLevel + 1, out var nestedMarkdown, out var nestedEnd))
+                {
+                    itemText.Append(nestedStart.Value);
+                    nestedPosition = nestedStart.Index + nestedStart.Length;
+                    continue;
+                }
+
+                itemText.Append('\n').Append(nestedMarkdown);
+                nestedPosition = nestedEnd;
+            }
+
+            var lines = itemText.ToString().Split('\n');
+            var firstLine = NormalizeListItemText(lines[0]);
+            if (!string.IsNullOrWhiteSpace(firstLine))
+            {
+                output.Append(' ', nestingLevel * 2)
+                    .Append(ordered ? $"{++itemNumber}. " : "- ")
+                    .Append(firstLine)
+                    .Append('\n');
+            }
+            foreach (var line in lines.Skip(1))
+            {
+                if (!string.IsNullOrWhiteSpace(line)) output.Append(line.TrimEnd()).Append('\n');
+            }
+
+            position = itemEnd;
+        }
+
+        markdown = output.ToString().TrimEnd();
+        return true;
+    }
+
+    private static bool TryReadElement(
+        string source,
+        Match start,
+        Regex tagMatcher,
+        out string content,
+        out int end)
+    {
+        content = string.Empty;
+        end = start.Index;
+        var depth = 1;
+        var position = start.Index + start.Length;
+        while (true)
+        {
+            var tag = tagMatcher.Match(source, position);
+            if (!tag.Success) return false;
+
+            if (tag.Groups["closing"].Success)
+            {
+                if (--depth == 0)
+                {
+                    content = source[position..tag.Index];
+                    end = tag.Index + tag.Length;
+                    return true;
+                }
+            }
+            else
+            {
+                depth++;
+            }
+            position = tag.Index + tag.Length;
+        }
+    }
+
+    private static string NormalizeListItemText(string html) =>
+        ListItemBlockElement().Replace(ListItemBreak().Replace(html, " "), " ").Trim();
 
     private static string ToStorageInline(string source)
     {
@@ -194,12 +326,16 @@ internal static partial class ConfluenceMarkdown
     private static partial Regex Code();
     [GeneratedRegex(@"<h([1-3])\b[^>]*>(.*?)</h\1>", RegexOptions.IgnoreCase | RegexOptions.Singleline)]
     private static partial Regex HeadingElement();
-    [GeneratedRegex(@"<ol\b[^>]*>(.*?)</ol>", RegexOptions.IgnoreCase | RegexOptions.Singleline)]
-    private static partial Regex OrderedListElement();
-    [GeneratedRegex(@"<ul\b[^>]*>(.*?)</ul>", RegexOptions.IgnoreCase | RegexOptions.Singleline)]
-    private static partial Regex UnorderedListElement();
-    [GeneratedRegex(@"<li\b[^>]*>(.*?)</li>", RegexOptions.IgnoreCase | RegexOptions.Singleline)]
-    private static partial Regex ListItem();
+    [GeneratedRegex(@"<(?<closing>/)?(?<tag>ul|ol)\b[^>]*>", RegexOptions.IgnoreCase | RegexOptions.Singleline)]
+    private static partial Regex ListElementTag();
+    [GeneratedRegex(@"<(?<tag>ul|ol)\b[^>]*>", RegexOptions.IgnoreCase | RegexOptions.Singleline)]
+    private static partial Regex ListElementStart();
+    [GeneratedRegex(@"<(?<closing>/)?li\b[^>]*>", RegexOptions.IgnoreCase | RegexOptions.Singleline)]
+    private static partial Regex ListItemTag();
+    [GeneratedRegex(@"<br\b[^>]*?/?>", RegexOptions.IgnoreCase)]
+    private static partial Regex ListItemBreak();
+    [GeneratedRegex(@"</?(?:p|div)\b[^>]*>", RegexOptions.IgnoreCase | RegexOptions.Singleline)]
+    private static partial Regex ListItemBlockElement();
     [GeneratedRegex(@"<blockquote\b[^>]*>(.*?)</blockquote>", RegexOptions.IgnoreCase | RegexOptions.Singleline)]
     private static partial Regex BlockquoteElement();
 }

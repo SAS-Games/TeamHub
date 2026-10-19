@@ -181,7 +181,7 @@ else
             </div>
         }
         <div class="section-body border-bottom">
-            <p class="small text-secondary mb-0">All feedback sections support Markdown. Save your feedback, then open “Preview saved feedback” to see its formatting.</p>
+            <p class="small text-secondary mb-0">Feedback sections support Markdown. Select Edit to update your feedback; saved formatting appears in these boxes.</p>
             <partial name="_MarkdownHelp" />
         </div>
         <div class="table-responsive">
@@ -207,16 +207,20 @@ else
                             @if (canEdit)
                             {
                                 <div class="d-flex flex-wrap gap-2 mt-2">
-                                    <form id="@feedbackFormId" method="post" asp-page-handler="SaveFeedback">
-                                        <input type="hidden" name="ReviewId" value="@Model.CurrentReview.Id" />
-                                        <input type="hidden" name="FeedbackId" value="@feedback.Id" />
-                                        <input type="hidden" name="Version" value="@feedback.Version" />
-                                        <button type="submit" class="btn btn-sm btn-outline-primary" disabled="@(!isEditing)" aria-label="Save feedback for @feedback.Reviewer">Save</button>
-                                    </form>
-                                    <form method="get" asp-page="/MilestoneReview">
-                                        <input type="hidden" name="EditFeedbackId" value="@feedback.Id" />
-                                        <button type="submit" class="btn btn-sm btn-outline-secondary" disabled="@isEditing" aria-label="Edit feedback for @feedback.Reviewer">Edit</button>
-                                    </form>
+                                    @if (isEditing)
+                                    {
+                                        <form id="@feedbackFormId" method="post" asp-page-handler="SaveFeedback">
+                                            <input type="hidden" name="ReviewId" value="@Model.CurrentReview.Id" />
+                                            <input type="hidden" name="FeedbackId" value="@feedback.Id" />
+                                            <input type="hidden" name="Version" value="@feedback.Version" />
+                                            <button type="submit" class="btn btn-sm btn-primary" aria-label="Save feedback for @feedback.Reviewer">Save</button>
+                                        </form>
+                                        <a asp-page="/MilestoneReview" class="btn btn-sm btn-outline-secondary" aria-label="Cancel editing feedback for @feedback.Reviewer">Cancel</a>
+                                    }
+                                    else
+                                    {
+                                        <a asp-page="/MilestoneReview" asp-route-editFeedbackId="@feedback.Id" class="btn btn-sm btn-outline-secondary" aria-label="Edit feedback for @feedback.Reviewer">Edit</a>
+                                    }
                                 </div>
                             }
                             @if (!string.IsNullOrWhiteSpace(feedback.JiraSyncError))
@@ -224,37 +228,21 @@ else
                                 <div class="small text-danger mt-2" title="@feedback.JiraSyncError">Jira sync pending</div>
                             }
                         </td>
-                        @if (canEdit)
+                        @if (isEditing)
                         {
-                            <td><textarea name="SessionDetails" form="@feedbackFormId" class="form-control" rows="4" maxlength="20000" readonly="@(!isEditing)" aria-label="Session Details for @feedback.Reviewer" aria-describedby="session-details-help" placeholder="e.g. PC, 1 hour, levels 1-3">@feedback.SessionDetails</textarea></td>
-                            <td><textarea name="WhatGood" form="@feedbackFormId" class="form-control" rows="4" maxlength="20000" readonly="@(!isEditing)" aria-label="What's Good for @feedback.Reviewer" aria-describedby="what-good-help" placeholder="What did you enjoy or find effective?">@feedback.WhatGood</textarea></td>
-                            <td><textarea name="NeedImprovements" form="@feedbackFormId" class="form-control" rows="4" maxlength="20000" readonly="@(!isEditing)" aria-label="Needs Improvement for @feedback.Reviewer" aria-describedby="needs-improvement-help" placeholder="What needs refinement or fixing, or felt frustrating?">@feedback.NeedImprovements</textarea></td>
-                            <td><textarea name="AdditionalFeedback" form="@feedbackFormId" class="form-control" rows="4" maxlength="20000" readonly="@(!isEditing)" aria-label="Additional Feedback for @feedback.Reviewer" aria-describedby="additional-feedback-help" placeholder="Optional feature or discipline-specific notes">@feedback.AdditionalFeedback</textarea></td>
+                            <td><textarea name="SessionDetails" form="@feedbackFormId" class="form-control" rows="4" maxlength="20000" aria-label="Session Details for @feedback.Reviewer" aria-describedby="session-details-help" placeholder="e.g. PC, 1 hour, levels 1-3">@feedback.SessionDetails</textarea></td>
+                            <td><textarea name="WhatGood" form="@feedbackFormId" class="form-control" rows="4" maxlength="20000" aria-label="What's Good for @feedback.Reviewer" aria-describedby="what-good-help" placeholder="What did you enjoy or find effective?">@feedback.WhatGood</textarea></td>
+                            <td><textarea name="NeedImprovements" form="@feedbackFormId" class="form-control" rows="4" maxlength="20000" aria-label="Needs Improvement for @feedback.Reviewer" aria-describedby="needs-improvement-help" placeholder="What needs refinement or fixing, or felt frustrating?">@feedback.NeedImprovements</textarea></td>
+                            <td><textarea name="AdditionalFeedback" form="@feedbackFormId" class="form-control" rows="4" maxlength="20000" aria-label="Additional Feedback for @feedback.Reviewer" aria-describedby="additional-feedback-help" placeholder="Optional feature or discipline-specific notes">@feedback.AdditionalFeedback</textarea></td>
                         }
                         else
                         {
-                            <td><safe-markdown class="milestone-review-text markdown-content" text="@feedback.SessionDetails"></safe-markdown></td>
-                            <td><safe-markdown class="milestone-review-text markdown-content" text="@feedback.WhatGood"></safe-markdown></td>
-                            <td><safe-markdown class="milestone-review-text markdown-content" text="@feedback.NeedImprovements"></safe-markdown></td>
-                            <td><safe-markdown class="milestone-review-text markdown-content" text="@feedback.AdditionalFeedback"></safe-markdown></td>
+                            <td><safe-markdown class="milestone-review-text markdown-content" text="@(string.IsNullOrWhiteSpace(feedback.SessionDetails) ? "No feedback provided." : feedback.SessionDetails)"></safe-markdown></td>
+                            <td><safe-markdown class="milestone-review-text markdown-content" text="@(string.IsNullOrWhiteSpace(feedback.WhatGood) ? "No feedback provided." : feedback.WhatGood)"></safe-markdown></td>
+                            <td><safe-markdown class="milestone-review-text markdown-content" text="@(string.IsNullOrWhiteSpace(feedback.NeedImprovements) ? "No feedback provided." : feedback.NeedImprovements)"></safe-markdown></td>
+                            <td><safe-markdown class="milestone-review-text markdown-content" text="@(string.IsNullOrWhiteSpace(feedback.AdditionalFeedback) ? "No feedback provided." : feedback.AdditionalFeedback)"></safe-markdown></td>
                         }
                     </tr>
-                    @if (canEdit)
-                    {
-                        <tr>
-                            <td colspan="5">
-                                <details>
-                                    <summary>Preview saved feedback for @feedback.Reviewer</summary>
-                                    <div class="row g-3 mt-1">
-                                        <div class="col-md-6"><h3 class="h6">Session Details</h3><safe-markdown class="markdown-content" text="@feedback.SessionDetails"></safe-markdown></div>
-                                        <div class="col-md-6"><h3 class="h6">What's Good</h3><safe-markdown class="markdown-content" text="@feedback.WhatGood"></safe-markdown></div>
-                                        <div class="col-md-6"><h3 class="h6">Needs Improvement</h3><safe-markdown class="markdown-content" text="@feedback.NeedImprovements"></safe-markdown></div>
-                                        <div class="col-md-6"><h3 class="h6">Additional Feedback</h3><safe-markdown class="markdown-content" text="@feedback.AdditionalFeedback"></safe-markdown></div>
-                                    </div>
-                                </details>
-                            </td>
-                        </tr>
-                    }
                 }
                 </tbody>
             </table>

@@ -19,14 +19,14 @@ public sealed partial class SafeMarkdownRenderer : ISafeMarkdownRenderer
             .Split('\n');
         var html = new StringBuilder();
         var paragraph = new List<string>();
-        string? activeList = null;
+        var activeLists = new Stack<ListState>();
 
         foreach (var line in lines)
         {
             if (string.IsNullOrWhiteSpace(line))
             {
                 FlushParagraph(html, paragraph);
-                CloseList(html, ref activeList);
+                CloseLists(html, activeLists);
                 continue;
             }
 
@@ -34,7 +34,7 @@ public sealed partial class SafeMarkdownRenderer : ISafeMarkdownRenderer
             if (heading.Success)
             {
                 FlushParagraph(html, paragraph);
-                CloseList(html, ref activeList);
+                CloseLists(html, activeLists);
                 var level = heading.Groups[1].Value.Length;
                 html.Append("<h").Append(level).Append('>')
                     .Append(RenderInline(heading.Groups[2].Value))
@@ -42,17 +42,14 @@ public sealed partial class SafeMarkdownRenderer : ISafeMarkdownRenderer
                 continue;
             }
 
-            var unordered = UnorderedListRegex().Match(line);
-            if (unordered.Success)
+            var listItem = ListItemRegex().Match(line);
+            if (listItem.Success)
             {
-                AddListItem(html, paragraph, ref activeList, "ul", unordered.Groups[1].Value);
-                continue;
-            }
-
-            var ordered = OrderedListRegex().Match(line);
-            if (ordered.Success)
-            {
-                AddListItem(html, paragraph, ref activeList, "ol", ordered.Groups[1].Value);
+                FlushParagraph(html, paragraph);
+                var marker = listItem.Groups[2].Value;
+                var listName = marker.EndsWith(".", StringComparison.Ordinal) ? "ol" : "ul";
+                var indentation = listItem.Groups[1].Value.Replace("\t", "  ", StringComparison.Ordinal).Length;
+                AddListItem(html, activeLists, indentation, listName, listItem.Groups[3].Value);
                 continue;
             }
 
@@ -60,17 +57,17 @@ public sealed partial class SafeMarkdownRenderer : ISafeMarkdownRenderer
             if (quote.Success)
             {
                 FlushParagraph(html, paragraph);
-                CloseList(html, ref activeList);
+                CloseLists(html, activeLists);
                 html.Append("<blockquote>").Append(RenderInline(quote.Groups[1].Value)).Append("</blockquote>");
                 continue;
             }
 
-            CloseList(html, ref activeList);
+            CloseLists(html, activeLists);
             paragraph.Add(line);
         }
 
         FlushParagraph(html, paragraph);
-        CloseList(html, ref activeList);
+        CloseLists(html, activeLists);
         return html.ToString();
     }
     private static void FlushParagraph(StringBuilder html, List<string> paragraph)
@@ -86,33 +83,47 @@ public sealed partial class SafeMarkdownRenderer : ISafeMarkdownRenderer
         paragraph.Clear();
     }
 
-    private static void CloseList(StringBuilder html, ref string? activeList)
+    private static void CloseLists(StringBuilder html, Stack<ListState> activeLists)
     {
-        if (activeList is null)
+        while (activeLists.Count > 0)
         {
-            return;
+            CloseList(html, activeLists.Pop());
         }
-
-        html.Append("</").Append(activeList).Append('>');
-        activeList = null;
     }
 
     private static void AddListItem(
         StringBuilder html,
-        List<string> paragraph,
-        ref string? activeList,
+        Stack<ListState> activeLists,
+        int indentation,
         string listName,
         string value)
     {
-        FlushParagraph(html, paragraph);
-        if (!string.Equals(activeList, listName, StringComparison.Ordinal))
+        while (activeLists.Count > 0 && indentation < activeLists.Peek().Indentation)
         {
-            CloseList(html, ref activeList);
-            activeList = listName;
-            html.Append('<').Append(listName).Append('>');
+            CloseList(html, activeLists.Pop());
         }
 
-        html.Append("<li>").Append(RenderInline(value)).Append("</li>");
+        if (activeLists.Count > 0 && indentation == activeLists.Peek().Indentation
+            && string.Equals(listName, activeLists.Peek().Name, StringComparison.Ordinal))
+        {
+            html.Append("</li>");
+            html.Append("<li>").Append(RenderInline(value));
+            return;
+        }
+
+        if (activeLists.Count > 0 && indentation == activeLists.Peek().Indentation)
+        {
+            CloseList(html, activeLists.Pop());
+        }
+
+        html.Append('<').Append(listName).Append('>');
+        html.Append("<li>").Append(RenderInline(value));
+        activeLists.Push(new ListState(indentation, listName));
+    }
+
+    private static void CloseList(StringBuilder html, ListState list)
+    {
+        html.Append("</li></").Append(list.Name).Append('>');
     }
 
     private static string RenderInline(string source)
@@ -170,11 +181,8 @@ public sealed partial class SafeMarkdownRenderer : ISafeMarkdownRenderer
     [GeneratedRegex(@"^(#{1,3})\s+(.+?)\s*$")]
     private static partial Regex HeadingRegex();
 
-    [GeneratedRegex(@"^\s*[-+*]\s+(.+?)\s*$")]
-    private static partial Regex UnorderedListRegex();
-
-    [GeneratedRegex(@"^\s*\d+\.\s+(.+?)\s*$")]
-    private static partial Regex OrderedListRegex();
+    [GeneratedRegex(@"^(\s*)([-+*]|\d+\.)\s+(.+?)\s*$")]
+    private static partial Regex ListItemRegex();
 
     [GeneratedRegex(@"^\s*>\s?(.+?)\s*$")]
     private static partial Regex QuoteRegex();
@@ -199,4 +207,6 @@ public sealed partial class SafeMarkdownRenderer : ISafeMarkdownRenderer
 
     [GeneratedRegex(@"(?<!\*)\*([^*\r\n]+)\*(?!\*)")]
     private static partial Regex ItalicRegex();
+
+    private sealed record ListState(int Indentation, string Name);
 }
