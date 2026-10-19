@@ -59,7 +59,7 @@ public class WorkflowConfigurationValidationTests
     }
 
     [Fact]
-    public void RejectsEscalationLevelsThatAreMissingRecipientsOrOutOfOrder()
+    public void RejectsEscalationLevelsThatAreMissingRecipients()
     {
         var definitions = new List<WorkflowDefinitionDto>
         {
@@ -90,6 +90,6 @@ public class WorkflowConfigurationValidationTests
         var errors = WorkflowConfigurationService.ValidateDefinitions(definitions);
 
         Assert.Contains(errors, error => error.Contains("level 2 needs at least one recipient", StringComparison.OrdinalIgnoreCase));
-        Assert.Contains(errors, error => error.Contains("level 2 must occur after level 1", StringComparison.OrdinalIgnoreCase));
+        Assert.DoesNotContain(errors, error => error.Contains("must occur after", StringComparison.OrdinalIgnoreCase));
     }
 }

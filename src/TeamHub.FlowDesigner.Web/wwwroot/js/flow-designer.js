@@ -215,7 +215,13 @@
             byId("childFlowName").value = selectedNode?.title?.trim() || "Detailed diagram";
         });
         byId("createChildFlowForm").addEventListener("submit", createChildFlow);
-        ["taskStepKey", "taskExpectedHours", "taskReminderAfterHours", "taskReminderRepeatHours", "taskEscalationAfterHours", "taskEscalationLevel2AfterHours", "taskEscalationLevel3AfterHours"].forEach(id => byId(id).addEventListener("input", updateSelectedNode));
+        ["taskExpectedHours", "taskReminderAfterHours", "taskReminderRepeatHours", "taskEscalationAfterHours", "taskEscalationLevel2AfterHours", "taskEscalationLevel3AfterHours"].forEach(id => byId(id).addEventListener("input", updateSelectedNode));
+        byId("taskDueDate").addEventListener("change", () => {
+            const duration = hoursUntilEndOfDate(byId("taskDueDate").value);
+            if (duration === null) return;
+            byId("taskExpectedHours").value = String(duration);
+            updateSelectedNode();
+        });
         ["taskRequired", "taskEnabled"].forEach(id => byId(id).addEventListener("change", updateSelectedNode));
         byId("addTaskAssignee").addEventListener("click", addTaskAssignee);
         byId("taskAssigneeEntry").addEventListener("change", addTaskAssignee);
@@ -320,6 +326,20 @@
             .toUpperCase()
             .replace(/[^A-Z0-9]+/g, "_")
             .replace(/^_+|_+$/g, "");
+    }
+
+    function dateFromHours(hours) {
+        const date = new Date(Date.now() + Number(hours || 0) * 3600000);
+        return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+    }
+
+    function hoursUntilEndOfDate(value) {
+        if (!value) return null;
+        const [year, month, day] = value.split("-").map(Number);
+        const due = new Date(year, month - 1, day, 23, 59, 59, 999);
+        return Number.isFinite(due.getTime()) && due.getTime() > Date.now()
+            ? (due.getTime() - Date.now()) / 3600000
+            : null;
     }
 
     function initializeWorkflowProperties() {
@@ -617,6 +637,8 @@
         byId("taskAssigneeEntry").value = "";
         renderTaskAssignees();
         byId("taskExpectedHours").value = node.customProperties?.expectedDurationHours || "24";
+        byId("taskDueDate").value = dateFromHours(byId("taskExpectedHours").value);
+        byId("taskDueDate").min = dateFromHours(0);
         byId("taskReminderAfterHours").value = node.customProperties?.reminderAfterHours || "";
         byId("taskReminderRepeatHours").value = node.customProperties?.reminderRepeatHours || "";
         byId("taskEscalationAfterHours").value = node.customProperties?.escalationAfterHours || "";
@@ -893,8 +915,24 @@
         if (!byId("nodeOutputPins").disabled && byId("nodeOutputPins").value) customProperties.outputPins = byId("nodeOutputPins").value;
 
         if (isWorkCenter() && selectedNode.type === "Activity") {
+            const isGeneratedKey = selectedNode.customProperties?.stepKeyGenerated === "true"
+                || !selectedNode.customProperties?.stepKey;
+            const generatedKey = isGeneratedKey
+                ? (toKey(byId("nodeTitle").value) || `TASK_${selectedNode.id.slice(0, 8).toUpperCase()}`)
+                : selectedNode.customProperties.stepKey;
+            byId("taskStepKey").value = generatedKey;
+            const firstDelay = Number(byId("taskEscalationAfterHours").value);
+            const secondDelay = Number(byId("taskEscalationLevel2AfterHours").value);
+            const thirdDelay = Number(byId("taskEscalationLevel3AfterHours").value);
+            if (byId("taskEscalationAfterHours").value !== "" && byId("taskEscalationLevel2AfterHours").value !== "" && secondDelay <= firstDelay) {
+                byId("taskEscalationLevel2AfterHours").value = String(firstDelay + 0.5);
+            }
+            if (byId("taskEscalationLevel2AfterHours").value !== "" && byId("taskEscalationLevel3AfterHours").value !== "" && thirdDelay <= Number(byId("taskEscalationLevel2AfterHours").value)) {
+                byId("taskEscalationLevel3AfterHours").value = String(Number(byId("taskEscalationLevel2AfterHours").value) + 0.5);
+            }
             Object.assign(customProperties, {
-                stepKey: byId("taskStepKey").value,
+                stepKey: generatedKey,
+                stepKeyGenerated: String(isGeneratedKey),
                 owner: byId("taskOwner").value,
                 ownerType: "Email",
                 expectedDurationHours: byId("taskExpectedHours").value,

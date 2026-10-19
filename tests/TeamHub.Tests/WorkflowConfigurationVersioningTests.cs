@@ -73,6 +73,40 @@ public class WorkflowConfigurationVersioningTests
         Assert.Equal([1, 2], versions);
     }
 
+    [Fact]
+    public async Task SaveDraft_GeneratesTaskIdAndNormalizesEscalationDelays()
+    {
+        await using var context = CreateDbContext();
+        var service = new WorkflowConfigurationService(context, new TestClock(DateTime.UtcNow));
+
+        var id = await service.SaveDraftAsync(new WorkflowDraftDto
+        {
+            WorkflowKey = "RELEASE",
+            WorkflowName = "Release",
+            Steps =
+            [
+                new WorkflowDraftStepDto
+                {
+                    StepName = "QA Signoff",
+                    Owner = "qa@example.com",
+                    ExpectedDurationHours = 24,
+                    EscalationAfterHours = 8,
+                    EscalationOwner = "lead@example.com",
+                    EscalationLevel2AfterHours = 4,
+                    EscalationLevel2Owners = "manager@example.com",
+                    EscalationLevel3AfterHours = 4,
+                    EscalationLevel3Owners = "director@example.com",
+                    Enabled = true
+                }
+            ]
+        });
+
+        var step = Assert.Single((await service.GetDraftAsync(id))!.Steps);
+        Assert.Equal("QA_SIGNOFF", step.StepKey);
+        Assert.Equal(8.5, step.EscalationLevel2AfterHours);
+        Assert.Equal(9, step.EscalationLevel3AfterHours);
+    }
+
     private static WorkflowDraftDto BuildDraft(string name)
     {
         return new WorkflowDraftDto

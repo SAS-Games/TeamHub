@@ -116,6 +116,46 @@ public sealed class WorkCenterFlowPublicationTests
         saved.EscalationLevel2Owners.Should().Be("director@company.com");
     }
 
+    [Fact]
+    public async Task Publish_GeneratesUniqueTaskIdsFromNames()
+    {
+        var configuration = new RecordingWorkflowConfigurationService();
+        var publisher = new WorkCenterFlowPublicationService(configuration, AdminContext());
+        var flow = OnboardingFlow();
+        flow.Nodes.Single(node => node.Id == "approval").CustomProperties.Remove("stepKey");
+        flow.Nodes.Single(node => node.Id == "security").Title = "Approval from PIC UAT";
+        flow.Nodes.Single(node => node.Id == "security").CustomProperties.Remove("stepKey");
+
+        var result = await publisher.PublishAsync(flow);
+
+        result.Success.Should().BeTrue();
+        var keys = configuration.SavedDraft!.Steps.Select(step => step.StepKey).ToList();
+        keys.Should().Contain("APPROVAL_FROM_PIC_UAT");
+        keys.Should().Contain("APPROVAL_FROM_PIC_UAT_2");
+    }
+
+    [Fact]
+    public async Task Publish_MovesOutOfOrderEscalationsToNextHalfHour()
+    {
+        var configuration = new RecordingWorkflowConfigurationService();
+        var publisher = new WorkCenterFlowPublicationService(configuration, AdminContext());
+        var flow = OnboardingFlow();
+        var task = flow.Nodes.Single(node => node.Id == "approval");
+        task.CustomProperties["escalationAfterHours"] = "4";
+        task.CustomProperties["escalationOwner"] = "lead@company.com";
+        task.CustomProperties["escalationLevel2AfterHours"] = "2";
+        task.CustomProperties["escalationLevel2Owners"] = "manager@company.com";
+        task.CustomProperties["escalationLevel3AfterHours"] = "3";
+        task.CustomProperties["escalationLevel3Owners"] = "director@company.com";
+
+        var result = await publisher.PublishAsync(flow);
+
+        result.Success.Should().BeTrue();
+        var saved = configuration.SavedDraft!.Steps.Single(step => step.StepKey == "PIC_UAT_APPROVAL");
+        saved.EscalationLevel2AfterHours.Should().Be(4.5);
+        saved.EscalationLevel3AfterHours.Should().Be(5);
+    }
+
 
     [Fact]
     public async Task Publish_RequiresAdminRole()

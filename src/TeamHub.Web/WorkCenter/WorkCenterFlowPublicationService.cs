@@ -165,10 +165,16 @@ public sealed class WorkCenterFlowPublicationService(
         var incoming = flow.Connections
             .GroupBy(connection => connection.TargetNodeId, StringComparer.Ordinal)
             .ToDictionary(group => group.Key, group => group.Select(connection => connection.SourceNodeId).ToList(), StringComparer.Ordinal);
-        var stepKeyByNode = orderedTasks.ToDictionary(
-            node => node.Id,
-            node => NormalizeKey(Get(node.CustomProperties, "stepKey") ?? node.Title),
-            StringComparer.Ordinal);
+        var stepKeyByNode = new Dictionary<string, string>(StringComparer.Ordinal);
+        var usedStepKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var node in orderedTasks)
+        {
+            var baseKey = NormalizeKey(Get(node.CustomProperties, "stepKey") ?? node.Title);
+            if (string.IsNullOrWhiteSpace(baseKey)) baseKey = "TASK";
+            var key = baseKey;
+            for (var suffix = 2; !usedStepKeys.Add(key); suffix++) key = $"{baseKey}_{suffix}";
+            stepKeyByNode.Add(node.Id, key);
+        }
 
         return new WorkflowDraftDto
         {
@@ -191,9 +197,11 @@ public sealed class WorkCenterFlowPublicationService(
                 ReminderRepeatHours = GetDouble(node.CustomProperties, "reminderRepeatHours"),
                 EscalationAfterHours = GetDouble(node.CustomProperties, "escalationAfterHours"),
                 EscalationOwner = Get(node.CustomProperties, "escalationOwner"),
-                EscalationLevel2AfterHours = GetDouble(node.CustomProperties, "escalationLevel2AfterHours"),
+                EscalationLevel2AfterHours = NextEscalationDelay(GetDouble(node.CustomProperties, "escalationAfterHours"), GetDouble(node.CustomProperties, "escalationLevel2AfterHours")),
                 EscalationLevel2Owners = Get(node.CustomProperties, "escalationLevel2Owners"),
-                EscalationLevel3AfterHours = GetDouble(node.CustomProperties, "escalationLevel3AfterHours"),
+                EscalationLevel3AfterHours = NextEscalationDelay(
+                    NextEscalationDelay(GetDouble(node.CustomProperties, "escalationAfterHours"), GetDouble(node.CustomProperties, "escalationLevel2AfterHours")),
+                    GetDouble(node.CustomProperties, "escalationLevel3AfterHours")),
                 EscalationLevel3Owners = Get(node.CustomProperties, "escalationLevel3Owners"),
                 Required = GetBool(node.CustomProperties, "required", true),
                 Enabled = GetBool(node.CustomProperties, "enabled", true),
@@ -315,15 +323,12 @@ public sealed class WorkCenterFlowPublicationService(
         {
             errors.Add($"Task '{task.Title}' escalation level 3 requires level 2.");
         }
-        if (level1.HasValue && level2.HasValue && level2.Value <= level1.Value)
-        {
-            errors.Add($"Task '{task.Title}' escalation level 2 must occur after level 1.");
-        }
-        if (level2.HasValue && level3.HasValue && level3.Value <= level2.Value)
-        {
-            errors.Add($"Task '{task.Title}' escalation level 3 must occur after level 2.");
-        }
     }
+
+    private static double? NextEscalationDelay(double? previous, double? current) =>
+        previous.HasValue && current.HasValue && current.Value <= previous.Value
+            ? previous.Value + 0.5
+            : current;
 
     private static bool IsTask(FlowNode node) => node.Type == NodeType.Activity;
 
