@@ -10,6 +10,8 @@ internal sealed class MilestoneReviewRecord
     public string MilestoneName { get; set; } = string.Empty;
     public string Description { get; set; } = string.Empty;
     public string? JiraTicketId { get; set; }
+    public string? WorkflowKey { get; set; }
+    public Guid? WorkflowInstanceId { get; set; }
     public MilestoneReviewStatus Status { get; set; }
     public string CreatedBy { get; set; } = string.Empty;
     public DateTimeOffset CreatedAt { get; set; }
@@ -57,6 +59,7 @@ public sealed class MilestoneReviewDbContext(DbContextOptions<MilestoneReviewDbC
             entity.Property(item => item.MilestoneName).HasMaxLength(160).IsRequired();
             entity.Property(item => item.Description).HasMaxLength(4000).IsRequired();
             entity.Property(item => item.JiraTicketId).HasMaxLength(64);
+            entity.Property(item => item.WorkflowKey).HasMaxLength(128);
             entity.Property(item => item.CreatedBy).HasMaxLength(320).IsRequired();
             entity.HasIndex(item => item.Status).IsUnique().HasFilter("\"Status\" = 0");
         });
@@ -106,6 +109,8 @@ internal sealed class SqliteMilestoneReviewDatabaseInitializer(MilestoneReviewDb
                 ON "MilestoneReviews" ("Status") WHERE "Status" = 0;
             """, cancellationToken);
         await AddColumnIfMissingAsync("MilestoneReviews", "JiraTicketId", "TEXT NULL", cancellationToken);
+        await AddColumnIfMissingAsync("MilestoneReviews", "WorkflowKey", "TEXT NULL", cancellationToken);
+        await AddColumnIfMissingAsync("MilestoneReviews", "WorkflowInstanceId", "TEXT NULL", cancellationToken);
         await AddColumnIfMissingAsync("MilestoneReviewAssignments", "ReviewerUserId", "TEXT NOT NULL DEFAULT ''", cancellationToken);
         await AddColumnIfMissingAsync("MilestoneReviewFeedback", "ReviewerUserId", "TEXT NOT NULL DEFAULT ''", cancellationToken);
         await AddColumnIfMissingAsync("MilestoneReviewFeedback", "JiraCommentId", "TEXT NULL", cancellationToken);

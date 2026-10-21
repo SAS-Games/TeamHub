@@ -101,6 +101,7 @@ builder.Services.AddTeamDirectory(builder.Configuration);
 builder.Services.AddMilestoneReview(builder.Configuration);
 builder.Services.AddScoped<IMilestoneReviewUserDirectory, TeamHubMilestoneReviewUserDirectory>();
 builder.Services.AddScoped<IMilestoneReviewCommentPublisher, StudioMilestoneReviewCommentPublisher>();
+builder.Services.AddScoped<IMilestoneReviewWorkflowStarter, TeamHubMilestoneReviewWorkflowStarter>();
 builder.Services.AddStudioDirectory(builder.Configuration);
 builder.Services.AddTeamHubAi(builder.Configuration);
 builder.Services.AddScoped<TeamHub.AI.Contracts.IAiProviderCredentialAccessor, TeamHub.Web.AI.PersonalAiProviderCredentialAccessor>();

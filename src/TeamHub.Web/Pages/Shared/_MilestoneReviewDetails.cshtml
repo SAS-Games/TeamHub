@@ -46,6 +46,27 @@
         <div class="form-text">Automatically populated from the selected description.</div>
         <span asp-validation-for="MilestoneName" class="text-danger"></span>
     </div>
+    <div class="col-md-6">
+        <label asp-for="WorkflowKey" class="form-label">Workflow Template</label>
+        @{ var workflowLocked = Model.EditingReview?.Status == TeamHub.MilestoneReview.MilestoneReviewStatus.Published; }
+        <select asp-for="WorkflowKey" class="form-select" required disabled="@(workflowLocked ? "disabled" : null)">
+            <option value="">Select workflow template</option>
+            @if (!string.IsNullOrWhiteSpace(Model.WorkflowKey)
+                && !Model.WorkflowOptions.Any(option => string.Equals(option.Key, Model.WorkflowKey, StringComparison.OrdinalIgnoreCase)))
+            {
+                <option value="@Model.WorkflowKey">@Model.WorkflowKey (not currently active)</option>
+            }
+            @foreach (var workflow in Model.WorkflowOptions)
+            {
+                <option value="@workflow.Key">@workflow.Name (v@workflow.Version)</option>
+            }
+        </select>
+        @if (workflowLocked)
+        {
+            <input type="hidden" name="WorkflowKey" value="@Model.WorkflowKey" />
+        }
+        <div class="form-text">Publishing this review automatically starts an instance of the selected workflow.</div>
+    </div>
     <div class="col-12">
         <label asp-for="JiraTicketId" class="form-label">Jira Ticket ID (optional)</label>
         <input asp-for="JiraTicketId" class="form-control" maxlength="64" placeholder="e.g. GAME-123" />

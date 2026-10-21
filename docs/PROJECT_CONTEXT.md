@@ -37,9 +37,12 @@ Hosting/publishing scripts are described in `scripts/hosting/README.md`.
 ## Milestone Review
 
 `TeamHub.MilestoneReview` owns its SQLite database and is separate from the
-configurable Team tables. Administrators create one draft at a time, select
-active registered reviewers, and publish it. Publishing leaves existing published
-reviews active so multiple milestone reviews can collect feedback simultaneously.
+configurable Team tables. Administrators create one draft at a time, select its
+project and milestone description from the configured milestone source, assign an
+active workflow template and registered reviewers, and publish it. The milestone is
+derived from the selected description. Publishing starts the assigned workflow with
+an instance name in `Project Description Milestone` order and leaves existing
+published reviews active so multiple milestone reviews can collect feedback simultaneously.
 Administrators archive each review explicitly when it is complete, retaining all
 feedback rows for read-only browsing. Drafts can include an optional Jira ticket ID.
 

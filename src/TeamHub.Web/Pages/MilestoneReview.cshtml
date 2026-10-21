@@ -66,6 +66,7 @@
                 {
                     <p><strong>Jira ticket:</strong> @Model.Draft.JiraTicketId</p>
                 }
+                <p><strong>Workflow template:</strong> @(Model.WorkflowOptions.FirstOrDefault(option => string.Equals(option.Key, Model.Draft.WorkflowKey, StringComparison.OrdinalIgnoreCase))?.Name ?? Model.Draft.WorkflowKey ?? "Not selected")</p>
                 <form method="post" class="d-inline">
                     <button asp-page-handler="Publish" type="submit" class="btn btn-primary">Publish Review</button>
                 </form>

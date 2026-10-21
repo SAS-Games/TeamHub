@@ -92,7 +92,8 @@ public sealed class MilestoneReviewTests : IAsyncLifetime
                 await using var reader = await columns.ExecuteReaderAsync();
                 var addedColumns = new List<string>();
                 while (await reader.ReadAsync()) addedColumns.Add(reader.GetString(0));
-                addedColumns.Should().Contain("JiraTicketId", "ReviewerUserId", "JiraCommentId", "JiraSyncError");
+                addedColumns.Should().Contain("JiraTicketId", "WorkflowKey", "WorkflowInstanceId",
+                    "ReviewerUserId", "JiraCommentId", "JiraSyncError");
                 addedColumns.Should().Contain("SessionDetails", "AdditionalFeedback");
                 addedColumns.Should().NotContain("WhatsBad");
                 await reader.DisposeAsync();
@@ -518,10 +519,50 @@ public sealed class MilestoneReviewTests : IAsyncLifetime
         await service.PublishDraftAsync("admin@example.com");
     }
 
+    [Fact]
+    public async Task PublishingDraftStartsAssignedWorkflowAndStoresInstanceId()
+    {
+        var workflowStarter = new RecordingWorkflowStarter();
+        var workflowService = new MilestoneReviewService(
+            dbContext,
+            new StubUserDirectory([
+                new MilestoneReviewUser(reviewerOne, "Reviewer One", "reviewer.one@example.com", true, true)
+            ]),
+            commentPublisher,
+            workflowStarter);
+        await workflowService.CreateDraftAsync(
+            new CreateMilestoneReviewRequest(
+                "Project One", "Alpha", "Review build", null, [reviewerOne], "MILESTONE_REVIEW"),
+            "admin@example.com");
+
+        var published = await workflowService.PublishDraftAsync("publisher@example.com");
+
+        published!.WorkflowKey.Should().Be("MILESTONE_REVIEW");
+        published.WorkflowInstanceId.Should().Be(workflowStarter.InstanceId);
+        workflowStarter.Requests.Should().ContainSingle();
+        workflowStarter.Requests[0].InstanceName.Should().Be("Project One Review build Alpha");
+        workflowStarter.Requests[0].StartedBy.Should().Be("publisher@example.com");
+        workflowStarter.Requests[0].MetadataJson.Should().Contain(published.Id.ToString());
+    }
+
     private sealed class StubUserDirectory(IReadOnlyList<MilestoneReviewUser> users) : IMilestoneReviewUserDirectory
     {
         public Task<IReadOnlyList<MilestoneReviewUser>> GetActiveUsersAsync(
             CancellationToken cancellationToken = default) => Task.FromResult(users);
+    }
+
+    private sealed class RecordingWorkflowStarter : IMilestoneReviewWorkflowStarter
+    {
+        public Guid InstanceId { get; } = Guid.NewGuid();
+        public List<MilestoneReviewWorkflowStartRequest> Requests { get; } = [];
+
+        public Task<Guid> StartAsync(
+            MilestoneReviewWorkflowStartRequest request,
+            CancellationToken cancellationToken = default)
+        {
+            Requests.Add(request);
+            return Task.FromResult(InstanceId);
+        }
     }
 
     [Fact]
