@@ -24,7 +24,7 @@
             <p class="text-secondary mb-0">Map a process, capture decisions, and keep every path understandable.</p>
         </div>
         <div class="d-flex gap-2">
-            @if (Model.CanReviewPublications)
+            @if (Model.CanReviewPublications || Model.PendingReviewCount > 0)
             {
                 <a class="btn btn-outline-secondary btn-lg" asp-page="/Flows/Review">Review requests <span class="badge text-bg-danger">@Model.PendingReviewCount</span></a>
             }

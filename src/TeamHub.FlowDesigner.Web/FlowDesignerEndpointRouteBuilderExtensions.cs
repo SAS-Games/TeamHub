@@ -15,6 +15,9 @@ public static class FlowDesignerEndpointRouteBuilderExtensions
         api.MapGet("/", async (IFlowService flows, CancellationToken cancellationToken) =>
             Results.Ok(await flows.ListAsync(cancellationToken)));
 
+        api.MapGet("/reviewers", async (IFlowReviewerDirectory reviewers, CancellationToken cancellationToken) =>
+            Results.Ok(await reviewers.ListAsync(cancellationToken)));
+
         api.MapGet("/published/{sourceFlowId:guid}", async (
             Guid sourceFlowId,
             IFlowPublicationWorkflowService publications,
@@ -91,12 +94,20 @@ public static class FlowDesignerEndpointRouteBuilderExtensions
 
         api.MapPost("/{id:guid}/publication-requests", async (
             Guid id,
+            FlowPublicationRequestInput request,
             IFlowPublicationWorkflowService publications,
             CancellationToken cancellationToken) =>
         {
             try
             {
-                return Results.Ok(await publications.RequestAsync(id, cancellationToken));
+                var result = await publications.RequestAsync(id, request.ReviewerUserIds ?? [], cancellationToken);
+                return Results.Ok(new
+                {
+                    result.Id,
+                    result.FlowName,
+                    status = result.Status.ToString(),
+                    published = result.Status == FlowPublicationRequestStatus.Approved
+                });
             }
             catch (ArgumentException exception)
             {
@@ -298,6 +309,7 @@ public static class FlowDesignerEndpointRouteBuilderExtensions
     }
 
     public sealed record AddNodeCommentRequest(string Body);
+    public sealed record FlowPublicationRequestInput(IReadOnlyList<string>? ReviewerUserIds);
     public sealed record CreateChildFlowRequest(string Name);
     public sealed record CreateFlowRequest(string Name, string? Description, DiagramType DiagramType);
 }

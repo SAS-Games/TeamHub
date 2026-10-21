@@ -26,10 +26,7 @@ public sealed class IndexModel(
             && permissions.CanCreate();
         Flows = await flows.ListAsync(cancellationToken);
         PublishedFlows = await publications.ListPublishedAsync(cancellationToken);
-        if (publications.CanReview)
-        {
-            PendingReviewCount = (await publications.ListPendingAsync(cancellationToken)).Count;
-        }
+        PendingReviewCount = (await publications.ListPendingAsync(cancellationToken)).Count;
     }
 
     public async Task<IActionResult> OnPostCreateAsync(string name, string? description, CancellationToken cancellationToken)

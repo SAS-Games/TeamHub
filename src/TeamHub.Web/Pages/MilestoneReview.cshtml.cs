@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
 using TeamHub.Authentication;
+using TeamHub.Milestones;
 using TeamHub.MilestoneReview;
 using TeamHub.Studio;
 using TeamHub.Web.AccessControl;
@@ -21,7 +22,9 @@ public sealed partial class MilestoneReviewModel(
     IStudioJiraCommentService comments,
     IDataProtectionProvider protection,
     ISafeMarkdownRenderer markdown,
-    ILogger<MilestoneReviewModel> logger) : PageModel
+    ILogger<MilestoneReviewModel> logger,
+    IStudioDirectoryService? studioDirectory = null,
+    IMilestoneTrackerService? milestoneTracker = null) : PageModel
 {
     private readonly IDataProtector restoreProtector = protection.CreateProtector("TeamHub.MilestoneReview.Restore.v1");
 
@@ -88,6 +91,9 @@ public sealed partial class MilestoneReviewModel(
     public ReviewSnapshot? EditingReview { get; private set; }
     public IReadOnlyList<ReviewSnapshot> HistoryReviews { get; private set; } = [];
     public IReadOnlyList<MilestoneReviewUser> AvailableReviewers { get; private set; } = [];
+    public IReadOnlyList<string> ProjectOptions { get; private set; } = [];
+    public IReadOnlyList<MilestoneReviewSelectionOption> MilestoneOptions { get; private set; } = [];
+    public string? MilestoneSelectionError { get; private set; }
     public Guid? CurrentUserId { get; private set; }
     public bool HasFeedbackEditAccess { get; private set; }
     public bool IsAdmin => User.IsInRole(TeamHubUserTypes.Admin);
@@ -536,6 +542,7 @@ public sealed partial class MilestoneReviewModel(
         HistoryReviews = await reviews.GetHistoryAsync(cancellationToken);
         if (IsAdmin)
         {
+            await LoadMilestoneOptionsAsync(cancellationToken);
             Draft = await reviews.GetDraftAsync(cancellationToken);
             EditingReview = new[] { Draft }.Concat(ActiveReviews)
                 .FirstOrDefault(item => item?.Id == EditReviewId);
@@ -550,6 +557,47 @@ public sealed partial class MilestoneReviewModel(
         }
     }
 
+    private async Task LoadMilestoneOptionsAsync(CancellationToken cancellationToken)
+    {
+        if (studioDirectory is null || milestoneTracker is null) return;
+
+        var projects = (await studioDirectory.GetStudiosAsync(cancellationToken))
+            .Where(studio => studio.IsActive && !string.IsNullOrWhiteSpace(studio.ProjectName))
+            .Select(studio => studio.ProjectName.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(project => project, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        ProjectOptions = projects;
+
+        try
+        {
+            var milestones = await milestoneTracker.GetMilestonesAsync(cancellationToken);
+            MilestoneOptions = projects
+                .SelectMany(project => milestones
+                    .Where(milestone => !milestone.Milestone.StartsWith("Total MS", StringComparison.OrdinalIgnoreCase))
+                    .Where(milestone => IsProjectMilestone(project, milestone))
+                    .Where(milestone => !string.IsNullOrWhiteSpace(milestone.Milestone))
+                    .OrderBy(milestone => milestone.DeliveryDate ?? DateTime.MaxValue)
+                    .Select(milestone => new MilestoneReviewSelectionOption(
+                        project,
+                        milestone.Milestone.Trim(),
+                        milestone.Description?.Trim() ?? string.Empty)))
+                .GroupBy(
+                    option => $"{option.ProjectName}\0{option.MilestoneName}\0{option.Description}",
+                    StringComparer.OrdinalIgnoreCase)
+                .Select(group => group.First())
+                .ToList();
+        }
+        catch (Exception exception) when (exception is FileNotFoundException or InvalidDataException or InvalidOperationException)
+        {
+            MilestoneSelectionError = exception.Message;
+        }
+    }
+
+    private static bool IsProjectMilestone(string projectName, MilestoneDto milestone) =>
+        string.Equals(milestone.Title, projectName, StringComparison.OrdinalIgnoreCase)
+        || string.Equals(milestone.Program, projectName, StringComparison.OrdinalIgnoreCase);
+
     private CreateMilestoneReviewRequest DetailsRequest() =>
         new(ProjectName!, MilestoneName!, Description ?? string.Empty, JiraTicketId, ReviewerIds);
 
@@ -557,9 +605,10 @@ public sealed partial class MilestoneReviewModel(
     {
         if (ModelState.IsValid && ValidLength(ProjectName, 160) && ValidLength(MilestoneName, 160)
             && ValidLength(Description, 4000) && ValidLength(JiraTicketId, 64)
-            && !string.IsNullOrWhiteSpace(ProjectName) && !string.IsNullOrWhiteSpace(MilestoneName))
+            && !string.IsNullOrWhiteSpace(ProjectName) && !string.IsNullOrWhiteSpace(MilestoneName)
+            && !string.IsNullOrWhiteSpace(Description))
             return true;
-        ModelState.AddModelError(string.Empty, "Project name and milestone are required. Check the maximum field lengths.");
+        ModelState.AddModelError(string.Empty, "Project and description are required. Check the maximum field lengths.");
         return false;
     }
 
@@ -570,4 +619,9 @@ public sealed partial class MilestoneReviewModel(
 
     private static bool ValidLength(string? value, int maxLength) =>
         value is null || value.Length <= maxLength;
+
+    public sealed record MilestoneReviewSelectionOption(
+        string ProjectName,
+        string MilestoneName,
+        string Description);
 }

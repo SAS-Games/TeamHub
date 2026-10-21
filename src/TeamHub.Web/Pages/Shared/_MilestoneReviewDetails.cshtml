@@ -3,18 +3,48 @@
 <div class="row g-3">
     <div class="col-md-6">
         <label asp-for="ProjectName" class="form-label">Project Name</label>
-        <input asp-for="ProjectName" class="form-control" maxlength="160" required />
+        <select asp-for="ProjectName" class="form-select" data-milestone-review-project required>
+            <option value="">Select project</option>
+            @if (!string.IsNullOrWhiteSpace(Model.ProjectName)
+                && !Model.ProjectOptions.Contains(Model.ProjectName, StringComparer.OrdinalIgnoreCase))
+            {
+                <option value="@Model.ProjectName">@Model.ProjectName</option>
+            }
+            @foreach (var project in Model.ProjectOptions)
+            {
+                <option value="@project">@project</option>
+            }
+        </select>
         <span asp-validation-for="ProjectName" class="text-danger"></span>
     </div>
     <div class="col-md-6">
-        <label asp-for="MilestoneName" class="form-label">Milestone</label>
-        <input asp-for="MilestoneName" class="form-control" maxlength="160" required />
-        <span asp-validation-for="MilestoneName" class="text-danger"></span>
-    </div>
-    <div class="col-12">
         <label asp-for="Description" class="form-label">Description</label>
-        <textarea asp-for="Description" class="form-control" rows="3" maxlength="4000"></textarea>
-        <partial name="_MarkdownHelp" />
+        <select asp-for="Description" class="form-select" data-milestone-review-description required>
+            <option value="">Select description</option>
+            @if (!string.IsNullOrWhiteSpace(Model.Description)
+                && !Model.MilestoneOptions.Any(option =>
+                    string.Equals(option.ProjectName, Model.ProjectName, StringComparison.OrdinalIgnoreCase)
+                    && string.Equals(option.MilestoneName, Model.MilestoneName, StringComparison.OrdinalIgnoreCase)
+                    && string.Equals(option.Description, Model.Description, StringComparison.OrdinalIgnoreCase)))
+            {
+                <option value="@Model.Description" data-project="@Model.ProjectName" data-milestone="@Model.MilestoneName">@Model.Description</option>
+            }
+            @foreach (var option in Model.MilestoneOptions.Where(item => !string.IsNullOrWhiteSpace(item.Description)))
+            {
+                <option value="@option.Description" data-project="@option.ProjectName" data-milestone="@option.MilestoneName">@option.Description</option>
+            }
+        </select>
+        <span asp-validation-for="Description" class="text-danger"></span>
+        @if (!string.IsNullOrWhiteSpace(Model.MilestoneSelectionError))
+        {
+            <div class="form-text text-warning">Milestone choices could not be loaded: @Model.MilestoneSelectionError</div>
+        }
+    </div>
+    <div class="col-md-6">
+        <label asp-for="MilestoneName" class="form-label">Milestone</label>
+        <input asp-for="MilestoneName" class="form-control" data-milestone-review-milestone readonly required />
+        <div class="form-text">Automatically populated from the selected description.</div>
+        <span asp-validation-for="MilestoneName" class="text-danger"></span>
     </div>
     <div class="col-12">
         <label asp-for="JiraTicketId" class="form-label">Jira Ticket ID (optional)</label>

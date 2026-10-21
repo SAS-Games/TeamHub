@@ -38,6 +38,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IFlowPublicationWorkflowService, FlowPublicationWorkflowService>();
         services.AddScoped<PublishedFlowRecoveryService>();
         services.TryAddSingleton<ICurrentUserProvider, AnonymousCurrentUserProvider>();
+        services.TryAddSingleton<IFlowReviewerDirectory, EmptyFlowReviewerDirectory>();
         services.TryAddSingleton<IFlowPermissionService, AllowAllFlowPermissionService>();
         services.TryAddSingleton<IFlowThemeProvider, DefaultFlowThemeProvider>();
         services.TryAddSingleton<IFlowNavigationProvider, DefaultFlowNavigationProvider>();
@@ -53,6 +54,7 @@ public static class ServiceCollectionExtensions
         await context.Database.EnsureCreatedAsync(cancellationToken);
         await EnsurePublicationRequestTableAsync(context, cancellationToken);
         await EnsurePublicationRequestDeletionColumnsAsync(context, cancellationToken);
+        await EnsurePublicationReviewerTableAsync(context, cancellationToken);
         await scope.ServiceProvider.GetRequiredService<FlowLibraryDatabaseInitializer>().InitializeAsync(cancellationToken);
         await scope.ServiceProvider.GetRequiredService<PublishedFlowRecoveryService>().RecoverIfEmptyAsync(cancellationToken);
         await scope.ServiceProvider.GetRequiredService<TemplateCatalogSeeder>().SeedAsync(cancellationToken);
@@ -112,6 +114,25 @@ public static class ServiceCollectionExtensions
         }
     }
 
+    private static Task EnsurePublicationReviewerTableAsync(
+        FlowDesignerDbContext context,
+        CancellationToken cancellationToken) =>
+        context.Database.ExecuteSqlRawAsync("""
+            CREATE TABLE IF NOT EXISTS FlowPublicationReviewers (
+                RequestId TEXT NOT NULL,
+                UserId TEXT NOT NULL,
+                DisplayName TEXT NOT NULL,
+                Status TEXT NOT NULL,
+                ReviewedAt TEXT NULL,
+                ReviewNote TEXT NULL,
+                CONSTRAINT PK_FlowPublicationReviewers PRIMARY KEY (RequestId, UserId),
+                CONSTRAINT FK_FlowPublicationReviewers_FlowPublicationRequests_RequestId
+                    FOREIGN KEY (RequestId) REFERENCES FlowPublicationRequests (Id) ON DELETE CASCADE
+            );
+            CREATE INDEX IF NOT EXISTS IX_FlowPublicationReviewers_UserId_Status
+                ON FlowPublicationReviewers (UserId, Status);
+            """, cancellationToken);
+
     private static async Task<bool> ColumnExistsAsync(
         FlowDesignerDbContext context,
         string tableName,
@@ -131,6 +152,12 @@ public static class ServiceCollectionExtensions
     private sealed class AnonymousCurrentUserProvider : ICurrentUserProvider
     {
         public string? GetCurrentUserId() => null;
+    }
+
+    private sealed class EmptyFlowReviewerDirectory : IFlowReviewerDirectory
+    {
+        public Task<IReadOnlyList<FlowReviewerOption>> ListAsync(CancellationToken cancellationToken = default) =>
+            Task.FromResult<IReadOnlyList<FlowReviewerOption>>([]);
     }
 
     private sealed class AllowAllFlowPermissionService : IFlowPermissionService

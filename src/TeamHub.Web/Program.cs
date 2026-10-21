@@ -86,6 +86,7 @@ builder.Services.AddWorkflowInfrastructure(builder.Configuration);
 builder.Services.AddScoped<INotificationRecipientResolver, TeamHubNotificationRecipientResolver>();
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<ICurrentUserProvider, TeamHubFlowCurrentUserProvider>();
+builder.Services.AddScoped<IFlowReviewerDirectory, TeamHubFlowReviewerDirectory>();
 builder.Services.AddScoped<IFlowPermissionService, TeamHubFlowPermissionService>();
 builder.Services.AddScoped<IFlowPublicationService, WorkCenterFlowPublicationService>();
 builder.Services.AddFlowDesigner(options =>

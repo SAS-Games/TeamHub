@@ -16,7 +16,8 @@ public sealed class FlowPublicationWorkflowService(
     IFlowValidator validator,
     ICurrentUserProvider currentUser,
     IFlowPermissionService permissions,
-    IFlowPublicationService hostPublisher) : IFlowPublicationWorkflowService
+    IFlowPublicationService hostPublisher,
+    IFlowReviewerDirectory? reviewerDirectory = null) : IFlowPublicationWorkflowService
 {
     private const int MaxReviewNoteLength = 2000;
 
@@ -24,6 +25,12 @@ public sealed class FlowPublicationWorkflowService(
 
     public async Task<FlowPublicationRequestSummary> RequestAsync(
         Guid flowId,
+        CancellationToken cancellationToken = default) =>
+        await RequestAsync(flowId, [], cancellationToken);
+
+    public async Task<FlowPublicationRequestSummary> RequestAsync(
+        Guid flowId,
+        IReadOnlyCollection<string> reviewerUserIds,
         CancellationToken cancellationToken = default)
     {
         var bundle = await LoadAuthoringBundleAsync(flowId, cancellationToken);
@@ -40,10 +47,26 @@ public sealed class FlowPublicationWorkflowService(
         if (pending is not null)
         {
             if (string.Equals(pending.SnapshotHash, snapshotHash, StringComparison.Ordinal)) return ToSummary(pending);
-            throw new InvalidOperationException("This diagram hierarchy already has a version awaiting admin review.");
+            throw new InvalidOperationException("This diagram hierarchy already has a version awaiting review.");
         }
 
         var requestedBy = RequiredCurrentUser();
+        var canPublishDirectly = CanReview
+            && (root.DiagramType == DiagramType.WorkCenterWorkflow
+                || string.Equals(root.CreatedBy, requestedBy, StringComparison.OrdinalIgnoreCase));
+        var selectedReviewerIds = reviewerUserIds
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .Select(value => value.Trim().ToLowerInvariant())
+            .Where(value => !string.Equals(value, requestedBy, StringComparison.OrdinalIgnoreCase))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        var availableReviewers = reviewerDirectory is null
+            ? new Dictionary<string, FlowReviewerOption>(StringComparer.OrdinalIgnoreCase)
+            : (await reviewerDirectory.ListAsync(cancellationToken))
+                .GroupBy(item => item.UserId, StringComparer.OrdinalIgnoreCase)
+                .ToDictionary(group => group.Key, group => group.First(), StringComparer.OrdinalIgnoreCase);
+        if (selectedReviewerIds.Any(id => !availableReviewers.ContainsKey(id)))
+            throw new ArgumentException("The reviewer selection contains an inactive or unavailable user.");
         var entity = new FlowPublicationRequestEntity
         {
             Id = Guid.NewGuid(),
@@ -59,7 +82,24 @@ public sealed class FlowPublicationWorkflowService(
             Status = FlowPublicationRequestStatus.Pending.ToString()
         };
         context.PublicationRequests.Add(entity);
+        foreach (var reviewerId in selectedReviewerIds)
+        {
+            context.PublicationReviewers.Add(new FlowPublicationReviewerEntity
+            {
+                RequestId = entity.Id,
+                UserId = reviewerId,
+                DisplayName = availableReviewers[reviewerId].DisplayName,
+                Status = FlowPublicationReviewerStatus.Pending.ToString()
+            });
+        }
         await context.SaveChangesAsync(cancellationToken);
+        if (canPublishDirectly)
+        {
+            await ApproveAsync(entity.Id, "Published directly by an administrator.", cancellationToken);
+            entity.Status = FlowPublicationRequestStatus.Approved.ToString();
+            entity.ReviewedBy = requestedBy;
+            entity.ReviewedAt = DateTime.UtcNow;
+        }
         return ToSummary(entity);
     }
 
@@ -85,13 +125,18 @@ public sealed class FlowPublicationWorkflowService(
     public async Task<IReadOnlyList<FlowPublicationRequestSummary>> ListPendingAsync(
         CancellationToken cancellationToken = default)
     {
-        RequireReviewer();
+        var user = RequiredCurrentUser().Trim().ToLowerInvariant();
         await using var context = await authoringContextFactory.CreateDbContextAsync(cancellationToken);
-        return (await context.PublicationRequests
-                .AsNoTracking()
-                .Where(item => item.Status == FlowPublicationRequestStatus.Pending.ToString())
-                .OrderBy(item => item.RequestedAt)
-                .ToListAsync(cancellationToken))
+        var query = context.PublicationRequests.AsNoTracking()
+            .Where(item => item.Status == FlowPublicationRequestStatus.Pending.ToString());
+        if (!CanReview)
+        {
+            var assignedRequestIds = context.PublicationReviewers.AsNoTracking()
+                .Where(item => item.UserId == user && item.Status == FlowPublicationReviewerStatus.Pending.ToString())
+                .Select(item => item.RequestId);
+            query = query.Where(item => assignedRequestIds.Contains(item.Id));
+        }
+        return (await query.OrderBy(item => item.RequestedAt).ToListAsync(cancellationToken))
             .Select(ToSummary)
             .ToList();
     }
@@ -100,11 +145,11 @@ public sealed class FlowPublicationWorkflowService(
         Guid requestId,
         CancellationToken cancellationToken = default)
     {
-        RequireReviewer();
         await using var context = await authoringContextFactory.CreateDbContextAsync(cancellationToken);
         var entity = await context.PublicationRequests.AsNoTracking()
             .SingleOrDefaultAsync(item => item.Id == requestId, cancellationToken);
         if (entity is null) return null;
+        await RequireRequestAccessAsync(context, requestId, cancellationToken);
         var bundle = DeserializeBundle(entity.SnapshotJson, entity.FlowId);
         return new FlowPublicationRequest(ToSummary(entity), RequiredRoot(bundle));
     }
@@ -114,11 +159,11 @@ public sealed class FlowPublicationWorkflowService(
         Guid flowId,
         CancellationToken cancellationToken = default)
     {
-        RequireReviewer();
         await using var context = await authoringContextFactory.CreateDbContextAsync(cancellationToken);
         var entity = await context.PublicationRequests.AsNoTracking()
             .SingleOrDefaultAsync(item => item.Id == requestId, cancellationToken);
         if (entity is null) return null;
+        await RequireRequestAccessAsync(context, requestId, cancellationToken);
         VerifyHash(entity.SnapshotJson, entity.SnapshotHash, "The submitted snapshot failed its integrity check.");
         return DeserializeBundle(entity.SnapshotJson, entity.FlowId).Flows.SingleOrDefault(item => item.Id == flowId);
     }
@@ -137,6 +182,12 @@ public sealed class FlowPublicationWorkflowService(
         {
             throw new InvalidOperationException("This publication request has already been reviewed.");
         }
+        var pendingReviewers = await authoringContext.PublicationReviewers.AsNoTracking()
+            .Where(item => item.RequestId == requestId && item.Status != FlowPublicationReviewerStatus.Approved.ToString())
+            .Select(item => item.DisplayName)
+            .ToListAsync(cancellationToken);
+        if (pendingReviewers.Count > 0)
+            throw new InvalidOperationException($"Waiting for reviewer approval from: {string.Join(", ", pendingReviewers)}.");
         VerifyHash(request.SnapshotJson, request.SnapshotHash, "The submitted snapshot failed its integrity check.");
 
         await using var publishedContext = await publishedContextFactory.CreateDbContextAsync(cancellationToken);
@@ -175,12 +226,47 @@ public sealed class FlowPublicationWorkflowService(
         return ToSummary(publication);
     }
 
+    public async Task<FlowPublicationReviewer> ApproveReviewAsync(
+        Guid requestId,
+        string? reviewNote,
+        CancellationToken cancellationToken = default)
+    {
+        var reviewerUserId = RequiredCurrentUser().Trim().ToLowerInvariant();
+        await using var context = await authoringContextFactory.CreateDbContextAsync(cancellationToken);
+        var request = await context.PublicationRequests.AsNoTracking()
+            .SingleOrDefaultAsync(item => item.Id == requestId, cancellationToken)
+            ?? throw new KeyNotFoundException($"Publication request '{requestId}' was not found.");
+        if (ParseStatus(request.Status) != FlowPublicationRequestStatus.Pending)
+            throw new InvalidOperationException("This publication request has already been reviewed.");
+        var reviewer = await context.PublicationReviewers.SingleOrDefaultAsync(
+            item => item.RequestId == requestId && item.UserId == reviewerUserId, cancellationToken)
+            ?? throw new UnauthorizedAccessException("You are not assigned to review this publication request.");
+        reviewer.Status = FlowPublicationReviewerStatus.Approved.ToString();
+        reviewer.ReviewedAt = DateTime.UtcNow;
+        reviewer.ReviewNote = NormalizeReviewNote(reviewNote);
+        await context.SaveChangesAsync(cancellationToken);
+        return ToReviewer(reviewer);
+    }
+
+    public async Task<IReadOnlyList<FlowPublicationReviewer>> ListReviewersAsync(
+        Guid requestId,
+        CancellationToken cancellationToken = default)
+    {
+        await using var context = await authoringContextFactory.CreateDbContextAsync(cancellationToken);
+        await RequireRequestAccessAsync(context, requestId, cancellationToken);
+        return (await context.PublicationReviewers.AsNoTracking()
+                .Where(item => item.RequestId == requestId)
+                .OrderBy(item => item.DisplayName)
+                .ToListAsync(cancellationToken))
+            .Select(ToReviewer)
+            .ToList();
+    }
+
     public async Task RejectAsync(
         Guid requestId,
         string reviewNote,
         CancellationToken cancellationToken = default)
     {
-        RequireReviewer();
         var normalizedNote = NormalizeReviewNote(reviewNote);
         if (string.IsNullOrWhiteSpace(normalizedNote))
         {
@@ -191,6 +277,13 @@ public sealed class FlowPublicationWorkflowService(
         var request = await context.PublicationRequests
             .SingleOrDefaultAsync(item => item.Id == requestId, cancellationToken)
             ?? throw new KeyNotFoundException($"Publication request '{requestId}' was not found.");
+        var currentUserId = RequiredCurrentUser().Trim().ToLowerInvariant();
+        if (!CanReview && !await context.PublicationReviewers.AnyAsync(
+                item => item.RequestId == requestId
+                    && item.UserId == currentUserId
+                    && item.Status == FlowPublicationReviewerStatus.Pending.ToString(),
+                cancellationToken))
+            throw new UnauthorizedAccessException("You are not assigned to review this publication request.");
         if (ParseStatus(request.Status) != FlowPublicationRequestStatus.Pending)
         {
             throw new InvalidOperationException("This publication request has already been reviewed.");
@@ -739,6 +832,18 @@ public sealed class FlowPublicationWorkflowService(
 
     private sealed record PublishedBundle(PublishedFlowEntity Entity, FlowDiagramTemplateBundle Bundle);
 
+    private async Task RequireRequestAccessAsync(
+        FlowDesignerDbContext context,
+        Guid requestId,
+        CancellationToken cancellationToken)
+    {
+        if (CanReview) return;
+        var userId = RequiredCurrentUser().Trim().ToLowerInvariant();
+        if (!await context.PublicationReviewers.AsNoTracking().AnyAsync(
+                item => item.RequestId == requestId && item.UserId == userId, cancellationToken))
+            throw new UnauthorizedAccessException("You are not assigned to review this publication request.");
+    }
+
     private void RequireReviewer()
     {
         if (!CanReview) throw new UnauthorizedAccessException("Admin access is required to review publication requests.");
@@ -763,6 +868,9 @@ public sealed class FlowPublicationWorkflowService(
     private static FlowPublicationRequestStatus ParseStatus(string value) =>
         Enum.TryParse<FlowPublicationRequestStatus>(value, out var status) ? status : FlowPublicationRequestStatus.Pending;
 
+    private static FlowPublicationReviewerStatus ParseReviewerStatus(string value) =>
+        Enum.TryParse<FlowPublicationReviewerStatus>(value, out var status) ? status : FlowPublicationReviewerStatus.Pending;
+
     private static DiagramType ParseDiagramType(string value) =>
         Enum.TryParse<DiagramType>(value, out var diagramType) ? diagramType : DiagramType.StandardFlowchart;
 
@@ -775,6 +883,10 @@ public sealed class FlowPublicationWorkflowService(
     private static PublishedFlowSummary ToSummary(PublishedFlowEntity entity) =>
         new(entity.Id, entity.SourceFlowId, entity.Name, entity.Description, ParseDiagramType(entity.DiagramType),
             entity.NodeCount, entity.SourceVersion, entity.PublicationVersion, AsUtc(entity.PublishedAt), entity.PublishedBy);
+
+    private static FlowPublicationReviewer ToReviewer(FlowPublicationReviewerEntity entity) =>
+        new(entity.UserId, entity.DisplayName, ParseReviewerStatus(entity.Status),
+            entity.ReviewedAt.HasValue ? AsUtc(entity.ReviewedAt.Value) : null, entity.ReviewNote);
 
     private static DateTimeOffset AsUtc(DateTime value) =>
         new(DateTime.SpecifyKind(value, DateTimeKind.Utc));

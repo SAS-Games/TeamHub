@@ -8,6 +8,21 @@ public enum FlowPublicationRequestStatus
     Deleted
 }
 
+public enum FlowPublicationReviewerStatus
+{
+    Pending,
+    Approved
+}
+
+public sealed record FlowPublicationReviewer(
+    string UserId,
+    string DisplayName,
+    FlowPublicationReviewerStatus Status,
+    DateTimeOffset? ReviewedAt,
+    string? ReviewNote);
+
+public sealed record FlowReviewerOption(string UserId, string DisplayName);
+
 public sealed record FlowPublicationRequestSummary(
     Guid Id,
     Guid FlowId,

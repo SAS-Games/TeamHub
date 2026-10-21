@@ -7,6 +7,11 @@ public interface ICurrentUserProvider
     string? GetCurrentUserId();
 }
 
+public interface IFlowReviewerDirectory
+{
+    Task<IReadOnlyList<FlowReviewerOption>> ListAsync(CancellationToken cancellationToken = default);
+}
+
 public interface IFlowPermissionService
 {
     bool CanView(string? ownerId);

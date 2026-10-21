@@ -54,7 +54,13 @@
             </button>
             @if (Model.CanRequestPublication)
             {
-                <button class="btn btn-sm btn-outline-success fd-edit-only" id="requestPublicationButton" type="button" disabled="@(Model.HasPendingPublicationRequest ? "disabled" : null)"><span id="requestPublicationButtonText">@(Model.HasPendingPublicationRequest ? "Pending admin review" : "Request publication")</span></button>
+                <button class="btn btn-sm btn-outline-success fd-edit-only" id="requestPublicationButton" type="button"
+                        data-direct-publish="@Model.CanPublishDirectly.ToString().ToLowerInvariant()"
+                        data-bs-toggle="@(Model.CanPublishDirectly ? null : "modal")"
+                        data-bs-target="@(Model.CanPublishDirectly ? null : "#publicationRequestModal")"
+                        disabled="@(Model.HasPendingPublicationRequest ? "disabled" : null)">
+                    <span id="requestPublicationButtonText">@(Model.HasPendingPublicationRequest ? "Pending review" : Model.CanPublishDirectly ? "Publish" : "Request publication")</span>
+                </button>
             }
             <div class="dropdown">
                 <button class="btn btn-sm btn-light dropdown-toggle" data-bs-toggle="dropdown" type="button">Export</button>
@@ -240,7 +246,13 @@
                         <div class="d-flex flex-wrap gap-1 mt-2" id="taskAssigneeList"></div>
                         <div class="form-text">Choose a registered email or enter one manually. Every assignee must complete their part.</div>
                     </div>
-                    <div class="mb-3"><label class="form-label" for="taskDueDate">Due date</label><input class="form-control" id="taskDueDate" type="date" /><input id="taskExpectedHours" type="hidden" value="24" /><div class="form-text" id="taskDueDateHelp">The selected date is converted to hours from now. Each workflow run then gets the same amount of time from when this task starts.</div></div>
+                    <div class="mb-3">
+                        <div class="row g-2">
+                            <div class="col-7"><label class="form-label" for="taskDueDate">Due date</label><input class="form-control" id="taskDueDate" type="date" /></div>
+                            <div class="col-5"><label class="form-label" for="taskExpectedHours">Due hours</label><input class="form-control" id="taskExpectedHours" type="number" min="0.5" step="0.5" value="24" /></div>
+                        </div>
+                        <div class="form-text" id="taskDueDateHelp">The date calculates due hours. You can adjust the hours directly; each workflow run uses that duration from task start.</div>
+                    </div>
                     <details class="mb-3"><summary class="fw-semibold">Reminders and escalation</summary>
                         <div class="mt-3"><label class="form-label" for="taskReminderAfterHours">First reminder after (hours)</label><input class="form-control" id="taskReminderAfterHours" type="number" min="0" step="any" /></div>
                         <div class="mt-3"><label class="form-label" for="taskReminderRepeatHours">Repeat reminder every (hours)</label><input class="form-control" id="taskReminderRepeatHours" type="number" min="0" step="any" /></div>
@@ -365,6 +377,24 @@
             </div>
         </div>
     </div>
+
+    @if (Model.CanRequestPublication && !Model.CanPublishDirectly)
+    {
+        <div class="modal fade" id="publicationRequestModal" tabindex="-1" aria-labelledby="publicationRequestTitle" aria-hidden="true">
+            <div class="modal-dialog modal-dialog-centered">
+                <div class="modal-content">
+                    <form id="publicationRequestForm">
+                        <div class="modal-header"><h2 class="modal-title fs-5" id="publicationRequestTitle">Request publication</h2><button class="btn-close" type="button" data-bs-dismiss="modal" aria-label="Close"></button></div>
+                        <div class="modal-body">
+                            <p class="text-secondary small">An administrator gives final approval and publishes. Optionally add other reviewers; every selected reviewer must approve first.</p>
+                            <div id="publicationReviewerList" class="d-grid gap-2"><span class="text-secondary small">Loading reviewers...</span></div>
+                        </div>
+                        <div class="modal-footer"><button class="btn btn-light" type="button" data-bs-dismiss="modal">Cancel</button><button class="btn btn-success" id="submitPublicationRequest" type="submit">Send for review</button></div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    }
 
     <div class="modal fade" id="leaveDiagramModal" tabindex="-1" aria-labelledby="leaveDiagramTitle" aria-hidden="true">
         <div class="modal-dialog modal-dialog-centered">

@@ -221,10 +221,13 @@ public sealed class CreateWithAiPageTests
         public bool CanReview => false;
         public Task<IReadOnlyList<PublishedFlowSummary>> ListPublishedAsync(CancellationToken cancellationToken = default) => Task.FromResult<IReadOnlyList<PublishedFlowSummary>>([]);
         public Task<FlowPublicationRequestSummary> RequestAsync(Guid flowId, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task<FlowPublicationRequestSummary> RequestAsync(Guid flowId, IReadOnlyCollection<string> reviewerUserIds, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task<FlowPublicationRequestSummary?> GetLatestRequestAsync(Guid flowId, CancellationToken cancellationToken = default) => throw new NotSupportedException();
-        public Task<IReadOnlyList<FlowPublicationRequestSummary>> ListPendingAsync(CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task<IReadOnlyList<FlowPublicationRequestSummary>> ListPendingAsync(CancellationToken cancellationToken = default) => Task.FromResult<IReadOnlyList<FlowPublicationRequestSummary>>([]);
         public Task<FlowPublicationRequest?> GetRequestAsync(Guid requestId, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task<PublishedFlowSummary> ApproveAsync(Guid requestId, string? reviewNote, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task<FlowPublicationReviewer> ApproveReviewAsync(Guid requestId, string? reviewNote, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task<IReadOnlyList<FlowPublicationReviewer>> ListReviewersAsync(Guid requestId, CancellationToken cancellationToken = default) => Task.FromResult<IReadOnlyList<FlowPublicationReviewer>>([]);
         public Task RejectAsync(Guid requestId, string reviewNote, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task<PublishedFlow?> GetPublishedBySourceAsync(Guid sourceFlowId, CancellationToken cancellationToken = default) => throw new NotSupportedException();
         public Task<IReadOnlyList<FlowSummary>> ListPublishedBundleAsync(Guid sourceFlowId, CancellationToken cancellationToken = default) => throw new NotSupportedException();

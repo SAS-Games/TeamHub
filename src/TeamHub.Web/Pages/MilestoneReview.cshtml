@@ -370,5 +370,36 @@ else
 
 @section Scripts {
     <partial name="_ValidationScriptsPartial" />
+    <script>
+        (() => {
+            const project = document.querySelector('[data-milestone-review-project]');
+            const description = document.querySelector('[data-milestone-review-description]');
+            const milestone = document.querySelector('[data-milestone-review-milestone]');
+            if (!project || !milestone || !description) return;
+
+            const matches = (value, selected) =>
+                (value || '').localeCompare(selected || '', undefined, { sensitivity: 'accent' }) === 0;
+            const updateDescriptions = () => {
+                let selectedOption = null;
+                for (const option of description.options) {
+                    if (!option.dataset.project) continue;
+                    const available = matches(option.dataset.project, project.value);
+                    option.hidden = !available;
+                    option.disabled = !available;
+                    if (available && option.selected) selectedOption = option;
+                }
+                if (!selectedOption) description.value = '';
+                updateMilestone();
+            };
+            const updateMilestone = () => {
+                const selected = description.options[description.selectedIndex];
+                milestone.value = selected?.dataset.milestone || '';
+            };
+
+            project.addEventListener('change', updateDescriptions);
+            description.addEventListener('change', updateMilestone);
+            updateDescriptions();
+        })();
+    </script>
     <script src="~/js/jira-comments.js" asp-append-version="true"></script>
 }

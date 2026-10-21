@@ -13,6 +13,23 @@ public sealed class TeamHubFlowCurrentUserProvider(IHttpContextAccessor httpCont
     }
 }
 
+public sealed class TeamHubFlowReviewerDirectory(IUserAccessService users) : IFlowReviewerDirectory
+{
+    public async Task<IReadOnlyList<FlowReviewerOption>> ListAsync(CancellationToken cancellationToken = default)
+    {
+        var result = new List<FlowReviewerOption>();
+        foreach (var user in (await users.ListUsersAsync(cancellationToken))
+                     .Where(user => user.IsActive && user.IsRegistered && user.UserType != TeamHubUserTypes.Admin))
+        {
+            var access = await users.GetAccessLevelAsync(
+                TeamHubModules.FlowDesigner, user.UserType, user.Id, cancellationToken);
+            if (access.Allows(AccessLevel.ReadOnly))
+                result.Add(new(user.UserId.Trim().ToLowerInvariant(), user.DisplayName));
+        }
+        return result.OrderBy(user => user.DisplayName, StringComparer.OrdinalIgnoreCase).ToList();
+    }
+}
+
 public sealed class TeamHubFlowPermissionService(IHttpContextAccessor httpContextAccessor) : IFlowPermissionService
 {
     public bool CanView(string? ownerId) => HasFullAccess() || IsOwner(ownerId);

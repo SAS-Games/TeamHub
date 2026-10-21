@@ -143,11 +143,7 @@ public class ConfigurationModel(
 
         try
         {
-            var request = await publications.RequestAsync(id, cancellationToken);
-            await publications.ApproveAsync(
-                request.Id,
-                "Published directly from the Work Center Workflow Library.",
-                cancellationToken);
+            await publications.RequestAsync(id, cancellationToken);
 
             var workflowKey = NormalizeKey(
                 flow.Metadata.TryGetValue("workflowKey", out var configuredKey)

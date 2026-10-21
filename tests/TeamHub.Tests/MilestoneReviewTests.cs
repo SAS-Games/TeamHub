@@ -8,6 +8,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using TeamHub.Authentication;
+using TeamHub.Milestones;
 using TeamHub.MilestoneReview;
 using TeamHub.Studio;
 using TeamHub.Web.AccessControl;
@@ -834,6 +835,33 @@ public sealed class MilestoneReviewTests : IAsyncLifetime
                 [new System.Security.Claims.Claim(System.Security.Claims.ClaimTypes.Role, role)], "Test"));
 
     [Fact]
+    public async Task AdminPageLoadsCascadingProjectMilestoneAndDescriptionOptions()
+    {
+        var studios = new StubStudioDirectory([
+            new StudioDetails { Id = "one", ProjectName = "Project One", IsActive = true },
+            new StudioDetails { Id = "duplicate", ProjectName = "project one", IsActive = true },
+            new StudioDetails { Id = "two", ProjectName = "Project Two", IsActive = true },
+            new StudioDetails { Id = "inactive", ProjectName = "Hidden Project", IsActive = false }
+        ]);
+        var milestones = new StubMilestoneTracker([
+            new MilestoneDto { Title = "Project One", Milestone = "Alpha", Description = "Alpha build" },
+            new MilestoneDto { Program = "Project Two", Milestone = "Beta", Description = "Beta build" },
+            new MilestoneDto { Title = "Project One", Milestone = "Total MS Complete", Description = "Summary" },
+            new MilestoneDto { Title = "Hidden Project", Milestone = "Hidden", Description = "Hidden build" }
+        ]);
+        var model = CreateModel(service, true, studios: studios, milestones: milestones);
+        SetRole(model, TeamHubUserTypes.Admin);
+
+        await model.OnGetAsync(CancellationToken.None);
+
+        model.ProjectOptions.Should().Equal("Project One", "Project Two");
+        model.MilestoneOptions.Should().BeEquivalentTo([
+            new MilestoneReviewModel.MilestoneReviewSelectionOption("Project One", "Alpha", "Alpha build"),
+            new MilestoneReviewModel.MilestoneReviewSelectionOption("Project Two", "Beta", "Beta build")
+        ]);
+    }
+
+    [Fact]
     public async Task OnGetFeedbackAsync_ReturnsFormattedJsonForLocalMilestoneFeedback()
     {
         await CreateAndPublishAsync([reviewerOne]);
@@ -1245,14 +1273,17 @@ public sealed class MilestoneReviewTests : IAsyncLifetime
 
     private static MilestoneReviewModel CreateModel(IMilestoneReviewService reviewService, bool allowed,
         StubCommentService? comments = null, Microsoft.AspNetCore.DataProtection.IDataProtectionProvider? protection = null,
-        AccessLevel? level = null, AuthorizedUserRecord? user = null) =>
+        AccessLevel? level = null, AuthorizedUserRecord? user = null,
+        IStudioDirectoryService? studios = null, IMilestoneTrackerService? milestones = null) =>
         new(reviewService,
             new StubUserDirectory([]),
             new StubAccess(allowed, level, user),
             comments ?? new StubCommentService(),
             protection ?? new Microsoft.AspNetCore.DataProtection.EphemeralDataProtectionProvider(),
             new TeamHub.Web.Formatting.SafeMarkdownRenderer(),
-            NullLogger<MilestoneReviewModel>.Instance)
+            NullLogger<MilestoneReviewModel>.Instance,
+            studios,
+            milestones)
         {
             PageContext = new PageContext { HttpContext = new DefaultHttpContext() }
         };
@@ -1291,6 +1322,32 @@ public sealed class MilestoneReviewTests : IAsyncLifetime
 
         public Task<StudioJiraMilestoneReviewCommentResult> UpsertMilestoneReviewCommentAsync(StudioJiraMilestoneReviewCommentRequest request, CancellationToken cancellationToken = default) =>
             Task.FromResult(new StudioJiraMilestoneReviewCommentResult("42"));
+    }
+
+    private sealed class StubStudioDirectory(IReadOnlyList<StudioDetails> studios) : IStudioDirectoryService
+    {
+        public Task<IReadOnlyList<StudioDetails>> GetStudiosAsync(CancellationToken cancellationToken = default) =>
+            Task.FromResult(studios);
+
+        public Task<StudioDetails?> GetStudioAsync(string id, CancellationToken cancellationToken = default) =>
+            Task.FromResult(studios.FirstOrDefault(item => item.Id == id));
+
+        public Task<StudioDetails> SaveStudioAsync(StudioDetails studio, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+
+        public Task DeleteStudioAsync(string id, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+    }
+
+    private sealed class StubMilestoneTracker(IReadOnlyList<MilestoneDto> milestones) : IMilestoneTrackerService
+    {
+        public Task<IReadOnlyList<MilestoneDto>> GetMilestonesAsync(CancellationToken cancellationToken = default) =>
+            Task.FromResult(milestones);
+
+        public Task<MilestoneSourceTestResult> TestSourceAsync(
+            MilestoneSourceSettings settings,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult(new MilestoneSourceTestResult(milestones.Count));
     }
 
 }
