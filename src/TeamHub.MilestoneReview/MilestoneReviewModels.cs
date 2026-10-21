@@ -88,6 +88,7 @@ public sealed class MilestoneReviewCommentSyncException(string message, Exceptio
 public interface IMilestoneReviewService
 {
     Task<MilestoneReview?> GetCurrentAsync(CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<MilestoneReview>> GetActiveAsync(CancellationToken cancellationToken = default);
     Task<MilestoneReview?> GetDraftAsync(CancellationToken cancellationToken = default);
     Task<IReadOnlyList<MilestoneReview>> GetHistoryAsync(CancellationToken cancellationToken = default);
     Task<MilestoneReview?> CreateDraftAsync(

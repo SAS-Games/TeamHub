@@ -58,7 +58,7 @@ public sealed class MilestoneReviewDbContext(DbContextOptions<MilestoneReviewDbC
             entity.Property(item => item.Description).HasMaxLength(4000).IsRequired();
             entity.Property(item => item.JiraTicketId).HasMaxLength(64);
             entity.Property(item => item.CreatedBy).HasMaxLength(320).IsRequired();
-            entity.HasIndex(item => item.Status).IsUnique().HasFilter("\"Status\" IN (0, 1)");
+            entity.HasIndex(item => item.Status).IsUnique().HasFilter("\"Status\" = 0");
         });
         modelBuilder.Entity<MilestoneReviewAssignmentRecord>(entity =>
         {
@@ -100,6 +100,11 @@ internal sealed class SqliteMilestoneReviewDatabaseInitializer(MilestoneReviewDb
     public async Task InitializeAsync(CancellationToken cancellationToken = default)
     {
         await dbContext.Database.EnsureCreatedAsync(cancellationToken);
+        await dbContext.Database.ExecuteSqlRawAsync("""
+            DROP INDEX IF EXISTS "IX_MilestoneReviews_Status";
+            CREATE UNIQUE INDEX "IX_MilestoneReviews_Status"
+                ON "MilestoneReviews" ("Status") WHERE "Status" = 0;
+            """, cancellationToken);
         await AddColumnIfMissingAsync("MilestoneReviews", "JiraTicketId", "TEXT NULL", cancellationToken);
         await AddColumnIfMissingAsync("MilestoneReviewAssignments", "ReviewerUserId", "TEXT NOT NULL DEFAULT ''", cancellationToken);
         await AddColumnIfMissingAsync("MilestoneReviewFeedback", "ReviewerUserId", "TEXT NOT NULL DEFAULT ''", cancellationToken);

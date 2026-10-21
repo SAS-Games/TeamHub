@@ -64,6 +64,9 @@ public sealed partial class MilestoneReviewModel(
     [BindProperty(SupportsGet = true)]
     public Guid? EditFeedbackId { get; set; }
 
+    [BindProperty(SupportsGet = true)]
+    public Guid? SelectedReviewId { get; set; }
+
     [BindProperty]
     public int Version { get; set; }
 
@@ -80,6 +83,7 @@ public sealed partial class MilestoneReviewModel(
     public string? AdditionalFeedback { get; set; }
 
     public ReviewSnapshot? CurrentReview { get; private set; }
+    public IReadOnlyList<ReviewSnapshot> ActiveReviews { get; private set; } = [];
     public ReviewSnapshot? Draft { get; private set; }
     public ReviewSnapshot? EditingReview { get; private set; }
     public IReadOnlyList<ReviewSnapshot> HistoryReviews { get; private set; } = [];
@@ -133,7 +137,7 @@ public sealed partial class MilestoneReviewModel(
         {
             await reviews.UpdateAsync(ReviewId, DetailsRequest(), IsAdmin, cancellationToken);
             StatusMessage = "Milestone review details updated. Existing feedback was preserved; Jira comments update on the next feedback save.";
-            return RedirectToPage(new { editReviewId = (Guid?)null });
+            return RedirectToPage(new { selectedReviewId = ReviewId, editReviewId = (Guid?)null });
         }
         catch (Exception exception) when (exception is ArgumentException or InvalidOperationException)
         {
@@ -150,7 +154,7 @@ public sealed partial class MilestoneReviewModel(
         ShowRestorePreview = true;
         if (CurrentReview?.Id != ReviewId || string.IsNullOrWhiteSpace(CurrentReview.JiraTicketId))
         {
-            ModelState.AddModelError(string.Empty, "Select the current published review with a Jira ticket.");
+            ModelState.AddModelError(string.Empty, "Select an active published review with a Jira ticket.");
             return Page();
         }
         foreach (var reviewer in CurrentReview.AssignedReviewers)
@@ -200,7 +204,8 @@ public sealed partial class MilestoneReviewModel(
         if (!IsAdmin) return Forbid();
         try
         {
-            var current = await reviews.GetCurrentAsync(cancellationToken);
+            var current = (await reviews.GetActiveAsync(cancellationToken))
+                .SingleOrDefault(item => item.Id == ReviewId);
             if (current?.Id != ReviewId || string.IsNullOrWhiteSpace(current.JiraTicketId))
                 throw new InvalidOperationException("The published review changed. Reopen the restore preview.");
             var requests = new List<RestoreMilestoneReviewFeedbackRequest>();
@@ -247,7 +252,7 @@ public sealed partial class MilestoneReviewModel(
         {
             ErrorMessage = "Jira timed out. No feedback was restored; reopen the preview and try again.";
         }
-        return RedirectToPage();
+        return RedirectToPage(new { selectedReviewId = ReviewId });
     }
 
     public async Task<IActionResult> OnPostCreateDraftAsync(CancellationToken cancellationToken)
@@ -284,7 +289,7 @@ public sealed partial class MilestoneReviewModel(
             ErrorMessage = "There is no draft to publish.";
         else
             StatusMessage = $"Milestone review published: {published.ProjectName} — {published.MilestoneName}.";
-        return RedirectToPage();
+        return RedirectToPage(new { selectedReviewId = published?.Id });
     }
 
     public async Task<IActionResult> OnPostDiscardDraftAsync(CancellationToken cancellationToken)
@@ -338,7 +343,7 @@ public sealed partial class MilestoneReviewModel(
             || !ValidLength(AdditionalFeedback, 20000))
         {
             ErrorMessage = "Feedback was not saved. Check that each field is no longer than 20,000 characters.";
-            return RedirectToPage();
+            return RedirectToPage(new { selectedReviewId = ReviewId });
         }
         try
         {
@@ -365,7 +370,7 @@ public sealed partial class MilestoneReviewModel(
         {
             ErrorMessage = exception.Message;
         }
-        return RedirectToPage();
+        return RedirectToPage(new { selectedReviewId = ReviewId });
     }
 
     public async Task<IActionResult> OnGetFeedbackAsync(Guid reviewId, CancellationToken cancellationToken)
@@ -377,8 +382,8 @@ public sealed partial class MilestoneReviewModel(
         if (reviewId == Guid.Empty)
             return JiraFailure("Select a valid milestone review.", StatusCodes.Status400BadRequest);
 
-        var current = await reviews.GetCurrentAsync(cancellationToken);
-        ReviewSnapshot? target = current?.Id == reviewId ? current : null;
+        ReviewSnapshot? target = (await reviews.GetActiveAsync(cancellationToken))
+            .FirstOrDefault(item => item.Id == reviewId);
         if (target is null)
         {
             var history = await reviews.GetHistoryAsync(cancellationToken);
@@ -520,12 +525,20 @@ public sealed partial class MilestoneReviewModel(
         var current = await access.GetCurrentAsync(cancellationToken);
         CurrentUserId = current.User?.Id;
         HasFeedbackEditAccess = await access.CanAsync(TeamHubModules.MilestoneReview, AccessLevel.Edit, cancellationToken);
-        CurrentReview = await reviews.GetCurrentAsync(cancellationToken);
+        ActiveReviews = await reviews.GetActiveAsync(cancellationToken);
+        var requestedReviewId = SelectedReviewId
+            ?? ActiveReviews.FirstOrDefault(review => review.Feedback.Any(item => item.Id == EditFeedbackId))?.Id
+            ?? (ReviewId == Guid.Empty ? null : ReviewId);
+        CurrentReview = requestedReviewId.HasValue
+            ? ActiveReviews.FirstOrDefault(item => item.Id == requestedReviewId) ?? ActiveReviews.FirstOrDefault()
+            : ActiveReviews.FirstOrDefault();
+        SelectedReviewId = CurrentReview?.Id;
         HistoryReviews = await reviews.GetHistoryAsync(cancellationToken);
         if (IsAdmin)
         {
             Draft = await reviews.GetDraftAsync(cancellationToken);
-            EditingReview = new[] { Draft, CurrentReview }.FirstOrDefault(item => item?.Id == EditReviewId);
+            EditingReview = new[] { Draft }.Concat(ActiveReviews)
+                .FirstOrDefault(item => item?.Id == EditReviewId);
             var available = (await reviewUsers.GetActiveUsersAsync(cancellationToken))
                 .Where(item => item.IsActive && item.IsRegistered).ToList();
             foreach (var assigned in EditingReview?.AssignedReviewers ?? [])

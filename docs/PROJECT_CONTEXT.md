@@ -38,12 +38,13 @@ Hosting/publishing scripts are described in `scripts/hosting/README.md`.
 
 `TeamHub.MilestoneReview` owns its SQLite database and is separate from the
 configurable Team tables. Administrators create one draft at a time, select
-active registered reviewers, and publish it. Publishing supersedes the previous
-current review and moves it into the Review History archive, retaining all
+active registered reviewers, and publish it. Publishing leaves existing published
+reviews active so multiple milestone reviews can collect feedback simultaneously.
+Administrators archive each review explicitly when it is complete, retaining all
 feedback rows for read-only browsing. Drafts can include an optional Jira ticket ID.
 
-Administrators can edit all creation fields on drafts and the current published
-review using Edit Review; archived reviews remain read-only. Contributor changes
+Administrators can edit all creation fields on drafts and active published
+reviews using Edit Review; archived reviews remain read-only. Contributor changes
 add new feedback rows without deleting existing feedback. Removed contributors
 can still see their feedback but cannot change it; reassigning them restores
 editing on the same row. Changing the Jira ticket clears local comment links and
@@ -52,8 +53,8 @@ next save syncs to the newly selected ticket. Detail edits do not republish the
 review or change its publication date. The Milestone Review page does not display
 the shared read-only access banner; permission enforcement is unchanged.
 
-Administrators can also archive the current published review without publishing
-a replacement. Archive preserves feedback in Review History and closes editing.
+Administrators can archive any active published review. Archive preserves feedback
+in Review History and closes editing.
 Only administrators can permanently delete published or archived reviews.
 Deletion cascades to the review's local contributor assignments and feedback;
 it does not delete Jira tickets or comments, restore an older review as current,
@@ -76,7 +77,7 @@ Raw HTML is encoded and only supported safe links are rendered.
 The development schema update adds SessionDetails and AdditionalFeedback and
 removes the obsolete WhatsBad column; existing WhatGood and NeedImprovements
 values are retained. No legacy feedback display mode is used.
-All users with module read access can see the current review and all feedback.
+All users with module read access can switch among active reviews and see their feedback.
 Only the assigned reviewer can edit their row; administrators can edit any row.
 The service enforces ownership independently of the UI and uses a version
 concurrency token to reject stale updates.

@@ -33,7 +33,8 @@
                 <partial name="_MilestoneReviewDetails" model="Model" />
                 <div class="d-flex gap-2 mt-3">
                     <button type="submit" class="btn btn-primary">Save Changes</button>
-                    <a asp-page="/MilestoneReview" asp-route-editReviewId="" class="btn btn-outline-secondary">Cancel</a>
+                    <a asp-page="/MilestoneReview" asp-route-selectedReviewId="@Model.EditingReview.Id"
+                       asp-route-editReviewId="" class="btn btn-outline-secondary">Cancel</a>
                 </div>
             </form>
         </section>
@@ -77,9 +78,28 @@
     }
 }
 
+@if (Model.ActiveReviews.Count > 1)
+{
+    <section class="content-section mb-4">
+        <div class="section-heading">
+            <div><span>In progress</span><h2>Active Reviews</h2></div>
+            <small class="text-secondary">@Model.ActiveReviews.Count reviews</small>
+        </div>
+        <div class="section-body d-flex flex-wrap gap-2">
+            @foreach (var review in Model.ActiveReviews)
+            {
+                <a asp-page="/MilestoneReview" asp-route-selectedReviewId="@review.Id"
+                   class="btn @(review.Id == Model.CurrentReview?.Id ? "btn-primary" : "btn-outline-primary")">
+                    @review.ProjectName — @review.MilestoneName
+                </a>
+            }
+        </div>
+    </section>
+}
+
 @if (Model.CurrentReview is null)
 {
-    <section class="content-section"><div class="section-body text-secondary">There is no published milestone review yet.</div></section>
+    <section class="content-section"><div class="section-body text-secondary">There are no active milestone reviews yet.</div></section>
 }
 else
 {
@@ -113,7 +133,8 @@ else
                             <button type="submit" class="btn btn-sm btn-outline-primary">Restore feedback from Jira</button>
                         </form>
                     }
-                    <a asp-page="/MilestoneReview" asp-route-editReviewId="@Model.CurrentReview.Id"
+                    <a asp-page="/MilestoneReview" asp-route-selectedReviewId="@Model.CurrentReview.Id"
+                       asp-route-editReviewId="@Model.CurrentReview.Id"
                        class="btn btn-sm btn-outline-primary">Edit Review</a>
                     <form method="post" asp-page-handler="Archive"
                           onsubmit="return confirm('Archive this review? Feedback will be preserved in Review History and can no longer be edited.')">
@@ -165,7 +186,7 @@ else
                                 </fieldset>
                             }
                             <button class="btn btn-primary" type="submit">Confirm Restore</button>
-                            <a asp-page="/MilestoneReview" class="btn btn-outline-secondary">Cancel</a>
+                            <a asp-page="/MilestoneReview" asp-route-selectedReviewId="@Model.CurrentReview.Id" class="btn btn-outline-secondary">Cancel</a>
                         </form>
                     }
                     else
@@ -215,11 +236,11 @@ else
                                             <input type="hidden" name="Version" value="@feedback.Version" />
                                             <button type="submit" class="btn btn-sm btn-primary" aria-label="Save feedback for @feedback.Reviewer">Save</button>
                                         </form>
-                                        <a asp-page="/MilestoneReview" class="btn btn-sm btn-outline-secondary" aria-label="Cancel editing feedback for @feedback.Reviewer">Cancel</a>
+                                        <a asp-page="/MilestoneReview" asp-route-selectedReviewId="@Model.CurrentReview.Id" class="btn btn-sm btn-outline-secondary" aria-label="Cancel editing feedback for @feedback.Reviewer">Cancel</a>
                                     }
                                     else
                                     {
-                                        <a asp-page="/MilestoneReview" asp-route-editFeedbackId="@feedback.Id" class="btn btn-sm btn-outline-secondary" aria-label="Edit feedback for @feedback.Reviewer">Edit</a>
+                                        <a asp-page="/MilestoneReview" asp-route-selectedReviewId="@Model.CurrentReview.Id" asp-route-editFeedbackId="@feedback.Id" class="btn btn-sm btn-outline-secondary" aria-label="Edit feedback for @feedback.Reviewer">Edit</a>
                                     }
                                 </div>
                             }

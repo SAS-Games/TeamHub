@@ -57,6 +57,8 @@ public sealed class MilestoneReviewTests : IAsyncLifetime
                         CREATE TABLE MilestoneReviews (
                             Id TEXT, ProjectName TEXT, MilestoneName TEXT, Description TEXT,
                             Status INTEGER, CreatedBy TEXT, CreatedAt TEXT, PublishedAt TEXT);
+                        CREATE UNIQUE INDEX IX_MilestoneReviews_Status
+                            ON MilestoneReviews (Status) WHERE Status IN (0, 1);
                         CREATE TABLE MilestoneReviewAssignments (
                             ReviewId TEXT, ReviewerId TEXT, Reviewer TEXT);
                         CREATE TABLE MilestoneReviewFeedback (
@@ -92,6 +94,16 @@ public sealed class MilestoneReviewTests : IAsyncLifetime
                 addedColumns.Should().Contain("JiraTicketId", "ReviewerUserId", "JiraCommentId", "JiraSyncError");
                 addedColumns.Should().Contain("SessionDetails", "AdditionalFeedback");
                 addedColumns.Should().NotContain("WhatsBad");
+                await reader.DisposeAsync();
+
+                await using var index = context.Database.GetDbConnection().CreateCommand();
+                index.CommandText = "SELECT sql FROM sqlite_master WHERE type = 'index' AND name = 'IX_MilestoneReviews_Status'";
+                (await index.ExecuteScalarAsync()).Should().BeOfType<string>()
+                    .Which.Should().Contain("WHERE \"Status\" = 0").And.NotContain("IN (0, 1)");
+
+                await using var insert = context.Database.GetDbConnection().CreateCommand();
+                insert.CommandText = "INSERT INTO MilestoneReviews (Id, Status) VALUES ('one', 1), ('two', 1)";
+                (await insert.ExecuteNonQueryAsync()).Should().Be(2);
             }
             finally
             {
@@ -157,8 +169,10 @@ public sealed class MilestoneReviewTests : IAsyncLifetime
                 new CreateMilestoneReviewRequest("Project", "Next", "", null, [reviewerOne]), "admin@example.com");
             await upgradedService.PublishDraftAsync("admin@example.com");
             (await upgradedService.GetCurrentAsync())!.Feedback.Should().ContainSingle();
-            (await upgradedService.GetHistoryAsync()).Should().ContainSingle()
-                .Which.Feedback.Single().SessionDetails.Should().Be("PC");
+            (await upgradedService.GetHistoryAsync()).Should().BeEmpty();
+            var active = await upgradedService.GetActiveAsync();
+            active.Should().HaveCount(2);
+            active.Single(item => item.Id == current.Id).Feedback.Single().SessionDetails.Should().Be("PC");
         }
         finally
         {
@@ -253,7 +267,7 @@ public sealed class MilestoneReviewTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task PublishingNewReviewReplacesCurrentButRetainsPreviousReview()
+    public async Task PublishingNewReviewKeepsPreviousReviewActive()
     {
         await CreateAndPublishAsync([reviewerOne], "First milestone");
         var old = (await service.GetCurrentAsync())!;
@@ -266,24 +280,27 @@ public sealed class MilestoneReviewTests : IAsyncLifetime
         current.MilestoneName.Should().Be("Second milestone");
         current.Feedback.Select(item => item.ReviewerId).Should().ContainSingle().Which.Should().Be(reviewerTwo);
 
-        await using var command = connection.CreateCommand();
-        command.CommandText = "SELECT COUNT(*) FROM MilestoneReviews WHERE Id = $id AND Status = $status";
-        command.Parameters.AddWithValue("$id", old.Id);
-        command.Parameters.AddWithValue("$status", (int)MilestoneReviewStatus.Superseded);
-        Convert.ToInt32(await command.ExecuteScalarAsync()).Should().Be(1);
+        var active = await service.GetActiveAsync();
+        active.Select(item => item.MilestoneName).Should().Equal("Second milestone", "First milestone");
+        active.Should().OnlyContain(item => item.Status == MilestoneReviewStatus.Published);
         var oldFeedback = old.Feedback.Single();
-        var oldSave = () => service.SaveFeedbackAsync(
+        await service.SaveFeedbackAsync(
             new SaveMilestoneReviewFeedbackRequest(old.Id, oldFeedback.Id, oldFeedback.Version, "", "Late", "", ""),
             reviewerOne, isAdmin: true);
-        await oldSave.Should().ThrowAsync<InvalidOperationException>()
-            .WithMessage("*current published review*");
 
-        var history = await service.GetHistoryAsync();
-        history.Should().HaveCount(1);
-        history[0].Id.Should().Be(old.Id);
-        history[0].MilestoneName.Should().Be("First milestone");
-        history[0].Feedback.Should().HaveCount(1);
-        history[0].Feedback[0].ReviewerId.Should().Be(reviewerOne);
+        (await service.GetActiveAsync()).Single(item => item.Id == old.Id)
+            .Feedback.Single().WhatGood.Should().Be("Late");
+        (await service.GetHistoryAsync()).Should().BeEmpty();
+
+        var model = CreateModel(service, allowed: true);
+        model.SelectedReviewId = old.Id;
+        (await model.OnGetAsync(CancellationToken.None)).Should().BeOfType<PageResult>();
+        model.ActiveReviews.Should().HaveCount(2);
+        model.CurrentReview!.Id.Should().Be(old.Id);
+
+        await service.ArchiveAsync(old.Id, isAdmin: true);
+        (await service.GetActiveAsync()).Should().ContainSingle().Which.Id.Should().Be(current.Id);
+        (await service.GetHistoryAsync()).Should().ContainSingle().Which.Id.Should().Be(old.Id);
     }
 
     [Fact]
@@ -304,6 +321,7 @@ public sealed class MilestoneReviewTests : IAsyncLifetime
             new CreateMilestoneReviewRequest("Project", "Milestone 2", "M2 Desc", "TICK-2", [reviewerTwo]),
             "admin@example.com");
         await service.PublishDraftAsync("admin@example.com");
+        await service.ArchiveAsync(current.Id, isAdmin: true);
 
         var historyAfterSecond = await service.GetHistoryAsync();
         historyAfterSecond.Should().HaveCount(1);
@@ -314,6 +332,8 @@ public sealed class MilestoneReviewTests : IAsyncLifetime
             new CreateMilestoneReviewRequest("Project", "Milestone 3", "M3 Desc", "TICK-3", [reviewerOne]),
             "admin@example.com");
         await service.PublishDraftAsync("admin@example.com");
+        var milestoneTwo = (await service.GetActiveAsync()).Single(item => item.MilestoneName == "Milestone 2");
+        await service.ArchiveAsync(milestoneTwo.Id, isAdmin: true);
 
         var historyAfterThird = await service.GetHistoryAsync();
         historyAfterThird.Should().HaveCount(2);
@@ -365,7 +385,7 @@ public sealed class MilestoneReviewTests : IAsyncLifetime
         archived.AssignedReviewers.Should().BeEquivalentTo(saved.AssignedReviewers);
         var lateSave = () => service.SaveFeedbackAsync(
             save with { Version = saved.Feedback.Single().Version }, reviewerOne, isAdmin: true);
-        await lateSave.Should().ThrowAsync<InvalidOperationException>().WithMessage("*current published review*");
+        await lateSave.Should().ThrowAsync<InvalidOperationException>().WithMessage("*active published review*");
 
         await service.PublishDraftAsync("admin@example.com");
         (await service.GetCurrentAsync())!.Id.Should().Be(draft.Id);

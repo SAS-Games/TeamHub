@@ -10,9 +10,28 @@ public sealed partial class MilestoneReviewService(
 {
     public async Task<MilestoneReview?> GetCurrentAsync(CancellationToken cancellationToken = default)
     {
-        var review = await dbContext.Reviews.AsNoTracking()
-            .SingleOrDefaultAsync(item => item.Status == MilestoneReviewStatus.Published, cancellationToken);
+        var reviews = await dbContext.Reviews.AsNoTracking()
+            .Where(item => item.Status == MilestoneReviewStatus.Published)
+            .ToListAsync(cancellationToken);
+        var review = reviews.OrderByDescending(item => item.PublishedAt)
+            .ThenByDescending(item => item.CreatedAt)
+            .FirstOrDefault();
         return review is null ? null : await ToDtoAsync(review, cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<MilestoneReview>> GetActiveAsync(
+        CancellationToken cancellationToken = default)
+    {
+        var rawReviews = await dbContext.Reviews.AsNoTracking()
+            .Where(item => item.Status == MilestoneReviewStatus.Published)
+            .ToListAsync(cancellationToken);
+        var reviews = rawReviews.OrderByDescending(item => item.PublishedAt)
+            .ThenByDescending(item => item.CreatedAt)
+            .ToList();
+        var result = new List<MilestoneReview>(reviews.Count);
+        foreach (var review in reviews)
+            result.Add(await ToDtoAsync(review, cancellationToken));
+        return result;
     }
 
     public async Task<MilestoneReview?> GetDraftAsync(CancellationToken cancellationToken = default)
@@ -132,9 +151,6 @@ public sealed partial class MilestoneReviewService(
         if (draft is null) return null;
 
         var now = DateTimeOffset.UtcNow;
-        await dbContext.Reviews.Where(item => item.Status == MilestoneReviewStatus.Published)
-            .ExecuteUpdateAsync(update => update.SetProperty(
-                item => item.Status, MilestoneReviewStatus.Superseded), cancellationToken);
         draft.Status = MilestoneReviewStatus.Published;
         draft.PublishedAt = now;
         var assignments = await dbContext.Assignments.AsNoTracking()
@@ -265,7 +281,7 @@ public sealed partial class MilestoneReviewService(
         await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
         var review = await dbContext.Reviews.AsNoTracking().SingleOrDefaultAsync(
             item => item.Id == requests[0].ReviewId && item.Status == MilestoneReviewStatus.Published, cancellationToken)
-            ?? throw new InvalidOperationException("Only the current published review can receive restored feedback.");
+            ?? throw new InvalidOperationException("Only an active published review can receive restored feedback.");
         var assigned = await dbContext.Assignments.Where(item => item.ReviewId == review.Id)
             .Select(item => item.ReviewerId).ToListAsync(cancellationToken);
         var rows = await dbContext.Feedback.Where(item => item.ReviewId == review.Id).ToListAsync(cancellationToken);
@@ -313,7 +329,7 @@ public sealed partial class MilestoneReviewService(
         var isPublished = await dbContext.Reviews.AnyAsync(
             item => item.Id == request.ReviewId && item.Status == MilestoneReviewStatus.Published,
             cancellationToken);
-        if (!isPublished) throw new InvalidOperationException("Feedback can only be changed on the current published review.");
+        if (!isPublished) throw new InvalidOperationException("Feedback can only be changed on an active published review.");
 
         var feedback = await dbContext.Feedback.SingleOrDefaultAsync(
             item => item.Id == request.FeedbackId && item.ReviewId == request.ReviewId,
