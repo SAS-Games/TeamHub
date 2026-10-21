@@ -27,6 +27,12 @@ public class WorkflowConfigurationVersioningTests
                     StepName = "QA Signoff",
                     Owner = "qa@example.com",
                     ExpectedDurationHours = 8,
+                    ReminderSubjectTemplate = "Reminder: {StepName}",
+                    ReminderBodyTemplate = "Due {DueDate}",
+                    OverdueSubjectTemplate = "Overdue: {StepName}",
+                    OverdueBodyTemplate = "Overdue for {Recipient}",
+                    EscalationSubjectTemplate = "Level {EscalationLevel}: {StepName}",
+                    EscalationBodyTemplate = "Outstanding: {OutstandingAssignees}",
                     Required = true,
                     Enabled = true,
                     SortOrder = 1
@@ -41,7 +47,14 @@ public class WorkflowConfigurationVersioningTests
         var definition = await context.WorkflowDefinitions.Include(x => x.Steps).SingleAsync(x => x.WorkflowKey == "GAME_RELEASE");
         Assert.True(definition.IsActive);
         Assert.Equal("Game Release", definition.Name);
-        Assert.Equal("QA_SIGNOFF", Assert.Single(definition.Steps).StepKey);
+        var step = Assert.Single(definition.Steps);
+        Assert.Equal("QA_SIGNOFF", step.StepKey);
+        Assert.Equal("Reminder: {StepName}", step.ReminderSubjectTemplate);
+        Assert.Equal("Due {DueDate}", step.ReminderBodyTemplate);
+        Assert.Equal("Overdue: {StepName}", step.OverdueSubjectTemplate);
+        Assert.Equal("Overdue for {Recipient}", step.OverdueBodyTemplate);
+        Assert.Equal("Level {EscalationLevel}: {StepName}", step.EscalationSubjectTemplate);
+        Assert.Equal("Outstanding: {OutstandingAssignees}", step.EscalationBodyTemplate);
     }
 
     [Fact]

@@ -207,6 +207,7 @@
                     <h3 class="h6 mb-0">Workflow Steps</h3>
                     <button type="button" class="btn btn-sm btn-outline-primary" data-add-row>Add Step</button>
                 </div>
+                <div class="form-text mb-2">Optional step email templates support <code>{InstanceName}</code>, <code>{InstanceDescription}</code>, <code>{WorkflowName}</code>, <code>{WorkflowKey}</code>, <code>{StepName}</code>, <code>{StepDescription}</code>, <code>{Recipient}</code>, <code>{Assignee}</code>, <code>{DueDate}</code>, <code>{DueHours}</code>, <code>{EscalationLevel}</code>, <code>{OutstandingAssignees}</code>, and top-level workflow metadata keys.</div>
                 <div class="table-responsive mb-4">
                     <table class="table styled-table align-middle">
                         <thead><tr><th>Task ID (generated)</th><th>Name</th><th>Owner</th><th>Due date</th><th>Depends On</th><th>Escalations</th><th>Flags</th><th>Actions</th></tr></thead>
@@ -240,6 +241,15 @@
                                     <input asp-for="Input.Steps[index].EscalationLevel3AfterHours" type="number" min="0" step="0.5" class="form-control mt-2" data-field="EscalationLevel3AfterHours" placeholder="Level 3 hours" />
                                     <input asp-for="Input.Steps[index].EscalationLevel3Owners" class="form-control mt-1" data-field="EscalationLevel3Owners" list="registeredWorkflowEmails" placeholder="Level 3 emails" />
                                     <div class="form-text">Hours after due date; separate emails with semicolons.</div>
+                                    <details class="mt-2">
+                                        <summary>Email content</summary>
+                                        <input asp-for="Input.Steps[index].ReminderSubjectTemplate" class="form-control mt-2" data-field="ReminderSubjectTemplate" maxlength="1000" placeholder="Reminder subject" />
+                                        <textarea asp-for="Input.Steps[index].ReminderBodyTemplate" class="form-control mt-1" data-field="ReminderBodyTemplate" rows="2" placeholder="Reminder body"></textarea>
+                                        <input asp-for="Input.Steps[index].OverdueSubjectTemplate" class="form-control mt-2" data-field="OverdueSubjectTemplate" maxlength="1000" placeholder="Overdue subject" />
+                                        <textarea asp-for="Input.Steps[index].OverdueBodyTemplate" class="form-control mt-1" data-field="OverdueBodyTemplate" rows="2" placeholder="Overdue body"></textarea>
+                                        <input asp-for="Input.Steps[index].EscalationSubjectTemplate" class="form-control mt-2" data-field="EscalationSubjectTemplate" maxlength="1000" placeholder="Escalation subject" />
+                                        <textarea asp-for="Input.Steps[index].EscalationBodyTemplate" class="form-control mt-1" data-field="EscalationBodyTemplate" rows="2" placeholder="Escalation body"></textarea>
+                                    </details>
                                 </td>
                                 <td>
                                     <input asp-for="Input.Steps[index].SortOrder" type="hidden" data-field="SortOrder" />
@@ -341,6 +351,18 @@
                 row.children[4].append(makeInput(prefix, index, "DependsOnCsv", { placeholder: "STEP_A, STEP_B" }));
                 row.children[5].append(makeInput(prefix, index, "EscalationAfterHours", { type: "number", placeholder: "Level 1 hours" }), makeInput(prefix, index, "EscalationOwner", { placeholder: "Level 1 emails" }), makeInput(prefix, index, "EscalationLevel2AfterHours", { type: "number", placeholder: "Level 2 hours" }), makeInput(prefix, index, "EscalationLevel2Owners", { placeholder: "Level 2 emails" }), makeInput(prefix, index, "EscalationLevel3AfterHours", { type: "number", placeholder: "Level 3 hours" }), makeInput(prefix, index, "EscalationLevel3Owners", { placeholder: "Level 3 emails" }));
                 row.children[5].querySelectorAll("input:not([type='number'])").forEach(input => input.setAttribute("list", "registeredWorkflowEmails"));
+                const emailTemplates = document.createElement("details");
+                emailTemplates.className = "mt-2";
+                emailTemplates.innerHTML = "<summary>Email content</summary>";
+                emailTemplates.append(
+                    makeInput(prefix, index, "ReminderSubjectTemplate", { placeholder: "Reminder subject" }),
+                    makeInput(prefix, index, "ReminderBodyTemplate", { multiline: true, placeholder: "Reminder body" }),
+                    makeInput(prefix, index, "OverdueSubjectTemplate", { placeholder: "Overdue subject" }),
+                    makeInput(prefix, index, "OverdueBodyTemplate", { multiline: true, placeholder: "Overdue body" }),
+                    makeInput(prefix, index, "EscalationSubjectTemplate", { placeholder: "Escalation subject" }),
+                    makeInput(prefix, index, "EscalationBodyTemplate", { multiline: true, placeholder: "Escalation body" }));
+                emailTemplates.querySelectorAll("input, textarea").forEach((field, fieldIndex) => field.classList.add(fieldIndex === 0 ? "mt-2" : "mt-1"));
+                row.children[5].append(emailTemplates);
                 row.children[6].append(makeInput(prefix, index, "SortOrder", { type: "hidden", value: `${index + 1}` }), makeInput(prefix, index, "Required", { type: "checkbox", checkbox: true, checked: true }), makeInput(prefix, index, "Enabled", { type: "checkbox", checkbox: true, checked: true }));
                 row.children[7].append(makeInput(prefix, index, "Remove", { type: "hidden", value: "false" }));
                 row.children[7].insertAdjacentHTML("beforeend", `<button type="button" class="btn btn-sm btn-outline-danger" data-remove-row>Remove</button>`);

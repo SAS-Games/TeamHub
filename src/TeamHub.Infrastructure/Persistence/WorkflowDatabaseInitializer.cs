@@ -114,6 +114,9 @@ internal sealed class WorkflowDatabaseInitializer(WorkflowDbContext dbContext) :
             await AddEscalationColumnsAsync("WorkflowStepDefinitions", includeSentTimestamps: false, cancellationToken);
             await AddEscalationColumnsAsync("WorkflowStepInstances", includeSentTimestamps: true, cancellationToken);
             await AddEscalationColumnsAsync("WorkflowDraftStepDefinitions", includeSentTimestamps: false, cancellationToken);
+            await AddNotificationTemplateColumnsAsync("WorkflowStepDefinitions", cancellationToken);
+            await AddNotificationTemplateColumnsAsync("WorkflowStepInstances", cancellationToken);
+            await AddNotificationTemplateColumnsAsync("WorkflowDraftStepDefinitions", cancellationToken);
         }
         finally
         {
@@ -143,6 +146,23 @@ internal sealed class WorkflowDatabaseInitializer(WorkflowDbContext dbContext) :
             dbContext.WorkflowStepAssignees.AddRange(legacyAssignees);
             await dbContext.SaveChangesAsync(cancellationToken);
         }
+    }
+
+    private async Task AddNotificationTemplateColumnsAsync(
+        string tableName,
+        CancellationToken cancellationToken)
+    {
+        if (!await TableExistsAsync(tableName, cancellationToken))
+        {
+            return;
+        }
+
+        await AddColumnIfMissingAsync(tableName, "ReminderSubjectTemplate", "TEXT NULL", cancellationToken);
+        await AddColumnIfMissingAsync(tableName, "ReminderBodyTemplate", "TEXT NULL", cancellationToken);
+        await AddColumnIfMissingAsync(tableName, "OverdueSubjectTemplate", "TEXT NULL", cancellationToken);
+        await AddColumnIfMissingAsync(tableName, "OverdueBodyTemplate", "TEXT NULL", cancellationToken);
+        await AddColumnIfMissingAsync(tableName, "EscalationSubjectTemplate", "TEXT NULL", cancellationToken);
+        await AddColumnIfMissingAsync(tableName, "EscalationBodyTemplate", "TEXT NULL", cancellationToken);
     }
 
     private async Task AddEscalationColumnsAsync(

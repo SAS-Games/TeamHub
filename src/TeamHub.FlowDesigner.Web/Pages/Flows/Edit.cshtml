@@ -256,6 +256,23 @@
                     <details class="mb-3"><summary class="fw-semibold">Reminders and escalation</summary>
                         <div class="mt-3"><label class="form-label" for="taskReminderAfterHours">First reminder after (hours)</label><input class="form-control" id="taskReminderAfterHours" type="number" min="0" step="any" /></div>
                         <div class="mt-3"><label class="form-label" for="taskReminderRepeatHours">Repeat reminder every (hours)</label><input class="form-control" id="taskReminderRepeatHours" type="number" min="0" step="any" /></div>
+                        <details class="border rounded p-2 mt-3">
+                            <summary class="fw-semibold">Email content overrides <span class="text-secondary fw-normal">(optional)</span></summary>
+                            <div class="form-text mt-2">Leave a field empty to use the standard email. Available placeholders: <code>{InstanceName}</code>, <code>{InstanceDescription}</code>, <code>{WorkflowName}</code>, <code>{WorkflowKey}</code>, <code>{StepName}</code>, <code>{StepDescription}</code>, <code>{Recipient}</code>, <code>{Assignee}</code>, <code>{DueDate}</code>, <code>{DueHours}</code>, <code>{EscalationLevel}</code>, and <code>{OutstandingAssignees}</code>. Top-level workflow metadata keys can also be used, for example <code>{ProjectName}</code> or <code>{MilestoneName}</code> when supplied by a milestone review.</div>
+                            <label class="form-label mt-3" for="taskReminderSubjectTemplate">Reminder subject</label>
+                            <input class="form-control" id="taskReminderSubjectTemplate" maxlength="1000" placeholder="Reminder - {StepName}" />
+                            <label class="form-label mt-2" for="taskReminderBodyTemplate">Reminder body</label>
+                            <textarea class="form-control" id="taskReminderBodyTemplate" rows="3" placeholder="Task {StepName} is due at {DueDate}."></textarea>
+                            <label class="form-label mt-3" for="taskOverdueSubjectTemplate">Overdue subject</label>
+                            <input class="form-control" id="taskOverdueSubjectTemplate" maxlength="1000" placeholder="Overdue - {StepName}" />
+                            <label class="form-label mt-2" for="taskOverdueBodyTemplate">Overdue body</label>
+                            <textarea class="form-control" id="taskOverdueBodyTemplate" rows="3" placeholder="Task {StepName} is overdue."></textarea>
+                            <label class="form-label mt-3" for="taskEscalationSubjectTemplate">Escalation subject</label>
+                            <input class="form-control" id="taskEscalationSubjectTemplate" maxlength="1000" placeholder="Escalation level {EscalationLevel} - {StepName}" />
+                            <label class="form-label mt-2" for="taskEscalationBodyTemplate">Escalation body</label>
+                            <textarea class="form-control" id="taskEscalationBodyTemplate" rows="3" placeholder="Task {StepName} is overdue for {OutstandingAssignees}."></textarea>
+                            <div class="form-text mt-2">The escalation subject and body are shared across levels; use <code>{EscalationLevel}</code> to identify the level.</div>
+                        </details>
                         <div class="border rounded p-2 mt-3">
                             <div class="fw-semibold">Escalation level 1</div>
                             <label class="form-label mt-2" for="taskEscalationAfterHours">After due date (hours)</label>
