@@ -30,7 +30,7 @@ design; they do not describe the currently implemented summary.
 - Preview: a scrollable modal, like Jira comments, with Copy Report and exactly
   **Studio | Support Activity**, combining support and notes
   into clear short statements in simple, management-friendly English.
-- Access: **AI Reports Create or higher**, with existing Studio Support Read Only
+- Access: **AI Reports Create or higher**, with existing Support Summary Read Only
   access. Administrators have Full Access through the existing permission resolver;
   non-admin access-matrix grants also permit generation. Both section visibility
   and the POST require the report-generation feature flag; server-side checks
@@ -87,7 +87,7 @@ generation. No live AI inference or native document/email paste was performed.
 
 AI Reports UI correction: the section is now last on Support Summary, after
 Employee Effort Distribution, with a single Weekly Work Summary button.
-It is hidden without AI Reports Create access or Studio Support Read Only access,
+It is hidden without AI Reports Create access or Support Summary Read Only access,
 and whenever Report Generator is disabled in AI Services. Non-admin matrix grants permit
 generation; administrators retain Full Access. The permission/feature checks
 are enforced in both page handlers and the source adapter. Report results,

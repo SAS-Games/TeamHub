@@ -30,7 +30,7 @@ public sealed class SupportSummaryCommentsModel(
         CancellationToken cancellationToken)
     {
         SetResponseHeaders();
-        if (!await access.CanAsync(TeamHubModules.StudioSupport, AccessLevel.Edit, cancellationToken))
+        if (!await access.CanAsync(TeamHubModules.SupportSummary, AccessLevel.Edit, cancellationToken))
             return Forbid();
         if (!ModelState.IsValid)
             return Failure("Select a valid studio and ticket.", StatusCodes.Status400BadRequest);
@@ -69,7 +69,7 @@ public sealed class SupportSummaryCommentsModel(
         string studioId, string ticketId, bool isImage, string? commentId, string? attachmentId, CancellationToken cancellationToken)
     {
         SetResponseHeaders();
-        if (!await access.CanAsync(TeamHubModules.StudioSupport, AccessLevel.ReadOnly, cancellationToken))
+        if (!await access.CanAsync(TeamHubModules.SupportSummary, AccessLevel.ReadOnly, cancellationToken))
             return Forbid();
         if (!ModelState.IsValid)
             return Failure("Select a valid studio and ticket.", StatusCodes.Status400BadRequest);
@@ -86,7 +86,7 @@ public sealed class SupportSummaryCommentsModel(
             }
             var result = await comments.GetCommentsAsync(query, cancellationToken);
             var canWriteComments = result.CanWriteComments
-                && await access.CanAsync(TeamHubModules.StudioSupport, AccessLevel.Edit, cancellationToken);
+                && await access.CanAsync(TeamHubModules.SupportSummary, AccessLevel.Edit, cancellationToken);
             return new JsonResult(new
             {
                 result.TicketId,

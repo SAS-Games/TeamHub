@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using TeamHub.Application.Interfaces;
 using TeamHub.Application.Models;
+using TeamHub.Domain.Entities;
 using TeamHub.Domain.Enums;
 using TeamHub.Infrastructure.Persistence;
 
@@ -8,26 +9,45 @@ namespace TeamHub.Infrastructure.Services;
 
 public sealed class WorkflowReadService(WorkflowDbContext dbContext, IClock clock) : IWorkflowReadService
 {
-    public async Task<DashboardSummaryDto> GetDashboardSummaryAsync(CancellationToken cancellationToken = default)
+    public async Task<DashboardSummaryDto> GetDashboardSummaryAsync(
+        string? assignedTo = null,
+        CancellationToken cancellationToken = default)
     {
         var now = clock.UtcNow;
+        var visibleWorkflows = ApplyAssignmentVisibility(dbContext.WorkflowInstances, assignedTo);
+        var visibleWorkflowIds = visibleWorkflows.Select(instance => instance.Id);
 
         return new DashboardSummaryDto
         {
-            ActiveWorkflows = await dbContext.WorkflowInstances.CountAsync(x => x.Status == WorkflowInstanceStatus.InProgress, cancellationToken),
-            OverdueSteps = await dbContext.WorkflowStepInstances.CountAsync(x => x.WorkflowInstance.Status == WorkflowInstanceStatus.InProgress && x.Status == WorkflowStepStatus.InProgress && x.DueAtUtc < now, cancellationToken),
-            CompletedThisWeek = await dbContext.WorkflowInstances.CountAsync(x => x.Status == WorkflowInstanceStatus.Completed && x.CompletedAtUtc >= now.AddDays(-7), cancellationToken),
-            ActiveSteps = await dbContext.WorkflowStepInstances.CountAsync(x => x.WorkflowInstance.Status == WorkflowInstanceStatus.InProgress && x.Status == WorkflowStepStatus.InProgress, cancellationToken)
+            ActiveWorkflows = await visibleWorkflows.CountAsync(
+                instance => instance.Status == WorkflowInstanceStatus.InProgress,
+                cancellationToken),
+            OverdueSteps = await dbContext.WorkflowStepInstances.CountAsync(
+                step => visibleWorkflowIds.Contains(step.WorkflowInstanceId)
+                    && step.WorkflowInstance.Status == WorkflowInstanceStatus.InProgress
+                    && step.Status == WorkflowStepStatus.InProgress
+                    && step.DueAtUtc < now,
+                cancellationToken),
+            CompletedThisWeek = await visibleWorkflows.CountAsync(
+                instance => instance.Status == WorkflowInstanceStatus.Completed
+                    && instance.CompletedAtUtc >= now.AddDays(-7),
+                cancellationToken),
+            ActiveSteps = await dbContext.WorkflowStepInstances.CountAsync(
+                step => visibleWorkflowIds.Contains(step.WorkflowInstanceId)
+                    && step.WorkflowInstance.Status == WorkflowInstanceStatus.InProgress
+                    && step.Status == WorkflowStepStatus.InProgress,
+                cancellationToken)
         };
     }
 
     public async Task<IReadOnlyList<WorkflowSummaryDto>> GetWorkflowSummariesAsync(
         WorkflowInstanceStatus? status = null,
         int? limit = null,
+        string? assignedTo = null,
         CancellationToken cancellationToken = default)
     {
         var now = clock.UtcNow;
-        var query = dbContext.WorkflowInstances
+        var query = ApplyAssignmentVisibility(dbContext.WorkflowInstances, assignedTo)
             .Include(x => x.WorkflowDefinition)
             .Include(x => x.Steps)
             .AsQueryable();
@@ -71,6 +91,19 @@ public sealed class WorkflowReadService(WorkflowDbContext dbContext, IClock cloc
                 ActiveSteps = string.Join(", ", activeSteps.Select(x => x.StepName))
             };
         }).ToList();
+    }
+
+    private static IQueryable<WorkflowInstance> ApplyAssignmentVisibility(
+        IQueryable<WorkflowInstance> query,
+        string? assignedTo)
+    {
+        if (assignedTo is null) return query;
+
+        var normalizedAssignee = assignedTo.Trim().ToLowerInvariant();
+        if (normalizedAssignee.Length == 0) return query.Where(_ => false);
+
+        return query.Where(instance => instance.Steps.Any(step =>
+            step.Assignees.Any(assignee => assignee.Email.ToLower() == normalizedAssignee)));
     }
 
     public async Task<IReadOnlyList<TaskItemDto>> GetMyTasksAsync(string owner, bool includeAllOwners = false, CancellationToken cancellationToken = default)

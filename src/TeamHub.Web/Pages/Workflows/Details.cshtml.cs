@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
 using Microsoft.EntityFrameworkCore;
+using TeamHub.Authentication;
 using TeamHub.Domain.Entities;
 using TeamHub.Infrastructure.Persistence;
 
@@ -12,11 +13,16 @@ public class DetailsModel(WorkflowDbContext dbContext) : PageModel
 
     public async Task<IActionResult> OnGetAsync(Guid id)
     {
+        var canViewAll = User.IsInRole(TeamHubUserTypes.Admin)
+            || User.IsInRole(TeamHubUserTypes.Privileged);
+        var currentUser = User.Identity?.Name?.Trim().ToLowerInvariant() ?? string.Empty;
         Instance = await dbContext.WorkflowInstances
             .Include(x => x.WorkflowDefinition)
             .Include(x => x.Steps.OrderBy(s => s.SortOrder))
             .ThenInclude(step => step.Assignees)
-            .FirstOrDefaultAsync(x => x.Id == id);
+            .FirstOrDefaultAsync(x => x.Id == id
+                && (canViewAll || x.Steps.Any(step =>
+                    step.Assignees.Any(assignee => assignee.Email.ToLower() == currentUser))));
 
         if (Instance is null)
         {

@@ -3,7 +3,6 @@ using FluentAssertions;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
-using Microsoft.AspNetCore.Mvc;
 using TeamHub.AI.Contracts;
 using TeamHub.AI.ReportGenerator.Contracts;
 using TeamHub.Web.AccessControl;
@@ -29,7 +28,12 @@ public sealed class SupportSummaryModelTests
             new StubJiraService(),
             confluenceService,
             new StubPlanningService(),
-            new StubWorklogEffortService())
+            new StubWorklogEffortService(),
+            new StubWeeklySummaryService(),
+            new StubCurrentAccess(
+                AccessLevel.ReadOnly,
+                AccessLevel.Edit,
+                TeamHubUserTypes.Registered))
         {
             ReportPeriod = SupportSummaryModel.CustomPeriod,
             StartDate = new DateOnly(2026, 9, 14),
@@ -59,6 +63,71 @@ public sealed class SupportSummaryModelTests
         confluenceService.LastUpdateCommand.Notes.Should().Be("Notes");
         model.StatusMessage.Should().Be("Saved.");
         action.Should().BeOfType<RedirectResult>().Which.Url.Should().EndWith("#confluence");
+    }
+
+    [Theory]
+    [InlineData(AccessLevel.ReadOnly, false)]
+    [InlineData(AccessLevel.Edit, true)]
+    [InlineData(AccessLevel.FullAccess, true)]
+    public async Task OnGetAsync_ExposesConfluenceEditingFromSupportSummaryPermission(
+        AccessLevel studioSupportAccess,
+        bool expected)
+    {
+        var model = new SupportSummaryModel(
+            new StubStudioDirectoryService([]),
+            new StubMilestoneService([]),
+            new StubJiraService(),
+            new StubConfluenceService(),
+            new StubPlanningService(),
+            new StubWorklogEffortService(),
+            new StubWeeklySummaryService(),
+            new StubCurrentAccess(
+                AccessLevel.ReadOnly,
+                studioSupportAccess,
+                TeamHubUserTypes.Registered))
+        {
+            PageContext = new PageContext { HttpContext = new DefaultHttpContext() }
+        };
+
+        await model.OnGetAsync(CancellationToken.None);
+
+        model.CanEditConfluence.Should().Be(expected);
+    }
+
+    [Fact]
+    public async Task OnPostSaveConfluenceUpdateAsync_RejectsUsersWithoutSupportSummaryEditPermission()
+    {
+        var confluenceService = new StubConfluenceService();
+        var model = new SupportSummaryModel(
+            new StubStudioDirectoryService([]),
+            new StubMilestoneService([]),
+            new StubJiraService(),
+            confluenceService,
+            new StubPlanningService(),
+            new StubWorklogEffortService(),
+            new StubWeeklySummaryService(),
+            new StubCurrentAccess(
+                AccessLevel.ReadOnly,
+                AccessLevel.ReadOnly,
+                TeamHubUserTypes.Registered))
+        {
+            PageContext = new PageContext { HttpContext = new DefaultHttpContext() }
+        };
+
+        var action = await model.OnPostSaveConfluenceUpdateAsync(
+            "studio-1",
+            "page-1",
+            new DateOnly(2026, 9, 14),
+            8,
+            "Work",
+            "HPGDS",
+            "WMD",
+            "Action",
+            "Notes",
+            CancellationToken.None);
+
+        action.Should().BeOfType<ForbidResult>();
+        confluenceService.LastUpdateCommand.Should().BeNull();
     }
 
     [Fact]
@@ -118,7 +187,8 @@ public sealed class SupportSummaryModelTests
             confluenceService,
             new StubPlanningService(),
             effortService,
-            new StubWeeklySummaryService())
+            new StubWeeklySummaryService(),
+            new StubCurrentAccess(AccessLevel.FullAccess))
         {
             PageContext = new PageContext
             {
@@ -186,7 +256,8 @@ public sealed class SupportSummaryModelTests
             confluenceService,
             new StubPlanningService(),
             new StubWorklogEffortService(),
-            new StubWeeklySummaryService())
+            new StubWeeklySummaryService(),
+            new StubCurrentAccess(AccessLevel.FullAccess))
         {
             ReportPeriod = SupportSummaryModel.MonthlyPeriod,
             SelectedMonth = "2026-09",
@@ -220,7 +291,8 @@ public sealed class SupportSummaryModelTests
             confluenceService,
             new StubPlanningService(),
             new StubWorklogEffortService(),
-            new StubWeeklySummaryService())
+            new StubWeeklySummaryService(),
+            new StubCurrentAccess(AccessLevel.FullAccess))
         {
             ReportPeriod = SupportSummaryModel.CustomPeriod,
             StartDate = new DateOnly(2026, 9, 3),
@@ -262,7 +334,8 @@ public sealed class SupportSummaryModelTests
             new StubConfluenceService(),
             new StubPlanningService(),
             new StubWorklogEffortService { Error = new InvalidOperationException(diagnostic) },
-            new StubWeeklySummaryService())
+            new StubWeeklySummaryService(),
+            new StubCurrentAccess(AccessLevel.FullAccess))
         {
             PageContext = new PageContext
             {
@@ -308,7 +381,8 @@ public sealed class SupportSummaryModelTests
             new StubConfluenceService(),
             new StubPlanningService(),
             new StubWorklogEffortService(),
-            new StubWeeklySummaryService())
+            new StubWeeklySummaryService(),
+            new StubCurrentAccess(AccessLevel.FullAccess))
         {
             PageContext = new PageContext { HttpContext = new DefaultHttpContext() }
         };
@@ -365,7 +439,8 @@ public sealed class SupportSummaryModelTests
             new StubConfluenceService(),
             new StubPlanningService(),
             new StubWorklogEffortService(),
-            new StubWeeklySummaryService())
+            new StubWeeklySummaryService(),
+            new StubCurrentAccess(AccessLevel.FullAccess))
         {
             PageContext = new PageContext { HttpContext = new DefaultHttpContext() }
         };
@@ -503,7 +578,7 @@ public sealed class SupportSummaryModelTests
     }
 
     [Fact]
-    public async Task WeeklySummaryService_DeniesMissingStudioSupportPermission()
+    public async Task WeeklySummaryService_DeniesMissingSupportSummaryPermission()
     {
         var service = new WeeklyWorkSummaryService(
             new StubCurrentAccess(AccessLevel.Create, AccessLevel.NoAccess, TeamHubUserTypes.Registered),
@@ -655,7 +730,8 @@ public sealed class SupportSummaryModelTests
 
     private static SupportSummaryModel SummaryModel(StubWeeklySummaryService service) => new(
         new StubStudioDirectoryService([]), new StubMilestoneService([]), new StubJiraService(),
-        new StubConfluenceService(), new StubPlanningService(), new StubWorklogEffortService(), service)
+        new StubConfluenceService(), new StubPlanningService(), new StubWorklogEffortService(), service,
+        new StubCurrentAccess(AccessLevel.FullAccess))
     {
         SelectedMonth = "2026-09", Week = 1,
         PageContext = new PageContext

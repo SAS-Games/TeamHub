@@ -1,11 +1,18 @@
 using FluentAssertions;
+using System.Security.Claims;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc.RazorPages;
 using Microsoft.EntityFrameworkCore;
 using TeamHub.Application.Interfaces;
 using TeamHub.Application.Models;
+using TeamHub.Authentication;
 using TeamHub.Domain.Entities;
 using TeamHub.Domain.Enums;
 using TeamHub.Infrastructure.Persistence;
 using TeamHub.Infrastructure.Services;
+using TeamHub.Web.Pages.WorkCenter;
+using WorkflowDetailsModel = TeamHub.Web.Pages.Workflows.DetailsModel;
 
 namespace TeamHub.Tests;
 
@@ -361,6 +368,104 @@ public class WorkflowEngineTests
         completed.Single().CompletedAtUtc.Should().Be(clock.UtcNow.AddDays(-1));
     }
 
+    [Fact]
+    public async Task WorkflowSummaries_AndDashboard_FilterEveryStateByAnyTaskAssignment()
+    {
+        await using var context = CreateDbContext();
+        var clock = new TestClock(new DateTime(2026, 9, 4, 10, 0, 0, DateTimeKind.Utc));
+        var definition = SeedSimpleWorkflow(context);
+
+        context.WorkflowInstances.AddRange(
+            Run(definition, "Alice active", WorkflowInstanceStatus.InProgress, "alice@example.com", clock.UtcNow.AddHours(-2)),
+            Run(definition, "Bob active", WorkflowInstanceStatus.InProgress, "bob@example.com", clock.UtcNow.AddHours(-1)),
+            Run(definition, "Alice completed", WorkflowInstanceStatus.Completed, "alice@example.com", clock.UtcNow.AddDays(-2)),
+            Run(definition, "Bob completed", WorkflowInstanceStatus.Completed, "bob@example.com", clock.UtcNow.AddDays(-1)),
+            Run(definition, "Alice cancelled", WorkflowInstanceStatus.Cancelled, "alice@example.com", clock.UtcNow.AddDays(-4)),
+            Run(definition, "Bob cancelled", WorkflowInstanceStatus.Cancelled, "bob@example.com", clock.UtcNow.AddDays(-3)));
+        await context.SaveChangesAsync();
+
+        var service = new WorkflowReadService(context, clock);
+        var active = await service.GetWorkflowSummariesAsync(
+            WorkflowInstanceStatus.InProgress,
+            assignedTo: "ALICE@example.com");
+        var completed = await service.GetWorkflowSummariesAsync(
+            WorkflowInstanceStatus.Completed,
+            10,
+            "alice@example.com");
+        var cancelled = await service.GetWorkflowSummariesAsync(
+            WorkflowInstanceStatus.Cancelled,
+            10,
+            "alice@example.com");
+        var summary = await service.GetDashboardSummaryAsync("alice@example.com");
+
+        active.Should().ContainSingle().Which.InstanceName.Should().Be("Alice active");
+        completed.Should().ContainSingle().Which.InstanceName.Should().Be("Alice completed");
+        cancelled.Should().ContainSingle().Which.InstanceName.Should().Be("Alice cancelled");
+        summary.ActiveWorkflows.Should().Be(1);
+        summary.ActiveSteps.Should().Be(1);
+        summary.OverdueSteps.Should().Be(1);
+        summary.CompletedThisWeek.Should().Be(1);
+    }
+
+    [Theory]
+    [InlineData(TeamHubUserTypes.Registered, "person@example.com")]
+    [InlineData(TeamHubUserTypes.Privileged, null)]
+    [InlineData(TeamHubUserTypes.Admin, null)]
+    public async Task WorkCenterOverview_ScopesOnlyRegisteredUsers(
+        string role,
+        string? expectedAssignee)
+    {
+        var readService = new RecordingWorkflowReadService();
+        var model = new OverviewModel(readService)
+        {
+            PageContext = new PageContext
+            {
+                HttpContext = new DefaultHttpContext
+                {
+                    User = new ClaimsPrincipal(new ClaimsIdentity(
+                    [
+                        new Claim(ClaimTypes.Name, "person@example.com"),
+                        new Claim(ClaimTypes.Role, role)
+                    ], "Test"))
+                }
+            }
+        };
+
+        await model.OnGetAsync(CancellationToken.None);
+
+        readService.AssignmentScopes.Should().HaveCount(4)
+            .And.OnlyContain(scope => scope == expectedAssignee);
+    }
+
+    [Fact]
+    public async Task WorkflowDetails_UsesTheSameAssignmentVisibilityRule()
+    {
+        await using var context = CreateDbContext();
+        var clock = new TestClock(new DateTime(2026, 9, 4, 10, 0, 0, DateTimeKind.Utc));
+        var definition = SeedSimpleWorkflow(context);
+        var assigned = Run(
+            definition,
+            "Assigned",
+            WorkflowInstanceStatus.InProgress,
+            "person@example.com",
+            clock.UtcNow);
+        var unrelated = Run(
+            definition,
+            "Unrelated",
+            WorkflowInstanceStatus.InProgress,
+            "someone-else@example.com",
+            clock.UtcNow);
+        context.WorkflowInstances.AddRange(assigned, unrelated);
+        await context.SaveChangesAsync();
+
+        var registered = DetailsPage(context, TeamHubUserTypes.Registered);
+        (await registered.OnGetAsync(assigned.Id)).Should().BeOfType<PageResult>();
+        (await registered.OnGetAsync(unrelated.Id)).Should().BeOfType<NotFoundResult>();
+
+        var privileged = DetailsPage(context, TeamHubUserTypes.Privileged);
+        (await privileged.OnGetAsync(unrelated.Id)).Should().BeOfType<PageResult>();
+    }
+
 
     [Fact]
     public async Task MultiAssigneeTask_AdvancesOnlyAfterEveryAssigneeCompletes()
@@ -553,6 +658,58 @@ public class WorkflowEngineTests
         return definition;
     }
 
+    private static WorkflowInstance Run(
+        WorkflowDefinition definition,
+        string name,
+        WorkflowInstanceStatus status,
+        string assignee,
+        DateTime startedAtUtc)
+    {
+        var stepStatus = status switch
+        {
+            WorkflowInstanceStatus.InProgress => WorkflowStepStatus.InProgress,
+            WorkflowInstanceStatus.Completed => WorkflowStepStatus.Completed,
+            _ => WorkflowStepStatus.Cancelled
+        };
+        return new WorkflowInstance
+        {
+            WorkflowDefinition = definition,
+            InstanceName = name,
+            Status = status,
+            StartedAtUtc = startedAtUtc,
+            CompletedAtUtc = status == WorkflowInstanceStatus.Completed ? startedAtUtc.AddHours(1) : null,
+            CancelledAtUtc = status == WorkflowInstanceStatus.Cancelled ? startedAtUtc.AddHours(1) : null,
+            StartedBy = "admin@example.com",
+            Steps =
+            [
+                new WorkflowStepInstance
+                {
+                    StepKey = "ASSIGNED_TASK",
+                    StepName = "Assigned task",
+                    Status = stepStatus,
+                    DueAtUtc = startedAtUtc.AddHours(1),
+                    Required = true,
+                    Assignees = [new WorkflowStepAssignee { Email = assignee }]
+                }
+            ]
+        };
+    }
+
+    private static WorkflowDetailsModel DetailsPage(WorkflowDbContext context, string role) => new(context)
+    {
+        PageContext = new PageContext
+        {
+            HttpContext = new DefaultHttpContext
+            {
+                User = new ClaimsPrincipal(new ClaimsIdentity(
+                [
+                    new Claim(ClaimTypes.Name, "person@example.com"),
+                    new Claim(ClaimTypes.Role, role)
+                ], "Test"))
+            }
+        }
+    };
+
     private sealed class TestClock(DateTime utcNow) : IClock
     {
         public DateTime UtcNow { get; set; } = utcNow;
@@ -567,5 +724,34 @@ public class WorkflowEngineTests
             Sent.Add(message);
             return Task.CompletedTask;
         }
+    }
+
+    private sealed class RecordingWorkflowReadService : IWorkflowReadService
+    {
+        public List<string?> AssignmentScopes { get; } = [];
+
+        public Task<DashboardSummaryDto> GetDashboardSummaryAsync(
+            string? assignedTo = null,
+            CancellationToken cancellationToken = default)
+        {
+            AssignmentScopes.Add(assignedTo);
+            return Task.FromResult(new DashboardSummaryDto());
+        }
+
+        public Task<IReadOnlyList<WorkflowSummaryDto>> GetWorkflowSummariesAsync(
+            WorkflowInstanceStatus? status = null,
+            int? limit = null,
+            string? assignedTo = null,
+            CancellationToken cancellationToken = default)
+        {
+            AssignmentScopes.Add(assignedTo);
+            return Task.FromResult<IReadOnlyList<WorkflowSummaryDto>>([]);
+        }
+
+        public Task<IReadOnlyList<TaskItemDto>> GetMyTasksAsync(
+            string owner,
+            bool includeAllOwners = false,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult<IReadOnlyList<TaskItemDto>>([]);
     }
 }

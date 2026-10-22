@@ -7,6 +7,7 @@ using TeamHub.Milestones;
 using TeamHub.Studio;
 using TeamHub.Web.WorklogAnalytics;
 using TeamHub.Web.Reports;
+using TeamHub.Web.AccessControl;
 using TeamHub.AI.Contracts;
 using TeamHub.AI.ReportGenerator.Contracts;
 
@@ -20,6 +21,7 @@ public sealed class SupportSummaryModel(
     ISupportSummaryPlanningService planningService,
     IWorklogEffortService worklogEffortService,
     IWeeklyWorkSummaryService weeklyWorkSummaryService,
+    ICurrentAccessService currentAccessService,
     IServiceScopeFactory? serviceScopeFactory = null) : PageModel
 {
     public const string WeeklyPeriod = "Weekly";
@@ -57,6 +59,7 @@ public sealed class SupportSummaryModel(
             : "Something went wrong while loading logged effort. Please contact an administrator.";
     public bool IsUsingSharedJiraCredential { get; private set; }
     public bool CanManagePlanning => User.IsInRole(TeamHubUserTypes.Admin);
+    public bool CanEditConfluence { get; private set; }
     public bool CanGenerateWeeklyWorkSummary { get; private set; }
 
     [TempData]
@@ -68,6 +71,10 @@ public sealed class SupportSummaryModel(
     public async Task OnGetAsync(CancellationToken cancellationToken)
     {
         SetReportRange();
+        CanEditConfluence = await currentAccessService.CanAsync(
+            TeamHubModules.SupportSummary,
+            AccessLevel.Edit,
+            cancellationToken);
         CanGenerateWeeklyWorkSummary = await weeklyWorkSummaryService.CanGenerateAsync(cancellationToken);
         Studios = (await studioDirectoryService.GetStudiosAsync(cancellationToken))
             .Where(studio => studio.IsActive)
@@ -114,6 +121,14 @@ public sealed class SupportSummaryModel(
         string? notes,
         CancellationToken cancellationToken)
     {
+        if (!await currentAccessService.CanAsync(
+                TeamHubModules.SupportSummary,
+                AccessLevel.Edit,
+                cancellationToken))
+        {
+            return Forbid();
+        }
+
         UpdateStudioConfluenceResult result;
         try
         {

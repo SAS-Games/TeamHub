@@ -136,8 +136,8 @@ Access. Permission levels are ordered No Access, Read Only, Create, Edit,
 Delete, Full Access. Route middleware determines module and required operation.
 Pages must also check permissions for cross-module actions.
 
-Support Summary is a Studio Support page. Its bottom AI Reports section and
-generation endpoint require AI Reports Create access or higher, Studio Support
+Support Summary uses the Support Summary access module. Its bottom AI Reports section and
+generation endpoint require AI Reports Create access or higher, Support Summary
 Read Only access, and Report Generator enabled in Configuration > AI Services. Administrators receive
 Full Access through the existing permission resolver; non-admin matrix grants
 also authorize generation. Atlassian
