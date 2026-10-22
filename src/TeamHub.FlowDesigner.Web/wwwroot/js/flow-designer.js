@@ -224,7 +224,7 @@
         });
         byId("createChildFlowForm").addEventListener("submit", createChildFlow);
         ["taskReminderAfterHours", "taskReminderRepeatHours", "taskEscalationAfterHours", "taskEscalationLevel2AfterHours", "taskEscalationLevel3AfterHours"].forEach(id => byId(id).addEventListener("input", updateSelectedNode));
-        ["taskReminderSubjectTemplate", "taskReminderBodyTemplate", "taskOverdueSubjectTemplate", "taskOverdueBodyTemplate", "taskEscalationSubjectTemplate", "taskEscalationBodyTemplate"].forEach(id => byId(id).addEventListener("input", updateSelectedNode));
+        ["taskAssignmentSubjectTemplate", "taskAssignmentBodyTemplate", "taskReminderSubjectTemplate", "taskReminderBodyTemplate", "taskOverdueSubjectTemplate", "taskOverdueBodyTemplate", "taskEscalationSubjectTemplate", "taskEscalationBodyTemplate"].forEach(id => byId(id).addEventListener("input", updateSelectedNode));
         byId("taskExpectedHours").addEventListener("input", () => {
             byId("taskDueDate").value = dateFromHours(byId("taskExpectedHours").value);
             updateSelectedNode();
@@ -697,6 +697,8 @@
         byId("taskDueDate").min = dateFromHours(0);
         byId("taskReminderAfterHours").value = node.customProperties?.reminderAfterHours || "";
         byId("taskReminderRepeatHours").value = node.customProperties?.reminderRepeatHours || "";
+        byId("taskAssignmentSubjectTemplate").value = node.customProperties?.assignmentSubjectTemplate || "";
+        byId("taskAssignmentBodyTemplate").value = node.customProperties?.assignmentBodyTemplate || "";
         byId("taskReminderSubjectTemplate").value = node.customProperties?.reminderSubjectTemplate || "";
         byId("taskReminderBodyTemplate").value = node.customProperties?.reminderBodyTemplate || "";
         byId("taskOverdueSubjectTemplate").value = node.customProperties?.overdueSubjectTemplate || "";
@@ -1000,6 +1002,8 @@
                 expectedDurationHours: byId("taskExpectedHours").value,
                 reminderAfterHours: byId("taskReminderAfterHours").value,
                 reminderRepeatHours: byId("taskReminderRepeatHours").value,
+                assignmentSubjectTemplate: byId("taskAssignmentSubjectTemplate").value,
+                assignmentBodyTemplate: byId("taskAssignmentBodyTemplate").value,
                 reminderSubjectTemplate: byId("taskReminderSubjectTemplate").value,
                 reminderBodyTemplate: byId("taskReminderBodyTemplate").value,
                 overdueSubjectTemplate: byId("taskOverdueSubjectTemplate").value,

@@ -3,7 +3,8 @@ using Microsoft.EntityFrameworkCore;
 namespace TeamHub.Team;
 
 internal sealed class SqliteTeamDirectoryService(TeamDbContext dbContext)
-    : ITeamDirectoryService, ITeamConfigurationService, ITeamAchievementService, IPageTextAppearanceService
+    : ITeamDirectoryService, ITeamConfigurationService, ITeamAchievementService, IPageTextAppearanceService,
+        IPageLayoutService
 {
     public async Task<TeamDirectoryDto> GetTeamDirectoryAsync(CancellationToken cancellationToken = default)
     {
@@ -263,6 +264,73 @@ internal sealed class SqliteTeamDirectoryService(TeamDbContext dbContext)
         }
 
         await dbContext.SaveChangesAsync(cancellationToken);
+    }
+
+    public async Task<string?> GetPageWidthAsync(
+        string pageKey,
+        CancellationToken cancellationToken = default)
+    {
+        var normalizedPageKey = NormalizePageKey(pageKey);
+        if (normalizedPageKey.Length == 0)
+        {
+            return null;
+        }
+
+        return await dbContext.PageLayoutSettings
+            .AsNoTracking()
+            .Where(setting => setting.PageKey == normalizedPageKey)
+            .Select(setting => setting.PageWidth)
+            .FirstOrDefaultAsync(cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<PageLayoutSettingDto>> GetPageWidthsAsync(
+        CancellationToken cancellationToken = default) =>
+        await dbContext.PageLayoutSettings
+            .AsNoTracking()
+            .OrderBy(setting => setting.PageKey)
+            .Select(setting => new PageLayoutSettingDto
+            {
+                PageKey = setting.PageKey,
+                PageWidth = setting.PageWidth
+            })
+            .ToListAsync(cancellationToken);
+
+    public async Task SavePageWidthsAsync(
+        IReadOnlyCollection<PageLayoutSettingDto> settings,
+        CancellationToken cancellationToken = default)
+    {
+        var normalizedSettings = settings
+            .Select(setting => new PageLayoutSettingDto
+            {
+                PageKey = NormalizePageKey(setting.PageKey),
+                PageWidth = CustomTeamPageWidths.Normalize(setting.PageWidth)
+            })
+            .Where(setting => setting.PageKey.Length > 0)
+            .GroupBy(setting => setting.PageKey, StringComparer.OrdinalIgnoreCase)
+            .Select(group => group.Last())
+            .ToList();
+
+        foreach (var setting in normalizedSettings)
+        {
+            var record = await dbContext.PageLayoutSettings
+                .FirstOrDefaultAsync(item => item.PageKey == setting.PageKey, cancellationToken);
+            if (record is null)
+            {
+                record = new PageLayoutSettingRecord { PageKey = setting.PageKey };
+                dbContext.PageLayoutSettings.Add(record);
+            }
+
+            record.PageWidth = setting.PageWidth;
+            record.UpdatedAtUtc = DateTime.UtcNow;
+        }
+
+        await dbContext.SaveChangesAsync(cancellationToken);
+    }
+
+    private static string NormalizePageKey(string? pageKey)
+    {
+        var normalized = pageKey?.Trim().Replace('\\', '/').ToLowerInvariant() ?? string.Empty;
+        return normalized.Length == 0 || normalized.StartsWith('/') ? normalized : $"/{normalized}";
     }
 
     private async Task<TeamMemberRecord> FindOrCreateMemberAsync(string id, CancellationToken cancellationToken)

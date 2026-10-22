@@ -24,6 +24,13 @@ internal sealed class PageTextAppearanceRecord
     public DateTime UpdatedAtUtc { get; set; } = DateTime.UtcNow;
 }
 
+internal sealed class PageLayoutSettingRecord
+{
+    public string PageKey { get; set; } = string.Empty;
+    public string PageWidth { get; set; } = CustomTeamPageWidths.Standard;
+    public DateTime UpdatedAtUtc { get; set; } = DateTime.UtcNow;
+}
+
 internal sealed class SupportSpecializationRecord
 {
     public Guid Id { get; set; } = Guid.NewGuid();
@@ -51,6 +58,7 @@ internal sealed class TeamDbContext(DbContextOptions<TeamDbContext> options) : D
     public DbSet<SupportSpecializationRecord> SupportSpecializations => Set<SupportSpecializationRecord>();
     public DbSet<TeamAchievementRecord> TeamAchievements => Set<TeamAchievementRecord>();
     public DbSet<PageTextAppearanceRecord> PageTextAppearances => Set<PageTextAppearanceRecord>();
+    public DbSet<PageLayoutSettingRecord> PageLayoutSettings => Set<PageLayoutSettingRecord>();
     internal DbSet<CustomTeamTabRecord> CustomTeamTabs => Set<CustomTeamTabRecord>();
     internal DbSet<CustomTeamTableRecord> CustomTeamTables => Set<CustomTeamTableRecord>();
     internal DbSet<CustomTeamColumnRecord> CustomTeamColumns => Set<CustomTeamColumnRecord>();
@@ -94,6 +102,14 @@ internal sealed class TeamDbContext(DbContextOptions<TeamDbContext> options) : D
             entity.HasKey(x => new { x.PageKey, x.ColumnKey });
             entity.Property(x => x.PageKey).HasMaxLength(128);
             entity.Property(x => x.ColumnKey).HasMaxLength(128);
+        });
+
+        modelBuilder.Entity<PageLayoutSettingRecord>(entity =>
+        {
+            entity.ToTable("PageLayoutSettings");
+            entity.HasKey(x => x.PageKey);
+            entity.Property(x => x.PageKey).HasMaxLength(256);
+            entity.Property(x => x.PageWidth).HasMaxLength(16);
         });
 
         modelBuilder.Entity<CustomTeamTabRecord>(entity =>

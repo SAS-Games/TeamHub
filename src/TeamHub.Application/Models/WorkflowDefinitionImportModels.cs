@@ -20,6 +20,8 @@ public sealed class WorkflowStepDefinitionDto
     public List<string> DependsOn { get; set; } = new();
     public double? ReminderAfterHours { get; set; }
     public double? ReminderRepeatHours { get; set; }
+    public string? AssignmentSubjectTemplate { get; set; }
+    public string? AssignmentBodyTemplate { get; set; }
     public string? ReminderSubjectTemplate { get; set; }
     public string? ReminderBodyTemplate { get; set; }
     public string? OverdueSubjectTemplate { get; set; }
@@ -75,6 +77,8 @@ public sealed class WorkflowDraftStepDto
     public string DependsOnCsv { get; set; } = string.Empty;
     public double? ReminderAfterHours { get; set; }
     public double? ReminderRepeatHours { get; set; }
+    public string? AssignmentSubjectTemplate { get; set; }
+    public string? AssignmentBodyTemplate { get; set; }
     public string? ReminderSubjectTemplate { get; set; }
     public string? ReminderBodyTemplate { get; set; }
     public string? OverdueSubjectTemplate { get; set; }

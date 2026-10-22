@@ -1,0 +1,48 @@
+@model WorkflowNotificationInbox
+
+<div class="dropdown teamhub-notifications">
+    <button class="btn btn-sm teamhub-notification-bell"
+            type="button"
+            data-bs-toggle="dropdown"
+            data-bs-auto-close="outside"
+            aria-expanded="false"
+            aria-label="Notifications, @Model.UnreadCount unread">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M12 22a2.5 2.5 0 0 0 2.35-1.65h-4.7A2.5 2.5 0 0 0 12 22Zm7-5.5-1.5-1.75V10a5.5 5.5 0 0 0-4.25-5.35V4a1.25 1.25 0 0 0-2.5 0v.65A5.5 5.5 0 0 0 6.5 10v4.75L5 16.5V18h14v-1.5Z" />
+        </svg>
+        @if (Model.UnreadCount > 0)
+        {
+            <span class="teamhub-notification-count">@(Model.UnreadCount > 99 ? "99+" : Model.UnreadCount)</span>
+        }
+    </button>
+    <div class="dropdown-menu dropdown-menu-end teamhub-notification-menu">
+        <div class="teamhub-notification-heading">
+            <strong>Notifications</strong>
+            <span>@Model.UnreadCount unread</span>
+        </div>
+        @if (Model.Notifications.Count == 0)
+        {
+            <div class="teamhub-notification-empty">You are all caught up.</div>
+        }
+        else
+        {
+            <div class="teamhub-notification-list">
+                @foreach (var notification in Model.Notifications)
+                {
+                    <a class="teamhub-notification-item"
+                       asp-page="/Notifications/Open"
+                       asp-route-id="@notification.Id">
+                        <span class="teamhub-notification-type">@notification.Type.ToString()</span>
+                        <strong>@notification.Subject</strong>
+                        @if (!string.IsNullOrWhiteSpace(notification.BodyPreview))
+                        {
+                            <span>@notification.BodyPreview</span>
+                        }
+                        <time datetime="@notification.CreatedAtUtc.ToString("O")">@notification.CreatedAtUtc.ToString("yyyy-MM-dd HH:mm") UTC</time>
+                    </a>
+                }
+            </div>
+        }
+        <a class="teamhub-notification-footer" asp-page="/Notifications/Index">View all notifications</a>
+    </div>
+</div>

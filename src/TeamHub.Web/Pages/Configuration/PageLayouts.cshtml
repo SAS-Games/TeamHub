@@ -1,0 +1,68 @@
+@page "/Configuration/PageLayouts"
+@model TeamHub.Web.Pages.Configuration.PageLayoutsModel
+@using TeamHub.Team
+@{
+    ViewData["Title"] = "Page Layout Configuration";
+}
+
+<div class="page-hero">
+    <div>
+        <div class="eyebrow">Configuration</div>
+        <h1>Page Layouts</h1>
+        <p>Choose how much horizontal space each TeamHub page can use.</p>
+    </div>
+    <a class="btn btn-outline-secondary" asp-page="/Configuration/Index">All Configuration</a>
+</div>
+
+@if (!string.IsNullOrWhiteSpace(Model.StatusMessage))
+{
+    <div class="alert alert-success mt-3">@Model.StatusMessage</div>
+}
+
+<form method="post" asp-page-handler="Save">
+    <div asp-validation-summary="All" class="alert alert-danger"></div>
+
+    @foreach (var category in Model.Pages.Select(page => page.Category).Distinct())
+    {
+        <section class="content-section">
+            <div class="section-heading">
+                <div><span>Page width</span><h2>@category</h2></div>
+            </div>
+            <div class="table-responsive">
+                <table class="table align-middle mb-0">
+                    <thead>
+                        <tr>
+                            <th>Page</th>
+                            <th>Razor page</th>
+                            <th style="width: 15rem;">Width</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                    @foreach (var entry in Model.Pages.Select((page, index) => new { Page = page, Index = index }).Where(entry => entry.Page.Category == category))
+                    {
+                        <tr>
+                            <td class="fw-semibold">@entry.Page.Name</td>
+                            <td><code>@entry.Page.PageKey</code></td>
+                            <td>
+                                <input type="hidden" name="Pages[@entry.Index].PageKey" value="@entry.Page.PageKey" />
+                                <select name="Pages[@entry.Index].PageWidth" class="form-select" aria-label="Width for @entry.Page.Name">
+                                    <option value="@CustomTeamPageWidths.Standard" selected="@(entry.Page.PageWidth == CustomTeamPageWidths.Standard)">Standard</option>
+                                    <option value="@CustomTeamPageWidths.Wide" selected="@(entry.Page.PageWidth == CustomTeamPageWidths.Wide)">Wide</option>
+                                    <option value="@CustomTeamPageWidths.Full" selected="@(entry.Page.PageWidth == CustomTeamPageWidths.Full)">Full width</option>
+                                </select>
+                            </td>
+                        </tr>
+                    }
+                    </tbody>
+                </table>
+            </div>
+        </section>
+    }
+
+    <div class="alert alert-secondary">
+        Custom Team tab widths remain configurable with each tab under <a asp-page="/Team/Configuration">Team Configuration</a>.
+        The full-screen flow editor keeps its dedicated full-bleed layout.
+    </div>
+
+    <button class="btn btn-primary" type="submit">Save Page Layouts</button>
+</form>

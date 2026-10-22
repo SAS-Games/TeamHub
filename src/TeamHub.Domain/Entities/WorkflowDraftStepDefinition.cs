@@ -15,6 +15,8 @@ public sealed class WorkflowDraftStepDefinition
     public string DependsOnCsv { get; set; } = string.Empty;
     public double? ReminderAfterHours { get; set; }
     public double? ReminderRepeatHours { get; set; }
+    public string? AssignmentSubjectTemplate { get; set; }
+    public string? AssignmentBodyTemplate { get; set; }
     public string? ReminderSubjectTemplate { get; set; }
     public string? ReminderBodyTemplate { get; set; }
     public string? OverdueSubjectTemplate { get; set; }

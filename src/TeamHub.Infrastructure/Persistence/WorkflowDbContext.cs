@@ -41,6 +41,7 @@ public sealed class WorkflowDbContext(DbContextOptions<WorkflowDbContext> option
             e.Property(x => x.EscalationOwner).HasMaxLength(2000);
             e.Property(x => x.EscalationLevel2Owners).HasMaxLength(2000);
             e.Property(x => x.EscalationLevel3Owners).HasMaxLength(2000);
+            e.Property(x => x.AssignmentSubjectTemplate).HasMaxLength(1000);
             e.Property(x => x.ReminderSubjectTemplate).HasMaxLength(1000);
             e.Property(x => x.OverdueSubjectTemplate).HasMaxLength(1000);
             e.Property(x => x.EscalationSubjectTemplate).HasMaxLength(1000);
@@ -82,6 +83,7 @@ public sealed class WorkflowDbContext(DbContextOptions<WorkflowDbContext> option
             e.Property(x => x.EscalationOwner).HasMaxLength(2000);
             e.Property(x => x.EscalationLevel2Owners).HasMaxLength(2000);
             e.Property(x => x.EscalationLevel3Owners).HasMaxLength(2000);
+            e.Property(x => x.AssignmentSubjectTemplate).HasMaxLength(1000);
             e.Property(x => x.ReminderSubjectTemplate).HasMaxLength(1000);
             e.Property(x => x.OverdueSubjectTemplate).HasMaxLength(1000);
             e.Property(x => x.EscalationSubjectTemplate).HasMaxLength(1000);
@@ -172,6 +174,7 @@ public sealed class WorkflowDbContext(DbContextOptions<WorkflowDbContext> option
             e.Property(x => x.EscalationOwner).HasMaxLength(2000);
             e.Property(x => x.EscalationLevel2Owners).HasMaxLength(2000);
             e.Property(x => x.EscalationLevel3Owners).HasMaxLength(2000);
+            e.Property(x => x.AssignmentSubjectTemplate).HasMaxLength(1000);
             e.Property(x => x.ReminderSubjectTemplate).HasMaxLength(1000);
             e.Property(x => x.OverdueSubjectTemplate).HasMaxLength(1000);
             e.Property(x => x.EscalationSubjectTemplate).HasMaxLength(1000);

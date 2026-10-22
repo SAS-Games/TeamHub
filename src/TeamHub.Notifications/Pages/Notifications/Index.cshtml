@@ -1,0 +1,51 @@
+@page "/Notifications"
+@model TeamHub.Notifications.Pages.Notifications.IndexModel
+@{
+    ViewData["Title"] = "Notifications";
+}
+
+<div class="page-hero">
+    <div>
+        <span class="eyebrow">Work Center</span>
+        <h1>Notifications</h1>
+        <p>Workflow task notifications sent to you by email.</p>
+    </div>
+    @if (Model.Inbox.UnreadCount > 0)
+    {
+        <form method="post" asp-page-handler="MarkAllRead">
+            <button class="btn btn-outline-secondary" type="submit">Mark all as read</button>
+        </form>
+    }
+</div>
+
+<section class="content-section">
+    <div class="section-heading">
+        <div>
+            <span>Inbox</span>
+            <h2>@Model.Inbox.UnreadCount unread</h2>
+        </div>
+    </div>
+    @if (Model.Inbox.Notifications.Count == 0)
+    {
+        <div class="section-body text-secondary">You are all caught up.</div>
+    }
+    else
+    {
+        <div class="notification-page-list">
+            @foreach (var notification in Model.Inbox.Notifications)
+            {
+                <a class="notification-page-item" asp-page="/Notifications/Open" asp-route-id="@notification.Id">
+                    <div>
+                        <span class="teamhub-notification-type">@notification.Type.ToString()</span>
+                        <strong>@notification.Subject</strong>
+                        @if (!string.IsNullOrWhiteSpace(notification.BodyPreview))
+                        {
+                            <p>@notification.BodyPreview</p>
+                        }
+                    </div>
+                    <time datetime="@notification.CreatedAtUtc.ToString("O")">@notification.CreatedAtUtc.ToString("yyyy-MM-dd HH:mm") UTC</time>
+                </a>
+            }
+        </div>
+    }
+</section>

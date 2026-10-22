@@ -16,6 +16,9 @@ using TeamHub.Infrastructure;
 using TeamHub.Infrastructure.Persistence;
 using TeamHub.Milestones;
 using TeamHub.MilestoneReview;
+using TeamHub.Notifications;
+using TeamHub.Notifications.DependencyInjection;
+using TeamHub.Notifications.Persistence;
 using TeamHub.Studio;
 using TeamHub.Team;
 using TeamHub.Web.Home;
@@ -43,7 +46,8 @@ ConfigurationFilePaths.ResolveConfiguredPaths(builder.Configuration, builder.Env
 var dataDir = Path.Combine(builder.Environment.ContentRootPath, "data");
 Directory.CreateDirectory(dataDir);
 
-builder.Configuration["ConnectionStrings:WorkflowDb"] = $"Data Source={Path.Combine(dataDir, "workflow.db")}";
+var workflowConnectionString = $"Data Source={Path.Combine(dataDir, "workflow.db")}";
+builder.Configuration["ConnectionStrings:WorkflowDb"] = workflowConnectionString;
 builder.Configuration["ConnectionStrings:TeamDb"] = $"Data Source={Path.Combine(dataDir, "team.db")}";
 builder.Configuration["ConnectionStrings:StudioDb"] = $"Data Source={Path.Combine(dataDir, "studio.db")}";
 builder.Configuration["TeamExcel:UploadDirectory"] = Path.Combine(dataDir, "team-excel");
@@ -58,7 +62,8 @@ var dataProtectionKeysPath = Path.Combine(dataDir, "protection-keys");
 Directory.CreateDirectory(dataProtectionKeysPath);
 
 // Add services to the container.
-builder.Services.AddRazorPages();
+builder.Services.AddRazorPages()
+    .AddApplicationPart(typeof(NotificationModuleMarker).Assembly);
 builder.Services.AddMemoryCache();
 builder.Services.AddSingleton<ISafeMarkdownRenderer, SafeMarkdownRenderer>();
 builder.Services.Configure<WorklogAnalyticsOptions>(
@@ -83,6 +88,7 @@ builder.Services.AddAuthorization();
 builder.Services.AddScoped<ICurrentAccessService, CurrentAccessService>();
 builder.Services.AddSingleton<ITeamHubModuleCatalog, TeamHubModuleCatalog>();
 builder.Services.AddWorkflowInfrastructure(builder.Configuration);
+builder.Services.AddTeamHubNotifications(workflowConnectionString);
 builder.Services.AddScoped<INotificationRecipientResolver, TeamHubNotificationRecipientResolver>();
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<ICurrentUserProvider, TeamHubFlowCurrentUserProvider>();
@@ -118,6 +124,7 @@ using (var scope = app.Services.CreateScope())
     var userAccess = scope.ServiceProvider.GetRequiredService<IUserAccessService>();
     await userAccess.InitializeAsync();
     await scope.ServiceProvider.GetRequiredService<IWorkflowDatabaseInitializer>().InitializeAsync();
+    await scope.ServiceProvider.GetRequiredService<INotificationDatabaseInitializer>().InitializeAsync();
     var studioDatabase = scope.ServiceProvider.GetRequiredService<IStudioDatabaseInitializer>();
     studioDatabase.InitializeAsync().GetAwaiter().GetResult();
     var teamDatabase = scope.ServiceProvider.GetRequiredService<ITeamDatabaseInitializer>();

@@ -195,6 +195,8 @@ public sealed class WorkCenterFlowPublicationService(
                     .OrderBy(key => key, StringComparer.OrdinalIgnoreCase)),
                 ReminderAfterHours = GetDouble(node.CustomProperties, "reminderAfterHours"),
                 ReminderRepeatHours = GetDouble(node.CustomProperties, "reminderRepeatHours"),
+                AssignmentSubjectTemplate = Get(node.CustomProperties, "assignmentSubjectTemplate"),
+                AssignmentBodyTemplate = Get(node.CustomProperties, "assignmentBodyTemplate"),
                 ReminderSubjectTemplate = Get(node.CustomProperties, "reminderSubjectTemplate"),
                 ReminderBodyTemplate = Get(node.CustomProperties, "reminderBodyTemplate"),
                 OverdueSubjectTemplate = Get(node.CustomProperties, "overdueSubjectTemplate"),

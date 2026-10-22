@@ -222,6 +222,35 @@ public sealed class TeamDirectoryTests
     }
 
     [Fact]
+    public async Task PageLayouts_AreStoredPerRazorPageAndNormalizeWidths()
+    {
+        var dbPath = CreateDatabasePath();
+        try
+        {
+            await using var provider = CreateServices(dbPath);
+            await using var scope = provider.CreateAsyncScope();
+            await scope.ServiceProvider.GetRequiredService<ITeamDatabaseInitializer>().InitializeAsync();
+            var layouts = scope.ServiceProvider.GetRequiredService<IPageLayoutService>();
+
+            await layouts.SavePageWidthsAsync([
+                new() { PageKey = "/MilestoneReview", PageWidth = "wide" },
+                new() { PageKey = "SupportSummary", PageWidth = CustomTeamPageWidths.Full }
+            ]);
+
+            (await layouts.GetPageWidthAsync("/MILESTONEREVIEW"))
+                .Should().Be(CustomTeamPageWidths.Wide);
+            (await layouts.GetPageWidthAsync("/supportsummary"))
+                .Should().Be(CustomTeamPageWidths.Full);
+            (await layouts.GetPageWidthAsync("/Index")).Should().BeNull();
+            (await layouts.GetPageWidthsAsync()).Should().HaveCount(2);
+        }
+        finally
+        {
+            DeleteDatabase(dbPath);
+        }
+    }
+
+    [Fact]
     public async Task Initializer_AddsSectionToAnExistingTeamMembersTable()
     {
         var dbPath = CreateDatabasePath();

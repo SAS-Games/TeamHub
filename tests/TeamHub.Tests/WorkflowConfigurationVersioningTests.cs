@@ -27,6 +27,8 @@ public class WorkflowConfigurationVersioningTests
                     StepName = "QA Signoff",
                     Owner = "qa@example.com",
                     ExpectedDurationHours = 8,
+                    AssignmentSubjectTemplate = "Assigned: {ProjectName} - {StepName}",
+                    AssignmentBodyTemplate = "Hello {Recipient}; due {DueDate}",
                     ReminderSubjectTemplate = "Reminder: {StepName}",
                     ReminderBodyTemplate = "Due {DueDate}",
                     OverdueSubjectTemplate = "Overdue: {StepName}",
@@ -49,6 +51,8 @@ public class WorkflowConfigurationVersioningTests
         Assert.Equal("Game Release", definition.Name);
         var step = Assert.Single(definition.Steps);
         Assert.Equal("QA_SIGNOFF", step.StepKey);
+        Assert.Equal("Assigned: {ProjectName} - {StepName}", step.AssignmentSubjectTemplate);
+        Assert.Equal("Hello {Recipient}; due {DueDate}", step.AssignmentBodyTemplate);
         Assert.Equal("Reminder: {StepName}", step.ReminderSubjectTemplate);
         Assert.Equal("Due {DueDate}", step.ReminderBodyTemplate);
         Assert.Equal("Overdue: {StepName}", step.OverdueSubjectTemplate);

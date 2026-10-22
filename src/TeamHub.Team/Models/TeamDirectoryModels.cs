@@ -80,6 +80,12 @@ public sealed class PageTextAppearanceDto
     }
 }
 
+public sealed class PageLayoutSettingDto
+{
+    public string PageKey { get; set; } = string.Empty;
+    public string PageWidth { get; set; } = CustomTeamPageWidths.Standard;
+}
+
 public sealed record TeamPageColumnDefinition(string Key, string Label);
 
 public sealed record TeamPageAppearanceDefinition(

@@ -253,12 +253,16 @@
                         </div>
                         <div class="form-text" id="taskDueDateHelp">The date calculates due hours. You can adjust the hours directly; each workflow run uses that duration from task start.</div>
                     </div>
-                    <details class="mb-3"><summary class="fw-semibold">Reminders and escalation</summary>
+                    <details class="mb-3"><summary class="fw-semibold">Email notifications and escalation</summary>
                         <div class="mt-3"><label class="form-label" for="taskReminderAfterHours">First reminder after (hours)</label><input class="form-control" id="taskReminderAfterHours" type="number" min="0" step="any" /></div>
                         <div class="mt-3"><label class="form-label" for="taskReminderRepeatHours">Repeat reminder every (hours)</label><input class="form-control" id="taskReminderRepeatHours" type="number" min="0" step="any" /></div>
                         <details class="border rounded p-2 mt-3">
                             <summary class="fw-semibold">Email content overrides <span class="text-secondary fw-normal">(optional)</span></summary>
-                            <div class="form-text mt-2">Leave a field empty to use the standard email. Available placeholders: <code>{InstanceName}</code>, <code>{InstanceDescription}</code>, <code>{WorkflowName}</code>, <code>{WorkflowKey}</code>, <code>{StepName}</code>, <code>{StepDescription}</code>, <code>{Recipient}</code>, <code>{Assignee}</code>, <code>{DueDate}</code>, <code>{DueHours}</code>, <code>{EscalationLevel}</code>, and <code>{OutstandingAssignees}</code>. Top-level workflow metadata keys can also be used, for example <code>{ProjectName}</code> or <code>{MilestoneName}</code> when supplied by a milestone review.</div>
+                            <div class="form-text mt-2">Leave a field empty to use the standard email. Available placeholders: <code>{InstanceName}</code>, <code>{InstanceDescription}</code>, <code>{WorkflowName}</code>, <code>{WorkflowKey}</code>, <code>{StepName}</code>, <code>{StepDescription}</code>, <code>{Recipient}</code>, <code>{Assignee}</code>, <code>{DueDate}</code>, <code>{DueHours}</code>, <code>{EscalationLevel}</code>, and <code>{OutstandingAssignees}</code>. Top-level workflow metadata keys can also be used, for example <code>{ProjectName}</code> or <code>{MilestoneName}</code> when supplied by a milestone review. Global Email Service templates are applied afterward, so keep <code>{Subject}</code> and <code>{Body}</code> there to preserve these overrides.</div>
+                            <label class="form-label mt-3" for="taskAssignmentSubjectTemplate">Assignment subject</label>
+                            <input class="form-control" id="taskAssignmentSubjectTemplate" maxlength="1000" placeholder="Action Required - {StepName}" />
+                            <label class="form-label mt-2" for="taskAssignmentBodyTemplate">Assignment body</label>
+                            <textarea class="form-control" id="taskAssignmentBodyTemplate" rows="3" placeholder="Task {StepName} is active and due at {DueDate}."></textarea>
                             <label class="form-label mt-3" for="taskReminderSubjectTemplate">Reminder subject</label>
                             <input class="form-control" id="taskReminderSubjectTemplate" maxlength="1000" placeholder="Reminder - {StepName}" />
                             <label class="form-label mt-2" for="taskReminderBodyTemplate">Reminder body</label>

@@ -29,7 +29,7 @@
     <tbody>
     @foreach (var step in Model.Instance.Steps.OrderBy(x => x.SortOrder))
     {
-        <tr>
+        <tr id="step-@step.Id">
             <td>@step.Status</td>
             <td>@step.StepName</td>
             <td>
