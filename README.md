@@ -200,6 +200,7 @@ and edge cases is documented in
 - Logs notifications and audit events in SQLite
 - Runs periodic reminder cycle via background service
 - Keeps active instances on their original version when new workflow versions are published
+- Shows all Overview workflow instances to Privileged and Admin users; Registered users see only active, recently completed, and cancelled instances containing a task assigned to them
 
 ## Notes
 

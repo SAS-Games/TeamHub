@@ -9,7 +9,7 @@
     <div>
         <div class="eyebrow">Work Center</div>
         <h1>Overview</h1>
-        <p>Live status across every active workflow instance.</p>
+        <p>Live status for the workflow instances visible to you.</p>
     </div>
 </div>
 <partial name="_WorkCenterNav" />
@@ -72,7 +72,7 @@
     </div>
     @if (Model.ActiveWorkflows.Count == 0)
     {
-        <div class="section-body text-secondary">No workflows are currently in progress. Start an available workflow to create a new run.</div>
+        <div class="section-body text-secondary">No visible workflows are currently in progress.</div>
     }
 </section>
 

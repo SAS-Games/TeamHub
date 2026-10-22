@@ -265,7 +265,7 @@ public sealed class AccessControlTests
         (await users.GetAccessLevelAsync(TeamHubModules.SupportSummary, TeamHubUserTypes.Registered, userId))
             .Should().Be(AccessLevel.ReadOnly);
         (await users.ListPermissionsAsync()).Should().NotContain(item =>
-            item.Module is "Studio Support" or "Support Summary Comments");
+            item.Module == "Studio Support" || item.Module == "Support Summary Comments");
         (await users.ListUserPermissionsAsync()).Should().ContainSingle(item =>
             item.AuthorizedUserId == userId
             && item.Module == TeamHubModules.SupportSummary
