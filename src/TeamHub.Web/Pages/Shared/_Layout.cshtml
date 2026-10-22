@@ -91,6 +91,7 @@
     <script type="importmap"></script>
     <link rel="stylesheet" href="~/lib/bootstrap/dist/css/bootstrap.min.css" />
     <link rel="stylesheet" href="~/css/site.css" asp-append-version="true" />
+    <link rel="stylesheet" href="~/_content/TeamHub.Notifications/notifications.css" asp-append-version="true" />
     <link rel="stylesheet" href="~/TeamHub.Web.styles.css" asp-append-version="true" />
     @await RenderSectionAsync("Styles", required: false)
 </head>
@@ -169,6 +170,7 @@
                     </ul>
                     @if (User.Identity?.IsAuthenticated == true)
                     {
+                        @await Component.InvokeAsync("NotificationBell")
                         @if (await CurrentAccess.CanAsync(TeamHubModules.AtlassianConnection))
                         {
                             <a class="btn btn-sm btn-outline-secondary me-2" asp-page="/Profile/Atlassian">My Connections</a>
