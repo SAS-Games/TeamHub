@@ -87,6 +87,14 @@ internal sealed class SqliteTeamDatabaseInitializer(TeamDbContext dbContext) : I
                 """, cancellationToken);
 
             await dbContext.Database.ExecuteSqlRawAsync("""
+                CREATE TABLE IF NOT EXISTS PageLayoutSettings (
+                    PageKey TEXT NOT NULL CONSTRAINT PK_PageLayoutSettings PRIMARY KEY,
+                    PageWidth TEXT NOT NULL,
+                    UpdatedAtUtc TEXT NOT NULL
+                );
+                """, cancellationToken);
+
+            await dbContext.Database.ExecuteSqlRawAsync("""
                 PRAGMA foreign_keys = ON;
 
                 CREATE TABLE IF NOT EXISTS CustomTeamTabs (

@@ -206,68 +206,103 @@ else
             <p class="small text-secondary mb-0">Feedback sections support Markdown. Select Edit to update your feedback; saved formatting appears in these boxes.</p>
             <partial name="_MarkdownHelp" />
         </div>
-        <div class="table-responsive">
-            <table class="table styled-table align-middle">
-                <thead>
-                    <tr>
-                        <th scope="col">Reviewer</th>
-                        <th scope="col">Session Details<div id="session-details-help" class="small fw-normal">Platform, duration, and levels or areas explored.</div></th>
-                        <th scope="col">What's Good<div id="what-good-help" class="small fw-normal">Aspects enjoyed or found effective during play.</div></th>
-                        <th scope="col">Needs Improvement<div id="needs-improvement-help" class="small fw-normal">Elements that need refinement, fixing, or felt frustrating during play.</div></th>
-                        <th scope="col">Additional Feedback<div id="additional-feedback-help" class="small fw-normal">Feature or discipline-specific notes, if any.</div></th>
-                    </tr>
-                </thead>
-                <tbody>
-                @foreach (var feedback in Model.CurrentReview.Feedback)
-                {
-                    var canEdit = Model.CanEdit(feedback);
-                    var isEditing = Model.IsEditingFeedback(feedback);
-                    var feedbackFormId = $"feedback-{feedback.Id}";
-                    <tr>
-                        <td>
-                            <div>@feedback.Reviewer</div>
-                            @if (canEdit)
+        <div class="milestone-feedback-list">
+            @foreach (var feedback in Model.CurrentReview.Feedback)
+            {
+                var canEdit = Model.CanEdit(feedback);
+                var isEditing = Model.IsEditingFeedback(feedback);
+                var isOwnFeedback = Model.CurrentUserId == feedback.ReviewerId;
+                var hasFeedback = !string.IsNullOrWhiteSpace(feedback.SessionDetails)
+                    || !string.IsNullOrWhiteSpace(feedback.WhatGood)
+                    || !string.IsNullOrWhiteSpace(feedback.NeedImprovements)
+                    || !string.IsNullOrWhiteSpace(feedback.AdditionalFeedback);
+                var feedbackId = $"feedback-{feedback.Id}";
+                var sessionFieldId = $"{feedbackId}-session";
+                var goodFieldId = $"{feedbackId}-good";
+                var improvementsFieldId = $"{feedbackId}-improvements";
+                var additionalFieldId = $"{feedbackId}-additional";
+                <details class="milestone-feedback-item" open="@(isEditing || isOwnFeedback ? "open" : null)">
+                    <summary class="milestone-feedback-summary">
+                        <span class="milestone-feedback-reviewer">
+                            <strong>@feedback.Reviewer</strong>
+                            @if (isOwnFeedback)
                             {
-                                <div class="d-flex flex-wrap gap-2 mt-2">
-                                    @if (isEditing)
-                                    {
-                                        <form id="@feedbackFormId" method="post" asp-page-handler="SaveFeedback">
-                                            <input type="hidden" name="ReviewId" value="@Model.CurrentReview.Id" />
-                                            <input type="hidden" name="FeedbackId" value="@feedback.Id" />
-                                            <input type="hidden" name="Version" value="@feedback.Version" />
-                                            <button type="submit" class="btn btn-sm btn-primary" aria-label="Save feedback for @feedback.Reviewer">Save</button>
-                                        </form>
-                                        <a asp-page="/MilestoneReview" asp-route-selectedReviewId="@Model.CurrentReview.Id" class="btn btn-sm btn-outline-secondary" aria-label="Cancel editing feedback for @feedback.Reviewer">Cancel</a>
-                                    }
-                                    else
-                                    {
-                                        <a asp-page="/MilestoneReview" asp-route-selectedReviewId="@Model.CurrentReview.Id" asp-route-editFeedbackId="@feedback.Id" class="btn btn-sm btn-outline-secondary" aria-label="Edit feedback for @feedback.Reviewer">Edit</a>
-                                    }
-                                </div>
+                                <span class="badge text-bg-primary">Your feedback</span>
                             }
+                        </span>
+                        <span class="milestone-feedback-summary-meta">
                             @if (!string.IsNullOrWhiteSpace(feedback.JiraSyncError))
                             {
-                                <div class="small text-danger mt-2" title="@feedback.JiraSyncError">Jira sync pending</div>
+                                <span class="text-danger" title="@feedback.JiraSyncError">Jira sync pending</span>
                             }
-                        </td>
-                        @if (isEditing)
-                        {
-                            <td><textarea name="SessionDetails" form="@feedbackFormId" class="form-control" rows="4" maxlength="20000" aria-label="Session Details for @feedback.Reviewer" aria-describedby="session-details-help" placeholder="e.g. PC, 1 hour, levels 1-3">@feedback.SessionDetails</textarea></td>
-                            <td><textarea name="WhatGood" form="@feedbackFormId" class="form-control" rows="4" maxlength="20000" aria-label="What's Good for @feedback.Reviewer" aria-describedby="what-good-help" placeholder="What did you enjoy or find effective?">@feedback.WhatGood</textarea></td>
-                            <td><textarea name="NeedImprovements" form="@feedbackFormId" class="form-control" rows="4" maxlength="20000" aria-label="Needs Improvement for @feedback.Reviewer" aria-describedby="needs-improvement-help" placeholder="What needs refinement or fixing, or felt frustrating?">@feedback.NeedImprovements</textarea></td>
-                            <td><textarea name="AdditionalFeedback" form="@feedbackFormId" class="form-control" rows="4" maxlength="20000" aria-label="Additional Feedback for @feedback.Reviewer" aria-describedby="additional-feedback-help" placeholder="Optional feature or discipline-specific notes">@feedback.AdditionalFeedback</textarea></td>
-                        }
-                        else
-                        {
-                            <td><safe-markdown class="milestone-review-text markdown-content" text="@(string.IsNullOrWhiteSpace(feedback.SessionDetails) ? "No feedback provided." : feedback.SessionDetails)"></safe-markdown></td>
-                            <td><safe-markdown class="milestone-review-text markdown-content" text="@(string.IsNullOrWhiteSpace(feedback.WhatGood) ? "No feedback provided." : feedback.WhatGood)"></safe-markdown></td>
-                            <td><safe-markdown class="milestone-review-text markdown-content" text="@(string.IsNullOrWhiteSpace(feedback.NeedImprovements) ? "No feedback provided." : feedback.NeedImprovements)"></safe-markdown></td>
-                            <td><safe-markdown class="milestone-review-text markdown-content" text="@(string.IsNullOrWhiteSpace(feedback.AdditionalFeedback) ? "No feedback provided." : feedback.AdditionalFeedback)"></safe-markdown></td>
-                        }
-                    </tr>
-                }
-                </tbody>
-            </table>
+                            <span>@(hasFeedback ? "Feedback added" : "Awaiting feedback")</span>
+                        </span>
+                    </summary>
+                    @if (isEditing)
+                    {
+                        <form method="post" asp-page-handler="SaveFeedback" class="milestone-feedback-body">
+                            <input type="hidden" name="ReviewId" value="@Model.CurrentReview.Id" />
+                            <input type="hidden" name="FeedbackId" value="@feedback.Id" />
+                            <input type="hidden" name="Version" value="@feedback.Version" />
+                            <div class="milestone-feedback-actions">
+                                <button type="submit" class="btn btn-sm btn-primary" aria-label="Save feedback for @feedback.Reviewer">Save</button>
+                                <a asp-page="/MilestoneReview" asp-route-selectedReviewId="@Model.CurrentReview.Id" class="btn btn-sm btn-outline-secondary" aria-label="Cancel editing feedback for @feedback.Reviewer">Cancel</a>
+                            </div>
+                            <div class="milestone-feedback-grid">
+                                <div>
+                                    <label class="form-label" for="@sessionFieldId">Session Details</label>
+                                    <div class="form-text mb-2">Platform, duration, and levels or areas explored.</div>
+                                    <textarea id="@sessionFieldId" name="SessionDetails" class="form-control" rows="5" maxlength="20000" placeholder="e.g. PC, 1 hour, levels 1-3">@feedback.SessionDetails</textarea>
+                                </div>
+                                <div>
+                                    <label class="form-label" for="@goodFieldId">What's Good</label>
+                                    <div class="form-text mb-2">Aspects enjoyed or found effective during play.</div>
+                                    <textarea id="@goodFieldId" name="WhatGood" class="form-control" rows="5" maxlength="20000" placeholder="What did you enjoy or find effective?">@feedback.WhatGood</textarea>
+                                </div>
+                                <div>
+                                    <label class="form-label" for="@improvementsFieldId">Needs Improvement</label>
+                                    <div class="form-text mb-2">Elements that need refinement, fixing, or felt frustrating.</div>
+                                    <textarea id="@improvementsFieldId" name="NeedImprovements" class="form-control" rows="5" maxlength="20000" placeholder="What needs refinement or fixing, or felt frustrating?">@feedback.NeedImprovements</textarea>
+                                </div>
+                                <div>
+                                    <label class="form-label" for="@additionalFieldId">Additional Feedback</label>
+                                    <div class="form-text mb-2">Feature or discipline-specific notes, if any.</div>
+                                    <textarea id="@additionalFieldId" name="AdditionalFeedback" class="form-control" rows="5" maxlength="20000" placeholder="Optional feature or discipline-specific notes">@feedback.AdditionalFeedback</textarea>
+                                </div>
+                            </div>
+                        </form>
+                    }
+                    else
+                    {
+                        <div class="milestone-feedback-body">
+                            @if (canEdit)
+                            {
+                                <div class="milestone-feedback-actions">
+                                    <a asp-page="/MilestoneReview" asp-route-selectedReviewId="@Model.CurrentReview.Id" asp-route-editFeedbackId="@feedback.Id" class="btn btn-sm btn-outline-secondary" aria-label="Edit feedback for @feedback.Reviewer">Edit</a>
+                                </div>
+                            }
+                            <div class="milestone-feedback-grid">
+                                <section>
+                                    <h3>Session Details</h3>
+                                    <safe-markdown class="milestone-review-text markdown-content" text="@(string.IsNullOrWhiteSpace(feedback.SessionDetails) ? "No feedback provided." : feedback.SessionDetails)"></safe-markdown>
+                                </section>
+                                <section>
+                                    <h3>What's Good</h3>
+                                    <safe-markdown class="milestone-review-text markdown-content" text="@(string.IsNullOrWhiteSpace(feedback.WhatGood) ? "No feedback provided." : feedback.WhatGood)"></safe-markdown>
+                                </section>
+                                <section>
+                                    <h3>Needs Improvement</h3>
+                                    <safe-markdown class="milestone-review-text markdown-content" text="@(string.IsNullOrWhiteSpace(feedback.NeedImprovements) ? "No feedback provided." : feedback.NeedImprovements)"></safe-markdown>
+                                </section>
+                                <section>
+                                    <h3>Additional Feedback</h3>
+                                    <safe-markdown class="milestone-review-text markdown-content" text="@(string.IsNullOrWhiteSpace(feedback.AdditionalFeedback) ? "No feedback provided." : feedback.AdditionalFeedback)"></safe-markdown>
+                                </section>
+                            </div>
+                        </div>
+                    }
+                </details>
+            }
         </div>
     </section>
 }

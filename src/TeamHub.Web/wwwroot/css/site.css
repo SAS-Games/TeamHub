@@ -182,6 +182,43 @@ body {
 .custom-team-cell-value { white-space: pre-line; overflow-wrap: anywhere; }
 .milestone-review-text { min-width: 180px; max-width: 520px; white-space: pre-wrap; overflow-wrap: anywhere; }
 .milestone-review-text.markdown-content { white-space: normal; }
+.milestone-feedback-list { display: grid; }
+.milestone-feedback-item { border-top: 1px solid #d9e1dc; }
+.milestone-feedback-item:first-child { border-top: 0; }
+.milestone-feedback-summary {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-height: 64px;
+  padding: 14px 22px;
+  color: #18322d;
+  background: #fff;
+  cursor: pointer;
+  list-style: none;
+}
+.milestone-feedback-summary::-webkit-details-marker { display: none; }
+.milestone-feedback-summary::before {
+  width: 9px;
+  height: 9px;
+  flex: 0 0 9px;
+  border-right: 2px solid #52665f;
+  border-bottom: 2px solid #52665f;
+  content: "";
+  transform: rotate(-45deg);
+  transition: transform .15s ease;
+}
+.milestone-feedback-item[open] > .milestone-feedback-summary { background: #edf2ee; }
+.milestone-feedback-item[open] > .milestone-feedback-summary::before { transform: rotate(45deg); }
+.milestone-feedback-summary:hover { background: #f5f8f6; }
+.milestone-feedback-reviewer { display: flex; flex: 1 1 auto; align-items: center; gap: 10px; min-width: 0; }
+.milestone-feedback-summary-meta { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px 14px; color: #65766f; font-size: .8rem; text-align: right; }
+.milestone-feedback-body { padding: 18px 22px 22px; border-top: 1px solid #d9e1dc; }
+.milestone-feedback-actions { display: flex; justify-content: flex-end; gap: 8px; margin-bottom: 14px; }
+.milestone-feedback-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.milestone-feedback-grid > section { min-width: 0; padding: 16px; background: #f8faf8; border: 1px solid #d9e1dc; border-radius: 8px; }
+.milestone-feedback-grid h3, .milestone-feedback-grid .form-label { margin: 0; color: #36554d; font-size: .82rem; font-weight: 800; letter-spacing: .03em; text-transform: uppercase; }
+.milestone-feedback-grid .milestone-review-text { min-width: 0; max-width: none; margin-top: 10px; }
+.milestone-feedback-grid textarea { min-height: 132px; resize: vertical; }
 .support-summary-confluence { min-width: 1200px; }
 .support-summary-confluence th { min-width: 170px; }
 .support-summary-confluence td { min-width: 220px; white-space: pre-wrap; overflow-wrap: anywhere; }
@@ -276,6 +313,11 @@ body {
   .roadmap-step { flex-basis: 190px; }
   .roadmap-step-top { align-items: start; flex-direction: column; gap: 2px; }
   .support-effort-grid { grid-template-columns: 1fr; }
+  .milestone-feedback-summary { align-items: flex-start; padding-inline: 16px; }
+  .milestone-feedback-reviewer { align-items: flex-start; flex-direction: column; gap: 5px; }
+  .milestone-feedback-summary-meta { flex-direction: column; align-items: flex-end; }
+  .milestone-feedback-body { padding-inline: 16px; }
+  .milestone-feedback-grid { grid-template-columns: 1fr; }
 }
 
 @media (min-width: 1400px) {

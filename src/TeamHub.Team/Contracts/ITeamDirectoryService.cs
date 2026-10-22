@@ -30,6 +30,15 @@ public interface IPageTextAppearanceService
     Task SavePageAppearanceAsync(PageTextAppearanceDto appearance, CancellationToken cancellationToken = default);
 }
 
+public interface IPageLayoutService
+{
+    Task<string?> GetPageWidthAsync(string pageKey, CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<PageLayoutSettingDto>> GetPageWidthsAsync(CancellationToken cancellationToken = default);
+    Task SavePageWidthsAsync(
+        IReadOnlyCollection<PageLayoutSettingDto> settings,
+        CancellationToken cancellationToken = default);
+}
+
 public interface ITeamDatabaseInitializer
 {
     Task InitializeAsync(CancellationToken cancellationToken = default);
