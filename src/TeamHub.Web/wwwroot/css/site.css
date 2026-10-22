@@ -191,6 +191,10 @@ body {
 .support-effort-card { min-width: 0; padding: 20px; background: #f8faf8; border: 1px solid #d9e1dc; border-radius: 8px; }
 .support-effort-card h3 { margin: 0; font-size: 1.1rem; }
 .support-effort-card p { margin: 5px 0 20px; color: #65766f; }
+.support-effort-copy-row { display: flex; align-items: center; justify-content: flex-end; gap: 10px; min-height: 32px; margin-top: 8px; }
+.support-effort-copy { display: inline-grid; flex: 0 0 30px; width: 30px; height: 30px; padding: 6px; place-items: center; }
+.support-effort-copy svg { width: 16px; height: 16px; fill: currentColor; }
+.support-effort-copy-status { flex: 1 1 auto; color: #52665f; font-size: .8rem; text-align: right; }
 .support-effort-chart { display: grid; grid-template-columns: minmax(180px, 260px) minmax(0, 1fr); gap: 24px; align-items: center; }
 .support-effort-pie { width: min(100%, 260px); aspect-ratio: 1; justify-self: center; border: 6px solid #fff; border-radius: 50%; box-shadow: 0 5px 18px rgba(24, 50, 45, .14); }
 .support-effort-legend { display: grid; gap: 9px; }
