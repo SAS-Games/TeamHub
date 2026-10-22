@@ -4,9 +4,12 @@ using System.Security.Cryptography;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
+using Microsoft.EntityFrameworkCore;
 using TeamHub.Authentication;
+using TeamHub.Milestones;
 using TeamHub.MilestoneReview;
 using TeamHub.Studio;
+using TeamHub.Infrastructure.Persistence;
 using TeamHub.Web.AccessControl;
 using TeamHub.Web.Formatting;
 using TeamHub.Web.Reviews;
@@ -21,9 +24,14 @@ public sealed partial class MilestoneReviewModel(
     IStudioJiraCommentService comments,
     IDataProtectionProvider protection,
     ISafeMarkdownRenderer markdown,
-    ILogger<MilestoneReviewModel> logger) : PageModel
+    ILogger<MilestoneReviewModel> logger,
+    IStudioDirectoryService? studioDirectory = null,
+    IMilestoneTrackerService? milestoneTracker = null,
+    WorkflowDbContext? workflowDbContext = null) : PageModel
 {
     private readonly IDataProtector restoreProtector = protection.CreateProtector("TeamHub.MilestoneReview.Restore.v1");
+    private bool milestoneOptionsLoaded;
+    private bool workflowOptionsLoaded;
 
     [BindProperty]
     public List<string> RestoreSelections { get; set; } = [];
@@ -50,6 +58,9 @@ public sealed partial class MilestoneReviewModel(
     public string? JiraTicketId { get; set; }
 
     [BindProperty]
+    public string? WorkflowKey { get; set; }
+
+    [BindProperty]
     public List<Guid> ReviewerIds { get; set; } = [];
 
     [BindProperty]
@@ -63,6 +74,9 @@ public sealed partial class MilestoneReviewModel(
 
     [BindProperty(SupportsGet = true)]
     public Guid? EditFeedbackId { get; set; }
+
+    [BindProperty(SupportsGet = true)]
+    public Guid? SelectedReviewId { get; set; }
 
     [BindProperty]
     public int Version { get; set; }
@@ -80,10 +94,15 @@ public sealed partial class MilestoneReviewModel(
     public string? AdditionalFeedback { get; set; }
 
     public ReviewSnapshot? CurrentReview { get; private set; }
+    public IReadOnlyList<ReviewSnapshot> ActiveReviews { get; private set; } = [];
     public ReviewSnapshot? Draft { get; private set; }
     public ReviewSnapshot? EditingReview { get; private set; }
     public IReadOnlyList<ReviewSnapshot> HistoryReviews { get; private set; } = [];
     public IReadOnlyList<MilestoneReviewUser> AvailableReviewers { get; private set; } = [];
+    public IReadOnlyList<string> ProjectOptions { get; private set; } = [];
+    public IReadOnlyList<MilestoneReviewSelectionOption> MilestoneOptions { get; private set; } = [];
+    public IReadOnlyList<MilestoneReviewWorkflowOption> WorkflowOptions { get; private set; } = [];
+    public string? MilestoneSelectionError { get; private set; }
     public Guid? CurrentUserId { get; private set; }
     public bool HasFeedbackEditAccess { get; private set; }
     public bool IsAdmin => User.IsInRole(TeamHubUserTypes.Admin);
@@ -115,6 +134,7 @@ public sealed partial class MilestoneReviewModel(
             MilestoneName = EditingReview.MilestoneName;
             Description = EditingReview.Description;
             JiraTicketId = EditingReview.JiraTicketId;
+            WorkflowKey = EditingReview.WorkflowKey;
             ReviewerIds = EditingReview.AssignedReviewers.Select(item => item.Id).ToList();
         }
         return Page();
@@ -124,6 +144,8 @@ public sealed partial class MilestoneReviewModel(
     {
         if (!IsAdmin) return Forbid();
         EditReviewId = ReviewId;
+        await LoadAsync(cancellationToken);
+        ResolveMilestoneFromDescription();
         if (!ValidateDetails())
         {
             await LoadAsync(cancellationToken);
@@ -133,7 +155,7 @@ public sealed partial class MilestoneReviewModel(
         {
             await reviews.UpdateAsync(ReviewId, DetailsRequest(), IsAdmin, cancellationToken);
             StatusMessage = "Milestone review details updated. Existing feedback was preserved; Jira comments update on the next feedback save.";
-            return RedirectToPage(new { editReviewId = (Guid?)null });
+            return RedirectToPage(new { selectedReviewId = ReviewId, editReviewId = (Guid?)null });
         }
         catch (Exception exception) when (exception is ArgumentException or InvalidOperationException)
         {
@@ -150,7 +172,7 @@ public sealed partial class MilestoneReviewModel(
         ShowRestorePreview = true;
         if (CurrentReview?.Id != ReviewId || string.IsNullOrWhiteSpace(CurrentReview.JiraTicketId))
         {
-            ModelState.AddModelError(string.Empty, "Select the current published review with a Jira ticket.");
+            ModelState.AddModelError(string.Empty, "Select an active published review with a Jira ticket.");
             return Page();
         }
         foreach (var reviewer in CurrentReview.AssignedReviewers)
@@ -200,7 +222,8 @@ public sealed partial class MilestoneReviewModel(
         if (!IsAdmin) return Forbid();
         try
         {
-            var current = await reviews.GetCurrentAsync(cancellationToken);
+            var current = (await reviews.GetActiveAsync(cancellationToken))
+                .SingleOrDefault(item => item.Id == ReviewId);
             if (current?.Id != ReviewId || string.IsNullOrWhiteSpace(current.JiraTicketId))
                 throw new InvalidOperationException("The published review changed. Reopen the restore preview.");
             var requests = new List<RestoreMilestoneReviewFeedbackRequest>();
@@ -247,12 +270,15 @@ public sealed partial class MilestoneReviewModel(
         {
             ErrorMessage = "Jira timed out. No feedback was restored; reopen the preview and try again.";
         }
-        return RedirectToPage();
+        return RedirectToPage(new { selectedReviewId = ReviewId });
     }
 
     public async Task<IActionResult> OnPostCreateDraftAsync(CancellationToken cancellationToken)
     {
         if (!IsAdmin) return Forbid();
+        await LoadMilestoneOptionsAsync(cancellationToken);
+        await LoadWorkflowOptionsAsync(cancellationToken);
+        ResolveMilestoneFromDescription();
         if (!ValidateDetails())
         {
             await LoadAsync(cancellationToken);
@@ -279,12 +305,22 @@ public sealed partial class MilestoneReviewModel(
     public async Task<IActionResult> OnPostPublishAsync(CancellationToken cancellationToken)
     {
         if (!IsAdmin) return Forbid();
-        var published = await reviews.PublishDraftAsync(CurrentActor(), cancellationToken);
-        if (published is null)
-            ErrorMessage = "There is no draft to publish.";
-        else
-            StatusMessage = $"Milestone review published: {published.ProjectName} — {published.MilestoneName}.";
-        return RedirectToPage();
+        try
+        {
+            var published = await reviews.PublishDraftAsync(CurrentActor(), cancellationToken);
+            if (published is null)
+                ErrorMessage = "There is no draft to publish.";
+            else if (published.WorkflowInstanceId.HasValue)
+                StatusMessage = $"Milestone review published and workflow started: {published.ProjectName} — {published.MilestoneName}.";
+            else
+                StatusMessage = $"Milestone review published: {published.ProjectName} — {published.MilestoneName}.";
+            return RedirectToPage(new { selectedReviewId = published?.Id });
+        }
+        catch (InvalidOperationException exception)
+        {
+            ErrorMessage = exception.Message;
+            return RedirectToPage();
+        }
     }
 
     public async Task<IActionResult> OnPostDiscardDraftAsync(CancellationToken cancellationToken)
@@ -338,7 +374,7 @@ public sealed partial class MilestoneReviewModel(
             || !ValidLength(AdditionalFeedback, 20000))
         {
             ErrorMessage = "Feedback was not saved. Check that each field is no longer than 20,000 characters.";
-            return RedirectToPage();
+            return RedirectToPage(new { selectedReviewId = ReviewId });
         }
         try
         {
@@ -365,7 +401,7 @@ public sealed partial class MilestoneReviewModel(
         {
             ErrorMessage = exception.Message;
         }
-        return RedirectToPage();
+        return RedirectToPage(new { selectedReviewId = ReviewId });
     }
 
     public async Task<IActionResult> OnGetFeedbackAsync(Guid reviewId, CancellationToken cancellationToken)
@@ -377,8 +413,8 @@ public sealed partial class MilestoneReviewModel(
         if (reviewId == Guid.Empty)
             return JiraFailure("Select a valid milestone review.", StatusCodes.Status400BadRequest);
 
-        var current = await reviews.GetCurrentAsync(cancellationToken);
-        ReviewSnapshot? target = current?.Id == reviewId ? current : null;
+        ReviewSnapshot? target = (await reviews.GetActiveAsync(cancellationToken))
+            .FirstOrDefault(item => item.Id == reviewId);
         if (target is null)
         {
             var history = await reviews.GetHistoryAsync(cancellationToken);
@@ -520,12 +556,22 @@ public sealed partial class MilestoneReviewModel(
         var current = await access.GetCurrentAsync(cancellationToken);
         CurrentUserId = current.User?.Id;
         HasFeedbackEditAccess = await access.CanAsync(TeamHubModules.MilestoneReview, AccessLevel.Edit, cancellationToken);
-        CurrentReview = await reviews.GetCurrentAsync(cancellationToken);
+        ActiveReviews = await reviews.GetActiveAsync(cancellationToken);
+        var requestedReviewId = SelectedReviewId
+            ?? ActiveReviews.FirstOrDefault(review => review.Feedback.Any(item => item.Id == EditFeedbackId))?.Id
+            ?? (ReviewId == Guid.Empty ? null : ReviewId);
+        CurrentReview = requestedReviewId.HasValue
+            ? ActiveReviews.FirstOrDefault(item => item.Id == requestedReviewId) ?? ActiveReviews.FirstOrDefault()
+            : ActiveReviews.FirstOrDefault();
+        SelectedReviewId = CurrentReview?.Id;
         HistoryReviews = await reviews.GetHistoryAsync(cancellationToken);
         if (IsAdmin)
         {
+            await LoadMilestoneOptionsAsync(cancellationToken);
+            await LoadWorkflowOptionsAsync(cancellationToken);
             Draft = await reviews.GetDraftAsync(cancellationToken);
-            EditingReview = new[] { Draft, CurrentReview }.FirstOrDefault(item => item?.Id == EditReviewId);
+            EditingReview = new[] { Draft }.Concat(ActiveReviews)
+                .FirstOrDefault(item => item?.Id == EditReviewId);
             var available = (await reviewUsers.GetActiveUsersAsync(cancellationToken))
                 .Where(item => item.IsActive && item.IsRegistered).ToList();
             foreach (var assigned in EditingReview?.AssignedReviewers ?? [])
@@ -537,16 +583,113 @@ public sealed partial class MilestoneReviewModel(
         }
     }
 
+    private async Task LoadWorkflowOptionsAsync(CancellationToken cancellationToken)
+    {
+        if (workflowOptionsLoaded || workflowDbContext is null) return;
+        workflowOptionsLoaded = true;
+        WorkflowOptions = (await workflowDbContext.WorkflowDefinitions.AsNoTracking()
+                .Where(definition => definition.Enabled && definition.IsActive)
+                .OrderBy(definition => definition.Name)
+                .ThenByDescending(definition => definition.Version)
+                .Select(definition => new MilestoneReviewWorkflowOption(
+                    definition.WorkflowKey,
+                    definition.Name,
+                    definition.Version))
+                .ToListAsync(cancellationToken))
+            .GroupBy(option => option.Key, StringComparer.OrdinalIgnoreCase)
+            .Select(group => group.First())
+            .ToList();
+    }
+
+    private async Task LoadMilestoneOptionsAsync(CancellationToken cancellationToken)
+    {
+        if (milestoneOptionsLoaded || studioDirectory is null || milestoneTracker is null) return;
+        milestoneOptionsLoaded = true;
+
+        var projects = (await studioDirectory.GetStudiosAsync(cancellationToken))
+            .Where(studio => studio.IsActive && !string.IsNullOrWhiteSpace(studio.ProjectName))
+            .Select(studio => studio.ProjectName.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(project => project, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        ProjectOptions = projects;
+
+        try
+        {
+            var milestones = await milestoneTracker.GetMilestonesAsync(cancellationToken);
+            MilestoneOptions = projects
+                .SelectMany(project => milestones
+                    .Where(milestone => !milestone.Milestone.StartsWith("Total MS", StringComparison.OrdinalIgnoreCase))
+                    .Where(milestone => IsProjectMilestone(project, milestone))
+                    .Where(milestone => !string.IsNullOrWhiteSpace(milestone.Milestone))
+                    .OrderBy(milestone => milestone.DeliveryDate ?? DateTime.MaxValue)
+                    .Select(milestone => new MilestoneReviewSelectionOption(
+                        project,
+                        milestone.Milestone.Trim(),
+                        milestone.Description?.Trim() ?? string.Empty)))
+                .GroupBy(
+                    option => $"{option.ProjectName}\0{option.MilestoneName}\0{option.Description}",
+                    StringComparer.OrdinalIgnoreCase)
+                .Select(group => group.First())
+                .ToList();
+        }
+        catch (Exception exception) when (exception is FileNotFoundException or InvalidDataException or InvalidOperationException)
+        {
+            MilestoneSelectionError = exception.Message;
+        }
+    }
+
+    private static bool IsProjectMilestone(string projectName, MilestoneDto milestone) =>
+        string.Equals(milestone.Title, projectName, StringComparison.OrdinalIgnoreCase)
+        || string.Equals(milestone.Program, projectName, StringComparison.OrdinalIgnoreCase);
+
+    private void ResolveMilestoneFromDescription()
+    {
+        if (studioDirectory is null || milestoneTracker is null) return;
+        var milestones = MilestoneOptions
+            .Where(option => string.Equals(option.ProjectName, ProjectName, StringComparison.OrdinalIgnoreCase)
+                && string.Equals(option.Description, Description, StringComparison.OrdinalIgnoreCase))
+            .Select(option => option.MilestoneName)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        if (milestones.Count == 1)
+        {
+            MilestoneName = milestones[0];
+            return;
+        }
+        if (milestones.Count == 0 && EditingReview is not null
+            && string.Equals(EditingReview.ProjectName, ProjectName, StringComparison.OrdinalIgnoreCase)
+            && string.Equals(EditingReview.Description, Description, StringComparison.OrdinalIgnoreCase))
+        {
+            MilestoneName = EditingReview.MilestoneName;
+            return;
+        }
+
+        MilestoneName = null;
+        ModelState.AddModelError(nameof(Description),
+            milestones.Count == 0
+                ? "Select a description available for the chosen project."
+                : "The selected description maps to more than one milestone. Update the milestone source before continuing.");
+    }
+
     private CreateMilestoneReviewRequest DetailsRequest() =>
-        new(ProjectName!, MilestoneName!, Description ?? string.Empty, JiraTicketId, ReviewerIds);
+        new(ProjectName!, MilestoneName!, Description ?? string.Empty, JiraTicketId, ReviewerIds, WorkflowKey);
 
     private bool ValidateDetails()
     {
-        if (ModelState.IsValid && ValidLength(ProjectName, 160) && ValidLength(MilestoneName, 160)
-            && ValidLength(Description, 4000) && ValidLength(JiraTicketId, 64)
-            && !string.IsNullOrWhiteSpace(ProjectName) && !string.IsNullOrWhiteSpace(MilestoneName))
+        var hasValidWorkflow = workflowDbContext is null
+            || (!string.IsNullOrWhiteSpace(WorkflowKey)
+                && (WorkflowOptions.Any(option => string.Equals(option.Key, WorkflowKey, StringComparison.OrdinalIgnoreCase))
+                    || (EditingReview?.Status == MilestoneReviewStatus.Published
+                        && string.Equals(EditingReview.WorkflowKey, WorkflowKey, StringComparison.OrdinalIgnoreCase))));
+        if (ModelState.IsValid && hasValidWorkflow
+            && ValidLength(ProjectName, 160) && ValidLength(MilestoneName, 160)
+            && ValidLength(Description, 4000) && ValidLength(JiraTicketId, 64) && ValidLength(WorkflowKey, 128)
+            && !string.IsNullOrWhiteSpace(ProjectName) && !string.IsNullOrWhiteSpace(MilestoneName)
+            && !string.IsNullOrWhiteSpace(Description))
             return true;
-        ModelState.AddModelError(string.Empty, "Project name and milestone are required. Check the maximum field lengths.");
+        ModelState.AddModelError(string.Empty,
+            "Project, description, and an active workflow template are required. Check the maximum field lengths.");
         return false;
     }
 
@@ -557,4 +700,11 @@ public sealed partial class MilestoneReviewModel(
 
     private static bool ValidLength(string? value, int maxLength) =>
         value is null || value.Length <= maxLength;
+
+    public sealed record MilestoneReviewSelectionOption(
+        string ProjectName,
+        string MilestoneName,
+        string Description);
+
+    public sealed record MilestoneReviewWorkflowOption(string Key, string Name, int Version);
 }

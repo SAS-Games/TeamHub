@@ -126,10 +126,10 @@ After signing in, open the **Flow Designer** tab in the normal TeamHub navigatio
 
 - A regular user can create, view, edit, duplicate, and delete only their own diagrams.
 - An administrator can view and manage every user's diagrams.
-- Owners submit a saved diagram with **Request publication**. A request made from a child resolves its single root parent and freezes the entire recursive parent/child hierarchy.
+- Administrator-owned diagrams publish directly without entering the review queue. Other owners submit a saved diagram with **Request publication**; a request made from a child resolves its single root parent and freezes the entire recursive parent/child hierarchy.
 - Only root diagrams appear in the authoring and published catalogs. Child diagrams are reached by drilling down from their parent.
-- Only Admin users can open the publication review queue, traverse the frozen hierarchy, and approve or reject it.
-- Approval writes the complete hierarchy as one immutable, versioned bundle in the `PublishedDiagrams` table of `data/flow-library.db`. The catalog reads only the current root bundle.
+- Owners can add active registered users as reviewers. Assigned reviewers can open the frozen hierarchy and approve or reject it; every selected reviewer must approve before an administrator can publish.
+- Final administrator approval writes the complete hierarchy as one immutable, versioned bundle in the `PublishedDiagrams` table of `data/flow-library.db`. The catalog reads only the current root bundle.
 - Admins can edit a live published parent or child. Each save creates a new immutable version of the complete published hierarchy; it does not silently overwrite the owner's authoring draft.
 - Publication requests and their original snapshots remain in `data/flowdesigner.db`, providing an independent recovery copy of approved content.
 - If the `PublishedDiagrams` table is empty, startup reconstructs approved bundle history-including descendants-from the retained authoring snapshots after verifying their SHA-256 hashes.
@@ -196,7 +196,7 @@ and edge cases is documented in
 - Activates root steps automatically
 - Activates dependent steps when dependencies are complete
 - Enforces owner/admin completion rule
-- Calculates due date from expected duration
+- Keeps expected duration in due hours; the optional due-date picker calculates that hour value and either field can be adjusted
 - Logs notifications and audit events in SQLite
 - Runs periodic reminder cycle via background service
 - Keeps active instances on their original version when new workflow versions are published

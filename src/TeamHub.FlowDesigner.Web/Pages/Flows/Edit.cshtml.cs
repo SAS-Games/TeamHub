@@ -16,6 +16,7 @@ public sealed class EditModel(
     public bool CanEdit { get; private set; }
     public bool IsShared { get; private set; }
     public bool CanRequestPublication { get; private set; }
+    public bool CanPublishDirectly { get; private set; }
     public bool HasPendingPublicationRequest { get; private set; }
     public FlowPublicationRequestStatus? LatestPublicationStatus { get; private set; }
     public string? PublicationReviewNote { get; private set; }
@@ -44,8 +45,15 @@ public sealed class EditModel(
         StartInPresentation = present;
         if (requestId.HasValue)
         {
-            if (!publications.CanReview) return Forbid();
-            var snapshot = await publications.GetRequestDiagramAsync(requestId.Value, id, cancellationToken);
+            FlowDefinition? snapshot;
+            try
+            {
+                snapshot = await publications.GetRequestDiagramAsync(requestId.Value, id, cancellationToken);
+            }
+            catch (UnauthorizedAccessException)
+            {
+                return Forbid();
+            }
             if (snapshot is null) return NotFound();
             ConfigureReadOnly(snapshot);
             IsReviewPreview = true;
@@ -103,6 +111,9 @@ public sealed class EditModel(
         IsViewOnly = !CanEdit;
         IsShared = flow.IsShared;
         CanRequestPublication = CanEdit;
+        CanPublishDirectly = publications.CanReview
+            && (flow.DiagramType == DiagramType.WorkCenterWorkflow
+                || string.Equals(flow.CreatedBy, User.Identity?.Name, StringComparison.OrdinalIgnoreCase));
         CanSaveAsTemplate = permissions.CanManageTemplates();
         LoadUrl = $"/api/flows/{id}";
         SaveUrl = $"/api/flows/{id}";

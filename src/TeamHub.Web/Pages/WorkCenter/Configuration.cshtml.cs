@@ -143,11 +143,7 @@ public class ConfigurationModel(
 
         try
         {
-            var request = await publications.RequestAsync(id, cancellationToken);
-            await publications.ApproveAsync(
-                request.Id,
-                "Published directly from the Work Center Workflow Library.",
-                cancellationToken);
+            await publications.RequestAsync(id, cancellationToken);
 
             var workflowKey = NormalizeKey(
                 flow.Metadata.TryGetValue("workflowKey", out var configuredKey)
@@ -267,6 +263,12 @@ public class ConfigurationModel(
                     DependsOnCsv = step.DependsOnCsv,
                     ReminderAfterHours = step.ReminderAfterHours,
                     ReminderRepeatHours = step.ReminderRepeatHours,
+                    ReminderSubjectTemplate = step.ReminderSubjectTemplate,
+                    ReminderBodyTemplate = step.ReminderBodyTemplate,
+                    OverdueSubjectTemplate = step.OverdueSubjectTemplate,
+                    OverdueBodyTemplate = step.OverdueBodyTemplate,
+                    EscalationSubjectTemplate = step.EscalationSubjectTemplate,
+                    EscalationBodyTemplate = step.EscalationBodyTemplate,
                     EscalationAfterHours = step.EscalationAfterHours,
                     EscalationOwner = step.EscalationOwner,
                     EscalationLevel2AfterHours = step.EscalationLevel2AfterHours,
@@ -300,6 +302,12 @@ public class ConfigurationModel(
                     DependsOnCsv = step.DependsOnCsv ?? string.Empty,
                     ReminderAfterHours = step.ReminderAfterHours,
                     ReminderRepeatHours = step.ReminderRepeatHours,
+                    ReminderSubjectTemplate = step.ReminderSubjectTemplate,
+                    ReminderBodyTemplate = step.ReminderBodyTemplate,
+                    OverdueSubjectTemplate = step.OverdueSubjectTemplate,
+                    OverdueBodyTemplate = step.OverdueBodyTemplate,
+                    EscalationSubjectTemplate = step.EscalationSubjectTemplate,
+                    EscalationBodyTemplate = step.EscalationBodyTemplate,
                     EscalationAfterHours = step.EscalationAfterHours,
                     EscalationOwner = step.EscalationOwner,
                     EscalationLevel2AfterHours = step.EscalationLevel2AfterHours,
@@ -325,6 +333,12 @@ public class ConfigurationModel(
         public string? DependsOnCsv { get; set; }
         public double? ReminderAfterHours { get; set; }
         public double? ReminderRepeatHours { get; set; }
+        public string? ReminderSubjectTemplate { get; set; }
+        public string? ReminderBodyTemplate { get; set; }
+        public string? OverdueSubjectTemplate { get; set; }
+        public string? OverdueBodyTemplate { get; set; }
+        public string? EscalationSubjectTemplate { get; set; }
+        public string? EscalationBodyTemplate { get; set; }
         public double? EscalationAfterHours { get; set; }
         public string? EscalationOwner { get; set; }
         public double? EscalationLevel2AfterHours { get; set; }

@@ -20,6 +20,12 @@ public sealed class WorkflowStepDefinitionDto
     public List<string> DependsOn { get; set; } = new();
     public double? ReminderAfterHours { get; set; }
     public double? ReminderRepeatHours { get; set; }
+    public string? ReminderSubjectTemplate { get; set; }
+    public string? ReminderBodyTemplate { get; set; }
+    public string? OverdueSubjectTemplate { get; set; }
+    public string? OverdueBodyTemplate { get; set; }
+    public string? EscalationSubjectTemplate { get; set; }
+    public string? EscalationBodyTemplate { get; set; }
     public double? EscalationAfterHours { get; set; }
     public string? EscalationOwner { get; set; }
     public double? EscalationLevel2AfterHours { get; set; }
@@ -69,6 +75,12 @@ public sealed class WorkflowDraftStepDto
     public string DependsOnCsv { get; set; } = string.Empty;
     public double? ReminderAfterHours { get; set; }
     public double? ReminderRepeatHours { get; set; }
+    public string? ReminderSubjectTemplate { get; set; }
+    public string? ReminderBodyTemplate { get; set; }
+    public string? OverdueSubjectTemplate { get; set; }
+    public string? OverdueBodyTemplate { get; set; }
+    public string? EscalationSubjectTemplate { get; set; }
+    public string? EscalationBodyTemplate { get; set; }
     public double? EscalationAfterHours { get; set; }
     public string? EscalationOwner { get; set; }
     public double? EscalationLevel2AfterHours { get; set; }

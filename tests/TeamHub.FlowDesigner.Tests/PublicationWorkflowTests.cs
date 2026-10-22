@@ -76,7 +76,70 @@ public sealed class PublicationWorkflowTests
 
         Assert.Equal("Connected", frozen!.Snapshot.Name);
         Assert.Contains("already has a version", error.Message);
-        await Assert.ThrowsAsync<UnauthorizedAccessException>(() => alice.ListPendingAsync());
+        Assert.Empty(await alice.ListPendingAsync());
+    }
+
+    [Fact]
+    public async Task AdminRequest_PublishesDirectlyWithoutEnteringReviewQueue()
+    {
+        await using var database = new TestDatabase();
+        var repository = await database.CreateRepositoryAsync();
+        await database.InitializeLibraryStoreAsync();
+        var flow = ValidationTests.ConnectedFlow();
+        flow.CreatedBy = "admin";
+        await repository.SaveAsync(flow);
+        var admin = CreateService(database, repository, "admin", isAdmin: true);
+
+        var request = await admin.RequestAsync(flow.Id);
+
+        Assert.Equal(FlowPublicationRequestStatus.Approved, request.Status);
+        Assert.Empty(await admin.ListPendingAsync());
+        Assert.NotNull(await admin.GetPublishedBySourceAsync(flow.Id));
+    }
+
+    [Fact]
+    public async Task AdminRequest_ForUserOwnedFlowStillRequiresReview()
+    {
+        await using var database = new TestDatabase();
+        var repository = await database.CreateRepositoryAsync();
+        await database.InitializeLibraryStoreAsync();
+        var flow = ValidationTests.ConnectedFlow();
+        flow.CreatedBy = "alice";
+        await repository.SaveAsync(flow);
+        var admin = CreateService(database, repository, "admin", isAdmin: true);
+
+        var request = await admin.RequestAsync(flow.Id);
+
+        Assert.Equal(FlowPublicationRequestStatus.Pending, request.Status);
+        Assert.Single(await admin.ListPendingAsync());
+        Assert.Null(await admin.GetPublishedBySourceAsync(flow.Id));
+    }
+
+    [Fact]
+    public async Task UserSelectedReviewersMustAllApproveBeforeAdminPublishes()
+    {
+        await using var database = new TestDatabase();
+        var repository = await database.CreateRepositoryAsync();
+        await database.InitializeLibraryStoreAsync();
+        var flow = ValidationTests.ConnectedFlow();
+        flow.CreatedBy = "alice";
+        await repository.SaveAsync(flow);
+        var directory = new ReviewerDirectory([new("bob", "Bob Reviewer")]);
+        var alice = CreateService(database, repository, "alice", false, directory);
+        var bob = CreateService(database, repository, "bob", false, directory);
+        var admin = CreateService(database, repository, "admin", true, directory);
+
+        var request = await alice.RequestAsync(flow.Id, ["bob"]);
+        var waiting = await Assert.ThrowsAsync<InvalidOperationException>(() => admin.ApproveAsync(request.Id, null));
+        Assert.Contains("Bob Reviewer", waiting.Message);
+        Assert.Single(await bob.ListPendingAsync());
+
+        var review = await bob.ApproveReviewAsync(request.Id, "Looks good.");
+        var published = await admin.ApproveAsync(request.Id, "Final approval.");
+
+        Assert.Equal(FlowPublicationReviewerStatus.Approved, review.Status);
+        Assert.Equal(1, published.PublicationVersion);
+        Assert.Empty(await bob.ListPendingAsync());
     }
 
     [Fact]
@@ -291,7 +354,8 @@ public sealed class PublicationWorkflowTests
         TestDatabase database,
         IFlowRepository repository,
         string userName,
-        bool isAdmin)
+        bool isAdmin,
+        IFlowReviewerDirectory? reviewerDirectory = null)
     {
         var serializer = new SystemTextJsonFlowSerializer();
         return new FlowPublicationWorkflowService(
@@ -302,7 +366,8 @@ public sealed class PublicationWorkflowTests
             new FlowValidator(),
             new UserProvider(userName),
             new PermissionService(userName, isAdmin),
-            new HostPublisher());
+            new HostPublisher(),
+            reviewerDirectory);
     }
 
     private sealed class UserProvider(string userName) : ICurrentUserProvider
@@ -328,5 +393,11 @@ public sealed class PublicationWorkflowTests
         public bool CanPublish(FlowDefinition flow) => true;
         public Task<FlowPublicationResult> PublishAsync(FlowDefinition flow, CancellationToken cancellationToken = default) =>
             Task.FromResult(FlowPublicationResult.Published("Published"));
+    }
+
+    private sealed class ReviewerDirectory(IReadOnlyList<FlowReviewerOption> reviewers) : IFlowReviewerDirectory
+    {
+        public Task<IReadOnlyList<FlowReviewerOption>> ListAsync(CancellationToken cancellationToken = default) =>
+            Task.FromResult(reviewers);
     }
 }

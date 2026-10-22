@@ -1,4 +1,5 @@
 using System.Text.RegularExpressions;
+using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 
 namespace TeamHub.MilestoneReview;
@@ -6,13 +7,33 @@ namespace TeamHub.MilestoneReview;
 public sealed partial class MilestoneReviewService(
     MilestoneReviewDbContext dbContext,
     IMilestoneReviewUserDirectory users,
-    IMilestoneReviewCommentPublisher commentPublisher) : IMilestoneReviewService
+    IMilestoneReviewCommentPublisher commentPublisher,
+    IMilestoneReviewWorkflowStarter? workflowStarter = null) : IMilestoneReviewService
 {
     public async Task<MilestoneReview?> GetCurrentAsync(CancellationToken cancellationToken = default)
     {
-        var review = await dbContext.Reviews.AsNoTracking()
-            .SingleOrDefaultAsync(item => item.Status == MilestoneReviewStatus.Published, cancellationToken);
+        var reviews = await dbContext.Reviews.AsNoTracking()
+            .Where(item => item.Status == MilestoneReviewStatus.Published)
+            .ToListAsync(cancellationToken);
+        var review = reviews.OrderByDescending(item => item.PublishedAt)
+            .ThenByDescending(item => item.CreatedAt)
+            .FirstOrDefault();
         return review is null ? null : await ToDtoAsync(review, cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<MilestoneReview>> GetActiveAsync(
+        CancellationToken cancellationToken = default)
+    {
+        var rawReviews = await dbContext.Reviews.AsNoTracking()
+            .Where(item => item.Status == MilestoneReviewStatus.Published)
+            .ToListAsync(cancellationToken);
+        var reviews = rawReviews.OrderByDescending(item => item.PublishedAt)
+            .ThenByDescending(item => item.CreatedAt)
+            .ToList();
+        var result = new List<MilestoneReview>(reviews.Count);
+        foreach (var review in reviews)
+            result.Add(await ToDtoAsync(review, cancellationToken));
+        return result;
     }
 
     public async Task<MilestoneReview?> GetDraftAsync(CancellationToken cancellationToken = default)
@@ -79,7 +100,9 @@ public sealed partial class MilestoneReviewService(
             review.PublishedAt,
             review.JiraTicketId,
             assignmentsByReviewId.GetValueOrDefault(review.Id, []),
-            feedbackByReviewId.GetValueOrDefault(review.Id, []))).ToList();
+            feedbackByReviewId.GetValueOrDefault(review.Id, []),
+            review.WorkflowKey,
+            review.WorkflowInstanceId)).ToList();
     }
 
     public async Task<MilestoneReview?> CreateDraftAsync(
@@ -104,6 +127,7 @@ public sealed partial class MilestoneReviewService(
             MilestoneName = details.MilestoneName,
             Description = details.Description,
             JiraTicketId = details.JiraTicketId,
+            WorkflowKey = details.WorkflowKey,
             Status = MilestoneReviewStatus.Draft,
             CreatedBy = Required(actor, 320, "Creator"),
             CreatedAt = DateTimeOffset.UtcNow
@@ -125,16 +149,37 @@ public sealed partial class MilestoneReviewService(
 
     public async Task<MilestoneReview?> PublishDraftAsync(string actor, CancellationToken cancellationToken = default)
     {
-        _ = Required(actor, 320, "Publisher");
+        var publisher = Required(actor, 320, "Publisher");
         await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
         var draft = await dbContext.Reviews.SingleOrDefaultAsync(
             item => item.Status == MilestoneReviewStatus.Draft, cancellationToken);
         if (draft is null) return null;
 
+        if (workflowStarter is not null && string.IsNullOrWhiteSpace(draft.WorkflowKey))
+            throw new InvalidOperationException("Select an active workflow template before publishing this milestone review.");
+        if (!string.IsNullOrWhiteSpace(draft.WorkflowKey) && !draft.WorkflowInstanceId.HasValue)
+        {
+            if (workflowStarter is null)
+                throw new InvalidOperationException("Milestone review workflow integration is not available.");
+            var instanceName = BuildWorkflowInstanceName(draft);
+            draft.WorkflowInstanceId = await workflowStarter.StartAsync(
+                new MilestoneReviewWorkflowStartRequest(
+                    draft.Id,
+                    draft.WorkflowKey,
+                    instanceName,
+                    draft.Description,
+                    publisher,
+                    JsonSerializer.Serialize(new
+                    {
+                        milestoneReviewId = draft.Id,
+                        draft.ProjectName,
+                        draft.MilestoneName,
+                        draft.Description
+                    })),
+                cancellationToken);
+        }
+
         var now = DateTimeOffset.UtcNow;
-        await dbContext.Reviews.Where(item => item.Status == MilestoneReviewStatus.Published)
-            .ExecuteUpdateAsync(update => update.SetProperty(
-                item => item.Status, MilestoneReviewStatus.Superseded), cancellationToken);
         draft.Status = MilestoneReviewStatus.Published;
         draft.PublishedAt = now;
         var assignments = await dbContext.Assignments.AsNoTracking()
@@ -214,6 +259,10 @@ public sealed partial class MilestoneReviewService(
         review.MilestoneName = details.MilestoneName;
         review.Description = details.Description;
         review.JiraTicketId = details.JiraTicketId;
+        if (review.Status == MilestoneReviewStatus.Published
+            && !string.Equals(review.WorkflowKey, details.WorkflowKey, StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException("The workflow template cannot be changed after the milestone review is published.");
+        review.WorkflowKey = details.WorkflowKey;
         dbContext.Assignments.RemoveRange(assignments.Where(item => !details.ReviewerIds.Contains(item.ReviewerId)));
         foreach (var id in addedIds)
         {
@@ -265,7 +314,7 @@ public sealed partial class MilestoneReviewService(
         await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
         var review = await dbContext.Reviews.AsNoTracking().SingleOrDefaultAsync(
             item => item.Id == requests[0].ReviewId && item.Status == MilestoneReviewStatus.Published, cancellationToken)
-            ?? throw new InvalidOperationException("Only the current published review can receive restored feedback.");
+            ?? throw new InvalidOperationException("Only an active published review can receive restored feedback.");
         var assigned = await dbContext.Assignments.Where(item => item.ReviewId == review.Id)
             .Select(item => item.ReviewerId).ToListAsync(cancellationToken);
         var rows = await dbContext.Feedback.Where(item => item.ReviewId == review.Id).ToListAsync(cancellationToken);
@@ -313,7 +362,7 @@ public sealed partial class MilestoneReviewService(
         var isPublished = await dbContext.Reviews.AnyAsync(
             item => item.Id == request.ReviewId && item.Status == MilestoneReviewStatus.Published,
             cancellationToken);
-        if (!isPublished) throw new InvalidOperationException("Feedback can only be changed on the current published review.");
+        if (!isPublished) throw new InvalidOperationException("Feedback can only be changed on an active published review.");
 
         var feedback = await dbContext.Feedback.SingleOrDefaultAsync(
             item => item.Id == request.FeedbackId && item.ReviewId == request.ReviewId,
@@ -399,7 +448,8 @@ public sealed partial class MilestoneReviewService(
             .ToListAsync(cancellationToken);
         return new MilestoneReview(
             review.Id, review.ProjectName, review.MilestoneName, review.Description,
-            review.Status, review.CreatedAt, review.PublishedAt, review.JiraTicketId, assignments, feedback);
+            review.Status, review.CreatedAt, review.PublishedAt, review.JiraTicketId, assignments, feedback,
+            review.WorkflowKey, review.WorkflowInstanceId);
     }
 
     private static CreateMilestoneReviewRequest ValidateDetails(CreateMilestoneReviewRequest request)
@@ -410,13 +460,23 @@ public sealed partial class MilestoneReviewService(
         var milestone = Required(request.MilestoneName, 160, "Milestone");
         var description = Bounded(request.Description, 4000, "Description");
         var ticket = Bounded(request.JiraTicketId, 64, "Jira ticket ID");
+        var workflowKey = Bounded(request.WorkflowKey, 128, "Workflow template");
         if (!string.IsNullOrWhiteSpace(ticket) && !JiraTicketKey().IsMatch(ticket))
             throw new ArgumentException("Jira ticket ID must use the project-key format, such as GAME-123.");
         if (request.ReviewerIds.Count == 0)
             throw new ArgumentException("Select at least one user who can provide feedback.");
         if (request.ReviewerIds.Distinct().Count() != request.ReviewerIds.Count)
             throw new ArgumentException("The reviewer selection contains an inactive or unavailable user.");
-        return new(project, milestone, description, string.IsNullOrWhiteSpace(ticket) ? null : ticket, request.ReviewerIds);
+        return new(project, milestone, description, string.IsNullOrWhiteSpace(ticket) ? null : ticket,
+            request.ReviewerIds, string.IsNullOrWhiteSpace(workflowKey) ? null : workflowKey);
+    }
+
+    private static string BuildWorkflowInstanceName(MilestoneReviewRecord review)
+    {
+        var name = string.Join(" ", new[] { review.ProjectName, review.Description, review.MilestoneName }
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .Select(value => value.Trim()));
+        return name.Length <= 256 ? name : name[..256].TrimEnd();
     }
 
     private static string Required(string? value, int maxLength, string label)

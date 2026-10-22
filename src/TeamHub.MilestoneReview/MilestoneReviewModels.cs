@@ -33,14 +33,32 @@ public sealed record MilestoneReview(
     DateTimeOffset? PublishedAt,
     string? JiraTicketId,
     IReadOnlyList<MilestoneReviewAssignedReviewer> AssignedReviewers,
-    IReadOnlyList<MilestoneReviewFeedback> Feedback);
+    IReadOnlyList<MilestoneReviewFeedback> Feedback,
+    string? WorkflowKey,
+    Guid? WorkflowInstanceId);
 
 public sealed record CreateMilestoneReviewRequest(
     string ProjectName,
     string MilestoneName,
     string Description,
     string? JiraTicketId,
-    IReadOnlyCollection<Guid> ReviewerIds);
+    IReadOnlyCollection<Guid> ReviewerIds,
+    string? WorkflowKey = null);
+
+public sealed record MilestoneReviewWorkflowStartRequest(
+    Guid ReviewId,
+    string WorkflowKey,
+    string InstanceName,
+    string Description,
+    string StartedBy,
+    string MetadataJson);
+
+public interface IMilestoneReviewWorkflowStarter
+{
+    Task<Guid> StartAsync(
+        MilestoneReviewWorkflowStartRequest request,
+        CancellationToken cancellationToken = default);
+}
 
 public sealed record SaveMilestoneReviewFeedbackRequest(
     Guid ReviewId,
@@ -88,6 +106,7 @@ public sealed class MilestoneReviewCommentSyncException(string message, Exceptio
 public interface IMilestoneReviewService
 {
     Task<MilestoneReview?> GetCurrentAsync(CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<MilestoneReview>> GetActiveAsync(CancellationToken cancellationToken = default);
     Task<MilestoneReview?> GetDraftAsync(CancellationToken cancellationToken = default);
     Task<IReadOnlyList<MilestoneReview>> GetHistoryAsync(CancellationToken cancellationToken = default);
     Task<MilestoneReview?> CreateDraftAsync(

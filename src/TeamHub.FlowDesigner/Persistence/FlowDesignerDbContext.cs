@@ -6,6 +6,7 @@ public sealed class FlowDesignerDbContext(DbContextOptions<FlowDesignerDbContext
 {
     internal DbSet<FlowDefinitionEntity> Flows => Set<FlowDefinitionEntity>();
     internal DbSet<FlowPublicationRequestEntity> PublicationRequests => Set<FlowPublicationRequestEntity>();
+    internal DbSet<FlowPublicationReviewerEntity> PublicationReviewers => Set<FlowPublicationReviewerEntity>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -33,5 +34,16 @@ public sealed class FlowDesignerDbContext(DbContextOptions<FlowDesignerDbContext
         request.Property(item => item.DeletedBy).HasMaxLength(200);
         request.HasIndex(item => new { item.Status, item.RequestedAt });
         request.HasIndex(item => new { item.FlowId, item.RequestedAt });
+
+        var reviewer = modelBuilder.Entity<FlowPublicationReviewerEntity>();
+        reviewer.ToTable("FlowPublicationReviewers");
+        reviewer.HasKey(item => new { item.RequestId, item.UserId });
+        reviewer.Property(item => item.UserId).HasMaxLength(320);
+        reviewer.Property(item => item.DisplayName).HasMaxLength(200).IsRequired();
+        reviewer.Property(item => item.Status).HasMaxLength(30).IsRequired();
+        reviewer.Property(item => item.ReviewNote).HasMaxLength(2000);
+        reviewer.HasIndex(item => new { item.UserId, item.Status });
+        reviewer.HasOne<FlowPublicationRequestEntity>().WithMany()
+            .HasForeignKey(item => item.RequestId).OnDelete(DeleteBehavior.Cascade);
     }
 }

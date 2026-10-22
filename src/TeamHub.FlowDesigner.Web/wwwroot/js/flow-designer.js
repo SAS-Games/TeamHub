@@ -21,6 +21,7 @@
     const saveButtonText = byId("saveButtonText");
     const requestPublicationButton = byId("requestPublicationButton");
     const requestPublicationButtonText = byId("requestPublicationButtonText");
+    const directPublish = requestPublicationButton?.dataset.directPublish === "true";
     const saveTemplateForm = byId("saveTemplateForm");
     const nodeForm = byId("nodeProperties");
     const connectionForm = byId("connectionProperties");
@@ -78,6 +79,7 @@
         root.dataset.diagramType = flow.diagramType;
         root.classList.add(`fd-mode-${flow.diagramType.toLowerCase()}`);
         if (isWorkCenter() && canEdit) await loadRegisteredAssignees();
+        if (canEdit && requestPublicationButton && !directPublish) await loadPublicationReviewers();
         adapter.setGraph(flow);
         const storedZoom = readStoredZoom();
         if (!adapter.setZoom(storedZoom)) {
@@ -151,7 +153,13 @@
         });
 
         saveButton.addEventListener("click", () => save(true));
-        requestPublicationButton?.addEventListener("click", requestPublication);
+        if (directPublish) requestPublicationButton?.addEventListener("click", () => requestPublication([]));
+        byId("publicationRequestForm")?.addEventListener("submit", event => {
+            event.preventDefault();
+            const reviewers = [...byId("publicationReviewerList").querySelectorAll("input:checked")]
+                .map(input => input.value);
+            requestPublication(reviewers);
+        });
         saveTemplateForm?.addEventListener("submit", saveAsTemplate);
         byId("saveTemplateModal")?.addEventListener("show.bs.modal", () => {
             if (!byId("templateName").value) byId("templateName").value = nameInput.value.trim();
@@ -215,7 +223,12 @@
             byId("childFlowName").value = selectedNode?.title?.trim() || "Detailed diagram";
         });
         byId("createChildFlowForm").addEventListener("submit", createChildFlow);
-        ["taskExpectedHours", "taskReminderAfterHours", "taskReminderRepeatHours", "taskEscalationAfterHours", "taskEscalationLevel2AfterHours", "taskEscalationLevel3AfterHours"].forEach(id => byId(id).addEventListener("input", updateSelectedNode));
+        ["taskReminderAfterHours", "taskReminderRepeatHours", "taskEscalationAfterHours", "taskEscalationLevel2AfterHours", "taskEscalationLevel3AfterHours"].forEach(id => byId(id).addEventListener("input", updateSelectedNode));
+        ["taskReminderSubjectTemplate", "taskReminderBodyTemplate", "taskOverdueSubjectTemplate", "taskOverdueBodyTemplate", "taskEscalationSubjectTemplate", "taskEscalationBodyTemplate"].forEach(id => byId(id).addEventListener("input", updateSelectedNode));
+        byId("taskExpectedHours").addEventListener("input", () => {
+            byId("taskDueDate").value = dateFromHours(byId("taskExpectedHours").value);
+            updateSelectedNode();
+        });
         byId("taskDueDate").addEventListener("change", () => {
             const duration = hoursUntilEndOfDate(byId("taskDueDate").value);
             if (duration === null) return;
@@ -338,7 +351,7 @@
         const [year, month, day] = value.split("-").map(Number);
         const due = new Date(year, month - 1, day, 23, 59, 59, 999);
         return Number.isFinite(due.getTime()) && due.getTime() > Date.now()
-            ? (due.getTime() - Date.now()) / 3600000
+            ? Math.ceil(((due.getTime() - Date.now()) / 3600000) * 2) / 2
             : null;
     }
 
@@ -462,23 +475,66 @@
         }
     }
 
-    async function requestPublication() {
+    async function loadPublicationReviewers() {
+        const list = byId("publicationReviewerList");
+        if (!list) return;
+        try {
+            const response = await fetch("/api/flows/reviewers");
+            if (!response.ok) throw new Error();
+            const reviewers = (await response.json())
+                .filter(item => item.userId.toLowerCase() !== currentUser.toLowerCase());
+            list.replaceChildren();
+            if (!reviewers.length) {
+                list.innerHTML = '<span class="text-secondary small">No additional reviewers are available. The administrator will provide final approval.</span>';
+                return;
+            }
+            reviewers.forEach((reviewer, index) => {
+                const label = document.createElement("label");
+                label.className = "form-check border rounded p-2";
+                const input = document.createElement("input");
+                input.className = "form-check-input ms-0 me-2";
+                input.type = "checkbox";
+                input.value = reviewer.userId;
+                input.id = `publicationReviewer${index}`;
+                const text = document.createElement("span");
+                text.textContent = `${reviewer.displayName || reviewer.userId} (${reviewer.userId})`;
+                label.append(input, text);
+                list.append(label);
+            });
+        } catch {
+            list.innerHTML = '<span class="text-danger small">Reviewers could not be loaded. You can still submit for administrator review.</span>';
+        }
+    }
+
+    async function requestPublication(reviewerUserIds) {
         if (!requestPublicationButton || saving || !canEdit) return;
         if (!(await save(false))) return;
 
         requestPublicationButton.disabled = true;
         requestPublicationButtonText.textContent = "Submitting...";
+        const submitButton = byId("submitPublicationRequest");
+        if (submitButton) submitButton.disabled = true;
         try {
-            const response = await fetch(`/api/flows/${flowId}/publication-requests`, { method: "POST" });
+            const response = await fetch(`/api/flows/${flowId}/publication-requests`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ reviewerUserIds: reviewerUserIds || [] })
+            });
             const result = await response.json().catch(() => ({}));
             if (!response.ok) throw new Error(result.message || "The publication request could not be submitted.");
-            requestPublicationButtonText.textContent = "Pending admin review";
-            showToast(`Publication request sent for the complete "${result.flowName || flow.name}" hierarchy`);
+            const requestModal = byId("publicationRequestModal");
+            if (requestModal) bootstrap.Modal.getInstance(requestModal)?.hide();
+            requestPublicationButtonText.textContent = result.published ? "Published" : "Pending review";
+            showToast(result.published
+                ? `Published the complete "${result.flowName || flow.name}" hierarchy`
+                : `Publication request sent for the complete "${result.flowName || flow.name}" hierarchy`);
         } catch (error) {
             console.error(error);
             requestPublicationButton.disabled = false;
-            requestPublicationButtonText.textContent = "Request publication";
+            requestPublicationButtonText.textContent = directPublish ? "Publish" : "Request publication";
             showToast(error.message || "The publication request could not be submitted.");
+        } finally {
+            if (submitButton) submitButton.disabled = false;
         }
     }
 
@@ -641,6 +697,12 @@
         byId("taskDueDate").min = dateFromHours(0);
         byId("taskReminderAfterHours").value = node.customProperties?.reminderAfterHours || "";
         byId("taskReminderRepeatHours").value = node.customProperties?.reminderRepeatHours || "";
+        byId("taskReminderSubjectTemplate").value = node.customProperties?.reminderSubjectTemplate || "";
+        byId("taskReminderBodyTemplate").value = node.customProperties?.reminderBodyTemplate || "";
+        byId("taskOverdueSubjectTemplate").value = node.customProperties?.overdueSubjectTemplate || "";
+        byId("taskOverdueBodyTemplate").value = node.customProperties?.overdueBodyTemplate || "";
+        byId("taskEscalationSubjectTemplate").value = node.customProperties?.escalationSubjectTemplate || "";
+        byId("taskEscalationBodyTemplate").value = node.customProperties?.escalationBodyTemplate || "";
         byId("taskEscalationAfterHours").value = node.customProperties?.escalationAfterHours || "";
         byId("taskEscalationOwner").value = node.customProperties?.escalationOwner || "";
         byId("taskEscalationLevel2AfterHours").value = node.customProperties?.escalationLevel2AfterHours || "";
@@ -938,6 +1000,12 @@
                 expectedDurationHours: byId("taskExpectedHours").value,
                 reminderAfterHours: byId("taskReminderAfterHours").value,
                 reminderRepeatHours: byId("taskReminderRepeatHours").value,
+                reminderSubjectTemplate: byId("taskReminderSubjectTemplate").value,
+                reminderBodyTemplate: byId("taskReminderBodyTemplate").value,
+                overdueSubjectTemplate: byId("taskOverdueSubjectTemplate").value,
+                overdueBodyTemplate: byId("taskOverdueBodyTemplate").value,
+                escalationSubjectTemplate: byId("taskEscalationSubjectTemplate").value,
+                escalationBodyTemplate: byId("taskEscalationBodyTemplate").value,
                 escalationAfterHours: byId("taskEscalationAfterHours").value,
                 escalationOwner: byId("taskEscalationOwner").value,
                 escalationLevel2AfterHours: byId("taskEscalationLevel2AfterHours").value,

@@ -98,6 +98,56 @@ public class ReminderTests
     }
 
     [Fact]
+    public async Task StepReminderTemplateRendersWorkflowAndMetadataPlaceholders()
+    {
+        await using var context = CreateDbContext();
+        var clock = new TestClock(new DateTime(2026, 9, 4, 10, 0, 0, DateTimeKind.Utc));
+        var notification = new TestNotificationService();
+        var engine = new WorkflowEngineService(context, clock, notification);
+        var definition = new WorkflowDefinition
+        {
+            WorkflowKey = "MILESTONE_REVIEW",
+            Name = "Milestone Review",
+            Version = 1,
+            ConfigHash = "custom-reminder",
+            IsActive = true,
+            Enabled = true,
+            ImportedAtUtc = clock.UtcNow
+        };
+        definition.Steps.Add(new WorkflowStepDefinition
+        {
+            WorkflowDefinition = definition,
+            StepKey = "REVIEW",
+            Name = "Review milestone",
+            Owner = "reviewer@x.com",
+            ExpectedDurationHours = 8,
+            ReminderAfterHours = 1,
+            ReminderSubjectTemplate = "{ProjectName} - {StepName}",
+            ReminderBodyTemplate = "Hello {Recipient}. Review {MilestoneName} by {DueDate}; due hours: {DueHours}; workflow: {WorkflowName}.",
+            Required = true,
+            Enabled = true,
+            SortOrder = 1
+        });
+        context.Add(definition);
+        await context.SaveChangesAsync();
+
+        await engine.StartWorkflowAsync(new StartWorkflowRequest
+        {
+            WorkflowKey = definition.WorkflowKey,
+            InstanceName = "Project Alpha Beta M2",
+            StartedBy = "admin",
+            MetadataJson = """{"ProjectName":"Project Alpha","MilestoneName":"M2"}"""
+        });
+        notification.Messages.Clear();
+        clock.UtcNow = clock.UtcNow.AddHours(2);
+
+        (await engine.RunReminderCycleAsync()).Should().Be(1);
+        notification.Messages.Single().Subject.Should().Be("Project Alpha - Review milestone");
+        notification.Messages.Single().Body.Should().Be(
+            "Hello reviewer@x.com. Review M2 by 2026-09-04 18:00 UTC; due hours: 8; workflow: Milestone Review.");
+    }
+
+    [Fact]
     public async Task EscalationLevelsNotifyEveryRecipientOnceAtTheirConfiguredThresholds()
     {
         await using var context = CreateDbContext();
@@ -125,6 +175,8 @@ public class ReminderTests
             EscalationOwner = "lead@x.com; manager@x.com",
             EscalationLevel2AfterHours = 6,
             EscalationLevel2Owners = "director@x.com",
+            EscalationSubjectTemplate = "Level {EscalationLevel}: {StepName}",
+            EscalationBodyTemplate = "Escalate {InstanceName} for {OutstandingAssignees} to {Recipient}.",
             Required = true,
             Enabled = true,
             SortOrder = 1
@@ -144,13 +196,16 @@ public class ReminderTests
         (await engine.RunReminderCycleAsync()).Should().Be(2);
         notification.Messages.Select(message => message.Recipient)
             .Should().BeEquivalentTo("lead@x.com", "manager@x.com");
+        notification.Messages.Should().OnlyContain(message => message.Subject == "Level 1: Task");
+        notification.Messages.Should().OnlyContain(message =>
+            message.Body == $"Escalate Instance for owner@x.com to {message.Recipient}.");
 
         (await engine.RunReminderCycleAsync()).Should().Be(0);
 
         clock.UtcNow = clock.UtcNow.AddHours(4);
         (await engine.RunReminderCycleAsync()).Should().Be(1);
         notification.Messages.Last().Recipient.Should().Be("director@x.com");
-        notification.Messages.Last().Subject.Should().Contain("level 2");
+        notification.Messages.Last().Subject.Should().Be("Level 2: Task");
     }
 
     private static WorkflowDbContext CreateDbContext()

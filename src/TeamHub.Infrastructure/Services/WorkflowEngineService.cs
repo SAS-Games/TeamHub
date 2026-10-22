@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Globalization;
 using Microsoft.EntityFrameworkCore;
 using TeamHub.Application.Interfaces;
 using TeamHub.Application.Models;
@@ -72,6 +73,12 @@ public sealed class WorkflowEngineService(
             SortOrder = step.SortOrder,
             ReminderAfterHours = step.ReminderAfterHours,
             ReminderRepeatHours = step.ReminderRepeatHours,
+            ReminderSubjectTemplate = step.ReminderSubjectTemplate,
+            ReminderBodyTemplate = step.ReminderBodyTemplate,
+            OverdueSubjectTemplate = step.OverdueSubjectTemplate,
+            OverdueBodyTemplate = step.OverdueBodyTemplate,
+            EscalationSubjectTemplate = step.EscalationSubjectTemplate,
+            EscalationBodyTemplate = step.EscalationBodyTemplate,
             EscalationAfterHours = step.EscalationAfterHours,
             EscalationOwner = step.EscalationOwner,
             EscalationLevel2AfterHours = step.EscalationLevel2AfterHours,
@@ -316,6 +323,7 @@ public sealed class WorkflowEngineService(
         var now = clock.UtcNow;
         var activeSteps = await dbContext.WorkflowStepInstances
             .Include(step => step.WorkflowInstance)
+            .ThenInclude(instance => instance.WorkflowDefinition)
             .Include(step => step.Assignees)
             .Where(step => step.WorkflowInstance.Status == WorkflowInstanceStatus.InProgress
                 && step.Status == WorkflowStepStatus.InProgress)
@@ -351,16 +359,28 @@ public sealed class WorkflowEngineService(
                     }
 
                     var overdue = step.DueAtUtc.Value < now;
+                    var defaultSubject = $"Reminder - {step.StepName}";
+                    var defaultBody = overdue
+                        ? $"Task '{step.StepName}' for instance '{step.WorkflowInstance.InstanceName}' is overdue."
+                        : $"Task '{step.StepName}' for instance '{step.WorkflowInstance.InstanceName}' is due at {step.DueAtUtc:yyyy-MM-dd HH:mm} UTC.";
                     await notificationService.SendAsync(new NotificationMessage
                     {
                         WorkflowInstanceId = step.WorkflowInstanceId,
                         WorkflowStepInstanceId = step.Id,
                         Type = overdue ? NotificationType.Overdue : NotificationType.Reminder,
                         Recipient = assignee.Email,
-                        Subject = $"Reminder - {step.StepName}",
-                        Body = overdue
-                            ? $"Task '{step.StepName}' for instance '{step.WorkflowInstance.InstanceName}' is overdue."
-                            : $"Task '{step.StepName}' for instance '{step.WorkflowInstance.InstanceName}' is due at {step.DueAtUtc:yyyy-MM-dd HH:mm} UTC."
+                        Subject = RenderNotificationTemplate(
+                            overdue ? step.OverdueSubjectTemplate : step.ReminderSubjectTemplate,
+                            defaultSubject,
+                            step,
+                            assignee.Email,
+                            outstandingAssignees),
+                        Body = RenderNotificationTemplate(
+                            overdue ? step.OverdueBodyTemplate : step.ReminderBodyTemplate,
+                            defaultBody,
+                            step,
+                            assignee.Email,
+                            outstandingAssignees)
                     }, cancellationToken);
                     assignee.LastReminderAtUtc = now;
                     notificationsSent++;
@@ -389,14 +409,28 @@ public sealed class WorkflowEngineService(
 
                     foreach (var recipient in recipients)
                     {
+                        var defaultSubject = $"Escalation level {level.Level} - {step.StepName}";
+                        var defaultBody = $"Task '{step.StepName}' for instance '{step.WorkflowInstance.InstanceName}' is overdue for: {string.Join(", ", outstandingAssignees.Select(item => item.Email))}.";
                         await notificationService.SendAsync(new NotificationMessage
                         {
                             WorkflowInstanceId = step.WorkflowInstanceId,
                             WorkflowStepInstanceId = step.Id,
                             Type = NotificationType.Escalation,
                             Recipient = recipient,
-                            Subject = $"Escalation level {level.Level} - {step.StepName}",
-                            Body = $"Task '{step.StepName}' for instance '{step.WorkflowInstance.InstanceName}' is overdue for: {string.Join(", ", outstandingAssignees.Select(item => item.Email))}."
+                            Subject = RenderNotificationTemplate(
+                                step.EscalationSubjectTemplate,
+                                defaultSubject,
+                                step,
+                                recipient,
+                                outstandingAssignees,
+                                level.Level),
+                            Body = RenderNotificationTemplate(
+                                step.EscalationBodyTemplate,
+                                defaultBody,
+                                step,
+                                recipient,
+                                outstandingAssignees,
+                                level.Level)
                         }, cancellationToken);
                         notificationsSent++;
                     }
@@ -419,6 +453,71 @@ public sealed class WorkflowEngineService(
 
         await dbContext.SaveChangesAsync(cancellationToken);
         return notificationsSent;
+    }
+
+    private static string RenderNotificationTemplate(
+        string? template,
+        string fallback,
+        WorkflowStepInstance step,
+        string recipient,
+        IReadOnlyCollection<WorkflowStepAssignee> outstandingAssignees,
+        int? escalationLevel = null)
+    {
+        var result = string.IsNullOrWhiteSpace(template) ? fallback : template;
+        var values = MetadataValues(step.WorkflowInstance.MetadataJson);
+        values["InstanceName"] = step.WorkflowInstance.InstanceName;
+        values["InstanceDescription"] = step.WorkflowInstance.Description ?? string.Empty;
+        values["WorkflowName"] = step.WorkflowInstance.WorkflowDefinition?.Name ?? string.Empty;
+        values["WorkflowKey"] = step.WorkflowInstance.WorkflowDefinition?.WorkflowKey ?? string.Empty;
+        values["StepName"] = step.StepName;
+        values["StepDescription"] = step.Description ?? string.Empty;
+        values["Recipient"] = recipient;
+        values["Assignee"] = recipient;
+        values["DueDate"] = step.DueAtUtc?.ToString("yyyy-MM-dd HH:mm 'UTC'", CultureInfo.InvariantCulture) ?? string.Empty;
+        values["DueHours"] = step.ExpectedDurationHours.ToString("0.##", CultureInfo.InvariantCulture);
+        values["EscalationLevel"] = escalationLevel?.ToString(CultureInfo.InvariantCulture) ?? string.Empty;
+        values["OutstandingAssignees"] = string.Join(", ", outstandingAssignees.Select(item => item.Email));
+
+        foreach (var value in values)
+        {
+            result = result.Replace($"{{{value.Key}}}", value.Value, StringComparison.OrdinalIgnoreCase);
+        }
+
+        return result;
+    }
+
+    private static Dictionary<string, string> MetadataValues(string? metadataJson)
+    {
+        var values = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        if (string.IsNullOrWhiteSpace(metadataJson))
+        {
+            return values;
+        }
+
+        try
+        {
+            using var document = JsonDocument.Parse(metadataJson);
+            if (document.RootElement.ValueKind != JsonValueKind.Object)
+            {
+                return values;
+            }
+
+            foreach (var property in document.RootElement.EnumerateObject())
+            {
+                values[property.Name] = property.Value.ValueKind switch
+                {
+                    JsonValueKind.String => property.Value.GetString() ?? string.Empty,
+                    JsonValueKind.Null => string.Empty,
+                    _ => property.Value.GetRawText()
+                };
+            }
+        }
+        catch (JsonException)
+        {
+            // Invalid legacy metadata should not prevent reminder delivery.
+        }
+
+        return values;
     }
 
     public async Task CancelWorkflowAsync(Guid workflowInstanceId, string actor, CancellationToken cancellationToken = default)

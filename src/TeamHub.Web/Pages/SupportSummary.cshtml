@@ -523,6 +523,20 @@ else
                     <div class="support-effort-legend" data-effort-legend></div>
                 </div>
                 <div class="support-effort-total" data-effort-total-row>Total <strong data-effort-total></strong></div>
+                <div class="support-effort-copy-row">
+                    <div class="support-effort-copy-status" data-copy-effort-status role="status" aria-live="polite"></div>
+                    <button class="btn btn-sm btn-outline-secondary support-effort-copy"
+                            type="button"
+                            data-copy-effort-chart
+                            title="Copy chart for PowerPoint"
+                            aria-label="Copy Total Effort Distribution chart for PowerPoint"
+                            disabled>
+                        <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+                            <path d="M4.5 1.5h7a2 2 0 0 1 2 2v7h-2v-7h-7v-2Z" />
+                            <path d="M2.5 4.5h7a2 2 0 0 1 2 2v7h-9v-9Zm2 2v5h5v-5h-5Z" />
+                        </svg>
+                    </button>
+                </div>
             </article>
 
             <article class="support-effort-card" data-effort-chart-card="studio">
@@ -536,6 +550,20 @@ else
                     <div class="support-effort-legend" data-effort-legend></div>
                 </div>
                 <div class="support-effort-total" data-effort-total-row>Total <strong data-effort-total></strong></div>
+                <div class="support-effort-copy-row">
+                    <div class="support-effort-copy-status" data-copy-effort-status role="status" aria-live="polite"></div>
+                    <button class="btn btn-sm btn-outline-secondary support-effort-copy"
+                            type="button"
+                            data-copy-effort-chart
+                            title="Copy chart for PowerPoint"
+                            aria-label="Copy Studio Effort Distribution chart for PowerPoint"
+                            disabled>
+                        <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+                            <path d="M4.5 1.5h7a2 2 0 0 1 2 2v7h-2v-7h-7v-2Z" />
+                            <path d="M2.5 4.5h7a2 2 0 0 1 2 2v7h-9v-9Zm2 2v5h5v-5h-5Z" />
+                        </svg>
+                    </button>
+                </div>
             </article>
         </div>
     </section>
@@ -712,11 +740,29 @@ else
             </div>
 
             <article class="support-effort-card support-effort-user-card">
+                <div>
+                    <h3 data-employee-effort-title>Employee Effort</h3>
+                    <p>Logged hours by activity.</p>
+                </div>
                 <div class="support-effort-chart">
                     <div class="support-effort-pie" role="img" data-employee-effort-pie></div>
                     <div class="support-effort-legend" data-employee-effort-legend></div>
                 </div>
                 <div class="support-effort-total">Total <strong data-employee-effort-total></strong></div>
+                <div class="support-effort-copy-row">
+                    <div class="support-effort-copy-status" data-copy-effort-status role="status" aria-live="polite"></div>
+                    <button class="btn btn-sm btn-outline-secondary support-effort-copy"
+                            type="button"
+                            data-copy-effort-chart
+                            title="Copy chart for PowerPoint"
+                            aria-label="Copy Employee Effort Distribution chart for PowerPoint"
+                            disabled>
+                        <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+                            <path d="M4.5 1.5h7a2 2 0 0 1 2 2v7h-2v-7h-7v-2Z" />
+                            <path d="M2.5 4.5h7a2 2 0 0 1 2 2v7h-9v-9Zm2 2v5h5v-5h-5Z" />
+                        </svg>
+                    </button>
+                </div>
             </article>
         </div>
     </section>
@@ -976,6 +1022,154 @@ updatePeriod();
         }))
         .filter(slice => slice.label && slice.hours > 0);
 
+    const chartData = new WeakMap();
+    const svgNamespace = 'http://www.w3.org/2000/svg';
+    const createSvgElement = (name, attributes = {}, text = null) => {
+        const element = document.createElementNS(svgNamespace, name);
+        Object.entries(attributes).forEach(([key, value]) => element.setAttribute(key, String(value)));
+        if (text !== null) element.textContent = text;
+        return element;
+    };
+
+    const buildChartSvg = ({ title, slices, colors }) => {
+        const total = slices.reduce((sum, slice) => sum + slice.hours, 0);
+        const rowHeight = 34;
+        const height = Math.max(480, 220 + slices.length * rowHeight);
+        const svg = createSvgElement('svg', {
+            xmlns: svgNamespace,
+            width: 960,
+            height,
+            viewBox: `0 0 960 ${height}`
+        });
+        svg.appendChild(createSvgElement('rect', { width: 960, height, fill: '#ffffff' }));
+        svg.appendChild(createSvgElement('text', {
+            x: 42, y: 56, fill: '#18322d', 'font-family': 'Aptos, Arial, sans-serif',
+            'font-size': 28, 'font-weight': 700
+        }, title));
+
+        const centerX = 225;
+        const centerY = Math.max(250, height / 2 + 18);
+        const radius = 150;
+        let angle = -Math.PI / 2;
+        slices.forEach((slice, index) => {
+            const sweep = slice.hours / total * Math.PI * 2;
+            const color = colors[index % colors.length] || '#6b7c75';
+            if (sweep >= Math.PI * 2 - 0.00001) {
+                svg.appendChild(createSvgElement('circle', {
+                    cx: centerX, cy: centerY, r: radius, fill: color, stroke: '#ffffff', 'stroke-width': 3
+                }));
+            } else {
+                const end = angle + sweep;
+                const x1 = centerX + radius * Math.cos(angle);
+                const y1 = centerY + radius * Math.sin(angle);
+                const x2 = centerX + radius * Math.cos(end);
+                const y2 = centerY + radius * Math.sin(end);
+                const largeArc = sweep > Math.PI ? 1 : 0;
+                svg.appendChild(createSvgElement('path', {
+                    d: `M ${centerX} ${centerY} L ${x1} ${y1} A ${radius} ${radius} 0 ${largeArc} 1 ${x2} ${y2} Z`,
+                    fill: color, stroke: '#ffffff', 'stroke-width': 3
+                }));
+                angle = end;
+            }
+        });
+
+        const legendX = 455;
+        const legendY = 120;
+        slices.forEach((slice, index) => {
+            const y = legendY + index * rowHeight;
+            const color = colors[index % colors.length] || '#6b7c75';
+            const percentage = slice.hours / total * 100;
+            svg.appendChild(createSvgElement('rect', {
+                x: legendX, y: y - 14, width: 18, height: 18, rx: 3, fill: color
+            }));
+            svg.appendChild(createSvgElement('text', {
+                x: legendX + 30, y, fill: '#52665f', 'font-family': 'Aptos, Arial, sans-serif', 'font-size': 17
+            }, slice.label.length > 34 ? `${slice.label.slice(0, 33)}…` : slice.label));
+            svg.appendChild(createSvgElement('text', {
+                x: 805, y, fill: '#18322d', 'font-family': 'Aptos, Arial, sans-serif',
+                'font-size': 17, 'font-weight': 700, 'text-anchor': 'end'
+            }, `${formatNumber(slice.hours)}h`));
+            svg.appendChild(createSvgElement('text', {
+                x: 915, y, fill: '#52665f', 'font-family': 'Aptos, Arial, sans-serif',
+                'font-size': 17, 'text-anchor': 'end'
+            }, `${percentage.toLocaleString(undefined, { maximumFractionDigits: 1 })}%`));
+        });
+        svg.appendChild(createSvgElement('line', {
+            x1: legendX, y1: height - 66, x2: 915, y2: height - 66, stroke: '#d9e1dc'
+        }));
+        svg.appendChild(createSvgElement('text', {
+            x: 915, y: height - 32, fill: '#18322d', 'font-family': 'Aptos, Arial, sans-serif',
+            'font-size': 19, 'font-weight': 700, 'text-anchor': 'end'
+        }, `Total ${formatNumber(total)} hours`));
+        return new XMLSerializer().serializeToString(svg);
+    };
+
+    const svgToPng = svgText => new Promise((resolve, reject) => {
+        const blobUrl = URL.createObjectURL(new Blob([svgText], { type: 'image/svg+xml;charset=utf-8' }));
+        const image = new Image();
+        image.onload = () => {
+            const canvas = document.createElement('canvas');
+            canvas.width = image.naturalWidth * 2;
+            canvas.height = image.naturalHeight * 2;
+            const context = canvas.getContext('2d');
+            context.scale(2, 2);
+            context.drawImage(image, 0, 0);
+            URL.revokeObjectURL(blobUrl);
+            canvas.toBlob(blob => blob ? resolve(blob) : reject(new Error('Could not create the chart image.')), 'image/png');
+        };
+        image.onerror = () => {
+            URL.revokeObjectURL(blobUrl);
+            reject(new Error('Could not render the chart image.'));
+        };
+        image.src = blobUrl;
+    });
+
+    const copyChart = async root => {
+        const button = root.querySelector('[data-copy-effort-chart]');
+        const status = root.querySelector('[data-copy-effort-status]');
+        const data = chartData.get(root);
+        if (!button || !status || !data) return;
+        if (!navigator.clipboard?.write || !window.ClipboardItem) {
+            status.textContent = 'Image copying is not supported by this browser. Use Microsoft Edge or Chrome.';
+            status.classList.add('text-danger');
+            return;
+        }
+
+        button.disabled = true;
+        status.classList.remove('text-danger');
+        status.textContent = 'Preparing chart…';
+        try {
+            const svgText = buildChartSvg(data);
+            const svgBlob = new Blob([svgText], { type: 'image/svg+xml' });
+            const pngBlob = await svgToPng(svgText);
+            const supportsSvg = typeof ClipboardItem.supports === 'function'
+                && ClipboardItem.supports('image/svg+xml');
+            let copiedAsSvg = supportsSvg;
+            const clipboardData = supportsSvg
+                ? { 'image/svg+xml': svgBlob, 'image/png': pngBlob }
+                : { 'image/png': pngBlob };
+            try {
+                await navigator.clipboard.write([new ClipboardItem(clipboardData)]);
+            } catch (error) {
+                if (!supportsSvg) throw error;
+                copiedAsSvg = false;
+                await navigator.clipboard.write([new ClipboardItem({ 'image/png': pngBlob })]);
+            }
+            status.textContent = copiedAsSvg
+                ? 'Copied. Paste it into PowerPoint as a vector graphic.'
+                : 'Copied as a high-resolution image. Paste it into PowerPoint.';
+        } catch {
+            status.textContent = 'The chart could not be copied. Check clipboard permission and try again.';
+            status.classList.add('text-danger');
+        } finally {
+            button.disabled = false;
+        }
+    };
+
+    document.querySelectorAll('[data-copy-effort-chart]').forEach(button => {
+        button.addEventListener('click', () => copyChart(button.closest('.support-effort-card')));
+    });
+
     const renderChart = (root, slices, ariaLabel, colors) => {
         const chart = root.querySelector('[data-effort-chart]') || root.querySelector('.support-effort-chart');
         const empty = root.querySelector('[data-effort-chart-empty]');
@@ -988,7 +1182,23 @@ updatePeriod();
         if (empty) empty.hidden = total > 0;
         if (chart) chart.hidden = total <= 0;
         if (totalRow) totalRow.hidden = total <= 0;
-        if (!pie || !legend || !totalElement || total <= 0) return;
+        const copyButton = root.querySelector('[data-copy-effort-chart]');
+        const copyStatus = root.querySelector('[data-copy-effort-status]');
+        if (copyButton) copyButton.disabled = total <= 0;
+        if (copyStatus) {
+            copyStatus.textContent = '';
+            copyStatus.classList.remove('text-danger');
+        }
+        if (!pie || !legend || !totalElement || total <= 0) {
+            chartData.delete(root);
+            return;
+        }
+
+        chartData.set(root, {
+            title: root.querySelector('h3')?.textContent?.trim() || ariaLabel.replace(/ pie chart$/i, ''),
+            slices: slices.map(slice => ({ ...slice })),
+            colors: [...colors]
+        });
 
         let start = 0;
         const stops = slices.map((slice, index) => {
@@ -1097,6 +1307,14 @@ updatePeriod();
             }));
             const renderEmployee = () => {
                 const employee = employees[Number(select.value)] || employees[0];
+                const employeeTitle = employeeRoot.querySelector('[data-employee-effort-title]');
+                if (employeeTitle) employeeTitle.textContent = `${employee.employee} Effort Distribution`;
+                const employeeCopyButton = employeeRoot.querySelector('[data-copy-effort-chart]');
+                if (employeeCopyButton) {
+                    employeeCopyButton.setAttribute(
+                        'aria-label',
+                        `Copy ${employee.employee} Effort Distribution chart for PowerPoint`);
+                }
                 renderChart(
                     employeeRoot.querySelector('.support-effort-user-card'),
                     employee.slices,

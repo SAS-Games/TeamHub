@@ -8,6 +8,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using TeamHub.Authentication;
+using TeamHub.Milestones;
 using TeamHub.MilestoneReview;
 using TeamHub.Studio;
 using TeamHub.Web.AccessControl;
@@ -57,6 +58,8 @@ public sealed class MilestoneReviewTests : IAsyncLifetime
                         CREATE TABLE MilestoneReviews (
                             Id TEXT, ProjectName TEXT, MilestoneName TEXT, Description TEXT,
                             Status INTEGER, CreatedBy TEXT, CreatedAt TEXT, PublishedAt TEXT);
+                        CREATE UNIQUE INDEX IX_MilestoneReviews_Status
+                            ON MilestoneReviews (Status) WHERE Status IN (0, 1);
                         CREATE TABLE MilestoneReviewAssignments (
                             ReviewId TEXT, ReviewerId TEXT, Reviewer TEXT);
                         CREATE TABLE MilestoneReviewFeedback (
@@ -89,9 +92,20 @@ public sealed class MilestoneReviewTests : IAsyncLifetime
                 await using var reader = await columns.ExecuteReaderAsync();
                 var addedColumns = new List<string>();
                 while (await reader.ReadAsync()) addedColumns.Add(reader.GetString(0));
-                addedColumns.Should().Contain("JiraTicketId", "ReviewerUserId", "JiraCommentId", "JiraSyncError");
+                addedColumns.Should().Contain("JiraTicketId", "WorkflowKey", "WorkflowInstanceId",
+                    "ReviewerUserId", "JiraCommentId", "JiraSyncError");
                 addedColumns.Should().Contain("SessionDetails", "AdditionalFeedback");
                 addedColumns.Should().NotContain("WhatsBad");
+                await reader.DisposeAsync();
+
+                await using var index = context.Database.GetDbConnection().CreateCommand();
+                index.CommandText = "SELECT sql FROM sqlite_master WHERE type = 'index' AND name = 'IX_MilestoneReviews_Status'";
+                (await index.ExecuteScalarAsync()).Should().BeOfType<string>()
+                    .Which.Should().Contain("WHERE \"Status\" = 0").And.NotContain("IN (0, 1)");
+
+                await using var insert = context.Database.GetDbConnection().CreateCommand();
+                insert.CommandText = "INSERT INTO MilestoneReviews (Id, Status) VALUES ('one', 1), ('two', 1)";
+                (await insert.ExecuteNonQueryAsync()).Should().Be(2);
             }
             finally
             {
@@ -157,8 +171,10 @@ public sealed class MilestoneReviewTests : IAsyncLifetime
                 new CreateMilestoneReviewRequest("Project", "Next", "", null, [reviewerOne]), "admin@example.com");
             await upgradedService.PublishDraftAsync("admin@example.com");
             (await upgradedService.GetCurrentAsync())!.Feedback.Should().ContainSingle();
-            (await upgradedService.GetHistoryAsync()).Should().ContainSingle()
-                .Which.Feedback.Single().SessionDetails.Should().Be("PC");
+            (await upgradedService.GetHistoryAsync()).Should().BeEmpty();
+            var active = await upgradedService.GetActiveAsync();
+            active.Should().HaveCount(2);
+            active.Single(item => item.Id == current.Id).Feedback.Single().SessionDetails.Should().Be("PC");
         }
         finally
         {
@@ -253,7 +269,7 @@ public sealed class MilestoneReviewTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task PublishingNewReviewReplacesCurrentButRetainsPreviousReview()
+    public async Task PublishingNewReviewKeepsPreviousReviewActive()
     {
         await CreateAndPublishAsync([reviewerOne], "First milestone");
         var old = (await service.GetCurrentAsync())!;
@@ -266,24 +282,27 @@ public sealed class MilestoneReviewTests : IAsyncLifetime
         current.MilestoneName.Should().Be("Second milestone");
         current.Feedback.Select(item => item.ReviewerId).Should().ContainSingle().Which.Should().Be(reviewerTwo);
 
-        await using var command = connection.CreateCommand();
-        command.CommandText = "SELECT COUNT(*) FROM MilestoneReviews WHERE Id = $id AND Status = $status";
-        command.Parameters.AddWithValue("$id", old.Id);
-        command.Parameters.AddWithValue("$status", (int)MilestoneReviewStatus.Superseded);
-        Convert.ToInt32(await command.ExecuteScalarAsync()).Should().Be(1);
+        var active = await service.GetActiveAsync();
+        active.Select(item => item.MilestoneName).Should().Equal("Second milestone", "First milestone");
+        active.Should().OnlyContain(item => item.Status == MilestoneReviewStatus.Published);
         var oldFeedback = old.Feedback.Single();
-        var oldSave = () => service.SaveFeedbackAsync(
+        await service.SaveFeedbackAsync(
             new SaveMilestoneReviewFeedbackRequest(old.Id, oldFeedback.Id, oldFeedback.Version, "", "Late", "", ""),
             reviewerOne, isAdmin: true);
-        await oldSave.Should().ThrowAsync<InvalidOperationException>()
-            .WithMessage("*current published review*");
 
-        var history = await service.GetHistoryAsync();
-        history.Should().HaveCount(1);
-        history[0].Id.Should().Be(old.Id);
-        history[0].MilestoneName.Should().Be("First milestone");
-        history[0].Feedback.Should().HaveCount(1);
-        history[0].Feedback[0].ReviewerId.Should().Be(reviewerOne);
+        (await service.GetActiveAsync()).Single(item => item.Id == old.Id)
+            .Feedback.Single().WhatGood.Should().Be("Late");
+        (await service.GetHistoryAsync()).Should().BeEmpty();
+
+        var model = CreateModel(service, allowed: true);
+        model.SelectedReviewId = old.Id;
+        (await model.OnGetAsync(CancellationToken.None)).Should().BeOfType<PageResult>();
+        model.ActiveReviews.Should().HaveCount(2);
+        model.CurrentReview!.Id.Should().Be(old.Id);
+
+        await service.ArchiveAsync(old.Id, isAdmin: true);
+        (await service.GetActiveAsync()).Should().ContainSingle().Which.Id.Should().Be(current.Id);
+        (await service.GetHistoryAsync()).Should().ContainSingle().Which.Id.Should().Be(old.Id);
     }
 
     [Fact]
@@ -304,6 +323,7 @@ public sealed class MilestoneReviewTests : IAsyncLifetime
             new CreateMilestoneReviewRequest("Project", "Milestone 2", "M2 Desc", "TICK-2", [reviewerTwo]),
             "admin@example.com");
         await service.PublishDraftAsync("admin@example.com");
+        await service.ArchiveAsync(current.Id, isAdmin: true);
 
         var historyAfterSecond = await service.GetHistoryAsync();
         historyAfterSecond.Should().HaveCount(1);
@@ -314,6 +334,8 @@ public sealed class MilestoneReviewTests : IAsyncLifetime
             new CreateMilestoneReviewRequest("Project", "Milestone 3", "M3 Desc", "TICK-3", [reviewerOne]),
             "admin@example.com");
         await service.PublishDraftAsync("admin@example.com");
+        var milestoneTwo = (await service.GetActiveAsync()).Single(item => item.MilestoneName == "Milestone 2");
+        await service.ArchiveAsync(milestoneTwo.Id, isAdmin: true);
 
         var historyAfterThird = await service.GetHistoryAsync();
         historyAfterThird.Should().HaveCount(2);
@@ -365,7 +387,7 @@ public sealed class MilestoneReviewTests : IAsyncLifetime
         archived.AssignedReviewers.Should().BeEquivalentTo(saved.AssignedReviewers);
         var lateSave = () => service.SaveFeedbackAsync(
             save with { Version = saved.Feedback.Single().Version }, reviewerOne, isAdmin: true);
-        await lateSave.Should().ThrowAsync<InvalidOperationException>().WithMessage("*current published review*");
+        await lateSave.Should().ThrowAsync<InvalidOperationException>().WithMessage("*active published review*");
 
         await service.PublishDraftAsync("admin@example.com");
         (await service.GetCurrentAsync())!.Id.Should().Be(draft.Id);
@@ -497,10 +519,50 @@ public sealed class MilestoneReviewTests : IAsyncLifetime
         await service.PublishDraftAsync("admin@example.com");
     }
 
+    [Fact]
+    public async Task PublishingDraftStartsAssignedWorkflowAndStoresInstanceId()
+    {
+        var workflowStarter = new RecordingWorkflowStarter();
+        var workflowService = new MilestoneReviewService(
+            dbContext,
+            new StubUserDirectory([
+                new MilestoneReviewUser(reviewerOne, "Reviewer One", "reviewer.one@example.com", true, true)
+            ]),
+            commentPublisher,
+            workflowStarter);
+        await workflowService.CreateDraftAsync(
+            new CreateMilestoneReviewRequest(
+                "Project One", "Alpha", "Review build", null, [reviewerOne], "MILESTONE_REVIEW"),
+            "admin@example.com");
+
+        var published = await workflowService.PublishDraftAsync("publisher@example.com");
+
+        published!.WorkflowKey.Should().Be("MILESTONE_REVIEW");
+        published.WorkflowInstanceId.Should().Be(workflowStarter.InstanceId);
+        workflowStarter.Requests.Should().ContainSingle();
+        workflowStarter.Requests[0].InstanceName.Should().Be("Project One Review build Alpha");
+        workflowStarter.Requests[0].StartedBy.Should().Be("publisher@example.com");
+        workflowStarter.Requests[0].MetadataJson.Should().Contain(published.Id.ToString());
+    }
+
     private sealed class StubUserDirectory(IReadOnlyList<MilestoneReviewUser> users) : IMilestoneReviewUserDirectory
     {
         public Task<IReadOnlyList<MilestoneReviewUser>> GetActiveUsersAsync(
             CancellationToken cancellationToken = default) => Task.FromResult(users);
+    }
+
+    private sealed class RecordingWorkflowStarter : IMilestoneReviewWorkflowStarter
+    {
+        public Guid InstanceId { get; } = Guid.NewGuid();
+        public List<MilestoneReviewWorkflowStartRequest> Requests { get; } = [];
+
+        public Task<Guid> StartAsync(
+            MilestoneReviewWorkflowStartRequest request,
+            CancellationToken cancellationToken = default)
+        {
+            Requests.Add(request);
+            return Task.FromResult(InstanceId);
+        }
     }
 
     [Fact]
@@ -812,6 +874,33 @@ public sealed class MilestoneReviewTests : IAsyncLifetime
         model.HttpContext.User = new System.Security.Claims.ClaimsPrincipal(
             new System.Security.Claims.ClaimsIdentity(
                 [new System.Security.Claims.Claim(System.Security.Claims.ClaimTypes.Role, role)], "Test"));
+
+    [Fact]
+    public async Task AdminPageLoadsCascadingProjectMilestoneAndDescriptionOptions()
+    {
+        var studios = new StubStudioDirectory([
+            new StudioDetails { Id = "one", ProjectName = "Project One", IsActive = true },
+            new StudioDetails { Id = "duplicate", ProjectName = "project one", IsActive = true },
+            new StudioDetails { Id = "two", ProjectName = "Project Two", IsActive = true },
+            new StudioDetails { Id = "inactive", ProjectName = "Hidden Project", IsActive = false }
+        ]);
+        var milestones = new StubMilestoneTracker([
+            new MilestoneDto { Title = "Project One", Milestone = "Alpha", Description = "Alpha build" },
+            new MilestoneDto { Program = "Project Two", Milestone = "Beta", Description = "Beta build" },
+            new MilestoneDto { Title = "Project One", Milestone = "Total MS Complete", Description = "Summary" },
+            new MilestoneDto { Title = "Hidden Project", Milestone = "Hidden", Description = "Hidden build" }
+        ]);
+        var model = CreateModel(service, true, studios: studios, milestones: milestones);
+        SetRole(model, TeamHubUserTypes.Admin);
+
+        await model.OnGetAsync(CancellationToken.None);
+
+        model.ProjectOptions.Should().Equal("Project One", "Project Two");
+        model.MilestoneOptions.Should().BeEquivalentTo([
+            new MilestoneReviewModel.MilestoneReviewSelectionOption("Project One", "Alpha", "Alpha build"),
+            new MilestoneReviewModel.MilestoneReviewSelectionOption("Project Two", "Beta", "Beta build")
+        ]);
+    }
 
     [Fact]
     public async Task OnGetFeedbackAsync_ReturnsFormattedJsonForLocalMilestoneFeedback()
@@ -1225,14 +1314,17 @@ public sealed class MilestoneReviewTests : IAsyncLifetime
 
     private static MilestoneReviewModel CreateModel(IMilestoneReviewService reviewService, bool allowed,
         StubCommentService? comments = null, Microsoft.AspNetCore.DataProtection.IDataProtectionProvider? protection = null,
-        AccessLevel? level = null, AuthorizedUserRecord? user = null) =>
+        AccessLevel? level = null, AuthorizedUserRecord? user = null,
+        IStudioDirectoryService? studios = null, IMilestoneTrackerService? milestones = null) =>
         new(reviewService,
             new StubUserDirectory([]),
             new StubAccess(allowed, level, user),
             comments ?? new StubCommentService(),
             protection ?? new Microsoft.AspNetCore.DataProtection.EphemeralDataProtectionProvider(),
             new TeamHub.Web.Formatting.SafeMarkdownRenderer(),
-            NullLogger<MilestoneReviewModel>.Instance)
+            NullLogger<MilestoneReviewModel>.Instance,
+            studios,
+            milestones)
         {
             PageContext = new PageContext { HttpContext = new DefaultHttpContext() }
         };
@@ -1271,6 +1363,32 @@ public sealed class MilestoneReviewTests : IAsyncLifetime
 
         public Task<StudioJiraMilestoneReviewCommentResult> UpsertMilestoneReviewCommentAsync(StudioJiraMilestoneReviewCommentRequest request, CancellationToken cancellationToken = default) =>
             Task.FromResult(new StudioJiraMilestoneReviewCommentResult("42"));
+    }
+
+    private sealed class StubStudioDirectory(IReadOnlyList<StudioDetails> studios) : IStudioDirectoryService
+    {
+        public Task<IReadOnlyList<StudioDetails>> GetStudiosAsync(CancellationToken cancellationToken = default) =>
+            Task.FromResult(studios);
+
+        public Task<StudioDetails?> GetStudioAsync(string id, CancellationToken cancellationToken = default) =>
+            Task.FromResult(studios.FirstOrDefault(item => item.Id == id));
+
+        public Task<StudioDetails> SaveStudioAsync(StudioDetails studio, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+
+        public Task DeleteStudioAsync(string id, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+    }
+
+    private sealed class StubMilestoneTracker(IReadOnlyList<MilestoneDto> milestones) : IMilestoneTrackerService
+    {
+        public Task<IReadOnlyList<MilestoneDto>> GetMilestonesAsync(CancellationToken cancellationToken = default) =>
+            Task.FromResult(milestones);
+
+        public Task<MilestoneSourceTestResult> TestSourceAsync(
+            MilestoneSourceSettings settings,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult(new MilestoneSourceTestResult(milestones.Count));
     }
 
 }

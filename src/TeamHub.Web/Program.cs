@@ -86,6 +86,7 @@ builder.Services.AddWorkflowInfrastructure(builder.Configuration);
 builder.Services.AddScoped<INotificationRecipientResolver, TeamHubNotificationRecipientResolver>();
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<ICurrentUserProvider, TeamHubFlowCurrentUserProvider>();
+builder.Services.AddScoped<IFlowReviewerDirectory, TeamHubFlowReviewerDirectory>();
 builder.Services.AddScoped<IFlowPermissionService, TeamHubFlowPermissionService>();
 builder.Services.AddScoped<IFlowPublicationService, WorkCenterFlowPublicationService>();
 builder.Services.AddFlowDesigner(options =>
@@ -100,6 +101,7 @@ builder.Services.AddTeamDirectory(builder.Configuration);
 builder.Services.AddMilestoneReview(builder.Configuration);
 builder.Services.AddScoped<IMilestoneReviewUserDirectory, TeamHubMilestoneReviewUserDirectory>();
 builder.Services.AddScoped<IMilestoneReviewCommentPublisher, StudioMilestoneReviewCommentPublisher>();
+builder.Services.AddScoped<IMilestoneReviewWorkflowStarter, TeamHubMilestoneReviewWorkflowStarter>();
 builder.Services.AddStudioDirectory(builder.Configuration);
 builder.Services.AddTeamHubAi(builder.Configuration);
 builder.Services.AddScoped<TeamHub.AI.Contracts.IAiProviderCredentialAccessor, TeamHub.Web.AI.PersonalAiProviderCredentialAccessor>();

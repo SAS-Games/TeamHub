@@ -41,6 +41,9 @@ public sealed class WorkflowDbContext(DbContextOptions<WorkflowDbContext> option
             e.Property(x => x.EscalationOwner).HasMaxLength(2000);
             e.Property(x => x.EscalationLevel2Owners).HasMaxLength(2000);
             e.Property(x => x.EscalationLevel3Owners).HasMaxLength(2000);
+            e.Property(x => x.ReminderSubjectTemplate).HasMaxLength(1000);
+            e.Property(x => x.OverdueSubjectTemplate).HasMaxLength(1000);
+            e.Property(x => x.EscalationSubjectTemplate).HasMaxLength(1000);
             e.HasOne(x => x.WorkflowDefinition)
                 .WithMany(x => x.Steps)
                 .HasForeignKey(x => x.WorkflowDefinitionId)
@@ -79,6 +82,9 @@ public sealed class WorkflowDbContext(DbContextOptions<WorkflowDbContext> option
             e.Property(x => x.EscalationOwner).HasMaxLength(2000);
             e.Property(x => x.EscalationLevel2Owners).HasMaxLength(2000);
             e.Property(x => x.EscalationLevel3Owners).HasMaxLength(2000);
+            e.Property(x => x.ReminderSubjectTemplate).HasMaxLength(1000);
+            e.Property(x => x.OverdueSubjectTemplate).HasMaxLength(1000);
+            e.Property(x => x.EscalationSubjectTemplate).HasMaxLength(1000);
             e.HasOne(x => x.WorkflowInstance)
                 .WithMany(x => x.Steps)
                 .HasForeignKey(x => x.WorkflowInstanceId)
@@ -166,6 +172,9 @@ public sealed class WorkflowDbContext(DbContextOptions<WorkflowDbContext> option
             e.Property(x => x.EscalationOwner).HasMaxLength(2000);
             e.Property(x => x.EscalationLevel2Owners).HasMaxLength(2000);
             e.Property(x => x.EscalationLevel3Owners).HasMaxLength(2000);
+            e.Property(x => x.ReminderSubjectTemplate).HasMaxLength(1000);
+            e.Property(x => x.OverdueSubjectTemplate).HasMaxLength(1000);
+            e.Property(x => x.EscalationSubjectTemplate).HasMaxLength(1000);
             e.HasIndex(x => new { x.WorkflowDraftDefinitionId, x.SortOrder });
             e.HasOne(x => x.WorkflowDraftDefinition)
                 .WithMany(x => x.Steps)
