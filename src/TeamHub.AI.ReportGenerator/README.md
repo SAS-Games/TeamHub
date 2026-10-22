@@ -71,7 +71,7 @@ the bottom AI Reports section is shown to administrators and users granted
 AI Reports Create access or higher when `AI:ReportGenerator:Enabled=true`.
 Generation enforces the same matrix permissions server-side.
 Weekly Work Summary opens a scrollable modal containing the two-column preview
-and Copy Report. Existing Studio Support access and source
+and Copy Report. Existing Support Summary access and source
 credential rules are unchanged. Monthly/custom ranges are not supported by this
 workflow. Existing `IReportGenerationWorkflow` is reserved for the broader
 report feature, not reused through report-type compatibility branches.

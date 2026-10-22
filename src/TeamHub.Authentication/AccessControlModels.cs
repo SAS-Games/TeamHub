@@ -24,7 +24,7 @@ public static class TeamHubModules
     public const string MilestoneReview = "Milestone Review";
     public const string FlowDesigner = "Flow Designer";
     public const string StudioConfiguration = "Studio Configuration";
-    public const string StudioSupport = "Studio Support";
+    public const string SupportSummary = "Support Summary";
     public const string AiReports = "AI Reports";
     public const string AtlassianConnection = "Atlassian Connection";
     public const string Administration = "Administration";
@@ -41,7 +41,7 @@ public static class TeamHubModules
         MilestoneReview,
         FlowDesigner,
         StudioConfiguration,
-        StudioSupport,
+        SupportSummary,
         AiReports,
         AtlassianConnection,
         Administration,

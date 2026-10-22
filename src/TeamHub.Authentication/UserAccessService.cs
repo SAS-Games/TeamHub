@@ -12,7 +12,9 @@ internal sealed class UserAccessService(
     IOptions<BootstrapAdminOptions> bootstrapAdminOptions) : IUserAccessService
 {
     private const string BootstrapCompleteKey = "BootstrapUsersImported";
-    private const string LegacyStudioSupportModule = "Studio Jira Tickets";
+    private const string LegacyStudioSupportModule = "Studio Support";
+    private const string LegacyStudioJiraTicketsModule = "Studio Jira Tickets";
+    private const string AccidentalSupportSummaryCommentsModule = "Support Summary Comments";
     private const string CustomTeamTabModulePrefix = "Team Tab: ";
     private readonly PasswordHasher<AuthorizedUserEntity> passwordHasher = new();
 
@@ -23,7 +25,7 @@ internal sealed class UserAccessService(
         await EnsureGidSchemaAsync(context, cancellationToken);
         await EnsureUserPermissionSchemaAsync(context, cancellationToken);
         await EnsureAccountTokenSchemaAsync(context, cancellationToken);
-        await MigrateStudioSupportPermissionsAsync(context, cancellationToken);
+        await MigrateSupportSummaryPermissionsAsync(context, cancellationToken);
         await SeedPermissionsAsync(context, TeamHubModules.All, cancellationToken);
 
         if (await context.Settings.AnyAsync(item => item.Key == BootstrapCompleteKey, cancellationToken)) return;
@@ -518,30 +520,62 @@ internal sealed class UserAccessService(
         await context.SaveChangesAsync(cancellationToken);
     }
 
-    private static async Task MigrateStudioSupportPermissionsAsync(
+    private static async Task MigrateSupportSummaryPermissionsAsync(
         AccessControlDbContext context,
         CancellationToken cancellationToken)
     {
-        var legacyPermissions = await context.ModulePermissions
-            .Where(item => item.Module == LegacyStudioSupportModule)
+        var supportPermissions = await context.ModulePermissions
+            .Where(item => item.Module == TeamHubModules.SupportSummary
+                || item.Module == LegacyStudioSupportModule
+                || item.Module == LegacyStudioJiraTicketsModule)
             .ToListAsync(cancellationToken);
-        if (legacyPermissions.Count == 0) return;
-
-        var currentPermissions = await context.ModulePermissions
-            .Where(item => item.Module == TeamHubModules.StudioSupport)
-            .ToDictionaryAsync(item => item.UserType, StringComparer.Ordinal, cancellationToken);
-        foreach (var legacy in legacyPermissions)
+        var currentPermissions = supportPermissions
+            .Where(item => item.Module == TeamHubModules.SupportSummary)
+            .ToDictionary(item => item.UserType, StringComparer.Ordinal);
+        foreach (var legacyModule in new[] { LegacyStudioSupportModule, LegacyStudioJiraTicketsModule })
         {
-            if (currentPermissions.TryGetValue(legacy.UserType, out var current))
+            foreach (var legacy in supportPermissions.Where(item => item.Module == legacyModule))
             {
-                current.AccessLevel = legacy.AccessLevel;
-                context.ModulePermissions.Remove(legacy);
-            }
-            else
-            {
-                legacy.Module = TeamHubModules.StudioSupport;
+                if (currentPermissions.ContainsKey(legacy.UserType))
+                {
+                    context.ModulePermissions.Remove(legacy);
+                    continue;
+                }
+
+                legacy.Module = TeamHubModules.SupportSummary;
+                currentPermissions[legacy.UserType] = legacy;
             }
         }
+
+        var supportUserPermissions = await context.UserModulePermissions
+            .Where(item => item.Module == TeamHubModules.SupportSummary
+                || item.Module == LegacyStudioSupportModule
+                || item.Module == LegacyStudioJiraTicketsModule)
+            .ToListAsync(cancellationToken);
+        var currentUserPermissions = supportUserPermissions
+            .Where(item => item.Module == TeamHubModules.SupportSummary)
+            .ToDictionary(item => item.AuthorizedUserId);
+        foreach (var legacyModule in new[] { LegacyStudioSupportModule, LegacyStudioJiraTicketsModule })
+        {
+            foreach (var legacy in supportUserPermissions.Where(item => item.Module == legacyModule))
+            {
+                if (currentUserPermissions.ContainsKey(legacy.AuthorizedUserId))
+                {
+                    context.UserModulePermissions.Remove(legacy);
+                    continue;
+                }
+
+                legacy.Module = TeamHubModules.SupportSummary;
+                currentUserPermissions[legacy.AuthorizedUserId] = legacy;
+            }
+        }
+
+        context.UserModulePermissions.RemoveRange(await context.UserModulePermissions
+            .Where(item => item.Module == AccidentalSupportSummaryCommentsModule)
+            .ToListAsync(cancellationToken));
+        context.ModulePermissions.RemoveRange(await context.ModulePermissions
+            .Where(item => item.Module == AccidentalSupportSummaryCommentsModule)
+            .ToListAsync(cancellationToken));
         await context.SaveChangesAsync(cancellationToken);
     }
 
@@ -573,7 +607,7 @@ internal sealed class UserAccessService(
             (TeamHubModules.FlowDesigner, TeamHubUserTypes.Privileged) => AccessLevel.FullAccess,
             (TeamHubModules.StudioConfiguration, TeamHubUserTypes.Registered) => AccessLevel.ReadOnly,
             (TeamHubModules.StudioConfiguration, TeamHubUserTypes.Privileged) => AccessLevel.Edit,
-            (TeamHubModules.StudioSupport, TeamHubUserTypes.Registered or TeamHubUserTypes.Privileged) => AccessLevel.ReadOnly,
+            (TeamHubModules.SupportSummary, TeamHubUserTypes.Registered or TeamHubUserTypes.Privileged) => AccessLevel.ReadOnly,
             (TeamHubModules.AiReports, TeamHubUserTypes.Registered or TeamHubUserTypes.Privileged) => AccessLevel.ReadOnly,
             (TeamHubModules.AtlassianConnection, TeamHubUserTypes.Registered or TeamHubUserTypes.Privileged) => AccessLevel.Edit,
             _ => AccessLevel.NoAccess

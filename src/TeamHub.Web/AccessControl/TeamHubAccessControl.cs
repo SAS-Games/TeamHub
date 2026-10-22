@@ -156,9 +156,12 @@ public static class TeamHubAccessRoutes
         if (path.StartsWithSegments("/Milestones")) return TeamHubModules.Milestones;
         if (path.StartsWithSegments("/MilestoneReview")) return TeamHubModules.MilestoneReview;
         if (path.StartsWithSegments("/Flows") || path.StartsWithSegments("/api/flows")) return TeamHubModules.FlowDesigner;
-        if (path.StartsWithSegments("/SupportSummary")) return TeamHubModules.StudioSupport;
+        // The physical Razor Page is /SupportSummaryComments, while its public route is
+        // /SupportSummary/Comments. Keep discovery and request authorization on the same module.
+        if (path.StartsWithSegments("/SupportSummaryComments")) return TeamHubModules.SupportSummary;
+        if (path.StartsWithSegments("/SupportSummary")) return TeamHubModules.SupportSummary;
         if (path.StartsWithSegments("/AIReports") || path.StartsWithSegments("/api/ai-reports")) return TeamHubModules.AiReports;
-        if (path.StartsWithSegments("/Studio/JiraTickets") || path.StartsWithSegments("/Studio/WeeklyUpdates")) return TeamHubModules.StudioSupport;
+        if (path.StartsWithSegments("/Studio/JiraTickets") || path.StartsWithSegments("/Studio/WeeklyUpdates")) return TeamHubModules.SupportSummary;
         if (path.StartsWithSegments("/Studio")) return TeamHubModules.StudioConfiguration;
         var customTeamTab = CustomTeamTabAccess.ResolveModule(path);
         if (customTeamTab is not null) return customTeamTab;

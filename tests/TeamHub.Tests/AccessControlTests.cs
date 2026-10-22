@@ -16,13 +16,13 @@ namespace TeamHub.Tests;
 public sealed class AccessControlTests
 {
     [Fact]
-    public void JiraCommentRoutes_RequireStudioSupportReadAccessIncludingImages()
+    public void JiraCommentRoutes_RequireSupportSummaryReadAccessIncludingImages()
     {
         var request = new DefaultHttpContext().Request;
         request.Path = "/SupportSummary/Comments";
         request.Method = "GET";
         request.QueryString = new QueryString("?handler=Image");
-        TeamHubAccessRoutes.ResolveModule(request.Path).Should().Be(TeamHubModules.StudioSupport);
+        TeamHubAccessRoutes.ResolveModule(request.Path).Should().Be(TeamHubModules.SupportSummary);
         TeamHubAccessRoutes.ResolveRequiredAccess(request).Should().Be(AccessLevel.ReadOnly);
     }
 
@@ -178,7 +178,7 @@ public sealed class AccessControlTests
         (await users.GetAccessLevelAsync(TeamHubModules.Home, TeamHubUserTypes.Guest)).Should().Be(AccessLevel.ReadOnly);
         (await users.GetAccessLevelAsync(TeamHubModules.FlowDesigner, TeamHubUserTypes.Registered)).Should().Be(AccessLevel.Edit);
         (await users.GetAccessLevelAsync(TeamHubModules.AtlassianConnection, TeamHubUserTypes.Registered)).Should().Be(AccessLevel.Edit);
-        (await users.GetAccessLevelAsync(TeamHubModules.StudioSupport, TeamHubUserTypes.Privileged)).Should().Be(AccessLevel.ReadOnly);
+        (await users.GetAccessLevelAsync(TeamHubModules.SupportSummary, TeamHubUserTypes.Privileged)).Should().Be(AccessLevel.ReadOnly);
         (await users.GetAccessLevelAsync(TeamHubModules.MilestoneReview, TeamHubUserTypes.Registered)).Should().Be(AccessLevel.ReadOnly);
         (await users.GetAccessLevelAsync(TeamHubModules.MilestoneReview, TeamHubUserTypes.Privileged)).Should().Be(AccessLevel.ReadOnly);
 
@@ -196,7 +196,7 @@ public sealed class AccessControlTests
     }
 
     [Fact]
-    public async Task InitializeAsync_MigratesLegacyStudioJiraPermissionsToStudioSupport()
+    public async Task InitializeAsync_MigratesLegacyStudioJiraPermissionsToSupportSummary()
     {
         await using var host = await AccessTestHost.CreateAsync();
         await using (var connection = new SqliteConnection($"Data Source={host.DatabasePath};Pooling=False"))
@@ -204,7 +204,7 @@ public sealed class AccessControlTests
             await connection.OpenAsync();
             await using var command = connection.CreateCommand();
             command.CommandText = """
-                DELETE FROM ModulePermissions WHERE Module = 'Studio Support' AND UserType = 'Registered';
+                DELETE FROM ModulePermissions WHERE Module = 'Support Summary' AND UserType = 'Registered';
                 INSERT INTO ModulePermissions (Module, UserType, AccessLevel)
                 VALUES ('Studio Jira Tickets', 'Registered', 3);
                 """;
@@ -215,8 +215,61 @@ public sealed class AccessControlTests
         var users = scope.ServiceProvider.GetRequiredService<IUserAccessService>();
         await users.InitializeAsync();
 
-        (await users.GetAccessLevelAsync(TeamHubModules.StudioSupport, TeamHubUserTypes.Registered)).Should().Be(AccessLevel.Edit);
+        (await users.GetAccessLevelAsync(TeamHubModules.SupportSummary, TeamHubUserTypes.Registered)).Should().Be(AccessLevel.Edit);
         (await users.ListPermissionsAsync()).Should().NotContain(item => item.Module == "Studio Jira Tickets");
+    }
+
+    [Fact]
+    public async Task InitializeAsync_RenamesStudioSupportAndPreservesPerUserOverrides()
+    {
+        await using var host = await AccessTestHost.CreateAsync();
+        Guid userId;
+        using (var setupScope = host.Services.CreateScope())
+        {
+            var setupUsers = setupScope.ServiceProvider.GetRequiredService<IUserAccessService>();
+            userId = (await setupUsers.SaveUserAsync(new SaveAuthorizedUserRequest(
+                null,
+                "support-editor@example.com",
+                null,
+                "Support Editor",
+                TeamHubUserTypes.Registered,
+                true,
+                "password123"),
+                "admin@example.com")).Id;
+        }
+
+        await using (var connection = new SqliteConnection($"Data Source={host.DatabasePath};Pooling=False"))
+        {
+            await connection.OpenAsync();
+            await using var command = connection.CreateCommand();
+            command.CommandText = """
+                DELETE FROM ModulePermissions
+                WHERE Module = 'Support Summary' AND UserType = 'Registered';
+                INSERT INTO ModulePermissions (Module, UserType, AccessLevel)
+                VALUES ('Studio Support', 'Registered', 3);
+                INSERT INTO UserModulePermissions (AuthorizedUserId, Module, AccessLevel)
+                VALUES ($userId, 'Studio Support', 1);
+                INSERT INTO ModulePermissions (Module, UserType, AccessLevel)
+                VALUES ('Support Summary Comments', 'Registered', 3);
+                """;
+            command.Parameters.AddWithValue("$userId", userId);
+            await command.ExecuteNonQueryAsync();
+        }
+
+        using var scope = host.Services.CreateScope();
+        var users = scope.ServiceProvider.GetRequiredService<IUserAccessService>();
+        await users.InitializeAsync();
+
+        (await users.GetAccessLevelAsync(TeamHubModules.SupportSummary, TeamHubUserTypes.Registered))
+            .Should().Be(AccessLevel.Edit);
+        (await users.GetAccessLevelAsync(TeamHubModules.SupportSummary, TeamHubUserTypes.Registered, userId))
+            .Should().Be(AccessLevel.ReadOnly);
+        (await users.ListPermissionsAsync()).Should().NotContain(item =>
+            item.Module is "Studio Support" or "Support Summary Comments");
+        (await users.ListUserPermissionsAsync()).Should().ContainSingle(item =>
+            item.AuthorizedUserId == userId
+            && item.Module == TeamHubModules.SupportSummary
+            && item.AccessLevel == AccessLevel.ReadOnly);
     }
 
     [Fact]
@@ -410,9 +463,10 @@ public sealed class AccessControlTests
     [InlineData("/Reports/Index", "Reports")]
     [InlineData("/ReleaseNotes", "Release Notes")]
     [InlineData("/Administration/Audit", "Administration")]
-    [InlineData("/Studio/JiraTickets", TeamHubModules.StudioSupport)]
-    [InlineData("/Studio/WeeklyUpdates", TeamHubModules.StudioSupport)]
-    [InlineData("/SupportSummary", TeamHubModules.StudioSupport)]
+    [InlineData("/Studio/JiraTickets", TeamHubModules.SupportSummary)]
+    [InlineData("/Studio/WeeklyUpdates", TeamHubModules.SupportSummary)]
+    [InlineData("/SupportSummary", TeamHubModules.SupportSummary)]
+    [InlineData("/SupportSummaryComments", TeamHubModules.SupportSummary)]
     [InlineData("/Team/Custom/support-metrics", "Team Tab: support-metrics")]
     [InlineData("/Register", null)]
     [InlineData("/AcceptInvitation", null)]

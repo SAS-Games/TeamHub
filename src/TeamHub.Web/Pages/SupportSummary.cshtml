@@ -2,12 +2,9 @@
 @model TeamHub.Web.Pages.SupportSummaryModel
 @using TeamHub.Authentication
 @using TeamHub.Web.Pages.Studio
-@using TeamHub.Web.AccessControl
-@inject ICurrentAccessService CurrentAccess
 @{
     ViewData["Title"] = "Support Summary";
     ViewData["PageWidth"] = "Full";
-    var canEditConfluence = await CurrentAccess.CanAsync(TeamHubModules.StudioSupport, AccessLevel.Edit, Model.HttpContext.RequestAborted);
 }
 
 <div class="page-hero">
@@ -587,10 +584,17 @@ else
             {
                 <div class="mx-4 mt-3 alert alert-secondary small">
                     This report is displayed with shared read-only access.
-                    @if (canEditConfluence)
+                    @if (Model.CanEditConfluence)
                     {
                         <text>To save an edit, connect your personal token in <a asp-page="/Profile/Atlassian" class="alert-link">My Atlassian Connection</a>.</text>
                     }
+                </div>
+            }
+            else if (Model.CanEditConfluence)
+            {
+                <div class="mx-4 mt-3 alert alert-secondary small">
+                    Support Summary edit access is enabled. Confluence saves use your personal token from
+                    <a asp-page="/Profile/Atlassian" class="alert-link">My Atlassian Connection</a>.
                 </div>
             }
             @if (Model.ConfluenceResult.Updates.Count == 0)
@@ -619,7 +623,7 @@ else
                                 <tbody>
                                 @foreach (var update in week)
                                 {
-                                    var canEditUpdate = canEditConfluence && update.PageFound && update.StudioFound;
+                                    var canEditUpdate = Model.CanEditConfluence && update.PageFound && update.StudioFound;
                                     var editFormId = $"confluence-edit-{confluenceEditIndex++}";
                                     <tr data-confluence-update-row>
                                         <th scope="row">
