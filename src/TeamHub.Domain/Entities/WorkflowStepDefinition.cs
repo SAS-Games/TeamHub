@@ -14,6 +14,8 @@ public sealed class WorkflowStepDefinition
     public double ExpectedDurationHours { get; set; }
     public double? ReminderAfterHours { get; set; }
     public double? ReminderRepeatHours { get; set; }
+    public string? AssignmentSubjectTemplate { get; set; }
+    public string? AssignmentBodyTemplate { get; set; }
     public string? ReminderSubjectTemplate { get; set; }
     public string? ReminderBodyTemplate { get; set; }
     public string? OverdueSubjectTemplate { get; set; }

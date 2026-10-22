@@ -202,6 +202,7 @@ and edge cases is documented in
 - Keeps active instances on their original version when new workflow versions are published
 - Shows all Overview workflow instances to Privileged and Admin users; Registered users see only active, recently completed, and cancelled instances containing a task assigned to them
 - Mirrors workflow-task emails in a self-contained Notifications module; the header bell shows unread items, and opening one marks it read before navigating to its workflow task
+- Supports per-step assignment subject and body overrides, with the same workflow, task, recipient, due-date, and metadata placeholders used by reminder and escalation templates
 
 ## Notes
 

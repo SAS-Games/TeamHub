@@ -207,7 +207,7 @@
                     <h3 class="h6 mb-0">Workflow Steps</h3>
                     <button type="button" class="btn btn-sm btn-outline-primary" data-add-row>Add Step</button>
                 </div>
-                <div class="form-text mb-2">Optional step email templates support <code>{InstanceName}</code>, <code>{InstanceDescription}</code>, <code>{WorkflowName}</code>, <code>{WorkflowKey}</code>, <code>{StepName}</code>, <code>{StepDescription}</code>, <code>{Recipient}</code>, <code>{Assignee}</code>, <code>{DueDate}</code>, <code>{DueHours}</code>, <code>{EscalationLevel}</code>, <code>{OutstandingAssignees}</code>, and top-level workflow metadata keys.</div>
+                <div class="form-text mb-2">Optional step email templates support <code>{InstanceName}</code>, <code>{InstanceDescription}</code>, <code>{WorkflowName}</code>, <code>{WorkflowKey}</code>, <code>{StepName}</code>, <code>{StepDescription}</code>, <code>{Recipient}</code>, <code>{Assignee}</code>, <code>{DueDate}</code>, <code>{DueHours}</code>, <code>{EscalationLevel}</code>, <code>{OutstandingAssignees}</code>, and top-level workflow metadata keys. Global Email Service templates are applied afterward, so keep <code>{Subject}</code> and <code>{Body}</code> there to preserve these overrides.</div>
                 <div class="table-responsive mb-4">
                     <table class="table styled-table align-middle">
                         <thead><tr><th>Task ID (generated)</th><th>Name</th><th>Owner</th><th>Due date</th><th>Depends On</th><th>Escalations</th><th>Flags</th><th>Actions</th></tr></thead>
@@ -243,6 +243,8 @@
                                     <div class="form-text">Hours after due date; separate emails with semicolons.</div>
                                     <details class="mt-2">
                                         <summary>Email content</summary>
+                                        <input asp-for="Input.Steps[index].AssignmentSubjectTemplate" class="form-control mt-2" data-field="AssignmentSubjectTemplate" maxlength="1000" placeholder="Assignment subject" />
+                                        <textarea asp-for="Input.Steps[index].AssignmentBodyTemplate" class="form-control mt-1" data-field="AssignmentBodyTemplate" rows="2" placeholder="Assignment body"></textarea>
                                         <input asp-for="Input.Steps[index].ReminderSubjectTemplate" class="form-control mt-2" data-field="ReminderSubjectTemplate" maxlength="1000" placeholder="Reminder subject" />
                                         <textarea asp-for="Input.Steps[index].ReminderBodyTemplate" class="form-control mt-1" data-field="ReminderBodyTemplate" rows="2" placeholder="Reminder body"></textarea>
                                         <input asp-for="Input.Steps[index].OverdueSubjectTemplate" class="form-control mt-2" data-field="OverdueSubjectTemplate" maxlength="1000" placeholder="Overdue subject" />
@@ -355,6 +357,8 @@
                 emailTemplates.className = "mt-2";
                 emailTemplates.innerHTML = "<summary>Email content</summary>";
                 emailTemplates.append(
+                    makeInput(prefix, index, "AssignmentSubjectTemplate", { placeholder: "Assignment subject" }),
+                    makeInput(prefix, index, "AssignmentBodyTemplate", { multiline: true, placeholder: "Assignment body" }),
                     makeInput(prefix, index, "ReminderSubjectTemplate", { placeholder: "Reminder subject" }),
                     makeInput(prefix, index, "ReminderBodyTemplate", { multiline: true, placeholder: "Reminder body" }),
                     makeInput(prefix, index, "OverdueSubjectTemplate", { placeholder: "Overdue subject" }),

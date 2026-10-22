@@ -263,6 +263,8 @@ public class ConfigurationModel(
                     DependsOnCsv = step.DependsOnCsv,
                     ReminderAfterHours = step.ReminderAfterHours,
                     ReminderRepeatHours = step.ReminderRepeatHours,
+                    AssignmentSubjectTemplate = step.AssignmentSubjectTemplate,
+                    AssignmentBodyTemplate = step.AssignmentBodyTemplate,
                     ReminderSubjectTemplate = step.ReminderSubjectTemplate,
                     ReminderBodyTemplate = step.ReminderBodyTemplate,
                     OverdueSubjectTemplate = step.OverdueSubjectTemplate,
@@ -302,6 +304,8 @@ public class ConfigurationModel(
                     DependsOnCsv = step.DependsOnCsv ?? string.Empty,
                     ReminderAfterHours = step.ReminderAfterHours,
                     ReminderRepeatHours = step.ReminderRepeatHours,
+                    AssignmentSubjectTemplate = step.AssignmentSubjectTemplate,
+                    AssignmentBodyTemplate = step.AssignmentBodyTemplate,
                     ReminderSubjectTemplate = step.ReminderSubjectTemplate,
                     ReminderBodyTemplate = step.ReminderBodyTemplate,
                     OverdueSubjectTemplate = step.OverdueSubjectTemplate,
@@ -333,6 +337,8 @@ public class ConfigurationModel(
         public string? DependsOnCsv { get; set; }
         public double? ReminderAfterHours { get; set; }
         public double? ReminderRepeatHours { get; set; }
+        public string? AssignmentSubjectTemplate { get; set; }
+        public string? AssignmentBodyTemplate { get; set; }
         public string? ReminderSubjectTemplate { get; set; }
         public string? ReminderBodyTemplate { get; set; }
         public string? OverdueSubjectTemplate { get; set; }

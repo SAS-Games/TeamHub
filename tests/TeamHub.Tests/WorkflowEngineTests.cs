@@ -42,6 +42,33 @@ public class WorkflowEngineTests
     }
 
     [Fact]
+    public async Task AssignmentNotification_UsesStepOverridesAndWorkflowMetadata()
+    {
+        await using var context = CreateDbContext();
+        var clock = new TestClock(new DateTime(2026, 9, 4, 10, 0, 0, DateTimeKind.Utc));
+        var notifications = new TestNotificationService();
+        var engine = new WorkflowEngineService(context, clock, notifications);
+        var definition = SeedSimpleWorkflow(context);
+        var rootStep = definition.Steps.Single(step => step.StepKey == "EMPLOYEE_ID");
+        rootStep.AssignmentSubjectTemplate = "{ProjectName} - {WorkflowName} - {StepName}";
+        rootStep.AssignmentBodyTemplate = "Review {MilestoneName}, {Recipient}; due {DueDate}.";
+        await context.SaveChangesAsync();
+
+        await engine.StartWorkflowAsync(new StartWorkflowRequest
+        {
+            WorkflowKey = definition.WorkflowKey,
+            InstanceName = "Release review",
+            StartedBy = "admin@local",
+            MetadataJson = """{"ProjectName":"Project Alpha","MilestoneName":"M2"}"""
+        });
+
+        var assignment = notifications.Sent.Should().ContainSingle(message =>
+            message.Type == NotificationType.Assignment).Subject;
+        assignment.Subject.Should().Be("Project Alpha - NEW HIRE ONBOARDING - Create Employee ID");
+        assignment.Body.Should().Be("Review M2, hr@company.com; due 2026-09-05 10:00 UTC.");
+    }
+
+    [Fact]
     public async Task DependentStepActivates_OnlyAfterAllDependenciesComplete()
     {
         await using var context = CreateDbContext();

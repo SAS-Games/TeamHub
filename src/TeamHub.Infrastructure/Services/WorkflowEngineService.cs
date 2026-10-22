@@ -50,6 +50,7 @@ public sealed class WorkflowEngineService(
         var instance = new WorkflowInstance
         {
             WorkflowDefinitionId = definition.Id,
+            WorkflowDefinition = definition,
             InstanceName = request.InstanceName,
             Description = request.Description,
             MetadataJson = request.MetadataJson,
@@ -73,6 +74,8 @@ public sealed class WorkflowEngineService(
             SortOrder = step.SortOrder,
             ReminderAfterHours = step.ReminderAfterHours,
             ReminderRepeatHours = step.ReminderRepeatHours,
+            AssignmentSubjectTemplate = step.AssignmentSubjectTemplate,
+            AssignmentBodyTemplate = step.AssignmentBodyTemplate,
             ReminderSubjectTemplate = step.ReminderSubjectTemplate,
             ReminderBodyTemplate = step.ReminderBodyTemplate,
             OverdueSubjectTemplate = step.OverdueSubjectTemplate,
@@ -295,6 +298,8 @@ public sealed class WorkflowEngineService(
         }
 
         var pendingSteps = await dbContext.WorkflowStepInstances
+            .Include(item => item.WorkflowInstance)
+            .ThenInclude(instance => instance.WorkflowDefinition)
             .Where(item => item.WorkflowInstanceId == step.WorkflowInstanceId && item.Status == WorkflowStepStatus.Pending)
             .ToListAsync(cancellationToken);
 
@@ -596,16 +601,31 @@ public sealed class WorkflowEngineService(
                 })
             });
 
-            foreach (var assignee in step.Assignees.Where(item => !item.CompletedAtUtc.HasValue))
+            var outstandingAssignees = step.Assignees
+                .Where(item => !item.CompletedAtUtc.HasValue)
+                .ToList();
+            foreach (var assignee in outstandingAssignees)
             {
+                var defaultSubject = $"Action Required - {step.StepName}";
+                var defaultBody = $"Task '{step.StepName}' is now active and due at {step.DueAtUtc:yyyy-MM-dd HH:mm} UTC. Every assignee must complete their part.";
                 await notificationService.SendAsync(new NotificationMessage
                 {
                     WorkflowInstanceId = step.WorkflowInstanceId,
                     WorkflowStepInstanceId = step.Id,
                     Type = NotificationType.Assignment,
                     Recipient = assignee.Email,
-                    Subject = $"Action Required - {step.StepName}",
-                    Body = $"Task '{step.StepName}' is now active and due at {step.DueAtUtc:yyyy-MM-dd HH:mm} UTC. Every assignee must complete their part."
+                    Subject = RenderNotificationTemplate(
+                        step.AssignmentSubjectTemplate,
+                        defaultSubject,
+                        step,
+                        assignee.Email,
+                        outstandingAssignees),
+                    Body = RenderNotificationTemplate(
+                        step.AssignmentBodyTemplate,
+                        defaultBody,
+                        step,
+                        assignee.Email,
+                        outstandingAssignees)
                 }, cancellationToken);
             }
         }

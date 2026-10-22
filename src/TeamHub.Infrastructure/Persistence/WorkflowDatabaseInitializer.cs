@@ -159,6 +159,8 @@ internal sealed class WorkflowDatabaseInitializer(WorkflowDbContext dbContext) :
 
         await AddColumnIfMissingAsync(tableName, "ReminderSubjectTemplate", "TEXT NULL", cancellationToken);
         await AddColumnIfMissingAsync(tableName, "ReminderBodyTemplate", "TEXT NULL", cancellationToken);
+        await AddColumnIfMissingAsync(tableName, "AssignmentSubjectTemplate", "TEXT NULL", cancellationToken);
+        await AddColumnIfMissingAsync(tableName, "AssignmentBodyTemplate", "TEXT NULL", cancellationToken);
         await AddColumnIfMissingAsync(tableName, "OverdueSubjectTemplate", "TEXT NULL", cancellationToken);
         await AddColumnIfMissingAsync(tableName, "OverdueBodyTemplate", "TEXT NULL", cancellationToken);
         await AddColumnIfMissingAsync(tableName, "EscalationSubjectTemplate", "TEXT NULL", cancellationToken);
