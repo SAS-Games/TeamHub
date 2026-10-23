@@ -16,7 +16,6 @@
     var applicationName = ApplicationOptions.Value.Name;
     var currentModule = TeamHubAccessRoutes.ResolveModule(Context.Request.Path);
     var currentPageAccess = currentModule is null ? AccessLevel.FullAccess : await CurrentAccess.GetAccessLevelAsync(currentModule);
-    var isReadOnlyPage = currentPageAccess == AccessLevel.ReadOnly;
     var navigationTabs = new List<NavigationTabOptions>();
     foreach (var tab in NavigationTabsOptions.Value.OrderBy(tab => tab.Order))
     {
@@ -203,10 +202,6 @@
     </header>
     <div class="@pageContainerClass teamhub-page-frame">
         <main role="main" class="pb-3">
-            @if (isReadOnlyPage && currentModule != TeamHubModules.MilestoneReview && User.Identity?.IsAuthenticated == true)
-            {
-                <div class="alert alert-light border small" role="status">You have read-only access to this module.</div>
-            }
             @RenderBody()
         </main>
     </div>
