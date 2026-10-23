@@ -13,6 +13,9 @@ using TeamHub.MilestoneReview;
 using TeamHub.Studio;
 using TeamHub.Web.AccessControl;
 using TeamHub.Web.Pages;
+using TeamHub.Web.ExternalProcesses;
+using TeamHub.Web.ExternalProcesses.MilestoneReviewReport;
+using TeamHub.Web.ExternalProcesses.WorklogAnalytics;
 
 namespace TeamHub.Tests;
 
@@ -702,6 +705,104 @@ public sealed class MilestoneReviewTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task MilestoneReportProcessSendsVersionedServerLoadedSnapshotAndRechecksAssignment()
+    {
+        await service.CreateDraftAsync(
+            new("Project", "Milestone", "Description", "GAME-123", [reviewerOne],
+                ReportGeneratorIds: [reviewerTwo]),
+            "admin@example.com");
+        await service.PublishDraftAsync("admin@example.com");
+        var current = (await service.GetCurrentAsync())!;
+        var runner = new StubExternalProcessRunner
+        {
+            Result = new("""
+                {"success":true,"reportId":"report-1","reportUrl":"https://reports.example.test/1","message":"Ready"}
+                """, "", 0)
+        };
+        var credentialResolver = new StubExternalProcessCredentialResolver();
+        var reportProcess = new MilestoneReviewReportProcessService(service, runner, credentialResolver);
+
+        var result = await reportProcess.GenerateAsync(
+            current.Id, reviewerTwo, "reviewer.two@example.com", false);
+
+        result.ReportId.Should().Be("report-1");
+        runner.Requests.Should().ContainSingle();
+        credentialResolver.ProcessKey.Should().Be(ExternalProcessKeys.MilestoneReviewReport);
+        using var input = System.Text.Json.JsonDocument.Parse(runner.Requests.Single().StandardInput!);
+        input.RootElement.GetProperty("schemaVersion").GetInt32().Should().Be(1);
+        input.RootElement.GetProperty("correlationId").GetGuid().Should().NotBeEmpty();
+        var review = input.RootElement.GetProperty("milestoneReview");
+        review.GetProperty("id").GetGuid().Should().Be(current.Id);
+        review.GetProperty("jiraTicketId").GetString().Should().Be("GAME-123");
+        review.GetProperty("feedback").GetArrayLength().Should().Be(1);
+
+        var unauthorized = () => reportProcess.GenerateAsync(
+            current.Id, reviewerOne, "reviewer.one@example.com", false);
+        await unauthorized.Should().ThrowAsync<UnauthorizedAccessException>();
+        runner.Requests.Should().ContainSingle("an unassigned user must not launch the external process");
+    }
+
+    [Fact]
+    public async Task WorklogAnalyticsUsesSharedExternalProcessRunnerAndCredentialPolicy()
+    {
+        var runner = new StubExternalProcessRunner
+        {
+            Result = new("""
+                {
+                  "effortSummary":[{"label":"Studio","hours":12.5}],
+                  "studioBreakdown":[],
+                  "employeeEffortBreakdowns":[]
+                }
+                """, "", 0)
+        };
+        var credentials = new StubExternalProcessCredentialResolver();
+        using var cache = new Microsoft.Extensions.Caching.Memory.MemoryCache(
+            new Microsoft.Extensions.Caching.Memory.MemoryCacheOptions());
+        var worklogs = new PythonWorklogEffortService(
+            runner, credentials, cache);
+
+        var report = await worklogs.GetActualEffortAsync(
+            new DateOnly(2026, 10, 19), new DateOnly(2026, 10, 23),
+            "privileged@example.com", true);
+
+        report.EffortSummary.Should().ContainSingle().Which.Hours.Should().Be(12.5);
+        var request = runner.Requests.Should().ContainSingle().Which;
+        request.ProcessKey.Should().Be(ExternalProcessKeys.WorklogAnalytics);
+        request.Arguments.Should().Equal("--start", "2026-10-19", "--end", "2026-10-23");
+        request.SensitiveEnvironment.Should().ContainKey("TEAMHUB_JIRA_PAT");
+        credentials.RequestingUserId.Should().Be("privileged@example.com");
+        credentials.AllowPrivilegedDefaultCredential.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task ExternalProcessCredentialPolicyCanUseConfiguredUsersBearerToken()
+    {
+        var services = new ServiceCollection();
+        services.Configure<ExternalProcessCatalogOptions>(options => options.Processes[
+            ExternalProcessKeys.MilestoneReviewReport] = new ExternalProcessOptions
+        {
+            Credential = new ExternalProcessCredentialOptions
+            {
+                Mode = ExternalProcessCredentialModes.ConfiguredUser,
+                ConfiguredUserId = "report.admin@example.com",
+                EnvironmentVariable = "MILESTONE_JIRA_PAT"
+            }
+        });
+        var credentials = new StubAtlassianCredentials();
+        services.AddSingleton<IAtlassianCredentialAccessor>(credentials);
+        services.AddScoped<IExternalProcessCredentialResolver, ExternalProcessCredentialResolver>();
+        await using var provider = services.BuildServiceProvider();
+
+        var environment = await provider.GetRequiredService<IExternalProcessCredentialResolver>()
+            .ResolveEnvironmentAsync(
+                ExternalProcessKeys.MilestoneReviewReport, "requester@example.com", false);
+
+        credentials.RequestingUserId.Should().Be("report.admin@example.com");
+        credentials.AllowDefault.Should().BeFalse();
+        environment.Should().Contain("MILESTONE_JIRA_PAT", "configured-admin-token");
+    }
+
+    [Fact]
     public async Task PublishedEditPreservesFeedbackAndRevokesRemovedContributorsWithoutDeletingTheirRows()
     {
         await CreateAndPublishAsync([reviewerOne]);
@@ -1383,6 +1484,61 @@ public sealed class MilestoneReviewTests : IAsyncLifetime
             Task.FromResult(allowed ? AccessLevel.ReadOnly : AccessLevel.NoAccess);
         public Task<CurrentAccessSnapshot> GetCurrentAsync(CancellationToken cancellationToken = default) =>
             Task.FromResult(new CurrentAccessSnapshot(TeamHubUserTypes.Registered, user));
+    }
+
+    private sealed class StubExternalProcessRunner : IExternalProcessRunner
+    {
+        public ExternalProcessResult Result { get; set; } = new("{}", "", 0);
+        public List<ExternalProcessRequest> Requests { get; } = [];
+        public bool IsEnabled(string processKey) => true;
+        public Task<ExternalProcessResult> RunAsync(
+            ExternalProcessRequest request, CancellationToken cancellationToken = default)
+        {
+            Requests.Add(request);
+            return Task.FromResult(Result);
+        }
+    }
+
+    private sealed class StubExternalProcessCredentialResolver : IExternalProcessCredentialResolver
+    {
+        public string? ProcessKey { get; private set; }
+        public string? RequestingUserId { get; private set; }
+        public bool? AllowPrivilegedDefaultCredential { get; private set; }
+        public Task<IReadOnlyDictionary<string, string>> ResolveEnvironmentAsync(
+            string processKey,
+            string requestingUserId,
+            bool allowPrivilegedDefaultCredential,
+            CancellationToken cancellationToken = default)
+        {
+            ProcessKey = processKey;
+            RequestingUserId = requestingUserId;
+            AllowPrivilegedDefaultCredential = allowPrivilegedDefaultCredential;
+            return Task.FromResult<IReadOnlyDictionary<string, string>>(
+                new Dictionary<string, string> { ["TEAMHUB_JIRA_PAT"] = "secret" });
+        }
+    }
+
+    private sealed class StubAtlassianCredentials : IAtlassianCredentialAccessor
+    {
+        public string? RequestingUserId { get; private set; }
+        public bool? AllowDefault { get; private set; }
+
+        public Task<AtlassianResolvedCredential?> ResolveJiraCredentialAsync(
+            string userId, bool allowPrivilegedDefault, CancellationToken cancellationToken = default)
+        {
+            RequestingUserId = userId;
+            AllowDefault = allowPrivilegedDefault;
+            return Task.FromResult<AtlassianResolvedCredential?>(
+                new("configured-admin-token", false, true));
+        }
+
+        public Task<AtlassianResolvedCredential?> ResolveDefaultJiraCredentialAsync(
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult<AtlassianResolvedCredential?>(new("default-token", true, true));
+
+        public Task<AtlassianResolvedCredential?> ResolveConfluenceCredentialAsync(
+            string userId, bool allowPrivilegedDefault, CancellationToken cancellationToken = default) =>
+            Task.FromResult<AtlassianResolvedCredential?>(null);
     }
 
     private sealed class StubCommentService : IStudioJiraCommentService

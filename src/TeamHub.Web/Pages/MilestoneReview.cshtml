@@ -130,9 +130,10 @@ else
                 <small class="text-secondary">Published @Model.CurrentReview.PublishedAt?.ToLocalTime().ToString("g")</small>
                 @if (Model.CanGenerateReport)
                 {
-                    <button type="button" class="btn btn-sm btn-primary" data-generate-milestone-report>
-                        Generate Report
-                    </button>
+                    <form method="post" asp-page-handler="GenerateReport" data-milestone-report-form>
+                        <input type="hidden" name="ReviewId" value="@Model.CurrentReview.Id" />
+                        <button type="submit" class="btn btn-sm btn-primary">Generate Report</button>
+                    </form>
                 }
                 @if (Model.IsAdmin)
                 {
@@ -314,6 +315,34 @@ else
             }
         </div>
     </section>
+
+    @if (Model.CanGenerateReport)
+    {
+        <div class="mt-3" role="status" aria-live="polite" data-milestone-report-result></div>
+        <div class="modal fade" id="milestone-report-progress-modal" tabindex="-1"
+             aria-labelledby="milestone-report-progress-title" aria-hidden="true"
+             data-milestone-report-modal>
+            <div class="modal-dialog modal-dialog-centered">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h2 class="modal-title fs-5" id="milestone-report-progress-title">Generate Milestone Report</h2>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cancel report generation"></button>
+                    </div>
+                    <div class="modal-body">
+                        <div class="d-flex align-items-center gap-3" data-milestone-report-progress>
+                            <div class="spinner-border text-primary" role="status" aria-hidden="true"></div>
+                            <span>Generating the milestone report…</span>
+                        </div>
+                        <div class="alert alert-danger mb-0" role="alert" data-milestone-report-error hidden></div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal"
+                                data-milestone-report-close hidden>Close</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    }
 }
 
 <section class="content-section mt-4">
@@ -447,4 +476,5 @@ else
         })();
     </script>
     <script src="~/js/jira-comments.js" asp-append-version="true"></script>
+    <script src="~/js/milestone-report.js" asp-append-version="true"></script>
 }

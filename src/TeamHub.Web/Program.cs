@@ -27,7 +27,9 @@ using TeamHub.Web.Options;
 using TeamHub.Web.FlowDesigner;
 using TeamHub.Web.WorkCenter;
 using TeamHub.Web.Formatting;
-using TeamHub.Web.WorklogAnalytics;
+using TeamHub.Web.ExternalProcesses;
+using TeamHub.Web.ExternalProcesses.MilestoneReviewReport;
+using TeamHub.Web.ExternalProcesses.WorklogAnalytics;
 using TeamHub.Web.Reports;
 using TeamHub.Web.Reviews;
 
@@ -66,9 +68,33 @@ builder.Services.AddRazorPages()
     .AddApplicationPart(typeof(NotificationModuleMarker).Assembly);
 builder.Services.AddMemoryCache();
 builder.Services.AddSingleton<ISafeMarkdownRenderer, SafeMarkdownRenderer>();
-builder.Services.Configure<WorklogAnalyticsOptions>(
-    builder.Configuration.GetSection(WorklogAnalyticsOptions.SectionName));
+builder.Services.Configure<ExternalProcessCatalogOptions>(
+    builder.Configuration.GetSection(ExternalProcessCatalogOptions.SectionName));
+var legacyWorklogSection = builder.Configuration.GetSection("WorklogAnalytics");
+if (legacyWorklogSection.Exists())
+{
+    var legacyWorklog = legacyWorklogSection.Get<LegacyWorklogAnalyticsOptions>()!;
+    builder.Services.PostConfigure<ExternalProcessCatalogOptions>(catalog =>
+    {
+        var process = catalog.Processes.FirstOrDefault(item =>
+            item.Key.Equals(ExternalProcessKeys.WorklogAnalytics, StringComparison.OrdinalIgnoreCase)).Value;
+        if (process is null)
+        {
+            process = new ExternalProcessOptions();
+            catalog.Processes[ExternalProcessKeys.WorklogAnalytics] = process;
+        }
+        process.Enabled = legacyWorklog.Enabled;
+        process.RootPath = legacyWorklog.RootPath;
+        process.ExecutablePath = string.IsNullOrWhiteSpace(legacyWorklog.PythonExecutable)
+            ? Path.Combine(legacyWorklog.RootPath, ".venv", "Scripts", "python.exe")
+            : legacyWorklog.PythonExecutable;
+        process.TimeoutSeconds = legacyWorklog.TimeoutSeconds;
+    });
+}
+builder.Services.AddSingleton<IExternalProcessRunner, ExternalProcessRunner>();
+builder.Services.AddScoped<IExternalProcessCredentialResolver, ExternalProcessCredentialResolver>();
 builder.Services.AddScoped<IWorklogEffortService, PythonWorklogEffortService>();
+builder.Services.AddScoped<IMilestoneReviewReportProcessService, MilestoneReviewReportProcessService>();
 var dataProtection = builder.Services.AddDataProtection()
     .PersistKeysToFileSystem(new DirectoryInfo(dataProtectionKeysPath))
     .SetApplicationName("TeamHub");
