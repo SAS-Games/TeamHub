@@ -171,15 +171,22 @@ public sealed class AiSettingsInput
     [StringLength(256)] public string CredentialEnvironmentVariable { get; set; } = "TEAMHUB_AI_PROVIDER_API_KEY";
 
     public bool FlowDesignerEnabled { get; set; }
+    [Display(Name = "Maximum source documents per request")]
     [Range(1, 50)] public int MaximumSourceDocuments { get; set; } = 10;
+    [Display(Name = "Maximum combined source characters")]
     [Range(1_000, 2_000_000)] public int MaximumSourceCharacters { get; set; } = 120_000;
+    [Display(Name = "Maximum instruction characters")]
     [Range(100, 20_000)] public int MaximumPromptCharacters { get; set; } = 4_000;
+    [Display(Name = "Maximum output tokens per AI request")]
     [Range(1_000, 32_000)] public int MaximumOutputTokens { get; set; } = 8_000;
     [Range(1, 25)] public int MaximumDiagrams { get; set; } = 12;
     [Range(1, 6)] public int MaximumHierarchyDepth { get; set; } = 4;
+    [Display(Name = "Maximum concurrent reports")]
     [Range(1, 16)] public int ReportMaximumConcurrentRequests { get; set; } = 1;
     public bool ReportGeneratorEnabled { get; set; }
+    [Display(Name = "Maximum source characters per studio")]
     [Range(1, 120000)] public int ReportMaximumSourceCharactersPerStudio { get; set; } = 24000;
+    [Display(Name = "Maximum output tokens per studio")]
     [Range(1, 16000)] public int ReportMaximumOutputTokens { get; set; } = 4000;
     [Required, StringLength(2048)]
     public string WeeklyWorkSummaryPromptPath { get; set; } = Path.Combine("Prompts", "WeeklyWorkSummary.md");

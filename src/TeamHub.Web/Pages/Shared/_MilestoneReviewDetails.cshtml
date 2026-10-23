@@ -90,4 +90,22 @@
         </div>
         <div class="form-text">Selected users can edit only their own row; all page readers can view every row. Removing a contributor preserves their existing feedback as read-only for that user.</div>
     </div>
+    <div class="col-12">
+        <label class="form-label">Report generators</label>
+        <div class="border rounded p-2" role="group" aria-label="Report generators">
+            @foreach (var user in Model.AvailableReviewers)
+            {
+                <label class="d-flex align-items-center gap-2 border-bottom py-2 px-1">
+                    <input class="form-check-input mt-0" type="checkbox" name="ReportGeneratorIds" value="@user.Id"
+                           checked="@Model.ReportGeneratorIds.Contains(user.Id)" />
+                    <span class="flex-grow-1">
+                        <strong class="d-block">@user.DisplayName</strong>
+                        <small class="text-secondary">@user.UserId</small>
+                    </span>
+                    <span class="small text-secondary">Can generate report</span>
+                </label>
+            }
+        </div>
+        <div class="form-text">Only selected users see the Generate Report button for this milestone review. This assignment is independent of feedback contributors.</div>
+    </div>
 </div>

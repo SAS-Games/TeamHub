@@ -64,6 +64,9 @@ public sealed partial class MilestoneReviewModel(
     public List<Guid> ReviewerIds { get; set; } = [];
 
     [BindProperty]
+    public List<Guid> ReportGeneratorIds { get; set; } = [];
+
+    [BindProperty]
     public Guid ReviewId { get; set; }
 
     [BindProperty(SupportsGet = true)]
@@ -106,6 +109,8 @@ public sealed partial class MilestoneReviewModel(
     public Guid? CurrentUserId { get; private set; }
     public bool HasFeedbackEditAccess { get; private set; }
     public bool IsAdmin => User.IsInRole(TeamHubUserTypes.Admin);
+    public bool CanGenerateReport => CurrentUserId.HasValue
+        && CurrentReview?.ReportGenerators.Any(item => item.Id == CurrentUserId.Value) == true;
 
     [TempData]
     public string? StatusMessage { get; set; }
@@ -136,6 +141,7 @@ public sealed partial class MilestoneReviewModel(
             JiraTicketId = EditingReview.JiraTicketId;
             WorkflowKey = EditingReview.WorkflowKey;
             ReviewerIds = EditingReview.AssignedReviewers.Select(item => item.Id).ToList();
+            ReportGeneratorIds = EditingReview.ReportGenerators.Select(item => item.Id).ToList();
         }
         return Page();
     }
@@ -609,6 +615,11 @@ public sealed partial class MilestoneReviewModel(
                 if (available.All(item => item.Id != assigned.Id))
                     available.Add(new(assigned.Id, assigned.DisplayName, assigned.UserId, false, true));
             }
+            foreach (var assigned in EditingReview?.ReportGenerators ?? [])
+            {
+                if (available.All(item => item.Id != assigned.Id))
+                    available.Add(new(assigned.Id, assigned.DisplayName, assigned.UserId, false, true));
+            }
             AvailableReviewers = available;
         }
     }
@@ -703,7 +714,8 @@ public sealed partial class MilestoneReviewModel(
     }
 
     private CreateMilestoneReviewRequest DetailsRequest() =>
-        new(ProjectName!, MilestoneName!, Description ?? string.Empty, JiraTicketId, ReviewerIds, WorkflowKey);
+        new(ProjectName!, MilestoneName!, Description ?? string.Empty, JiraTicketId,
+            ReviewerIds, WorkflowKey, ReportGeneratorIds);
 
     private bool ValidateDetails()
     {

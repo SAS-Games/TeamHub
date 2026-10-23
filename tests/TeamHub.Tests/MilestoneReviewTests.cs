@@ -103,6 +103,10 @@ public sealed class MilestoneReviewTests : IAsyncLifetime
                 (await index.ExecuteScalarAsync()).Should().BeOfType<string>()
                     .Which.Should().Contain("WHERE \"Status\" = 0").And.NotContain("IN (0, 1)");
 
+                await using var reportGenerators = context.Database.GetDbConnection().CreateCommand();
+                reportGenerators.CommandText = "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'MilestoneReviewReportGenerators'";
+                Convert.ToInt32(await reportGenerators.ExecuteScalarAsync()).Should().Be(1);
+
                 await using var insert = context.Database.GetDbConnection().CreateCommand();
                 insert.CommandText = "INSERT INTO MilestoneReviews (Id, Status) VALUES ('one', 1), ('two', 1)";
                 (await insert.ExecuteNonQueryAsync()).Should().Be(2);
@@ -654,6 +658,47 @@ public sealed class MilestoneReviewTests : IAsyncLifetime
         saved.AssignedReviewers.Should().ContainSingle().Which.Id.Should().Be(reviewerTwo);
         await service.PublishDraftAsync("admin@example.com");
         (await service.GetCurrentAsync())!.Feedback.Should().ContainSingle().Which.ReviewerId.Should().Be(reviewerTwo);
+    }
+
+    [Fact]
+    public async Task ReportGeneratorsAreStoredAndUpdatedIndependentlyFromFeedbackContributors()
+    {
+        var draft = (await service.CreateDraftAsync(
+            new("Project", "Milestone", "", null, [reviewerOne], ReportGeneratorIds: [reviewerTwo]),
+            "admin@example.com"))!;
+
+        draft.AssignedReviewers.Should().ContainSingle().Which.Id.Should().Be(reviewerOne);
+        draft.ReportGenerators.Should().ContainSingle().Which.Id.Should().Be(reviewerTwo);
+
+        await service.UpdateAsync(draft.Id,
+            new("Project", "Milestone", "", null, [reviewerTwo], ReportGeneratorIds: [reviewerOne]), true);
+        var updated = (await service.GetDraftAsync())!;
+
+        updated.AssignedReviewers.Should().ContainSingle().Which.Id.Should().Be(reviewerTwo);
+        updated.ReportGenerators.Should().ContainSingle().Which.Id.Should().Be(reviewerOne);
+    }
+
+    [Fact]
+    public async Task GenerateReportVisibilityRequiresExplicitReportGeneratorAssignment()
+    {
+        await service.CreateDraftAsync(
+            new("Project", "Milestone", "", null, [reviewerOne], ReportGeneratorIds: [reviewerTwo]),
+            "admin@example.com");
+        await service.PublishDraftAsync("admin@example.com");
+
+        var feedbackContributor = CreateModel(service, true, user: ReviewUser());
+        await feedbackContributor.OnGetAsync(CancellationToken.None);
+        feedbackContributor.CanGenerateReport.Should().BeFalse();
+
+        var assignedReportGenerator = CreateModel(service, true, user: new AuthorizedUserRecord(
+            reviewerTwo, "reviewer.two@example.com", null, "Reviewer Two", TeamHubUserTypes.Registered,
+            true, true, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow));
+        await assignedReportGenerator.OnGetAsync(CancellationToken.None);
+        assignedReportGenerator.CanGenerateReport.Should().BeTrue();
+
+        SetRole(feedbackContributor, TeamHubUserTypes.Admin);
+        feedbackContributor.CanGenerateReport.Should().BeFalse(
+            "administrators must also be explicitly assigned as report generators");
     }
 
     [Fact]

@@ -174,11 +174,11 @@ internal sealed class AiConfigurationService : IAiConfigurationService
         if (request.FlowDesigner.MaximumSourceDocuments is < 1 or > 50)
             throw new ArgumentException("Maximum source documents must be between 1 and 50.");
         if (request.FlowDesigner.MaximumSourceCharacters is < 1_000 or > 2_000_000)
-            throw new ArgumentException("Maximum source characters must be between 1,000 and 2,000,000.");
+            throw new ArgumentException("Maximum combined source characters must be between 1,000 and 2,000,000.");
         if (request.FlowDesigner.MaximumPromptCharacters is < 100 or > 20_000)
-            throw new ArgumentException("Maximum prompt characters must be between 100 and 20,000.");
+            throw new ArgumentException("Maximum instruction characters must be between 100 and 20,000.");
         if (request.FlowDesigner.MaximumOutputTokens is < 1_000 or > 32_000)
-            throw new ArgumentException("Maximum output tokens must be between 1,000 and 32,000.");
+            throw new ArgumentException("Maximum output tokens per AI request must be between 1,000 and 32,000.");
         if (request.FlowDesigner.MaximumDiagrams is < 1 or > 25)
             throw new ArgumentException("Maximum diagrams must be between 1 and 25.");
         if (request.FlowDesigner.MaximumHierarchyDepth is < 1 or > 6)
@@ -186,9 +186,9 @@ internal sealed class AiConfigurationService : IAiConfigurationService
         if (request.ReportGenerator.MaximumConcurrentRequests is < 1 or > 16)
             throw new ArgumentException("Maximum concurrent report requests must be between 1 and 16.");
         if (request.ReportGenerator.MaximumSourceCharactersPerStudio is < 1 or > 120000)
-            throw new ArgumentException("Maximum report source characters per studio must be between 1 and 120,000.");
+            throw new ArgumentException("Maximum source characters per studio must be between 1 and 120,000.");
         if (request.ReportGenerator.MaximumOutputTokens is < 1 or > 16000)
-            throw new ArgumentException("Maximum report output tokens must be between 1 and 16,000.");
+            throw new ArgumentException("Maximum output tokens per studio must be between 1 and 16,000.");
         if (string.IsNullOrWhiteSpace(request.ReportGenerator.WeeklyWorkSummaryPromptPath))
             throw new ArgumentException("The Weekly Work Summary prompt path is required.");
     }

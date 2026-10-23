@@ -23,6 +23,8 @@ public sealed record MilestoneReviewFeedback(
 
 public sealed record MilestoneReviewAssignedReviewer(Guid Id, string DisplayName, string UserId);
 
+public sealed record MilestoneReviewReportGenerator(Guid Id, string DisplayName, string UserId);
+
 public sealed record MilestoneReview(
     Guid Id,
     string ProjectName,
@@ -33,6 +35,7 @@ public sealed record MilestoneReview(
     DateTimeOffset? PublishedAt,
     string? JiraTicketId,
     IReadOnlyList<MilestoneReviewAssignedReviewer> AssignedReviewers,
+    IReadOnlyList<MilestoneReviewReportGenerator> ReportGenerators,
     IReadOnlyList<MilestoneReviewFeedback> Feedback,
     string? WorkflowKey,
     Guid? WorkflowInstanceId);
@@ -43,7 +46,8 @@ public sealed record CreateMilestoneReviewRequest(
     string Description,
     string? JiraTicketId,
     IReadOnlyCollection<Guid> ReviewerIds,
-    string? WorkflowKey = null);
+    string? WorkflowKey = null,
+    IReadOnlyCollection<Guid>? ReportGeneratorIds = null);
 
 public sealed record MilestoneReviewWorkflowStartRequest(
     Guid ReviewId,

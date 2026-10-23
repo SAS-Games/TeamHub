@@ -73,6 +73,22 @@ public sealed partial class MilestoneReviewService(
                 group => group.Key,
                 group => (IReadOnlyList<MilestoneReviewAssignedReviewer>)group.Select(x => x.Dto).ToList());
 
+        var reportGenerators = await dbContext.ReportGenerators.AsNoTracking()
+            .Where(item => reviewIds.Contains(item.ReviewId))
+            .OrderBy(item => item.ReportGenerator)
+            .Select(item => new
+            {
+                item.ReviewId,
+                Dto = new MilestoneReviewReportGenerator(
+                    item.ReportGeneratorId, item.ReportGenerator, item.ReportGeneratorUserId)
+            })
+            .ToListAsync(cancellationToken);
+        var reportGeneratorsByReviewId = reportGenerators
+            .GroupBy(item => item.ReviewId)
+            .ToDictionary(
+                group => group.Key,
+                group => (IReadOnlyList<MilestoneReviewReportGenerator>)group.Select(x => x.Dto).ToList());
+
         var feedback = await dbContext.Feedback.AsNoTracking()
             .Where(item => reviewIds.Contains(item.ReviewId))
             .OrderBy(item => item.Reviewer)
@@ -100,6 +116,7 @@ public sealed partial class MilestoneReviewService(
             review.PublishedAt,
             review.JiraTicketId,
             assignmentsByReviewId.GetValueOrDefault(review.Id, []),
+            reportGeneratorsByReviewId.GetValueOrDefault(review.Id, []),
             feedbackByReviewId.GetValueOrDefault(review.Id, []),
             review.WorkflowKey,
             review.WorkflowInstanceId)).ToList();
@@ -117,9 +134,12 @@ public sealed partial class MilestoneReviewService(
         var activeUsers = await users.GetActiveUsersAsync(cancellationToken);
         var byId = activeUsers.Where(user => user.IsActive && user.IsRegistered)
             .ToDictionary(user => user.Id);
-        var reviewerIds = request.ReviewerIds.Distinct().ToList();
+        var reviewerIds = details.ReviewerIds.Distinct().ToList();
         if (reviewerIds.Any(id => !byId.ContainsKey(id)))
             throw new ArgumentException("The reviewer selection contains an inactive or unavailable user.");
+        var reportGeneratorIds = details.ReportGeneratorIds!.Distinct().ToList();
+        if (reportGeneratorIds.Any(id => !byId.ContainsKey(id)))
+            throw new ArgumentException("The report generator selection contains an inactive or unavailable user.");
 
         var review = new MilestoneReviewRecord
         {
@@ -141,6 +161,18 @@ public sealed partial class MilestoneReviewService(
                 ReviewerId = reviewerId,
                 Reviewer = Required(byId[reviewerId].DisplayName, 160, "Reviewer display name"),
                 ReviewerUserId = Required(byId[reviewerId].UserId, 320, "Reviewer email")
+            });
+        }
+        foreach (var reportGeneratorId in reportGeneratorIds)
+        {
+            dbContext.ReportGenerators.Add(new MilestoneReviewReportGeneratorRecord
+            {
+                ReviewId = review.Id,
+                ReportGeneratorId = reportGeneratorId,
+                ReportGenerator = Required(
+                    byId[reportGeneratorId].DisplayName, 160, "Report generator display name"),
+                ReportGeneratorUserId = Required(
+                    byId[reportGeneratorId].UserId, 320, "Report generator email")
             });
         }
         await dbContext.SaveChangesAsync(cancellationToken);
@@ -208,6 +240,8 @@ public sealed partial class MilestoneReviewService(
         if (draft is null) return;
         await dbContext.Assignments.Where(item => item.ReviewId == draft.Id)
             .ExecuteDeleteAsync(cancellationToken);
+        await dbContext.ReportGenerators.Where(item => item.ReviewId == draft.Id)
+            .ExecuteDeleteAsync(cancellationToken);
         dbContext.Reviews.Remove(draft);
         await dbContext.SaveChangesAsync(cancellationToken);
     }
@@ -239,10 +273,17 @@ public sealed partial class MilestoneReviewService(
             .ToListAsync(cancellationToken);
         var existingIds = assignments.Select(item => item.ReviewerId).ToHashSet();
         var addedIds = details.ReviewerIds.Where(id => !existingIds.Contains(id)).ToList();
+        var reportGenerators = await dbContext.ReportGenerators.Where(item => item.ReviewId == reviewId)
+            .ToListAsync(cancellationToken);
+        var existingReportGeneratorIds = reportGenerators.Select(item => item.ReportGeneratorId).ToHashSet();
+        var addedReportGeneratorIds = details.ReportGeneratorIds!
+            .Where(id => !existingReportGeneratorIds.Contains(id)).ToList();
         var activeUsers = await users.GetActiveUsersAsync(cancellationToken);
         var byId = activeUsers.Where(user => user.IsActive && user.IsRegistered).ToDictionary(user => user.Id);
         if (addedIds.Any(id => !byId.ContainsKey(id)))
             throw new ArgumentException("The reviewer selection contains an inactive or unavailable user.");
+        if (addedReportGeneratorIds.Any(id => !byId.ContainsKey(id)))
+            throw new ArgumentException("The report generator selection contains an inactive or unavailable user.");
 
         var feedback = await dbContext.Feedback.Where(item => item.ReviewId == reviewId)
             .ToListAsync(cancellationToken);
@@ -264,6 +305,8 @@ public sealed partial class MilestoneReviewService(
             throw new InvalidOperationException("The workflow template cannot be changed after the milestone review is published.");
         review.WorkflowKey = details.WorkflowKey;
         dbContext.Assignments.RemoveRange(assignments.Where(item => !details.ReviewerIds.Contains(item.ReviewerId)));
+        dbContext.ReportGenerators.RemoveRange(reportGenerators.Where(
+            item => !details.ReportGeneratorIds!.Contains(item.ReportGeneratorId)));
         foreach (var id in addedIds)
         {
             var user = byId[id];
@@ -280,6 +323,17 @@ public sealed partial class MilestoneReviewService(
                     ReviewerUserId = email, UpdatedAt = DateTimeOffset.UtcNow
                 });
         }
+        foreach (var id in addedReportGeneratorIds)
+        {
+            var user = byId[id];
+            dbContext.ReportGenerators.Add(new MilestoneReviewReportGeneratorRecord
+            {
+                ReviewId = reviewId,
+                ReportGeneratorId = id,
+                ReportGenerator = Required(user.DisplayName, 160, "Report generator display name"),
+                ReportGeneratorUserId = Required(user.UserId, 320, "Report generator email")
+            });
+        }
         try
         {
             await dbContext.SaveChangesAsync(cancellationToken);
@@ -295,6 +349,14 @@ public sealed partial class MilestoneReviewService(
     {
         if (!isAdmin)
             throw new UnauthorizedAccessException("Only administrators can delete milestone reviews.");
+        var canDelete = await dbContext.Reviews.AnyAsync(
+            item => item.Id == reviewId
+                && (item.Status == MilestoneReviewStatus.Published || item.Status == MilestoneReviewStatus.Superseded),
+            cancellationToken);
+        if (!canDelete)
+            throw new InvalidOperationException("The published or archived review was not found. Reload the page.");
+        await dbContext.ReportGenerators.Where(item => item.ReviewId == reviewId)
+            .ExecuteDeleteAsync(cancellationToken);
         var deleted = await dbContext.Reviews
             .Where(item => item.Id == reviewId
                 && (item.Status == MilestoneReviewStatus.Published || item.Status == MilestoneReviewStatus.Superseded))
@@ -439,6 +501,12 @@ public sealed partial class MilestoneReviewService(
             .OrderBy(item => item.Reviewer)
             .Select(item => new MilestoneReviewAssignedReviewer(item.ReviewerId, item.Reviewer, item.ReviewerUserId))
             .ToListAsync(cancellationToken);
+        var reportGenerators = await dbContext.ReportGenerators.AsNoTracking()
+            .Where(item => item.ReviewId == review.Id)
+            .OrderBy(item => item.ReportGenerator)
+            .Select(item => new MilestoneReviewReportGenerator(
+                item.ReportGeneratorId, item.ReportGenerator, item.ReportGeneratorUserId))
+            .ToListAsync(cancellationToken);
         var feedback = await dbContext.Feedback.AsNoTracking()
             .Where(item => item.ReviewId == review.Id)
             .OrderBy(item => item.Reviewer)
@@ -448,7 +516,8 @@ public sealed partial class MilestoneReviewService(
             .ToListAsync(cancellationToken);
         return new MilestoneReview(
             review.Id, review.ProjectName, review.MilestoneName, review.Description,
-            review.Status, review.CreatedAt, review.PublishedAt, review.JiraTicketId, assignments, feedback,
+            review.Status, review.CreatedAt, review.PublishedAt, review.JiraTicketId,
+            assignments, reportGenerators, feedback,
             review.WorkflowKey, review.WorkflowInstanceId);
     }
 
@@ -467,8 +536,12 @@ public sealed partial class MilestoneReviewService(
             throw new ArgumentException("Select at least one user who can provide feedback.");
         if (request.ReviewerIds.Distinct().Count() != request.ReviewerIds.Count)
             throw new ArgumentException("The reviewer selection contains an inactive or unavailable user.");
+        var reportGeneratorIds = request.ReportGeneratorIds ?? [];
+        if (reportGeneratorIds.Distinct().Count() != reportGeneratorIds.Count)
+            throw new ArgumentException("The report generator selection contains a duplicate user.");
         return new(project, milestone, description, string.IsNullOrWhiteSpace(ticket) ? null : ticket,
-            request.ReviewerIds, string.IsNullOrWhiteSpace(workflowKey) ? null : workflowKey);
+            request.ReviewerIds, string.IsNullOrWhiteSpace(workflowKey) ? null : workflowKey,
+            reportGeneratorIds);
     }
 
     private static string BuildWorkflowInstanceName(MilestoneReviewRecord review)
