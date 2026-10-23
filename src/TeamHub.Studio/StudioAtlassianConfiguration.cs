@@ -85,6 +85,7 @@ public interface IAtlassianConfigurationService
 public interface IAtlassianCredentialAccessor
 {
     Task<AtlassianResolvedCredential?> ResolveJiraCredentialAsync(string userId, bool allowPrivilegedDefault, CancellationToken cancellationToken = default);
+    Task<AtlassianResolvedCredential?> ResolveDefaultJiraCredentialAsync(CancellationToken cancellationToken = default);
     Task<AtlassianResolvedCredential?> ResolveConfluenceCredentialAsync(string userId, bool allowPrivilegedDefault, CancellationToken cancellationToken = default);
 }
 
@@ -410,6 +411,10 @@ internal sealed class SqliteAtlassianConfigurationService : IAtlassianConfigurat
     public Task<AtlassianResolvedCredential?> ResolveJiraCredentialAsync(string userId, bool allowPrivilegedDefault, CancellationToken cancellationToken = default) =>
         ResolveCredentialAsync(userId, allowPrivilegedDefault, true, cancellationToken);
 
+    public Task<AtlassianResolvedCredential?> ResolveDefaultJiraCredentialAsync(
+        CancellationToken cancellationToken = default) =>
+        ResolveDefaultCredentialAsync(jira: true, cancellationToken);
+
     public Task<AtlassianResolvedCredential?> ResolveConfluenceCredentialAsync(string userId, bool allowPrivilegedDefault, CancellationToken cancellationToken = default) =>
         ResolveCredentialAsync(userId, allowPrivilegedDefault, false, cancellationToken);
 
@@ -427,21 +432,7 @@ internal sealed class SqliteAtlassianConfigurationService : IAtlassianConfigurat
                     && (jira ? item.JiraReadOnlyAccess : item.ConfluenceReadOnlyAccess), cancellationToken);
             if (permitted)
             {
-                var settings = await dbContext.AtlassianIntegrationSettings.AsNoTracking()
-                    .SingleOrDefaultAsync(item => item.Id == 1, cancellationToken);
-                var protectedToken = settings is null
-                    ? null
-                    : jira ? settings.DefaultJiraTokenProtected : settings.DefaultConfluenceTokenProtected;
-                if (string.IsNullOrWhiteSpace(protectedToken)) return null;
-
-                try
-                {
-                    return new(tokenProtector.Unprotect(protectedToken), true, true);
-                }
-                catch (CryptographicException)
-                {
-                    throw new InvalidOperationException("The shared Atlassian credential cannot be decrypted. Ask an administrator to re-enter the default token.");
-                }
+                return await ResolveDefaultCredentialAsync(jira, cancellationToken);
             }
         }
 
@@ -450,6 +441,27 @@ internal sealed class SqliteAtlassianConfigurationService : IAtlassianConfigurat
             record => jira ? record.JiraTokenProtected : record.ConfluenceTokenProtected,
             cancellationToken);
         return string.IsNullOrWhiteSpace(personalToken) ? null : new(personalToken, false, false);
+    }
+
+    private async Task<AtlassianResolvedCredential?> ResolveDefaultCredentialAsync(
+        bool jira,
+        CancellationToken cancellationToken)
+    {
+        var settings = await dbContext.AtlassianIntegrationSettings.AsNoTracking()
+            .SingleOrDefaultAsync(item => item.Id == 1, cancellationToken);
+        var protectedToken = settings is null
+            ? null
+            : jira ? settings.DefaultJiraTokenProtected : settings.DefaultConfluenceTokenProtected;
+        if (string.IsNullOrWhiteSpace(protectedToken)) return null;
+
+        try
+        {
+            return new(tokenProtector.Unprotect(protectedToken), true, true);
+        }
+        catch (CryptographicException)
+        {
+            throw new InvalidOperationException("The shared Atlassian credential cannot be decrypted. Ask an administrator to re-enter the default token.");
+        }
     }
 
     private async Task<string?> GetTokenAsync(

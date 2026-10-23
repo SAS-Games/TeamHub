@@ -6,7 +6,11 @@ using System.Text.RegularExpressions;
 namespace TeamHub.Studio;
 
 public sealed record StudioJiraCommentQuery(
-    string? StudioId, string TicketId, string RequestingUserId, bool AllowPrivilegedDefaultCredential);
+    string? StudioId,
+    string TicketId,
+    string RequestingUserId,
+    bool AllowPrivilegedDefaultCredential,
+    bool UsePersonalOrDefaultCredential = false);
 
 public sealed record StudioJiraCommentPart(string Kind, string Text, string? Url = null, string? AttachmentId = null);
 public sealed record StudioJiraComment(
@@ -313,7 +317,7 @@ internal sealed partial class JiraStudioCommentService(
         CancellationToken cancellationToken,
         bool requirePersonalWriteCredential = false)
     {
-        if (string.IsNullOrWhiteSpace(query.RequestingUserId)
+        if ((!query.UsePersonalOrDefaultCredential && string.IsNullOrWhiteSpace(query.RequestingUserId))
             || (query.StudioId is not null && string.IsNullOrWhiteSpace(query.StudioId))
             || string.IsNullOrWhiteSpace(query.TicketId) || !TicketKey().IsMatch(query.TicketId))
             throw new StudioJiraCommentException("Select a valid ticket and sign in to view comments.");
@@ -333,17 +337,30 @@ internal sealed partial class JiraStudioCommentService(
         AtlassianResolvedCredential? credential;
         try
         {
-            credential = await credentials.ResolveJiraCredentialAsync(
-                query.RequestingUserId, query.AllowPrivilegedDefaultCredential, cancellationToken);
+            if (query.UsePersonalOrDefaultCredential)
+            {
+                credential = string.IsNullOrWhiteSpace(query.RequestingUserId)
+                    ? null
+                    : await credentials.ResolveJiraCredentialAsync(
+                        query.RequestingUserId, allowPrivilegedDefault: false, cancellationToken);
+                credential ??= await credentials.ResolveDefaultJiraCredentialAsync(cancellationToken);
+            }
+            else
+            {
+                credential = await credentials.ResolveJiraCredentialAsync(
+                    query.RequestingUserId, query.AllowPrivilegedDefaultCredential, cancellationToken);
+            }
         }
         catch (InvalidOperationException exception)
         {
             throw new StudioJiraCommentException(exception.Message);
         }
         if (credential is null)
-            throw new StudioJiraCommentException(requirePersonalWriteCredential
-                ? "Adding or editing Jira comments requires your personal Jira connection with comment permission."
-                : "No Jira credential is available. Connect your account in My Connections or ask an administrator to grant shared read-only access.");
+            throw new StudioJiraCommentException(query.UsePersonalOrDefaultCredential
+                ? "No Jira bearer token is available for the administrator and no default Jira bearer token is configured. Connect the administrator account or add a default token under Configuration > Jira & Confluence."
+                : requirePersonalWriteCredential
+                    ? "Adding or editing Jira comments requires your personal Jira connection with comment permission."
+                    : "No Jira credential is available. Connect your account in My Connections or ask an administrator to grant shared read-only access.");
         if (requirePersonalWriteCredential && (credential.IsShared || credential.IsReadOnly))
             throw new StudioJiraCommentException("Adding or editing Jira comments requires your personal Jira connection. Shared read-only access cannot be used.");
         var baseUrl = settings.JiraBaseUrl.TrimEnd('/');
