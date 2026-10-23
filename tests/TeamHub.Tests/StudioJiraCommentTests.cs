@@ -89,6 +89,41 @@ public sealed class StudioJiraCommentTests
     }
 
     [Fact]
+    public async Task GetComments_CanFallBackToDefaultCredentialForAdminRestoreWithoutUserGrant()
+    {
+        await using var host = await Host.CreateAsync(request =>
+        {
+            request.Headers.Authorization!.Parameter.Should().Be("shared-test-token");
+            return Json(request.RequestUri!.AbsolutePath.EndsWith("/comment")
+                ? """{"total":0,"comments":[]}""" : IssueJson);
+        });
+        await host.ConfigureDefaultCredentialAsync();
+
+        var result = await host.Service.GetCommentsAsync(host.Query with { UsePersonalOrDefaultCredential = true });
+
+        result.IsUsingSharedCredential.Should().BeTrue();
+        result.CanWriteComments.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task GetComments_PrefersAdminPersonalCredentialForAdminRestore()
+    {
+        await using var host = await Host.CreateAsync(request =>
+        {
+            request.Headers.Authorization!.Parameter.Should().Be("personal-test-token");
+            return Json(request.RequestUri!.AbsolutePath.EndsWith("/comment")
+                ? """{"total":0,"comments":[]}""" : IssueJson);
+        });
+        await host.ConfigureDefaultCredentialWithoutRemovingPersonalAsync();
+
+        var result = await host.Service.GetCommentsAsync(
+            host.Query with { UsePersonalOrDefaultCredential = true });
+
+        result.IsUsingSharedCredential.Should().BeFalse();
+        result.CanWriteComments.Should().BeTrue();
+    }
+
+    [Fact]
     public async Task GetComments_DeniesInactiveStudioBeforeNetworkRequest()
     {
         var calls = 0;
@@ -658,6 +693,19 @@ public sealed class StudioJiraCommentTests
             await atlassian.SaveDefaultTokensAsync("shared-test-token", null);
             await atlassian.SavePrivilegedAccessAsync([
                 new AtlassianPrivilegedAccess(query.RequestingUserId, true, false)]);
+        }
+        public async Task ConfigureDefaultCredentialAsync()
+        {
+            var atlassian = scope.ServiceProvider.GetRequiredService<IAtlassianConfigurationService>();
+            await atlassian.SaveUserTokensAsync(query.RequestingUserId, null, null, removeJiraToken: true);
+            await atlassian.SaveDefaultTokensAsync("shared-test-token", null);
+            await atlassian.SavePrivilegedAccessAsync([]);
+        }
+        public async Task ConfigureDefaultCredentialWithoutRemovingPersonalAsync()
+        {
+            var atlassian = scope.ServiceProvider.GetRequiredService<IAtlassianConfigurationService>();
+            await atlassian.SaveDefaultTokensAsync("shared-test-token", null);
+            await atlassian.SavePrivilegedAccessAsync([]);
         }
         public async Task DeactivateStudioAsync()
         {

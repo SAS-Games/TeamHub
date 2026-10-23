@@ -1050,7 +1050,8 @@ public sealed class MilestoneReviewTests : IAsyncLifetime
         model.ReviewId = current.Id;
         (await model.OnPostPreviewRestoreAsync(CancellationToken.None)).Should().BeOfType<PageResult>();
         model.RestorePreview.Should().HaveCount(2);
-        comments.LastQuery!.RequestingUserId.Should().Be("reviewer.one@example.com");
+        comments.GetCommentsCallCount.Should().Be(1);
+        comments.LastQuery!.UsePersonalOrDefaultCredential.Should().BeTrue();
         comments.LastQuery.AllowPrivilegedDefaultCredential.Should().BeFalse();
         (await service.GetCurrentAsync())!.Feedback.Single().WhatGood.Should().BeEmpty();
         model.RestoreSelections = [model.RestorePreview.Single(item => item.CommentId == "41").Token];
@@ -1141,7 +1142,7 @@ public sealed class MilestoneReviewTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task RestoreActionsRequireAdminAndPersonalJiraAccess()
+    public async Task RestoreActionsRequireAdminAndAnAvailableJiraCredential()
     {
         var denied = CreateModel(service, true);
         SetRole(denied, TeamHubUserTypes.Registered);
@@ -1151,12 +1152,12 @@ public sealed class MilestoneReviewTests : IAsyncLifetime
         await restore.Should().ThrowAsync<UnauthorizedAccessException>();
         await service.CreateDraftAsync(new("Test", "Alpha", "", "SIEHP-1206", [reviewerOne]), "admin");
         await service.PublishDraftAsync("admin");
-        var model = CreateModel(service, true, new StubCommentService { Error = new StudioJiraCommentException("No personal credential") });
+        var model = CreateModel(service, true, new StubCommentService { Error = new StudioJiraCommentException("No default Jira bearer token") });
         SetRole(model, TeamHubUserTypes.Admin);
         model.ReviewId = (await service.GetCurrentAsync())!.Id;
         await model.OnPostPreviewRestoreAsync(CancellationToken.None);
         model.RestorePreview.Should().BeEmpty();
-        model.RestoreWarnings.Single().Should().Contain("personal Jira connection");
+        model.RestoreWarnings.Single().Should().Contain("default Jira bearer token");
     }
 
     [Fact]
@@ -1344,8 +1345,10 @@ public sealed class MilestoneReviewTests : IAsyncLifetime
         public IReadOnlyList<StudioJiraComment> Items { get; set; } = [];
         public Exception? Error { get; set; }
         public StudioJiraCommentQuery? LastQuery { get; private set; }
+        public int GetCommentsCallCount { get; private set; }
         public Task<StudioJiraCommentResult> GetCommentsAsync(StudioJiraCommentQuery query, CancellationToken cancellationToken = default)
         {
+            GetCommentsCallCount++;
             LastQuery = query;
             if (Error is not null) throw Error;
             return Task.FromResult(new StudioJiraCommentResult(query.TicketId, "https://jira.example.test", false, Items));

@@ -220,10 +220,15 @@ public sealed class StudioDirectoryTests
 
             var credentialAccessor = scope.ServiceProvider.GetRequiredService<IAtlassianCredentialAccessor>();
             var jiraCredential = await credentialAccessor.ResolveJiraCredentialAsync("privileged@example.com", true);
+            var defaultJiraCredential = await credentialAccessor.ResolveDefaultJiraCredentialAsync();
             var confluenceCredential = await credentialAccessor.ResolveConfluenceCredentialAsync("privileged@example.com", true);
             jiraCredential.Should().NotBeNull();
             jiraCredential!.IsShared.Should().BeTrue();
             jiraCredential.IsReadOnly.Should().BeTrue();
+            defaultJiraCredential.Should().NotBeNull();
+            defaultJiraCredential!.Token.Should().Be("shared-jira-token");
+            defaultJiraCredential.IsShared.Should().BeTrue();
+            defaultJiraCredential.IsReadOnly.Should().BeTrue();
             confluenceCredential.Should().NotBeNull();
             confluenceCredential!.IsShared.Should().BeTrue();
             confluenceCredential.IsReadOnly.Should().BeTrue();

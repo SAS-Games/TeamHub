@@ -175,6 +175,8 @@ public sealed partial class MilestoneReviewModel(
             ModelState.AddModelError(string.Empty, "Select an active published review with a Jira ticket.");
             return Page();
         }
+
+        var restoreTargets = new List<(MilestoneReviewAssignedReviewer Reviewer, MilestoneReviewFeedback Row)>();
         foreach (var reviewer in CurrentReview.AssignedReviewers)
         {
             var row = CurrentReview.Feedback.Single(item => item.ReviewerId == reviewer.Id);
@@ -182,14 +184,41 @@ public sealed partial class MilestoneReviewModel(
                 || row.JiraCommentId is not null)
             {
                 RestoreWarnings.Add($"{reviewer.DisplayName}: existing feedback will not be overwritten.");
-                continue;
             }
+            else
+            {
+                restoreTargets.Add((reviewer, row));
+            }
+        }
+        if (restoreTargets.Count == 0) return Page();
+
+        StudioJiraCommentResult jiraComments;
+        try
+        {
+            jiraComments = await comments.GetCommentsAsync(
+                RestoreCredentialQuery(CurrentReview.JiraTicketId), cancellationToken);
+        }
+        catch (Exception exception) when (exception is StudioJiraCommentException or HttpRequestException
+            or JsonException or InvalidOperationException or KeyNotFoundException or RegexMatchTimeoutException)
+        {
+            logger.LogWarning(exception, "Jira feedback restoration preview failed for review {ReviewId}.", CurrentReview.Id);
+            RestoreWarnings.Add($"Could not load Jira feedback using the administrator or default Jira bearer token. {exception.Message}");
+            return Page();
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            RestoreWarnings.Add("Jira timed out. Reopen the preview to retry.");
+            return Page();
+        }
+
+        foreach (var target in restoreTargets)
+        {
+            var reviewer = target.Reviewer;
+            var row = target.Row;
             try
             {
-                var result = await comments.GetCommentsAsync(new(null, CurrentReview.JiraTicketId, reviewer.UserId, false),
-                    cancellationToken);
                 var count = RestorePreview.Count;
-                foreach (var comment in result.Comments)
+                foreach (var comment in jiraComments.Comments)
                 {
                     var values = JiraMilestoneFeedbackParser.Parse(comment, reviewer.UserId);
                     if (values is null) continue;
@@ -206,12 +235,8 @@ public sealed partial class MilestoneReviewModel(
             catch (Exception exception) when (exception is StudioJiraCommentException or HttpRequestException
                 or JsonException or InvalidOperationException or KeyNotFoundException or RegexMatchTimeoutException)
             {
-                logger.LogWarning(exception, "Jira feedback restoration preview failed for reviewer {ReviewerId}.", reviewer.Id);
-                RestoreWarnings.Add($"{reviewer.DisplayName}: could not load feedback. Check their personal Jira connection and ticket access, then retry.");
-            }
-            catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
-            {
-                RestoreWarnings.Add($"{reviewer.DisplayName}: Jira timed out. Reopen the preview to retry.");
+                logger.LogWarning(exception, "Jira feedback parsing failed for reviewer {ReviewerId}.", reviewer.Id);
+                RestoreWarnings.Add($"{reviewer.DisplayName}: the matching Jira feedback could not be read safely.");
             }
         }
         return Page();
@@ -227,6 +252,7 @@ public sealed partial class MilestoneReviewModel(
             if (current?.Id != ReviewId || string.IsNullOrWhiteSpace(current.JiraTicketId))
                 throw new InvalidOperationException("The published review changed. Reopen the restore preview.");
             var requests = new List<RestoreMilestoneReviewFeedbackRequest>();
+            StudioJiraCommentResult? jiraComments = null;
             foreach (var selection in RestoreSelections.Where(value => !string.IsNullOrWhiteSpace(value)))
             {
                 var token = JsonSerializer.Deserialize<RestoreToken>(restoreProtector.Unprotect(selection))
@@ -239,9 +265,9 @@ public sealed partial class MilestoneReviewModel(
                     ?? throw new InvalidOperationException("The feedback row changed. Reopen the preview.");
                 var reviewer = current.AssignedReviewers.SingleOrDefault(item => item.Id == row.ReviewerId)
                     ?? throw new InvalidOperationException("The contributor selection changed. Reopen the preview.");
-                var result = await comments.GetCommentsAsync(new(null, current.JiraTicketId, reviewer.UserId, false),
-                    cancellationToken);
-                var comment = result.Comments.SingleOrDefault(item => item.Id == request.CommentId);
+                jiraComments ??= await comments.GetCommentsAsync(
+                    RestoreCredentialQuery(current.JiraTicketId), cancellationToken);
+                var comment = jiraComments.Comments.SingleOrDefault(item => item.Id == request.CommentId);
                 var values = comment is null ? null : JiraMilestoneFeedbackParser.Parse(comment, reviewer.UserId);
                 if (values is null || !values.SequenceEqual(new[]
                     { request.SessionDetails, request.WhatGood, request.NeedImprovements, request.AdditionalFeedback }))
@@ -272,6 +298,10 @@ public sealed partial class MilestoneReviewModel(
         }
         return RedirectToPage(new { selectedReviewId = ReviewId });
     }
+
+    private StudioJiraCommentQuery RestoreCredentialQuery(string ticketId) =>
+        new(null, ticketId, User.Identity?.Name ?? string.Empty,
+            AllowPrivilegedDefaultCredential: false, UsePersonalOrDefaultCredential: true);
 
     public async Task<IActionResult> OnPostCreateDraftAsync(CancellationToken cancellationToken)
     {
