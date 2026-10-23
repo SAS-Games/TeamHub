@@ -205,7 +205,7 @@ public sealed partial class MilestoneReviewService(
                     {
                         milestoneReviewId = draft.Id,
                         draft.ProjectName,
-                        draft.MilestoneName,
+                        MilestoneName = BuildWorkflowMilestoneName(draft),
                         draft.Description
                     })),
                 cancellationToken);
@@ -551,6 +551,11 @@ public sealed partial class MilestoneReviewService(
             .Select(value => value.Trim()));
         return name.Length <= 256 ? name : name[..256].TrimEnd();
     }
+
+    private static string BuildWorkflowMilestoneName(MilestoneReviewRecord review) =>
+        string.Join(" ", new[] { review.MilestoneName, review.Description }
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .Select(value => value.Trim()));
 
     private static string Required(string? value, int maxLength, string label)
     {

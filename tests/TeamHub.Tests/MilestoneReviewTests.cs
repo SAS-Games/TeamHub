@@ -1,6 +1,7 @@
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using FluentAssertions;
+using System.Text.Json;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
@@ -550,6 +551,9 @@ public sealed class MilestoneReviewTests : IAsyncLifetime
         workflowStarter.Requests[0].InstanceName.Should().Be("Project One Review build Alpha");
         workflowStarter.Requests[0].StartedBy.Should().Be("publisher@example.com");
         workflowStarter.Requests[0].MetadataJson.Should().Contain(published.Id.ToString());
+        using var metadata = JsonDocument.Parse(workflowStarter.Requests[0].MetadataJson);
+        metadata.RootElement.GetProperty("MilestoneName").GetString().Should().Be("Alpha Review build");
+        metadata.RootElement.GetProperty("Description").GetString().Should().Be("Review build");
     }
 
     private sealed class StubUserDirectory(IReadOnlyList<MilestoneReviewUser> users) : IMilestoneReviewUserDirectory
