@@ -5,7 +5,7 @@ using Microsoft.Extensions.DependencyInjection;
 using TeamHub.Authentication;
 using TeamHub.Milestones;
 using TeamHub.Studio;
-using TeamHub.Web.WorklogAnalytics;
+using TeamHub.Web.ExternalProcesses.WorklogAnalytics;
 using TeamHub.Web.Reports;
 using TeamHub.Web.AccessControl;
 using TeamHub.AI.Contracts;

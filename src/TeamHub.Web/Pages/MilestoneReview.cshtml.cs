@@ -13,6 +13,8 @@ using TeamHub.Infrastructure.Persistence;
 using TeamHub.Web.AccessControl;
 using TeamHub.Web.Formatting;
 using TeamHub.Web.Reviews;
+using TeamHub.Web.ExternalProcesses;
+using TeamHub.Web.ExternalProcesses.MilestoneReviewReport;
 using ReviewSnapshot = TeamHub.MilestoneReview.MilestoneReview;
 
 namespace TeamHub.Web.Pages;
@@ -27,7 +29,8 @@ public sealed partial class MilestoneReviewModel(
     ILogger<MilestoneReviewModel> logger,
     IStudioDirectoryService? studioDirectory = null,
     IMilestoneTrackerService? milestoneTracker = null,
-    WorkflowDbContext? workflowDbContext = null) : PageModel
+    WorkflowDbContext? workflowDbContext = null,
+    IMilestoneReviewReportProcessService? reportProcess = null) : PageModel
 {
     private readonly IDataProtector restoreProtector = protection.CreateProtector("TeamHub.MilestoneReview.Restore.v1");
     private bool milestoneOptionsLoaded;
@@ -62,6 +65,9 @@ public sealed partial class MilestoneReviewModel(
 
     [BindProperty]
     public List<Guid> ReviewerIds { get; set; } = [];
+
+    [BindProperty]
+    public List<Guid> ReportGeneratorIds { get; set; } = [];
 
     [BindProperty]
     public Guid ReviewId { get; set; }
@@ -106,6 +112,8 @@ public sealed partial class MilestoneReviewModel(
     public Guid? CurrentUserId { get; private set; }
     public bool HasFeedbackEditAccess { get; private set; }
     public bool IsAdmin => User.IsInRole(TeamHubUserTypes.Admin);
+    public bool CanGenerateReport => CurrentUserId.HasValue
+        && CurrentReview?.ReportGenerators.Any(item => item.Id == CurrentUserId.Value) == true;
 
     [TempData]
     public string? StatusMessage { get; set; }
@@ -136,6 +144,7 @@ public sealed partial class MilestoneReviewModel(
             JiraTicketId = EditingReview.JiraTicketId;
             WorkflowKey = EditingReview.WorkflowKey;
             ReviewerIds = EditingReview.AssignedReviewers.Select(item => item.Id).ToList();
+            ReportGeneratorIds = EditingReview.ReportGenerators.Select(item => item.Id).ToList();
         }
         return Page();
     }
@@ -162,6 +171,56 @@ public sealed partial class MilestoneReviewModel(
             ModelState.AddModelError(string.Empty, exception.Message);
             await LoadAsync(cancellationToken);
             return Page();
+        }
+    }
+
+    public async Task<IActionResult> OnPostGenerateReportAsync(CancellationToken cancellationToken)
+    {
+        Response.Headers.CacheControl = "no-store";
+        var current = await access.GetCurrentAsync(cancellationToken);
+        if (current.User is null) return Forbid();
+        if (reportProcess is null)
+            return new JsonResult(new { error = "Milestone report generation is not available." })
+                { StatusCode = StatusCodes.Status503ServiceUnavailable };
+        if (!reportProcess.IsEnabled)
+            return new JsonResult(new { error = "Milestone report generation is not enabled." })
+                { StatusCode = StatusCodes.Status503ServiceUnavailable };
+
+        try
+        {
+            var result = await reportProcess.GenerateAsync(
+                ReviewId,
+                current.User.Id,
+                current.User.UserId,
+                User.IsInRole(TeamHubUserTypes.Privileged),
+                cancellationToken);
+            return new JsonResult(new
+            {
+                result.Success,
+                result.ReportId,
+                result.ReportUrl,
+                result.Message
+            });
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return Forbid();
+        }
+        catch (ExternalProcessException exception)
+        {
+            logger.LogWarning(exception,
+                "Milestone report generation failed for review {ReviewId} and user {UserId}.",
+                ReviewId, current.User.Id);
+            return new JsonResult(new { error = exception.Message })
+                { StatusCode = StatusCodes.Status502BadGateway };
+        }
+        catch (InvalidOperationException exception)
+        {
+            logger.LogWarning(exception,
+                "Milestone report request was rejected for review {ReviewId} and user {UserId}.",
+                ReviewId, current.User.Id);
+            return new JsonResult(new { error = exception.Message })
+                { StatusCode = StatusCodes.Status400BadRequest };
         }
     }
 
@@ -609,6 +668,11 @@ public sealed partial class MilestoneReviewModel(
                 if (available.All(item => item.Id != assigned.Id))
                     available.Add(new(assigned.Id, assigned.DisplayName, assigned.UserId, false, true));
             }
+            foreach (var assigned in EditingReview?.ReportGenerators ?? [])
+            {
+                if (available.All(item => item.Id != assigned.Id))
+                    available.Add(new(assigned.Id, assigned.DisplayName, assigned.UserId, false, true));
+            }
             AvailableReviewers = available;
         }
     }
@@ -703,7 +767,8 @@ public sealed partial class MilestoneReviewModel(
     }
 
     private CreateMilestoneReviewRequest DetailsRequest() =>
-        new(ProjectName!, MilestoneName!, Description ?? string.Empty, JiraTicketId, ReviewerIds, WorkflowKey);
+        new(ProjectName!, MilestoneName!, Description ?? string.Empty, JiraTicketId,
+            ReviewerIds, WorkflowKey, ReportGeneratorIds);
 
     private bool ValidateDetails()
     {

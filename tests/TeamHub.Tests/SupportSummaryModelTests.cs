@@ -11,7 +11,7 @@ using TeamHub.Authentication;
 using TeamHub.Milestones;
 using TeamHub.Studio;
 using TeamHub.Web.Pages;
-using TeamHub.Web.WorklogAnalytics;
+using TeamHub.Web.ExternalProcesses.WorklogAnalytics;
 
 namespace TeamHub.Tests;
 

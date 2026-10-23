@@ -20,11 +20,11 @@ public static class AiFlowDesignerServiceCollectionExtensions
             .Validate(options => options.MaximumSourceDocuments is >= 1 and <= 50,
                 "AI:FlowDesigner:MaximumSourceDocuments must be between 1 and 50.")
             .Validate(options => options.MaximumSourceCharacters is >= 1_000 and <= 2_000_000,
-                "AI:FlowDesigner:MaximumSourceCharacters must be between 1,000 and 2,000,000.")
+                "AI Flow Designer maximum combined source characters must be between 1,000 and 2,000,000.")
             .Validate(options => options.MaximumPromptCharacters is >= 100 and <= 20_000,
-                "AI:FlowDesigner:MaximumPromptCharacters must be between 100 and 20,000.")
+                "AI Flow Designer maximum instruction characters must be between 100 and 20,000.")
             .Validate(options => options.MaximumOutputTokens is >= 1_000 and <= 32_000,
-                "AI:FlowDesigner:MaximumOutputTokens must be between 1,000 and 32,000.")
+                "AI Flow Designer maximum output tokens per AI request must be between 1,000 and 32,000.")
             .Validate(options => options.MaximumDiagrams is >= 1 and <= 25,
                 "AI:FlowDesigner:MaximumDiagrams must be between 1 and 25.")
             .Validate(options => options.MaximumHierarchyDepth is >= 1 and <= 6,

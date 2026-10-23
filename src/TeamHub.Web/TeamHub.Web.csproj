@@ -29,7 +29,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <Content Include="WorklogAnalytics\teamhub_effort_report.py">
+    <Content Include="ExternalProcesses\WorklogAnalytics\teamhub_effort_report.py">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
     </Content>

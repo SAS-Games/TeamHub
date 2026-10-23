@@ -26,6 +26,14 @@ internal sealed class MilestoneReviewAssignmentRecord
     public string ReviewerUserId { get; set; } = string.Empty;
 }
 
+internal sealed class MilestoneReviewReportGeneratorRecord
+{
+    public Guid ReviewId { get; set; }
+    public Guid ReportGeneratorId { get; set; }
+    public string ReportGenerator { get; set; } = string.Empty;
+    public string ReportGeneratorUserId { get; set; } = string.Empty;
+}
+
 internal sealed class MilestoneReviewFeedbackRecord
 {
     public Guid Id { get; set; }
@@ -47,6 +55,7 @@ public sealed class MilestoneReviewDbContext(DbContextOptions<MilestoneReviewDbC
 {
     internal DbSet<MilestoneReviewRecord> Reviews => Set<MilestoneReviewRecord>();
     internal DbSet<MilestoneReviewAssignmentRecord> Assignments => Set<MilestoneReviewAssignmentRecord>();
+    internal DbSet<MilestoneReviewReportGeneratorRecord> ReportGenerators => Set<MilestoneReviewReportGeneratorRecord>();
     internal DbSet<MilestoneReviewFeedbackRecord> Feedback => Set<MilestoneReviewFeedbackRecord>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -69,6 +78,15 @@ public sealed class MilestoneReviewDbContext(DbContextOptions<MilestoneReviewDbC
             entity.HasKey(item => new { item.ReviewId, item.ReviewerId });
             entity.Property(item => item.Reviewer).HasMaxLength(160).IsRequired();
             entity.Property(item => item.ReviewerUserId).HasMaxLength(320).IsRequired();
+            entity.HasOne<MilestoneReviewRecord>().WithMany()
+                .HasForeignKey(item => item.ReviewId).OnDelete(DeleteBehavior.Cascade);
+        });
+        modelBuilder.Entity<MilestoneReviewReportGeneratorRecord>(entity =>
+        {
+            entity.ToTable("MilestoneReviewReportGenerators");
+            entity.HasKey(item => new { item.ReviewId, item.ReportGeneratorId });
+            entity.Property(item => item.ReportGenerator).HasMaxLength(160).IsRequired();
+            entity.Property(item => item.ReportGeneratorUserId).HasMaxLength(320).IsRequired();
             entity.HasOne<MilestoneReviewRecord>().WithMany()
                 .HasForeignKey(item => item.ReviewId).OnDelete(DeleteBehavior.Cascade);
         });
@@ -112,6 +130,16 @@ internal sealed class SqliteMilestoneReviewDatabaseInitializer(MilestoneReviewDb
         await AddColumnIfMissingAsync("MilestoneReviews", "WorkflowKey", "TEXT NULL", cancellationToken);
         await AddColumnIfMissingAsync("MilestoneReviews", "WorkflowInstanceId", "TEXT NULL", cancellationToken);
         await AddColumnIfMissingAsync("MilestoneReviewAssignments", "ReviewerUserId", "TEXT NOT NULL DEFAULT ''", cancellationToken);
+        await dbContext.Database.ExecuteSqlRawAsync("""
+            CREATE TABLE IF NOT EXISTS "MilestoneReviewReportGenerators" (
+                "ReviewId" TEXT NOT NULL,
+                "ReportGeneratorId" TEXT NOT NULL,
+                "ReportGenerator" TEXT NOT NULL,
+                "ReportGeneratorUserId" TEXT NOT NULL,
+                CONSTRAINT "PK_MilestoneReviewReportGenerators"
+                    PRIMARY KEY ("ReviewId", "ReportGeneratorId")
+            );
+            """, cancellationToken);
         await AddColumnIfMissingAsync("MilestoneReviewFeedback", "ReviewerUserId", "TEXT NOT NULL DEFAULT ''", cancellationToken);
         await AddColumnIfMissingAsync("MilestoneReviewFeedback", "JiraCommentId", "TEXT NULL", cancellationToken);
         await AddColumnIfMissingAsync("MilestoneReviewFeedback", "JiraSyncError", "TEXT NULL", cancellationToken);

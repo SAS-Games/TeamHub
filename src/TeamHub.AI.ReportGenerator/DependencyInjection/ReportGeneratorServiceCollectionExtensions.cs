@@ -20,9 +20,9 @@ public static class ReportGeneratorServiceCollectionExtensions
             .Validate(options => options.MaximumConcurrentRequests is >= 1 and <= 16,
                 "AI:ReportGenerator:MaximumConcurrentRequests must be between 1 and 16.")
             .Validate(options => options.MaximumSourceCharactersPerStudio is >= 1 and <= 120000,
-                "AI:ReportGenerator:MaximumSourceCharactersPerStudio must be between 1 and 120000.")
+                "AI Report Generator maximum source characters per studio must be between 1 and 120,000.")
             .Validate(options => options.MaximumOutputTokens is >= 1 and <= 16000,
-                "AI:ReportGenerator:MaximumOutputTokens must be between 1 and 16000.")
+                "AI Report Generator maximum output tokens per studio must be between 1 and 16,000.")
             .Validate(options => !string.IsNullOrWhiteSpace(options.WeeklyWorkSummaryPromptPath),
                 "AI:ReportGenerator:WeeklyWorkSummaryPromptPath is required.")
             .ValidateOnStart();

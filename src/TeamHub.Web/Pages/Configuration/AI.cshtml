@@ -144,10 +144,26 @@
         <div class="section-heading"><div><span>Feature</span><h2>Flow Designer</h2></div></div>
         <div class="p-4 row g-3">
             <div class="col-12"><div class="form-check"><input asp-for="Settings.FlowDesignerEnabled" class="form-check-input" /><label asp-for="Settings.FlowDesignerEnabled" class="form-check-label">Enable Create with AI</label></div></div>
-            <div class="col-6 col-lg-4"><label asp-for="Settings.MaximumSourceDocuments" class="form-label">Maximum source documents</label><input asp-for="Settings.MaximumSourceDocuments" class="form-control" /></div>
-            <div class="col-6 col-lg-4"><label asp-for="Settings.MaximumSourceCharacters" class="form-label">Maximum source characters</label><input asp-for="Settings.MaximumSourceCharacters" class="form-control" /></div>
-            <div class="col-6 col-lg-4"><label asp-for="Settings.MaximumPromptCharacters" class="form-label">Maximum prompt characters</label><input asp-for="Settings.MaximumPromptCharacters" class="form-control" /></div>
-            <div class="col-6 col-lg-4"><label asp-for="Settings.MaximumOutputTokens" class="form-label">Maximum output tokens</label><input asp-for="Settings.MaximumOutputTokens" class="form-control" /></div>
+            <div class="col-6 col-lg-4">
+                <label asp-for="Settings.MaximumSourceDocuments" class="form-label">Maximum source documents per request</label>
+                <input asp-for="Settings.MaximumSourceDocuments" class="form-control" />
+                <div class="form-text">Limits how many documents can be included in one generation.</div>
+            </div>
+            <div class="col-6 col-lg-4">
+                <label asp-for="Settings.MaximumSourceCharacters" class="form-label">Maximum combined source characters</label>
+                <input asp-for="Settings.MaximumSourceCharacters" class="form-control" />
+                <div class="form-text">Limits the combined text from all selected documents. Content is rejected, not truncated, when it exceeds this value.</div>
+            </div>
+            <div class="col-6 col-lg-4">
+                <label asp-for="Settings.MaximumPromptCharacters" class="form-label">Maximum instruction characters</label>
+                <input asp-for="Settings.MaximumPromptCharacters" class="form-control" />
+                <div class="form-text">Limits the user's diagram instruction; source documents are counted separately.</div>
+            </div>
+            <div class="col-6 col-lg-4">
+                <label asp-for="Settings.MaximumOutputTokens" class="form-label">Maximum output tokens per AI request</label>
+                <input asp-for="Settings.MaximumOutputTokens" class="form-control" />
+                <div class="form-text">Caps the generated diagram response. Lower values reduce latency and usage but may truncate complex results.</div>
+            </div>
             <div class="col-6 col-lg-4"><label asp-for="Settings.MaximumDiagrams" class="form-label">Maximum diagrams</label><input asp-for="Settings.MaximumDiagrams" class="form-control" /></div>
             <div class="col-6 col-lg-4"><label asp-for="Settings.MaximumHierarchyDepth" class="form-label">Maximum hierarchy depth</label><input asp-for="Settings.MaximumHierarchyDepth" class="form-control" /></div>
         </div>
@@ -172,11 +188,13 @@
                 <label asp-for="Settings.ReportMaximumSourceCharactersPerStudio" class="form-label">Maximum source characters per studio</label>
                 <input asp-for="Settings.ReportMaximumSourceCharactersPerStudio" class="form-control" />
                 <span asp-validation-for="Settings.ReportMaximumSourceCharactersPerStudio" class="text-danger"></span>
+                <div class="form-text">Limits the support activity sent for one studio. Content is rejected, not truncated, when it exceeds this value.</div>
             </div>
             <div class="col-md-4">
-                <label asp-for="Settings.ReportMaximumOutputTokens" class="form-label">Maximum report output tokens</label>
+                <label asp-for="Settings.ReportMaximumOutputTokens" class="form-label">Maximum output tokens per studio</label>
                 <input asp-for="Settings.ReportMaximumOutputTokens" class="form-control" />
                 <span asp-validation-for="Settings.ReportMaximumOutputTokens" class="text-danger"></span>
+                <div class="form-text">Caps each studio's generated summary. Lower values reduce latency and usage but may truncate the response.</div>
             </div>
             <div class="col-12">
                 <label asp-for="Settings.WeeklyWorkSummaryPromptPath" class="form-label">Weekly Work Summary instruction file</label>
