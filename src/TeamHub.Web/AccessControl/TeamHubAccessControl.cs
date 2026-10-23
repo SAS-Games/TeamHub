@@ -152,6 +152,7 @@ public static class TeamHubAccessRoutes
         if (path.StartsWithSegments("/Configuration/Templates")) return TeamHubModules.FlowDesigner;
         if (path.StartsWithSegments("/Configuration")) return TeamHubModules.Administration;
         if (path.StartsWithSegments("/Profile/Atlassian")) return TeamHubModules.AtlassianConnection;
+        if (path.StartsWithSegments("/Notifications")) return TeamHubModules.Notifications;
         if (path.StartsWithSegments("/WorkCenter") || path.StartsWithSegments("/Workflows")) return TeamHubModules.WorkCenter;
         if (path.StartsWithSegments("/Milestones")) return TeamHubModules.Milestones;
         if (path.StartsWithSegments("/MilestoneReview")) return TeamHubModules.MilestoneReview;
@@ -174,6 +175,23 @@ public static class TeamHubAccessRoutes
     {
         var path = request.Path.Value ?? string.Empty;
         var handler = request.Query["handler"].ToString();
+        if (path.StartsWith("/Notifications", StringComparison.OrdinalIgnoreCase))
+            return AccessLevel.ReadOnly;
+        if (path.StartsWith("/Team/Configuration", StringComparison.OrdinalIgnoreCase))
+            return AccessLevel.FullAccess;
+        if (path.StartsWith("/WorkCenter/Configuration", StringComparison.OrdinalIgnoreCase))
+        {
+            if (HttpMethods.IsGet(request.Method) && request.Query.ContainsKey("create")) return AccessLevel.Create;
+            if (HttpMethods.IsGet(request.Method) && request.Query.ContainsKey("draftId")) return AccessLevel.Edit;
+            if (handler.Contains("Publish", StringComparison.OrdinalIgnoreCase)) return AccessLevel.FullAccess;
+            if (handler.Contains("Delete", StringComparison.OrdinalIgnoreCase)) return AccessLevel.Delete;
+            if (handler.Contains("Create", StringComparison.OrdinalIgnoreCase)
+                || handler.Contains("Duplicate", StringComparison.OrdinalIgnoreCase)) return AccessLevel.Create;
+            if (HttpMethods.IsPost(request.Method)) return AccessLevel.Edit;
+            return AccessLevel.ReadOnly;
+        }
+        if (path.StartsWith("/WorkCenter/StartNew", StringComparison.OrdinalIgnoreCase))
+            return AccessLevel.Create;
         if (path.Equals("/SupportSummary", StringComparison.OrdinalIgnoreCase)
             && HttpMethods.IsPost(request.Method)
             && handler.Equals("GenerateWeeklyWorkSummary", StringComparison.OrdinalIgnoreCase))
@@ -205,6 +223,9 @@ public static class TeamHubAccessRoutes
             || handler.Contains("Publish", StringComparison.OrdinalIgnoreCase)) return AccessLevel.FullAccess;
         if (HttpMethods.IsPost(request.Method)
             && (handler.Contains("Create", StringComparison.OrdinalIgnoreCase) || handler.Contains("Duplicate", StringComparison.OrdinalIgnoreCase))) return AccessLevel.Create;
+        if (HttpMethods.IsPost(request.Method)
+            && (path.EndsWith("/New", StringComparison.OrdinalIgnoreCase)
+                || path.EndsWith("/CreateWithAi", StringComparison.OrdinalIgnoreCase))) return AccessLevel.Create;
         if (HttpMethods.IsPost(request.Method) || HttpMethods.IsPut(request.Method) || HttpMethods.IsPatch(request.Method)) return AccessLevel.Edit;
         if (HttpMethods.IsGet(request.Method)
             && (path.EndsWith("/New", StringComparison.OrdinalIgnoreCase) || request.Query.ContainsKey("create"))) return AccessLevel.Create;

@@ -14,7 +14,8 @@
 @inject IPageLayoutService PageLayouts
 @{
     var applicationName = ApplicationOptions.Value.Name;
-    var currentModule = TeamHubAccessRoutes.ResolveModule(Context.Request.Path);
+    var currentModule = Context.Items["TeamHub.Module"] as string
+        ?? TeamHubAccessRoutes.ResolveModule(Context.Request.Path);
     var currentPageAccess = currentModule is null ? AccessLevel.FullAccess : await CurrentAccess.GetAccessLevelAsync(currentModule);
     var navigationTabs = new List<NavigationTabOptions>();
     foreach (var tab in NavigationTabsOptions.Value.OrderBy(tab => tab.Order))
@@ -185,7 +186,10 @@
                     </ul>
                     @if (User.Identity?.IsAuthenticated == true)
                     {
-                        @await Component.InvokeAsync("NotificationBell")
+                        @if (await CurrentAccess.CanAsync(TeamHubModules.Notifications))
+                        {
+                            @await Component.InvokeAsync("NotificationBell")
+                        }
                         @if (await CurrentAccess.CanAsync(TeamHubModules.AtlassianConnection))
                         {
                             <a class="btn btn-sm btn-outline-secondary me-2" asp-page="/Profile/Atlassian">My Connections</a>
@@ -234,9 +238,25 @@
             const requiredFor = (url, method) => {
                 const target = new URL(url, window.location.href);
                 const handler = target.searchParams.get("handler") || "";
+                const path = target.pathname;
+                if (/^\/Notifications(?:\/|$)/i.test(path)) return 1;
+                if (/^\/Team\/Configuration(?:\/|$)/i.test(path)) return 5;
+                if (/^\/WorkCenter\/Configuration(?:\/|$)/i.test(path)) {
+                    if (method === "GET" && target.searchParams.has("create")) return 2;
+                    if (method === "GET" && target.searchParams.has("draftId")) return 3;
+                    if (/publish/i.test(handler)) return 5;
+                    if (/delete/i.test(handler)) return 4;
+                    if (/(create|duplicate)/i.test(handler)) return 2;
+                    return method === "POST" ? 3 : 1;
+                }
+                if (/^\/WorkCenter\/StartNew(?:\/|$)/i.test(path)) return 2;
+                if (/^\/SupportSummary\/?$/i.test(path) && /generateweeklyworksummary/i.test(handler)) return 1;
+                if (/^\/Flows\/?$/i.test(path) && /^delete$/i.test(handler)) return 3;
+                if (/^\/Flows\/?$/i.test(path) && /deletepublished/i.test(handler)) return 5;
                 if (method === "DELETE" || /delete/i.test(handler)) return 4;
                 if (/\/publish/i.test(target.pathname) || (/\/templates/i.test(target.pathname) && method !== "GET") || /publish/i.test(handler)) return 5;
                 if (method === "POST" && /(create|duplicate)/i.test(handler)) return 2;
+                if (method === "POST" && (/\/new$/i.test(path) || /\/createwithai$/i.test(path))) return 2;
                 if (["POST", "PUT", "PATCH"].includes(method)) return 3;
                 if (method === "GET" && (/\/new$/i.test(target.pathname) || target.searchParams.has("create"))) return 2;
                 return 1;
@@ -244,7 +264,8 @@
             const allows = required => granted === 5 || granted >= required;
 
             document.querySelectorAll('form[method="post"]').forEach(form => {
-                if (!allows(3)) form.querySelectorAll('input, select, textarea').forEach(control => control.disabled = true);
+                const formRequired = requiredFor(form.action, "POST");
+                if (!allows(formRequired)) form.querySelectorAll('input, select, textarea').forEach(control => control.disabled = true);
                 form.querySelectorAll('button, input[type="submit"]').forEach(button => {
                     const target = button.formAction || form.action;
                     button.disabled = !allows(requiredFor(target, "POST"));

@@ -27,6 +27,7 @@ public static class TeamHubModules
     public const string SupportSummary = "Support Summary";
     public const string AiReports = "AI Reports";
     public const string AtlassianConnection = "Atlassian Connection";
+    public const string Notifications = "Notifications";
     public const string Administration = "Administration";
     public const string UserManagement = "User Management";
     public const string AccessManagement = "Access Management";
@@ -44,10 +45,71 @@ public static class TeamHubModules
         SupportSummary,
         AiReports,
         AtlassianConnection,
+        Notifications,
         Administration,
         UserManagement,
         AccessManagement
     ];
+}
+
+public static class TeamHubModuleAccess
+{
+    private static readonly IReadOnlyList<AccessLevel> ReadOnly =
+        [AccessLevel.NoAccess, AccessLevel.ReadOnly];
+    private static readonly IReadOnlyList<AccessLevel> Editable =
+        [AccessLevel.NoAccess, AccessLevel.ReadOnly, AccessLevel.Edit];
+    private static readonly IReadOnlyList<AccessLevel> Creatable =
+        [AccessLevel.NoAccess, AccessLevel.Create];
+    private static readonly IReadOnlyList<AccessLevel> WorkItems =
+        [AccessLevel.NoAccess, AccessLevel.ReadOnly, AccessLevel.Create, AccessLevel.Edit];
+    private static readonly IReadOnlyList<AccessLevel> Crud =
+        [AccessLevel.NoAccess, AccessLevel.ReadOnly, AccessLevel.Create, AccessLevel.Edit, AccessLevel.Delete];
+    private static readonly IReadOnlyList<AccessLevel> FlowDesigner =
+        [AccessLevel.NoAccess, AccessLevel.ReadOnly, AccessLevel.Create, AccessLevel.Edit, AccessLevel.FullAccess];
+
+    public static IReadOnlyList<AccessLevel> SupportedLevels(string module) => module switch
+    {
+        TeamHubModules.Home or TeamHubModules.UsefulLinks or TeamHubModules.Milestones
+            or TeamHubModules.Notifications => ReadOnly,
+        TeamHubModules.Team => ReadOnly,
+        TeamHubModules.WorkCenter => WorkItems,
+        TeamHubModules.StudioConfiguration => Crud,
+        TeamHubModules.FlowDesigner => FlowDesigner,
+        TeamHubModules.AiReports => Creatable,
+        TeamHubModules.MilestoneReview or TeamHubModules.SupportSummary
+            or TeamHubModules.AtlassianConnection => Editable,
+        TeamHubModules.Administration or TeamHubModules.UserManagement
+            or TeamHubModules.AccessManagement => [AccessLevel.NoAccess, AccessLevel.FullAccess],
+        _ => Editable
+    };
+
+    public static AccessLevel Normalize(string module, AccessLevel requested)
+    {
+        var supported = SupportedLevels(module);
+        if (supported.Contains(requested)) return requested;
+
+        return supported
+            .Where(level => level <= requested)
+            .DefaultIfEmpty(AccessLevel.NoAccess)
+            .Max();
+    }
+
+    public static string Description(string module) => module switch
+    {
+        TeamHubModules.Home => "View the Home page.",
+        TeamHubModules.UsefulLinks => "Show useful links on the Home page.",
+        TeamHubModules.Team => "View team pages. Team configuration remains Admin-only.",
+        TeamHubModules.WorkCenter => "Read views workflows allowed for the user's role, Create starts them, and Edit completes assigned tasks. Workflow-library administration remains Admin-only.",
+        TeamHubModules.Milestones => "View milestone information.",
+        TeamHubModules.MilestoneReview => "Read views reviews and Jira feedback; Edit updates the user's feedback. Administrative restore and publishing remain Admin-only.",
+        TeamHubModules.FlowDesigner => "Read views flows, Create adds flows, Edit changes owned flows, and Full Access manages shared flows and templates. Publication review remains Admin-only.",
+        TeamHubModules.StudioConfiguration => "Read views studios, Create adds studios, Edit updates them, and Delete removes them.",
+        TeamHubModules.SupportSummary => "Read views support information; Edit updates Confluence and support comments. Planning administration remains Admin-only.",
+        TeamHubModules.AiReports => "Create generates AI reports; No Access disables report generation.",
+        TeamHubModules.AtlassianConnection => "Read views connection status; Edit changes the user's connection.",
+        TeamHubModules.Notifications => "Read views notifications and manages the user's read state.",
+        _ => "Read views the page; Edit changes its content."
+    };
 }
 
 public enum AccessLevel

@@ -189,7 +189,7 @@ public sealed class AccessControlTests
             new(TeamHubModules.Home, TeamHubUserTypes.Admin, AccessLevel.NoAccess)
         ]);
 
-        (await users.GetAccessLevelAsync(TeamHubModules.Milestones, TeamHubUserTypes.Registered)).Should().Be(AccessLevel.Create);
+        (await users.GetAccessLevelAsync(TeamHubModules.Milestones, TeamHubUserTypes.Registered)).Should().Be(AccessLevel.ReadOnly);
         (await users.GetAccessLevelAsync(TeamHubModules.UserManagement, TeamHubUserTypes.Privileged)).Should().Be(AccessLevel.NoAccess);
         (await users.GetAccessLevelAsync(TeamHubModules.Administration, TeamHubUserTypes.Privileged)).Should().Be(AccessLevel.NoAccess);
         (await users.GetAccessLevelAsync(TeamHubModules.Home, TeamHubUserTypes.Admin)).Should().Be(AccessLevel.FullAccess);
@@ -467,6 +467,7 @@ public sealed class AccessControlTests
     [InlineData("/Studio/WeeklyUpdates", TeamHubModules.SupportSummary)]
     [InlineData("/SupportSummary", TeamHubModules.SupportSummary)]
     [InlineData("/SupportSummaryComments", TeamHubModules.SupportSummary)]
+    [InlineData("/Notifications/Index", TeamHubModules.Notifications)]
     [InlineData("/Team/Custom/support-metrics", "Team Tab: support-metrics")]
     [InlineData("/Register", null)]
     [InlineData("/AcceptInvitation", null)]
@@ -511,6 +512,14 @@ public sealed class AccessControlTests
     [InlineData("POST", "/Team/Custom/support-metrics", "?handler=SaveRow", AccessLevel.Edit)]
     [InlineData("GET", "/api/flows/published/id", "", AccessLevel.ReadOnly)]
     [InlineData("PUT", "/api/flows/published/id", "", AccessLevel.FullAccess)]
+    [InlineData("GET", "/Notifications/Open/id", "", AccessLevel.ReadOnly)]
+    [InlineData("POST", "/Notifications", "?handler=MarkAllRead", AccessLevel.ReadOnly)]
+    [InlineData("GET", "/WorkCenter/StartNew", "", AccessLevel.Create)]
+    [InlineData("POST", "/WorkCenter/StartNew", "", AccessLevel.Create)]
+    [InlineData("GET", "/WorkCenter/Configuration", "?draftId=1", AccessLevel.Edit)]
+    [InlineData("POST", "/WorkCenter/Configuration", "?handler=Delete", AccessLevel.Delete)]
+    [InlineData("POST", "/WorkCenter/Configuration", "?handler=Publish", AccessLevel.FullAccess)]
+    [InlineData("GET", "/Team/Configuration", "", AccessLevel.FullAccess)]
     public void RouteAccess_MapsOperationsToRequiredLevels(string method, string path, string query, AccessLevel expected)
     {
         var context = new DefaultHttpContext();
@@ -549,6 +558,22 @@ public sealed class AccessControlTests
     public void AccessLevels_EnforceTheConfiguredHierarchy(AccessLevel granted, AccessLevel required, bool expected)
     {
         granted.Allows(required).Should().Be(expected);
+    }
+
+    [Theory]
+    [InlineData(TeamHubModules.Home, AccessLevel.Edit, AccessLevel.ReadOnly)]
+    [InlineData(TeamHubModules.Notifications, AccessLevel.FullAccess, AccessLevel.ReadOnly)]
+    [InlineData(TeamHubModules.MilestoneReview, AccessLevel.FullAccess, AccessLevel.Edit)]
+    [InlineData(TeamHubModules.AiReports, AccessLevel.Edit, AccessLevel.Create)]
+    [InlineData(TeamHubModules.FlowDesigner, AccessLevel.Delete, AccessLevel.Edit)]
+    [InlineData(TeamHubModules.WorkCenter, AccessLevel.Delete, AccessLevel.Edit)]
+    public void ModuleAccess_NormalizesToAUsefulSupportedLevel(
+        string module,
+        AccessLevel configured,
+        AccessLevel expected)
+    {
+        TeamHubModuleAccess.Normalize(module, configured).Should().Be(expected);
+        TeamHubModuleAccess.SupportedLevels(module).Should().Contain(expected);
     }
 
     private sealed class AccessTestHost : IAsyncDisposable
