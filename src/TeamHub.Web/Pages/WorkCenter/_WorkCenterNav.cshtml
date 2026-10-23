@@ -1,15 +1,19 @@
+@using TeamHub.Authentication
+@using TeamHub.Web.AccessControl
+@inject ICurrentAccessService CurrentAccess
 @{
     var current = (string)ViewData["WorkCenterTab"]!;
+    var canStart = await CurrentAccess.CanAsync(TeamHubModules.WorkCenter, AccessLevel.Create, Context.RequestAborted);
 }
 <nav class="page-switcher" aria-label="Work Center views">
     <a class="@(current == "Overview" ? "active" : "")" asp-page="/WorkCenter/Overview">Overview</a>
     <a class="@(current == "MyTasks" ? "active" : "")" asp-page="/WorkCenter/MyTasks">My Tasks</a>
-    @if (User.IsInRole("Admin"))
+    @if (canStart)
     {
         <a class="@(current == "StartNew" ? "active" : "")" asp-page="/WorkCenter/StartNew">Start New</a>
-        @if (User.IsInRole("Admin"))
-        {
-            <a class="@(current == "Configuration" ? "active" : "")" asp-page="/WorkCenter/Configuration">Workflow Library</a>
-        }
+    }
+    @if (User.IsInRole(TeamHubUserTypes.Admin))
+    {
+        <a class="@(current == "Configuration" ? "active" : "")" asp-page="/WorkCenter/Configuration">Workflow Library</a>
     }
 </nav>

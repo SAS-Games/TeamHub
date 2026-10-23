@@ -15,7 +15,6 @@ public sealed class AccessModel(
 {
     public IReadOnlyList<ModuleOption> Modules { get; private set; } = [];
     public IReadOnlyList<string> UserTypes { get; } = TeamHubUserTypes.All;
-    public IReadOnlyList<AccessLevel> AccessLevels { get; } = Enum.GetValues<AccessLevel>();
     public IReadOnlyList<AuthorizedUserRecord> AuthorizedUsers { get; private set; } = [];
     public IReadOnlyDictionary<string, AccessLevel> Permissions { get; private set; } =
         new Dictionary<string, AccessLevel>();
@@ -56,15 +55,20 @@ public sealed class AccessModel(
                 or TeamHubModules.UserManagement
                 or TeamHubModules.AccessManagement
                 ? AccessLevel.NoAccess
-                : Permissions.GetValueOrDefault(Key(module, userType), AccessLevel.NoAccess);
+                : TeamHubModuleAccess.Normalize(
+                    module,
+                    Permissions.GetValueOrDefault(Key(module, userType), AccessLevel.NoAccess));
 
     public IReadOnlyList<AccessLevel> GetAccessLevels(string module) =>
-        module.StartsWith(CustomTeamTabAccess.ModulePrefix, StringComparison.Ordinal)
-            ? [AccessLevel.NoAccess, AccessLevel.ReadOnly, AccessLevel.Edit]
-            : AccessLevels;
+        TeamHubModuleAccess.SupportedLevels(module);
 
-    public AccessLevel? GetUserLevel(string module, Guid authorizedUserId) =>
-        UserPermissions.GetValueOrDefault(UserKey(module, authorizedUserId));
+    public string GetAccessDescription(string module) => TeamHubModuleAccess.Description(module);
+
+    public AccessLevel? GetUserLevel(string module, Guid authorizedUserId)
+    {
+        var configured = UserPermissions.GetValueOrDefault(UserKey(module, authorizedUserId));
+        return configured.HasValue ? TeamHubModuleAccess.Normalize(module, configured.Value) : null;
+    }
 
     public IReadOnlyList<ModuleOption> UserOverrideModules =>
         Modules.Where(module => module.Key is not (TeamHubModules.Administration
@@ -72,9 +76,7 @@ public sealed class AccessModel(
             or TeamHubModules.AccessManagement)).ToList();
 
     public IReadOnlyList<AccessLevel> GetUserAccessLevels(string module) =>
-        module.StartsWith(CustomTeamTabAccess.ModulePrefix, StringComparison.Ordinal)
-            ? [AccessLevel.NoAccess, AccessLevel.ReadOnly, AccessLevel.Edit]
-            : AccessLevels;
+        TeamHubModuleAccess.SupportedLevels(module);
 
     public bool IsLocked(string module, string userType) =>
         userType == TeamHubUserTypes.Admin

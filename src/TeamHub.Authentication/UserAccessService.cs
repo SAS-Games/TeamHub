@@ -15,7 +15,6 @@ internal sealed class UserAccessService(
     private const string LegacyStudioSupportModule = "Studio Support";
     private const string LegacyStudioJiraTicketsModule = "Studio Jira Tickets";
     private const string AccidentalSupportSummaryCommentsModule = "Support Summary Comments";
-    private const string CustomTeamTabModulePrefix = "Team Tab: ";
     private readonly PasswordHasher<AuthorizedUserEntity> passwordHasher = new();
 
     public async Task InitializeAsync(CancellationToken cancellationToken = default)
@@ -445,12 +444,13 @@ internal sealed class UserAccessService(
                 .Where(item => item.AuthorizedUserId == authorizedUserId.Value && item.Module == module)
                 .Select(item => (AccessLevel?)item.AccessLevel)
                 .SingleOrDefaultAsync(cancellationToken);
-            if (userOverride.HasValue) return userOverride.Value;
+            if (userOverride.HasValue) return TeamHubModuleAccess.Normalize(module, userOverride.Value);
         }
-        return await context.ModulePermissions.AsNoTracking()
+        var configured = await context.ModulePermissions.AsNoTracking()
             .Where(item => item.Module == module && item.UserType == userType)
             .Select(item => (AccessLevel?)item.AccessLevel)
             .SingleOrDefaultAsync(cancellationToken) ?? AccessLevel.NoAccess;
+        return TeamHubModuleAccess.Normalize(module, configured);
     }
 
     private static async Task EnsureUserPermissionSchemaAsync(
@@ -597,19 +597,20 @@ internal sealed class UserAccessService(
         {
             (TeamHubModules.Home or TeamHubModules.UsefulLinks, _) => AccessLevel.ReadOnly,
             (TeamHubModules.Team, TeamHubUserTypes.Registered) => AccessLevel.ReadOnly,
-            (TeamHubModules.Team, TeamHubUserTypes.Privileged) => AccessLevel.Edit,
+            (TeamHubModules.Team, TeamHubUserTypes.Privileged) => AccessLevel.ReadOnly,
             (TeamHubModules.WorkCenter, TeamHubUserTypes.Registered) => AccessLevel.Edit,
-            (TeamHubModules.WorkCenter, TeamHubUserTypes.Privileged) => AccessLevel.FullAccess,
+            (TeamHubModules.WorkCenter, TeamHubUserTypes.Privileged) => AccessLevel.Edit,
             (TeamHubModules.Milestones, TeamHubUserTypes.Registered) => AccessLevel.ReadOnly,
-            (TeamHubModules.Milestones, TeamHubUserTypes.Privileged) => AccessLevel.Edit,
+            (TeamHubModules.Milestones, TeamHubUserTypes.Privileged) => AccessLevel.ReadOnly,
             (TeamHubModules.MilestoneReview, TeamHubUserTypes.Registered or TeamHubUserTypes.Privileged) => AccessLevel.ReadOnly,
             (TeamHubModules.FlowDesigner, TeamHubUserTypes.Registered) => AccessLevel.Edit,
             (TeamHubModules.FlowDesigner, TeamHubUserTypes.Privileged) => AccessLevel.FullAccess,
             (TeamHubModules.StudioConfiguration, TeamHubUserTypes.Registered) => AccessLevel.ReadOnly,
             (TeamHubModules.StudioConfiguration, TeamHubUserTypes.Privileged) => AccessLevel.Edit,
             (TeamHubModules.SupportSummary, TeamHubUserTypes.Registered or TeamHubUserTypes.Privileged) => AccessLevel.ReadOnly,
-            (TeamHubModules.AiReports, TeamHubUserTypes.Registered or TeamHubUserTypes.Privileged) => AccessLevel.ReadOnly,
+            (TeamHubModules.AiReports, TeamHubUserTypes.Registered or TeamHubUserTypes.Privileged) => AccessLevel.NoAccess,
             (TeamHubModules.AtlassianConnection, TeamHubUserTypes.Registered or TeamHubUserTypes.Privileged) => AccessLevel.Edit,
+            (TeamHubModules.Notifications, TeamHubUserTypes.Registered or TeamHubUserTypes.Privileged) => AccessLevel.ReadOnly,
             _ => AccessLevel.NoAccess
         };
     }
@@ -618,7 +619,9 @@ internal sealed class UserAccessService(
     {
         if (userType == TeamHubUserTypes.Admin) return AccessLevel.FullAccess;
         if (IsAdministrativeModule(module)) return AccessLevel.NoAccess;
-        return Enum.IsDefined(requested) ? requested : AccessLevel.NoAccess;
+        return Enum.IsDefined(requested)
+            ? TeamHubModuleAccess.Normalize(module, requested)
+            : AccessLevel.NoAccess;
     }
 
     private static bool IsAdministrativeModule(string module) =>
@@ -632,10 +635,7 @@ internal sealed class UserAccessService(
     {
         if (!Enum.IsDefined(requested))
             throw new ArgumentException("Select a valid per-user access level.");
-        if (module.StartsWith(CustomTeamTabModulePrefix, StringComparison.Ordinal)
-            && requested is not (AccessLevel.NoAccess or AccessLevel.ReadOnly or AccessLevel.Edit))
-            throw new ArgumentException("Per-user custom tab access must be No Access, Read Only, or Edit.");
-        return requested;
+        return TeamHubModuleAccess.Normalize(module, requested);
     }
 
     private static async Task EnsureAnotherActiveAdminAsync(AccessControlDbContext context, Guid excludedId, CancellationToken cancellationToken)

@@ -26,7 +26,7 @@
 <section class="content-section">
     <div class="section-heading"><div><span>Authorization policy</span><h2>Page / Module Access Matrix</h2></div></div>
     <div class="section-body pb-3">
-        <p class="text-secondary mb-2">Access is cumulative: each level includes the capabilities to its left.</p>
+        <p class="text-secondary mb-2">Access is cumulative: each level includes the capabilities to its left. Each module shows only the levels supported by its pages and actions.</p>
         <div class="d-flex flex-wrap gap-2 small">
             <span class="badge text-bg-light">No Access</span>
             <span aria-hidden="true">→</span><span class="badge text-bg-light">Read Only</span>
@@ -44,7 +44,10 @@
                 @foreach (var module in Model.Modules)
                 {
                     <tr>
-                        <td><strong>@module.Label</strong></td>
+                        <td>
+                            <strong>@module.Label</strong>
+                            <small class="d-block text-secondary">@Model.GetAccessDescription(module.Key)</small>
+                        </td>
                         @foreach (var type in Model.UserTypes)
                         {
                             var level = Model.GetLevel(module.Key, type);
