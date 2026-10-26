@@ -4,6 +4,41 @@
 // Write your JavaScript code.
 
 (() => {
+    const toggle = document.getElementById('theme-toggle');
+    if (!toggle) return;
+
+    const systemTheme = window.matchMedia('(prefers-color-scheme: dark)');
+    let preference;
+    try {
+        preference = localStorage.getItem('teamhub-theme');
+    } catch { }
+
+    const applyTheme = theme => {
+        document.documentElement.dataset.bsTheme = theme;
+        toggle.setAttribute('aria-pressed', String(theme === 'dark'));
+        toggle.title = theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode';
+    };
+    const applyPreference = () => applyTheme(preference === 'light' || preference === 'dark'
+        ? preference
+        : systemTheme.matches ? 'dark' : 'light');
+
+    applyPreference();
+    toggle.addEventListener('click', () => {
+        preference = document.documentElement.dataset.bsTheme === 'dark' ? 'light' : 'dark';
+        applyPreference();
+        try {
+            localStorage.setItem('teamhub-theme', preference);
+        } catch { }
+    });
+    systemTheme.addEventListener('change', applyPreference);
+    window.addEventListener('storage', event => {
+        if (event.key !== 'teamhub-theme' && event.key !== null) return;
+        preference = event.newValue;
+        applyPreference();
+    });
+})();
+
+(() => {
     const centerRoadmapFocus = track => {
         if (track.scrollWidth <= track.clientWidth) return;
 

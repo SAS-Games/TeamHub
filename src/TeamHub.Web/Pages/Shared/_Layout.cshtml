@@ -102,6 +102,17 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>@ViewData["Title"] - @applicationName</title>
+    <script>
+        (() => {
+            let preference;
+            try {
+                preference = localStorage.getItem("teamhub-theme");
+            } catch { }
+            document.documentElement.dataset.bsTheme = preference === "light" || preference === "dark"
+                ? preference
+                : window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+        })();
+    </script>
     <link rel="icon" type="image/svg+xml" href="~/images/teamhub-logo.svg" asp-append-version="true" />
     <link rel="alternate icon" href="~/favicon.ico" />
     <script type="importmap"></script>
@@ -113,7 +124,7 @@
 </head>
 <body class="@(fullBleed ? "fd-host-designer-page" : null)">
     <header>
-        <nav class="navbar navbar-expand-xxl navbar-light bg-white border-bottom box-shadow teamhub-navbar @(fullBleed ? "mb-0" : "mb-3")">
+        <nav class="navbar navbar-expand-xxl border-bottom box-shadow teamhub-navbar @(fullBleed ? "mb-0" : "mb-3")">
             <div class="container">
                 <a class="navbar-brand teamhub-navbar-brand" asp-page="/Index" aria-label="@applicationName Team Hub home">
                     <img class="teamhub-navbar-logo" src="~/images/teamhub-logo.svg" alt="" aria-hidden="true" asp-append-version="true" />
@@ -122,6 +133,11 @@
                         <span>Team Hub</span>
                     </span>
                 </a>
+                <button class="btn btn-outline-secondary teamhub-theme-toggle ms-auto me-2 order-xxl-last" type="button" id="theme-toggle"
+                        aria-label="Dark mode" aria-pressed="false" title="Switch to dark mode">
+                    <span class="theme-icon-dark" aria-hidden="true">&#9789;</span>
+                    <span class="theme-icon-light" aria-hidden="true">&#9728;</span>
+                </button>
                 <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target=".navbar-collapse" aria-controls="navbarSupportedContent"
                         aria-expanded="false" aria-label="Toggle navigation">
                     <span class="navbar-toggler-icon"></span>
@@ -134,13 +150,13 @@
                             {
                                 @foreach (var customTab in mainNavigationTabs)
                                 {
-                                    <li class="nav-item"><a class="nav-link text-dark" asp-page="/Team/Custom" asp-route-slug="@customTab.Slug">@customTab.Name</a></li>
+                                    <li class="nav-item"><a class="nav-link" asp-page="/Team/Custom" asp-route-slug="@customTab.Slug">@customTab.Name</a></li>
                                 }
                             }
                             if (string.Equals(tab.Page, "/Studio/Index", StringComparison.OrdinalIgnoreCase))
                             {
                                 <li class="nav-item dropdown">
-                                    <a class="nav-link dropdown-toggle text-dark" href="#" id="studiosDropdown" role="button" data-bs-toggle="dropdown" data-bs-auto-close="outside" aria-expanded="false">@tab.Name</a>
+                                    <a class="nav-link dropdown-toggle" href="#" id="studiosDropdown" role="button" data-bs-toggle="dropdown" data-bs-auto-close="outside" aria-expanded="false">@tab.Name</a>
                                     <ul class="dropdown-menu studio-groups-menu" aria-labelledby="studiosDropdown">
                                         @if (studioTabs.Count == 0)
                                         {
@@ -173,14 +189,14 @@
                             }
                             else
                             {
-                                <li class="nav-item"><a class="nav-link text-dark" asp-page="@tab.Page">@tab.Name</a></li>
+                                <li class="nav-item"><a class="nav-link" asp-page="@tab.Page">@tab.Name</a></li>
                             }
                         }
                         @if (mainNavigationInsertPage is null)
                         {
                             @foreach (var customTab in mainNavigationTabs)
                             {
-                                <li class="nav-item"><a class="nav-link text-dark" asp-page="/Team/Custom" asp-route-slug="@customTab.Slug">@customTab.Name</a></li>
+                                <li class="nav-item"><a class="nav-link" asp-page="/Team/Custom" asp-route-slug="@customTab.Slug">@customTab.Name</a></li>
                             }
                         }
                     </ul>
