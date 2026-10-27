@@ -25,6 +25,7 @@
     let pendingModel = null;
     let activeRequest = null;
     let conversationRevision = 0;
+    let normalBounds = null;
     const copyIcon = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 7V3h13v13h-4v5H3V7h5Zm2 0h7v7h2V5h-9v2Zm5 2H5v10h10V9Z" /></svg>';
     const copiedIcon = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9.2 17.2-4.4-4.4 1.4-1.4 3 3L17.8 5.8l1.4 1.4-10 10Z" /></svg>';
 
@@ -50,7 +51,17 @@
                 fullscreen: state.fullscreen === true,
                 mode: state.mode === "TeamHub" ? "TeamHub" : "General",
                 model: typeof state.model === "string" ? state.model.slice(0, 200) : "",
-                history: savedHistory
+                history: savedHistory,
+                bounds: state.bounds
+                    && [state.bounds.left, state.bounds.top, state.bounds.width, state.bounds.height]
+                        .every(value => Number.isFinite(value))
+                    ? {
+                        left: state.bounds.left,
+                        top: state.bounds.top,
+                        width: state.bounds.width,
+                        height: state.bounds.height
+                    }
+                    : null
             };
         } catch {
             return null;
@@ -65,7 +76,8 @@
                 fullscreen: root.classList.contains("is-fullscreen"),
                 mode: mode.value,
                 model: pendingModel || model.value,
-                history: history.slice(-20)
+                history: history.slice(-20),
+                bounds: normalBounds
             }));
         } catch {
             // Chat remains usable when browser storage is unavailable.
@@ -634,6 +646,132 @@
         return "text/plain";
     }
 
+    function clearWidgetBounds() {
+        root.style.removeProperty("left");
+        root.style.removeProperty("top");
+        root.style.removeProperty("right");
+        root.style.removeProperty("bottom");
+        root.style.removeProperty("width");
+        root.style.removeProperty("height");
+    }
+
+    function constrainBounds(bounds) {
+        const margin = 8;
+        const viewportWidth = document.documentElement.clientWidth;
+        const viewportHeight = document.documentElement.clientHeight;
+        const minimumWidth = Math.min(340, Math.max(1, viewportWidth - (margin * 2)));
+        const minimumHeight = Math.min(420, Math.max(1, viewportHeight - (margin * 2)));
+        const width = Math.min(Math.max(bounds.width, minimumWidth), viewportWidth - (margin * 2));
+        const height = Math.min(Math.max(bounds.height, minimumHeight), viewportHeight - (margin * 2));
+        return {
+            left: Math.min(Math.max(bounds.left, margin), viewportWidth - width - margin),
+            top: Math.min(Math.max(bounds.top, margin), viewportHeight - height - margin),
+            width,
+            height
+        };
+    }
+
+    function applyWidgetBounds(bounds) {
+        if (!widget || !bounds || window.matchMedia("(max-width: 575.98px)").matches) return;
+        const constrained = constrainBounds(bounds);
+        root.style.left = `${constrained.left}px`;
+        root.style.top = `${constrained.top}px`;
+        root.style.right = "auto";
+        root.style.bottom = "auto";
+        root.style.width = `${constrained.width}px`;
+        root.style.height = `${constrained.height}px`;
+        normalBounds = constrained;
+    }
+
+    function currentWidgetBounds() {
+        const rectangle = root.getBoundingClientRect();
+        return {
+            left: rectangle.left,
+            top: rectangle.top,
+            width: rectangle.width,
+            height: rectangle.height
+        };
+    }
+
+    function initializeWidgetResize() {
+        if (!widget) return;
+        const handles = root.querySelectorAll("[data-ai-chat-resize]");
+        for (const handle of handles) {
+            handle.addEventListener("pointerdown", event => {
+                if (root.classList.contains("is-fullscreen")
+                    || window.matchMedia("(max-width: 575.98px)").matches
+                    || event.button !== 0) return;
+
+                event.preventDefault();
+                const direction = handle.dataset.aiChatResize || "";
+                const start = currentWidgetBounds();
+                const startRight = start.left + start.width;
+                const startBottom = start.top + start.height;
+                const startX = event.clientX;
+                const startY = event.clientY;
+                const margin = 8;
+                applyWidgetBounds(start);
+                handle.setPointerCapture(event.pointerId);
+                document.documentElement.classList.add("teamhub-ai-chat-resizing");
+
+                const move = moveEvent => {
+                    const viewportWidth = document.documentElement.clientWidth;
+                    const viewportHeight = document.documentElement.clientHeight;
+                    const minimumWidth = Math.min(340, Math.max(1, viewportWidth - (margin * 2)));
+                    const minimumHeight = Math.min(420, Math.max(1, viewportHeight - (margin * 2)));
+                    const deltaX = moveEvent.clientX - startX;
+                    const deltaY = moveEvent.clientY - startY;
+                    let left = start.left;
+                    let top = start.top;
+                    let right = startRight;
+                    let bottom = startBottom;
+
+                    if (direction.includes("w")) {
+                        left = Math.min(Math.max(margin, start.left + deltaX), startRight - minimumWidth);
+                    } else if (direction.includes("e")) {
+                        right = Math.max(
+                            Math.min(viewportWidth - margin, startRight + deltaX),
+                            start.left + minimumWidth);
+                    }
+                    if (direction.includes("n")) {
+                        top = Math.min(Math.max(margin, start.top + deltaY), startBottom - minimumHeight);
+                    } else if (direction.includes("s")) {
+                        bottom = Math.max(
+                            Math.min(viewportHeight - margin, startBottom + deltaY),
+                            start.top + minimumHeight);
+                    }
+
+                    applyWidgetBounds({
+                        left,
+                        top,
+                        width: right - left,
+                        height: bottom - top
+                    });
+                };
+
+                const stop = stopEvent => {
+                    handle.removeEventListener("pointermove", move);
+                    handle.removeEventListener("pointerup", stop);
+                    handle.removeEventListener("pointercancel", stop);
+                    if (handle.hasPointerCapture(stopEvent.pointerId)) {
+                        handle.releasePointerCapture(stopEvent.pointerId);
+                    }
+                    document.documentElement.classList.remove("teamhub-ai-chat-resizing");
+                    normalBounds = currentWidgetBounds();
+                    persistState();
+                };
+
+                handle.addEventListener("pointermove", move);
+                handle.addEventListener("pointerup", stop);
+                handle.addEventListener("pointercancel", stop);
+            });
+        }
+
+        window.addEventListener("resize", () => {
+            if (!root.classList.contains("is-fullscreen") && normalBounds) applyWidgetBounds(normalBounds);
+        });
+    }
+
     function setWidgetOpen(open) {
         if (!widget) return;
         if (!open) {
@@ -654,7 +792,17 @@
     if (launcher) launcher.addEventListener("click", () => setWidgetOpen(root.hidden));
     if (close) close.addEventListener("click", () => setWidgetOpen(false));
     if (maximize) maximize.addEventListener("click", () => {
-        const isFullscreen = root.classList.toggle("is-fullscreen");
+        const isFullscreen = !root.classList.contains("is-fullscreen");
+        if (isFullscreen) {
+            if (!window.matchMedia("(max-width: 575.98px)").matches) {
+                normalBounds = currentWidgetBounds();
+            }
+            clearWidgetBounds();
+            root.classList.add("is-fullscreen");
+        } else {
+            root.classList.remove("is-fullscreen");
+            if (normalBounds) applyWidgetBounds(normalBounds);
+        }
         maximize.setAttribute("aria-label", isFullscreen ? "Restore AI Chat" : "Maximize AI Chat");
         maximize.setAttribute("title", isFullscreen ? "Restore" : "Maximize");
         persistState();
@@ -759,6 +907,7 @@
         mode.value = savedState.mode;
         pendingModel = savedState.model;
         history = savedState.history;
+        normalBounds = savedState.bounds;
     }
     updateMode(false);
     messagesElement.replaceChildren();
@@ -770,10 +919,12 @@
 
     if (widget) {
         root.classList.toggle("is-fullscreen", savedState?.fullscreen === true);
+        if (savedState?.fullscreen !== true && normalBounds) applyWidgetBounds(normalBounds);
         if (savedState?.fullscreen === true && maximize) {
             maximize.setAttribute("aria-label", "Restore AI Chat");
             maximize.setAttribute("title", "Restore");
         }
+        initializeWidgetResize();
         setWidgetOpen(savedState?.open === true);
     } else if (!modelsLoaded) {
         loadModels();

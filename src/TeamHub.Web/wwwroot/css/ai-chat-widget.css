@@ -55,6 +55,77 @@
   border-radius: 12px;
 }
 
+.teamhub-ai-chat-resize-handle {
+  position: absolute;
+  z-index: 6;
+  touch-action: none;
+}
+
+.teamhub-ai-chat-resize-handle.resize-n,
+.teamhub-ai-chat-resize-handle.resize-s {
+  right: 14px;
+  left: 14px;
+  height: 8px;
+  cursor: ns-resize;
+}
+
+.teamhub-ai-chat-resize-handle.resize-n { top: 0; }
+.teamhub-ai-chat-resize-handle.resize-s { bottom: 0; }
+
+.teamhub-ai-chat-resize-handle.resize-e,
+.teamhub-ai-chat-resize-handle.resize-w {
+  top: 14px;
+  bottom: 14px;
+  width: 8px;
+  cursor: ew-resize;
+}
+
+.teamhub-ai-chat-resize-handle.resize-e { right: 0; }
+.teamhub-ai-chat-resize-handle.resize-w { left: 0; }
+
+.teamhub-ai-chat-resize-handle.resize-ne,
+.teamhub-ai-chat-resize-handle.resize-se,
+.teamhub-ai-chat-resize-handle.resize-sw,
+.teamhub-ai-chat-resize-handle.resize-nw {
+  width: 16px;
+  height: 16px;
+}
+
+.teamhub-ai-chat-resize-handle.resize-ne { top: 0; right: 0; cursor: nesw-resize; }
+.teamhub-ai-chat-resize-handle.resize-se { right: 0; bottom: 0; cursor: nwse-resize; }
+.teamhub-ai-chat-resize-handle.resize-sw { bottom: 0; left: 0; cursor: nesw-resize; }
+.teamhub-ai-chat-resize-handle.resize-nw { top: 0; left: 0; cursor: nwse-resize; }
+
+.teamhub-ai-chat-resize-handle.resize-se::after,
+.teamhub-ai-chat-resize-handle.resize-sw::after {
+  position: absolute;
+  bottom: 3px;
+  width: 7px;
+  height: 7px;
+  opacity: .45;
+  border-bottom: 2px solid var(--text-muted-color);
+  content: "";
+}
+
+.teamhub-ai-chat-resize-handle.resize-se::after {
+  right: 3px;
+  border-right: 2px solid var(--text-muted-color);
+}
+
+.teamhub-ai-chat-resize-handle.resize-sw::after {
+  left: 3px;
+  border-left: 2px solid var(--text-muted-color);
+}
+
+.teamhub-ai-chat-panel.is-fullscreen .teamhub-ai-chat-resize-handle {
+  display: none;
+}
+
+html.teamhub-ai-chat-resizing,
+html.teamhub-ai-chat-resizing * {
+  user-select: none !important;
+}
+
 .teamhub-ai-chat-header {
   display: flex;
   align-items: center;
@@ -240,9 +311,13 @@
 
 @media (max-width: 575.98px) {
   .teamhub-ai-chat-panel {
-    inset: 8px;
-    width: auto;
-    height: auto;
+    inset: 8px !important;
+    width: auto !important;
+    height: auto !important;
     border-radius: 10px;
+  }
+
+  .teamhub-ai-chat-resize-handle {
+    display: none;
   }
 }
