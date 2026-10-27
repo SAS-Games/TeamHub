@@ -7,17 +7,17 @@
   margin-right: .5rem;
   padding: 7px;
   place-items: center;
-  color: #36554d;
-  border: 1px solid #bdcbc5;
+  color: var(--text-heading-color);
+  border: 1px solid var(--surface-border-color);
   border-radius: 50%;
-  background: #fff;
+  background: var(--surface-bg-color);
 }
 
 .teamhub-ai-chat-launcher:hover,
 .teamhub-ai-chat-launcher:focus,
 .teamhub-ai-chat-launcher[aria-expanded="true"] {
-  color: #18322d;
-  background: #edf2ee;
+  color: var(--text-color);
+  background: var(--surface-muted-color);
 }
 
 .teamhub-ai-chat-launcher svg,
@@ -37,9 +37,10 @@
   width: min(430px, calc(100vw - 24px));
   height: min(650px, calc(100vh - 92px));
   overflow: hidden;
-  border: 1px solid #bdcbc5;
+  color: var(--text-color);
+  border: 1px solid var(--surface-border-color);
   border-radius: 16px;
-  background: #fff;
+  background: var(--surface-bg-color);
   box-shadow: 0 18px 52px rgba(24, 50, 45, .26);
 }
 
@@ -111,14 +112,14 @@
 .teamhub-ai-chat-documents label {
   display: block;
   margin-bottom: .2rem;
-  color: #526660;
+  color: var(--text-secondary-color);
   font-size: .72rem;
   font-weight: 700;
 }
 
 .teamhub-ai-chat-note {
   padding: 0 1rem .65rem;
-  color: #65766f;
+  color: var(--text-muted-color);
   font-size: .74rem;
   line-height: 1.35;
 }
@@ -127,7 +128,7 @@
   min-height: 0;
   overflow-y: auto;
   padding: 1rem;
-  background: #f6f9f7;
+  background: var(--surface-subtle-color);
 }
 
 .teamhub-ai-chat-panel .ai-chat-empty {
@@ -136,12 +137,12 @@
   place-content: center;
   gap: .35rem;
   padding: 2rem 1rem;
-  color: #65766f;
+  color: var(--text-muted-color);
   text-align: center;
 }
 
 .teamhub-ai-chat-panel .ai-chat-empty strong {
-  color: #18322d;
+  color: var(--text-color);
 }
 
 .teamhub-ai-chat-panel .ai-chat-message {
@@ -157,9 +158,9 @@
   max-width: 88%;
   padding: .7rem .85rem;
   overflow-wrap: anywhere;
-  border: 1px solid #d9e1dc;
+  border: 1px solid var(--divider-color);
   border-radius: 13px;
-  background: #fff;
+  background: var(--surface-bg-color);
 }
 
 .teamhub-ai-chat-panel .ai-chat-answer {
@@ -168,14 +169,14 @@
 }
 
 .teamhub-ai-chat-panel .ai-chat-message.user .ai-chat-bubble {
-  color: #fff;
-  border-color: #287565;
-  background: #287565;
+  color: var(--on-primary-color, #fff);
+  border-color: var(--primary-color, #287565);
+  background: var(--primary-color, #287565);
 }
 
 .teamhub-ai-chat-panel .ai-chat-citations {
   margin-top: .55rem;
-  color: #65766f;
+  color: var(--text-muted-color);
   font-size: .72rem;
 }
 
@@ -192,7 +193,7 @@
   width: 28px;
   height: 28px;
   padding: 0;
-  color: #65766f;
+  color: var(--text-muted-color);
   border: 0;
   border-radius: 5px;
   background: transparent;
@@ -201,8 +202,8 @@
 
 .teamhub-ai-chat-panel .ai-chat-copy-button:hover,
 .teamhub-ai-chat-panel .ai-chat-copy-button:focus {
-  color: #18322d;
-  background: #edf2ee;
+  color: var(--text-color);
+  background: var(--surface-muted-color);
 }
 
 .teamhub-ai-chat-panel .ai-chat-copy-button svg {
@@ -213,7 +214,7 @@
 
 .teamhub-ai-chat-composer {
   padding: .75rem 1rem 1rem;
-  border-top: 1px solid #d9e1dc;
+  border-top: 1px solid var(--divider-color);
 }
 
 .teamhub-ai-chat-documents {

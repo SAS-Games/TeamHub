@@ -10,16 +10,16 @@
   height: 36px;
   padding: 7px;
   place-items: center;
-  color: #36554d;
-  border: 1px solid #bdcbc5;
+  color: var(--text-heading-color, #36554d);
+  border: 1px solid var(--surface-border-color, #bdcbc5);
   border-radius: 50%;
-  background: #fff;
+  background: var(--surface-bg-color, #fff);
 }
 
 .teamhub-notification-bell:hover,
 .teamhub-notification-bell:focus {
-  color: #18322d;
-  background: #edf2ee;
+  color: var(--text-color, #18322d);
+  background: var(--surface-muted-color, #edf2ee);
 }
 
 .teamhub-notification-bell svg {
@@ -37,7 +37,7 @@
   padding: 0 5px;
   color: #fff;
   background: #c43d2f;
-  border: 2px solid #fff;
+  border: 2px solid var(--surface-bg-color, #fff);
   border-radius: 999px;
   font-size: .62rem;
   font-weight: 800;
@@ -49,7 +49,9 @@
   width: min(390px, calc(100vw - 24px));
   padding: 0;
   overflow: hidden;
-  border-color: #bdcbc5;
+  color: var(--text-color, #18322d);
+  background: var(--surface-bg-color, #fff);
+  border-color: var(--surface-border-color, #bdcbc5);
   box-shadow: 0 14px 36px rgba(24, 50, 45, .2);
 }
 
@@ -58,12 +60,12 @@
   align-items: center;
   justify-content: space-between;
   padding: 14px 16px;
-  background: #edf2ee;
-  border-bottom: 1px solid #d9e1dc;
+  background: var(--surface-muted-color, #edf2ee);
+  border-bottom: 1px solid var(--divider-color, #d9e1dc);
 }
 
 .teamhub-notification-heading span {
-  color: #65766f;
+  color: var(--text-muted-color, #65766f);
   font-size: .78rem;
 }
 
@@ -76,25 +78,25 @@
   display: grid;
   gap: 3px;
   padding: 13px 16px;
-  color: #18322d;
-  border-bottom: 1px solid #e3e9e5;
+  color: var(--text-color, #18322d);
+  border-bottom: 1px solid var(--divider-color, #e3e9e5);
   text-decoration: none;
 }
 
 .teamhub-notification-item:hover,
 .teamhub-notification-item:focus {
-  color: #18322d;
-  background: #f5f8f6;
+  color: var(--text-color, #18322d);
+  background: var(--surface-hover-color, #f5f8f6);
 }
 
 .teamhub-notification-item > span:not(.teamhub-notification-type),
 .teamhub-notification-item time {
-  color: #65766f;
+  color: var(--text-muted-color, #65766f);
   font-size: .78rem;
 }
 
 .teamhub-notification-type {
-  color: #b64f2e;
+  color: var(--accent-color, #b64f2e);
   font-size: .66rem;
   font-weight: 800;
   letter-spacing: .06em;
@@ -103,15 +105,15 @@
 
 .teamhub-notification-empty {
   padding: 24px 16px;
-  color: #65766f;
+  color: var(--text-muted-color, #65766f);
   text-align: center;
 }
 
 .teamhub-notification-footer {
   display: block;
   padding: 11px 16px;
-  color: #287565;
-  background: #fff;
+  color: var(--field-focus-color, #287565);
+  background: var(--surface-bg-color, #fff);
   font-size: .82rem;
   font-weight: 700;
   text-align: center;
@@ -128,8 +130,8 @@
   justify-content: space-between;
   gap: 24px;
   padding: 18px 22px;
-  color: #18322d;
-  border-top: 1px solid #e3e9e5;
+  color: var(--text-color, #18322d);
+  border-top: 1px solid var(--divider-color, #e3e9e5);
   text-decoration: none;
 }
 
@@ -139,8 +141,8 @@
 
 .notification-page-item:hover,
 .notification-page-item:focus {
-  color: #18322d;
-  background: #f5f8f6;
+  color: var(--text-color, #18322d);
+  background: var(--surface-hover-color, #f5f8f6);
 }
 
 .notification-page-item strong {
@@ -151,7 +153,7 @@
 .notification-page-item p,
 .notification-page-item time {
   margin: 5px 0 0;
-  color: #65766f;
+  color: var(--text-muted-color, #65766f);
   font-size: .84rem;
 }
 

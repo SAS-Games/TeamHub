@@ -14,6 +14,8 @@
   --accent-color: #c05a35;
   --field-hover-color: #526c62;
   --field-focus-color: #287565;
+  --primary-color: #287565;
+  --on-primary-color: #fff;
   --field-placeholder-color: #62756e;
   --field-disabled-color: #e4ebe7;
   --field-disabled-border-color: #9aaba4;
@@ -48,6 +50,8 @@
   --accent-color: #f2a17c;
   --field-hover-color: #98b4a3;
   --field-focus-color: #76cfb3;
+  --primary-color: #76cfb3;
+  --on-primary-color: #10231d;
   --field-placeholder-color: #a4b4aa;
   --field-disabled-color: #333c36;
   --field-disabled-border-color: #58695e;
@@ -65,10 +69,20 @@
   --roadmap-next-text-color: #f2d996;
   --roadmap-next-heading-color: #f2d996;
   --bs-body-bg: var(--surface-bg-color);
+  --bs-body-bg-rgb: 36, 42, 38;
   --bs-body-color: var(--text-color);
+  --bs-body-color-rgb: 229, 237, 231;
+  --bs-emphasis-color: #f1f6f2;
+  --bs-emphasis-color-rgb: 241, 246, 242;
   --bs-secondary-color: var(--text-muted-color);
+  --bs-secondary-rgb: 176, 190, 180;
+  --bs-secondary-bg: var(--surface-muted-color);
+  --bs-secondary-bg-rgb: 48, 57, 50;
   --bs-tertiary-bg: var(--surface-muted-color);
+  --bs-tertiary-bg-rgb: 48, 57, 50;
   --bs-border-color: var(--surface-border-color);
+  --bs-heading-color: var(--text-color);
+  --bs-light-rgb: 48, 57, 50;
   --bs-link-color: #8ac9f5;
   --bs-link-hover-color: #bbdffc;
   --layout-link-color: var(--bs-link-color);
@@ -102,6 +116,46 @@ body {
   flex-direction: column;
   background-color: var(--page-bg-color);
   color: var(--text-color);
+}
+
+/* Bootstrap's fixed "light" helpers are used throughout older pages. Keep
+   those utilities aligned with the active application theme. */
+[data-bs-theme="dark"] .bg-light,
+[data-bs-theme="dark"] .bg-light-subtle,
+[data-bs-theme="dark"] .text-bg-light {
+  color: var(--text-color) !important;
+  background-color: var(--surface-muted-color) !important;
+}
+
+[data-bs-theme="dark"] .text-dark {
+  color: var(--text-color) !important;
+}
+
+[data-bs-theme="dark"] .table-light {
+  --bs-table-color: var(--text-color);
+  --bs-table-bg: var(--surface-muted-color);
+  --bs-table-border-color: var(--surface-border-color);
+  --bs-table-striped-bg: var(--surface-subtle-color);
+  --bs-table-striped-color: var(--text-color);
+  --bs-table-active-bg: var(--surface-hover-color);
+  --bs-table-active-color: var(--text-color);
+  --bs-table-hover-bg: var(--surface-hover-color);
+  --bs-table-hover-color: var(--text-color);
+}
+
+[data-bs-theme="dark"] .btn-light {
+  --bs-btn-color: var(--text-color);
+  --bs-btn-bg: var(--surface-muted-color);
+  --bs-btn-border-color: var(--surface-border-color);
+  --bs-btn-hover-color: var(--text-color);
+  --bs-btn-hover-bg: var(--surface-hover-color);
+  --bs-btn-hover-border-color: var(--field-hover-color);
+  --bs-btn-active-color: var(--text-color);
+  --bs-btn-active-bg: var(--surface-hover-color);
+  --bs-btn-active-border-color: var(--field-hover-color);
+  --bs-btn-disabled-color: var(--text-muted-color);
+  --bs-btn-disabled-bg: var(--field-disabled-color);
+  --bs-btn-disabled-border-color: var(--field-disabled-border-color);
 }
 
 .teamhub-page-frame {
@@ -264,6 +318,21 @@ body {
 .styled-table td, .styled-table th { padding: 14px 18px; vertical-align: middle; }
 .team-matrix-multiline { white-space: pre-line; overflow-wrap: anywhere; }
 .custom-team-cell-value { white-space: pre-line; overflow-wrap: anywhere; }
+.custom-team-table .table {
+  --bs-table-color: var(--text-color);
+  --bs-table-bg: var(--surface-bg-color);
+  --bs-table-border-color: var(--divider-color);
+  --bs-table-striped-color: var(--text-color);
+  --bs-table-hover-color: var(--text-color);
+  --bs-table-hover-bg: var(--surface-hover-color);
+}
+[data-bs-theme="dark"] .custom-team-table .table.table-light {
+  --bs-table-color: var(--text-color);
+  --bs-table-bg: var(--surface-muted-color);
+  --bs-table-border-color: var(--surface-border-color);
+  --bs-table-hover-color: var(--text-color);
+  --bs-table-hover-bg: var(--surface-hover-color);
+}
 .milestone-review-text { min-width: 180px; max-width: 520px; white-space: pre-wrap; overflow-wrap: anywhere; }
 .milestone-review-text.markdown-content { white-space: normal; }
 .milestone-feedback-list { display: grid; }
