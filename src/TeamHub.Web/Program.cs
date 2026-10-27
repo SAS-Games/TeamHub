@@ -141,6 +141,8 @@ builder.Services.AddTeamHubAi(builder.Configuration);
 builder.Services.AddScoped<TeamHub.AI.Contracts.IAiProviderCredentialAccessor, TeamHub.Web.AI.PersonalAiProviderCredentialAccessor>();
 builder.Services.AddAiChat(builder.Configuration);
 builder.Services.AddScoped<IAiChatKnowledgeSource, TeamHub.Web.AI.TeamHubChatKnowledgeSource>();
+builder.Services.AddScoped<IAiChatKnowledgeSource, TeamHub.Web.AI.SupportSummaryChatKnowledgeSource>();
+builder.Services.AddScoped<IAiChatKnowledgeSource, TeamHub.Web.AI.TeamHubPageChatKnowledgeSource>();
 builder.Services.AddAiFlowDesigner(builder.Configuration);
 builder.Services.AddReportGenerator(builder.Configuration);
 builder.Services.AddScoped<IWeeklyWorkSummaryService, WeeklyWorkSummaryService>();

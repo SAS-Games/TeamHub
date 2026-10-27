@@ -24,6 +24,7 @@
     let loadingModels = null;
     let pendingModel = null;
     let activeRequest = null;
+    let conversationRevision = 0;
     const copyIcon = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 7V3h13v13h-4v5H3V7h5Zm2 0h7v7h2V5h-9v2Zm5 2H5v10h10V9Z" /></svg>';
     const copiedIcon = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9.2 17.2-4.4-4.4 1.4-1.4 3 3L17.8 5.8l1.4 1.4-10 10Z" /></svg>';
 
@@ -47,7 +48,7 @@
             return {
                 open: state.open === true,
                 fullscreen: state.fullscreen === true,
-                mode: state.mode === "General" ? "General" : "TeamHub",
+                mode: state.mode === "TeamHub" ? "TeamHub" : "General",
                 model: typeof state.model === "string" ? state.model.slice(0, 200) : "",
                 history: savedHistory
             };
@@ -86,8 +87,10 @@
     }
 
     function resetConversation() {
+        conversationRevision += 1;
         history = [];
         if (files) files.value = "";
+        prompt.value = "";
         showEmptyConversation();
         error.textContent = "";
         persistState();
@@ -143,6 +146,309 @@
         }
     }
 
+    const markdownBlockStart = /^(?:#{1,6}\s+|```|~~~|>\s?|[-+*]\s+|\d+\.\s+|<svg\b|(?:-{3,}|\*{3,}|_{3,})\s*$)/i;
+    const safeSvgElements = new Set([
+        "svg", "g", "path", "rect", "circle", "ellipse", "line", "polyline", "polygon", "text", "tspan",
+        "defs", "lineargradient", "radialgradient", "stop", "clippath", "title", "desc"
+    ]);
+    const safeSvgAttributes = new Set([
+        "xmlns", "viewbox", "preserveaspectratio", "width", "height", "x", "y", "x1", "x2", "y1", "y2",
+        "cx", "cy", "r", "rx", "ry", "d", "points", "fill", "fill-opacity", "fill-rule", "stroke",
+        "stroke-width", "stroke-linecap", "stroke-linejoin", "stroke-opacity", "opacity", "transform",
+        "font-family", "font-size", "font-weight", "text-anchor", "dominant-baseline", "offset", "stop-color",
+        "stop-opacity", "gradientunits", "gradienttransform", "spreadmethod", "id", "clip-path", "role",
+        "aria-label"
+    ]);
+
+    function safeLinkUrl(value) {
+        try {
+            const url = new URL(value, window.location.href);
+            return ["http:", "https:", "mailto:"].includes(url.protocol) ? url.href : null;
+        } catch {
+            return null;
+        }
+    }
+
+    function safeImageUrl(value) {
+        if (/^data:image\/(?:png|jpeg|gif|webp);base64,[a-z0-9+/=\s]+$/i.test(value)) return value;
+        try {
+            const url = new URL(value, window.location.href);
+            return ["http:", "https:"].includes(url.protocol) ? url.href : null;
+        } catch {
+            return null;
+        }
+    }
+
+    function appendInlineMarkdown(parent, source) {
+        const pattern = /(`[^`\r\n]+`|!\[[^\]\r\n]*\]\([^\s)]+\)|\[[^\]\r\n]+\]\([^\s)]+\)|\*\*\*[^*\r\n]+\*\*\*|\*\*[^*\r\n]+\*\*|~~[^~\r\n]+~~|\*[^*\r\n]+\*)/g;
+        let offset = 0;
+        for (const match of source.matchAll(pattern)) {
+            if (match.index > offset) parent.append(document.createTextNode(source.slice(offset, match.index)));
+            const tokenValue = match[0];
+            let element = null;
+            let text = tokenValue;
+
+            if (tokenValue.startsWith("`")) {
+                element = document.createElement("code");
+                text = tokenValue.slice(1, -1);
+            } else if (tokenValue.startsWith("![")) {
+                const parts = /^!\[([^\]]*)\]\(([^)]+)\)$/.exec(tokenValue);
+                const sourceUrl = parts ? safeImageUrl(parts[2]) : null;
+                if (sourceUrl) {
+                    element = document.createElement("img");
+                    element.src = sourceUrl;
+                    element.alt = parts[1];
+                    element.loading = "lazy";
+                    element.referrerPolicy = "no-referrer";
+                    element.className = "ai-chat-markdown-image";
+                    text = "";
+                }
+            } else if (tokenValue.startsWith("[")) {
+                const parts = /^\[([^\]]+)\]\(([^)]+)\)$/.exec(tokenValue);
+                const href = parts ? safeLinkUrl(parts[2]) : null;
+                if (href) {
+                    element = document.createElement("a");
+                    element.href = href;
+                    element.target = "_blank";
+                    element.rel = "noopener noreferrer";
+                    text = parts[1];
+                }
+            } else if (tokenValue.startsWith("***")) {
+                const strong = document.createElement("strong");
+                element = document.createElement("em");
+                strong.append(element);
+                parent.append(strong);
+                text = tokenValue.slice(3, -3);
+            } else if (tokenValue.startsWith("**")) {
+                element = document.createElement("strong");
+                text = tokenValue.slice(2, -2);
+            } else if (tokenValue.startsWith("~~")) {
+                element = document.createElement("del");
+                text = tokenValue.slice(2, -2);
+            } else if (tokenValue.startsWith("*")) {
+                element = document.createElement("em");
+                text = tokenValue.slice(1, -1);
+            }
+
+            if (element) {
+                if (text) element.textContent = text;
+                if (!element.parentNode) parent.append(element);
+            } else {
+                parent.append(document.createTextNode(tokenValue));
+            }
+            offset = match.index + tokenValue.length;
+        }
+        if (offset < source.length) parent.append(document.createTextNode(source.slice(offset)));
+    }
+
+    function markdownTableCells(line) {
+        const trimmed = line.trim().replace(/^\|/, "").replace(/\|$/, "");
+        return trimmed.split("|").map(cell => cell.trim());
+    }
+
+    function isMarkdownTable(lines, index) {
+        if (index + 1 >= lines.length || !lines[index].includes("|")) return false;
+        const separators = markdownTableCells(lines[index + 1]);
+        return separators.length > 0 && separators.every(cell => /^:?-{3,}:?$/.test(cell));
+    }
+
+    function sanitizeSvg(source) {
+        const parsed = new DOMParser().parseFromString(source, "image/svg+xml");
+        const rootElement = parsed.documentElement;
+        if (!rootElement || rootElement.localName.toLowerCase() !== "svg"
+            || parsed.querySelector("parsererror")) return null;
+
+        const copyElement = original => {
+            const tagName = original.localName.toLowerCase();
+            if (!safeSvgElements.has(tagName)) return null;
+            const clean = document.createElementNS("http://www.w3.org/2000/svg", original.localName);
+            for (const attribute of original.attributes) {
+                const name = attribute.name.toLowerCase();
+                const value = attribute.value.trim();
+                if (!safeSvgAttributes.has(name) || name.startsWith("on")) continue;
+                if (/url\s*\(/i.test(value) && !/^url\(#[a-z0-9_.:-]+\)$/i.test(value)) continue;
+                if (name === "id" && !/^[a-z0-9_.:-]+$/i.test(value)) continue;
+                clean.setAttribute(attribute.name, value);
+            }
+            for (const child of original.childNodes) {
+                if (child.nodeType === Node.TEXT_NODE) {
+                    clean.append(document.createTextNode(child.textContent || ""));
+                } else if (child.nodeType === Node.ELEMENT_NODE) {
+                    const cleanChild = copyElement(child);
+                    if (cleanChild) clean.append(cleanChild);
+                }
+            }
+            return clean;
+        };
+
+        const cleanRoot = copyElement(rootElement);
+        if (!cleanRoot) return null;
+        cleanRoot.classList.add("ai-chat-generated-svg");
+        cleanRoot.setAttribute("role", "img");
+        if (!cleanRoot.hasAttribute("aria-label")) cleanRoot.setAttribute("aria-label", "AI-generated image");
+        return cleanRoot;
+    }
+
+    function appendSvgPreview(parent, source) {
+        const svg = sanitizeSvg(source);
+        if (!svg) return false;
+        const figure = document.createElement("figure");
+        figure.className = "ai-chat-generated-image";
+        const preview = document.createElement("div");
+        preview.className = "ai-chat-generated-image-preview";
+        preview.append(svg);
+        const caption = document.createElement("figcaption");
+        caption.textContent = "AI-generated SVG image";
+        const download = document.createElement("a");
+        download.className = "btn btn-sm btn-outline-secondary";
+        download.download = "generated-image.svg";
+        download.textContent = "Download SVG";
+        const serialized = new XMLSerializer().serializeToString(svg);
+        download.href = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(serialized)}`;
+        caption.append(download);
+        figure.append(preview, caption);
+        parent.append(figure);
+        return true;
+    }
+
+    function renderMarkdown(parent, content) {
+        parent.classList.add("markdown-content", "ai-chat-rich-content");
+        const lines = String(content || "").replace(/\r\n?/g, "\n").split("\n");
+        let index = 0;
+        while (index < lines.length) {
+            const line = lines[index];
+            if (!line.trim()) {
+                index += 1;
+                continue;
+            }
+
+            const fence = /^(?:```|~~~)\s*([a-z0-9_-]*)\s*$/i.exec(line.trim());
+            if (fence) {
+                const marker = line.trim().slice(0, 3);
+                const language = fence[1].toLowerCase();
+                const body = [];
+                index += 1;
+                while (index < lines.length && !lines[index].trim().startsWith(marker)) body.push(lines[index++]);
+                if (index < lines.length) index += 1;
+                const code = body.join("\n");
+                if (language === "svg" && appendSvgPreview(parent, code)) continue;
+                const pre = document.createElement("pre");
+                const codeElement = document.createElement("code");
+                if (language) codeElement.dataset.language = language;
+                codeElement.textContent = code;
+                pre.append(codeElement);
+                parent.append(pre);
+                continue;
+            }
+
+            if (/^\s*<svg\b/i.test(line)) {
+                const svgLines = [line];
+                while (!/<\/svg>\s*$/i.test(svgLines.at(-1)) && index + 1 < lines.length) {
+                    index += 1;
+                    svgLines.push(lines[index]);
+                }
+                index += 1;
+                const svgSource = svgLines.join("\n").trim();
+                if (appendSvgPreview(parent, svgSource)) continue;
+                const pre = document.createElement("pre");
+                const code = document.createElement("code");
+                code.textContent = svgSource;
+                pre.append(code);
+                parent.append(pre);
+                continue;
+            }
+
+            if (isMarkdownTable(lines, index)) {
+                const headers = markdownTableCells(lines[index]);
+                index += 2;
+                const table = document.createElement("table");
+                const thead = document.createElement("thead");
+                const headerRow = document.createElement("tr");
+                for (const header of headers) {
+                    const cell = document.createElement("th");
+                    appendInlineMarkdown(cell, header);
+                    headerRow.append(cell);
+                }
+                thead.append(headerRow);
+                const tbody = document.createElement("tbody");
+                while (index < lines.length && lines[index].includes("|") && lines[index].trim()) {
+                    const row = document.createElement("tr");
+                    const values = markdownTableCells(lines[index]);
+                    for (let cellIndex = 0; cellIndex < headers.length; cellIndex += 1) {
+                        const cell = document.createElement("td");
+                        appendInlineMarkdown(cell, values[cellIndex] || "");
+                        row.append(cell);
+                    }
+                    tbody.append(row);
+                    index += 1;
+                }
+                table.append(thead, tbody);
+                const wrapper = document.createElement("div");
+                wrapper.className = "ai-chat-table-wrap";
+                wrapper.append(table);
+                parent.append(wrapper);
+                continue;
+            }
+
+            const heading = /^(#{1,6})\s+(.+)$/.exec(line);
+            if (heading) {
+                const element = document.createElement(`h${heading[1].length}`);
+                appendInlineMarkdown(element, heading[2]);
+                parent.append(element);
+                index += 1;
+                continue;
+            }
+
+            if (/^\s*(?:-{3,}|\*{3,}|_{3,})\s*$/.test(line)) {
+                parent.append(document.createElement("hr"));
+                index += 1;
+                continue;
+            }
+
+            if (/^\s*>/.test(line)) {
+                const quote = document.createElement("blockquote");
+                while (index < lines.length && /^\s*>/.test(lines[index])) {
+                    if (quote.childNodes.length) quote.append(document.createElement("br"));
+                    appendInlineMarkdown(quote, lines[index].replace(/^\s*>\s?/, ""));
+                    index += 1;
+                }
+                parent.append(quote);
+                continue;
+            }
+
+            const listMatch = /^\s*([-+*]|\d+\.)\s+(.+)$/.exec(line);
+            if (listMatch) {
+                const ordered = /\d+\./.test(listMatch[1]);
+                const list = document.createElement(ordered ? "ol" : "ul");
+                while (index < lines.length) {
+                    const itemMatch = /^\s*([-+*]|\d+\.)\s+(.+)$/.exec(lines[index]);
+                    if (!itemMatch || /\d+\./.test(itemMatch[1]) !== ordered) break;
+                    const item = document.createElement("li");
+                    appendInlineMarkdown(item, itemMatch[2]);
+                    list.append(item);
+                    index += 1;
+                }
+                parent.append(list);
+                continue;
+            }
+
+            const paragraphLines = [line];
+            index += 1;
+            while (index < lines.length && lines[index].trim()
+                && !markdownBlockStart.test(lines[index].trim())
+                && !isMarkdownTable(lines, index)) {
+                paragraphLines.push(lines[index]);
+                index += 1;
+            }
+            const paragraph = document.createElement("p");
+            paragraphLines.forEach((paragraphLine, lineIndex) => {
+                if (lineIndex) paragraph.append(document.createElement("br"));
+                appendInlineMarkdown(paragraph, paragraphLine);
+            });
+            parent.append(paragraph);
+        }
+    }
+
     function addMessage(role, content, citations) {
         const empty = messagesElement.querySelector(".ai-chat-empty");
         if (empty) empty.remove();
@@ -150,9 +456,14 @@
         row.className = `ai-chat-message ${role}`;
         const bubble = document.createElement("div");
         bubble.className = "ai-chat-bubble";
+        if (role === "assistant") bubble.classList.add("ai-chat-rich-bubble");
         const answer = document.createElement("div");
         answer.className = "ai-chat-answer";
-        answer.textContent = content;
+        if (role === "assistant") {
+            renderMarkdown(answer, content);
+        } else {
+            answer.textContent = content;
+        }
         bubble.append(answer);
         if (Array.isArray(citations) && citations.length) {
             const sourceLine = document.createElement("div");
@@ -176,6 +487,91 @@
         row.append(bubble);
         messagesElement.append(row);
         messagesElement.scrollTop = messagesElement.scrollHeight;
+    }
+
+    function addThinkingMessage() {
+        const empty = messagesElement.querySelector(".ai-chat-empty");
+        if (empty) empty.remove();
+
+        const row = document.createElement("div");
+        row.className = "ai-chat-message assistant ai-chat-thinking";
+        row.setAttribute("role", "status");
+        row.setAttribute("aria-label", "AI is thinking");
+
+        const bubble = document.createElement("div");
+        bubble.className = "ai-chat-bubble ai-chat-thinking-bubble";
+
+        const label = document.createElement("span");
+        label.className = "ai-chat-thinking-label";
+        label.textContent = "Thinking";
+
+        const dots = document.createElement("span");
+        dots.className = "ai-chat-thinking-dots";
+        dots.setAttribute("aria-hidden", "true");
+        for (let index = 0; index < 3; index += 1) {
+            dots.append(document.createElement("span"));
+        }
+
+        bubble.append(label, dots);
+        row.append(bubble);
+        messagesElement.append(row);
+        messagesElement.scrollTop = messagesElement.scrollHeight;
+        return row;
+    }
+
+    function requestExternalAccess(payload, signal) {
+        return new Promise((resolve, reject) => {
+            const sourceNames = Array.isArray(payload.externalSources)
+                ? payload.externalSources.filter(source => typeof source === "string")
+                : [];
+            const row = document.createElement("div");
+            row.className = "ai-chat-message assistant ai-chat-consent";
+
+            const bubble = document.createElement("div");
+            bubble.className = "ai-chat-bubble ai-chat-consent-bubble";
+            const question = document.createElement("div");
+            question.className = "ai-chat-answer";
+            question.textContent = payload.answer
+                || "May TeamHub use your external connections for this question?";
+
+            const actions = document.createElement("div");
+            actions.className = "ai-chat-consent-actions";
+            actions.setAttribute("role", "group");
+            actions.setAttribute("aria-label", "External access choice");
+            const approve = document.createElement("button");
+            approve.type = "button";
+            approve.className = "btn btn-sm btn-primary";
+            approve.textContent = sourceNames.length
+                ? `Use ${sourceNames.join(" and ")}`
+                : "Allow for this question";
+            const decline = document.createElement("button");
+            decline.type = "button";
+            decline.className = "btn btn-sm btn-outline-secondary";
+            decline.textContent = "Use TeamHub only";
+            actions.append(approve, decline);
+            bubble.append(question, actions);
+            row.append(bubble);
+            messagesElement.append(row);
+            messagesElement.scrollTop = messagesElement.scrollHeight;
+
+            const finish = approved => {
+                signal.removeEventListener("abort", cancel);
+                approve.disabled = true;
+                decline.disabled = true;
+                actions.textContent = approved
+                    ? `${sourceNames.join(" and ")} access approved for this question.`
+                    : "Using TeamHub data only for this question.";
+                actions.classList.add("is-complete");
+                resolve(approved);
+            };
+            const cancel = () => {
+                row.remove();
+                reject(new DOMException("Response generation was cancelled.", "AbortError"));
+            };
+            approve.addEventListener("click", () => finish(true), { once: true });
+            decline.addEventListener("click", () => finish(false), { once: true });
+            signal.addEventListener("abort", cancel, { once: true });
+        });
     }
 
     async function loadModels(force = false) {
@@ -240,6 +636,10 @@
 
     function setWidgetOpen(open) {
         if (!widget) return;
+        if (!open) {
+            activeRequest?.abort();
+            resetConversation();
+        }
         root.hidden = !open;
         root.setAttribute("aria-hidden", String(!open));
         launcher.setAttribute("aria-expanded", String(open));
@@ -266,6 +666,11 @@
     mode.addEventListener("change", () => updateMode(true));
     model.addEventListener("change", persistState);
     window.addEventListener("beforeunload", persistState);
+    prompt.addEventListener("keydown", event => {
+        if (event.key !== "Enter" || event.shiftKey || event.isComposing) return;
+        event.preventDefault();
+        form.requestSubmit();
+    });
     form.addEventListener("submit", async event => {
         event.preventDefault();
         if (activeRequest) {
@@ -275,6 +680,7 @@
         const content = prompt.value.trim();
         if (!content || !model.value || send.disabled) return;
         error.textContent = "";
+        const requestRevision = conversationRevision;
         activeRequest = new AbortController();
         setGenerating(true);
         const previousHistory = [...history];
@@ -284,42 +690,64 @@
         ];
         history = requestHistory;
         addMessage("user", content);
+        let thinkingMessage = addThinkingMessage();
         persistState();
         prompt.value = "";
 
         try {
             const documents = await readDocuments();
-            const response = await fetch("/AIChat?handler=Message", {
-                method: "POST",
-                signal: activeRequest.signal,
-                headers: {
-                    "Content-Type": "application/json",
-                    "RequestVerificationToken": token.value
-                },
-                body: JSON.stringify({
-                    mode: mode.value,
-                    model: model.value,
-                    messages: requestHistory,
-                    documents
-                })
-            });
-            const payload = await response.json().catch(() => ({}));
-            if (!response.ok) throw new Error(payload.error || "The AI request could not be completed.");
+            let externalAccessDecision = null;
+            let approvedExternalSources = [];
+            let payload;
+            while (true) {
+                const response = await fetch("/AIChat?handler=Message", {
+                    method: "POST",
+                    signal: activeRequest.signal,
+                    headers: {
+                        "Content-Type": "application/json",
+                        "RequestVerificationToken": token.value
+                    },
+                    body: JSON.stringify({
+                        mode: mode.value,
+                        model: model.value,
+                        messages: requestHistory,
+                        documents,
+                        externalAccessDecision,
+                        approvedExternalSources
+                    })
+                });
+                payload = await response.json().catch(() => ({}));
+                if (!response.ok) throw new Error(payload.error || "The AI request could not be completed.");
+                if (!payload.requiresExternalAccess) break;
+
+                thinkingMessage.remove();
+                const approved = await requestExternalAccess(payload, activeRequest.signal);
+                externalAccessDecision = approved ? "Approved" : "Denied";
+                approvedExternalSources = approved && Array.isArray(payload.externalSources)
+                    ? payload.externalSources
+                    : [];
+                thinkingMessage = addThinkingMessage();
+            }
+            if (requestRevision !== conversationRevision) return;
             const assistantMessage = {
                 role: "assistant",
                 content: payload.answer,
                 citations: Array.isArray(payload.citations) ? payload.citations : []
             };
             history = [...requestHistory, assistantMessage];
+            thinkingMessage.remove();
             addMessage("assistant", assistantMessage.content, assistantMessage.citations);
             persistState();
         } catch (exception) {
-            history = previousHistory;
-            persistState();
-            error.textContent = exception.name === "AbortError"
-                ? "Response generation was cancelled."
-                : exception.message || "The AI request could not be completed.";
+            if (requestRevision === conversationRevision) {
+                history = previousHistory;
+                persistState();
+                error.textContent = exception.name === "AbortError"
+                    ? "Response generation was cancelled."
+                    : exception.message || "The AI request could not be completed.";
+            }
         } finally {
+            thinkingMessage.remove();
             activeRequest = null;
             setGenerating(false);
             prompt.focus();

@@ -294,6 +294,33 @@ public sealed class AiModelProviderTests
     }
 
     [Fact]
+    public async Task Pfb_gateway_retries_a_length_limited_chat_response_with_more_output_tokens()
+    {
+        var requestCount = 0;
+        var handler = new StubHttpMessageHandler(request =>
+        {
+            requestCount++;
+            using var payload = JsonDocument.Parse(request.Content!.ReadAsStringAsync().GetAwaiter().GetResult());
+            payload.RootElement.GetProperty("max_tokens").GetInt32()
+                .Should().Be(requestCount == 1 ? 1_000 : 4_000);
+            return requestCount == 1
+                ? JsonResponse("""{"choices":[{"message":{"role":"assistant","content":null},"finish_reason":"length"}]}""")
+                : JsonResponse("""{"choices":[{"message":{"role":"assistant","content":"{\"answer\":true}"},"finish_reason":"stop"}]}""");
+        });
+        var provider = new PfbAiGatewayModelProvider(
+            new StubHttpClientFactory(handler),
+            new TokenCredentialAccessor("test-jwt"));
+        using var schema = JsonDocument.Parse("""{"type":"object"}""");
+
+        var result = await provider.GenerateStructuredAsync(
+            PfbSettings(),
+            new AiStructuredGenerationRequest("Return JSON.", "Create it.", schema.RootElement.Clone(), 1_000));
+
+        result.Content.Should().Be("{\"answer\":true}");
+        requestCount.Should().Be(2);
+    }
+
+    [Fact]
     public async Task Pfb_gateway_open_ai_chat_sends_the_json_schema()
     {
         var handler = new StubHttpMessageHandler(request =>

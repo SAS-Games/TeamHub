@@ -8,10 +8,24 @@ public enum AiChatMode
     General
 }
 
+public static class AiChatExternalSources
+{
+    public const string Jira = "Jira";
+    public const string Confluence = "Confluence";
+
+    public static IReadOnlyList<string> All { get; } = [Jira, Confluence];
+}
+
 public sealed record AiChatUserContext(
     string UserId,
     string DisplayName,
-    string UserType);
+    string UserType,
+    IReadOnlySet<string>? ApprovedExternalSources = null)
+{
+    public bool HasApprovedExternalSource(string source) =>
+        ApprovedExternalSources?.Any(item =>
+            string.Equals(item, source, StringComparison.OrdinalIgnoreCase)) == true;
+}
 
 public sealed record AiChatMessage(string Role, string Content);
 

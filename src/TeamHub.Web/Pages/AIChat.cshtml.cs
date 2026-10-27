@@ -4,7 +4,9 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
 using TeamHub.AI.Chat.Contracts;
 using TeamHub.AI.Contracts;
+using TeamHub.Authentication;
 using TeamHub.Web.AccessControl;
+using TeamHub.Web.AI;
 
 namespace TeamHub.Web.Pages;
 
@@ -67,11 +69,41 @@ public sealed class AIChatModel(
             if (!Enum.TryParse<AiChatMode>(input.Mode, true, out var mode))
                 return BadRequest(new { error = "Select TeamHub or General chat mode." });
 
+            var latestQuestion = input.Messages.LastOrDefault(message =>
+                string.Equals(message.Role, "user", StringComparison.OrdinalIgnoreCase))?.Content ?? string.Empty;
+            var requestedExternalSources = mode == AiChatMode.TeamHub
+                && await access.CanAsync(TeamHubModules.SupportSummary, AccessLevel.ReadOnly, cancellationToken)
+                    ? SupportSummaryChatKnowledgeSource.GetRequestedExternalSources(latestQuestion)
+                    : [];
+
+            if (requestedExternalSources.Count > 0
+                && string.IsNullOrWhiteSpace(input.ExternalAccessDecision))
+            {
+                var sourceNames = string.Join(" and ", requestedExternalSources);
+                return new JsonResult(new
+                {
+                    requiresExternalAccess = true,
+                    externalSources = requestedExternalSources,
+                    answer = $"To provide more current support details, may TeamHub use your {sourceNames} connection for this question? Your approval applies only to this question."
+                });
+            }
+
+            var approvedExternalSources = string.Equals(
+                input.ExternalAccessDecision,
+                "Approved",
+                StringComparison.OrdinalIgnoreCase)
+                    ? input.ApprovedExternalSources
+                        .Where(source => requestedExternalSources.Any(requested =>
+                            string.Equals(requested, source, StringComparison.OrdinalIgnoreCase)))
+                        .ToHashSet(StringComparer.OrdinalIgnoreCase)
+                    : new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
             var response = await chat.SendAsync(
                 new AiChatUserContext(
                     current.User.UserId,
                     current.User.DisplayName,
-                    current.User.UserType),
+                    current.User.UserType,
+                    approvedExternalSources),
                 new AiChatRequest(mode, input.Model, input.Messages, input.Documents),
                 cancellationToken);
             return new JsonResult(response);
@@ -105,5 +137,7 @@ public sealed class AIChatModel(
 
         public List<AiChatMessage> Messages { get; set; } = [];
         public List<AiChatDocument> Documents { get; set; } = [];
+        public string? ExternalAccessDecision { get; set; }
+        public List<string> ApprovedExternalSources { get; set; } = [];
     }
 }

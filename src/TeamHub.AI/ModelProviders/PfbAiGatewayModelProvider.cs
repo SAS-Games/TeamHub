@@ -117,10 +117,18 @@ public sealed class PfbAiGatewayModelProvider(
             if (!result.IsSuccessStatusCode)
                 throw new AiModelProviderException(GatewayErrorMessage(result.StatusCode, result.Body));
 
-            using var document = JsonDocument.Parse(result.Body);
-            var content = mode == OpenAiResponsesMode
-                ? ReadResponsesContent(document.RootElement)
-                : ReadChatContent(document.RootElement);
+            var generated = ReadGeneratedContent(mode, result.Body);
+            if (string.IsNullOrWhiteSpace(generated.Content)
+                && generated.OutputLimitReached
+                && IncreaseOutputTokenLimit(payload, mode))
+            {
+                result = await PostWithRetryAsync(client, path, payload, timeout.Token);
+                if (!result.IsSuccessStatusCode)
+                    throw new AiModelProviderException(GatewayErrorMessage(result.StatusCode, result.Body));
+                generated = ReadGeneratedContent(mode, result.Body);
+            }
+
+            var content = generated.Content;
             if (string.IsNullOrWhiteSpace(content))
                 throw new AiModelProviderException("PFB AI Gateway response did not contain generated content.");
 
@@ -316,6 +324,55 @@ public sealed class PfbAiGatewayModelProvider(
         return string.Join("\n", parts);
     }
 
+    private static GeneratedContent ReadGeneratedContent(string mode, string body)
+    {
+        using var document = JsonDocument.Parse(body);
+        var root = document.RootElement;
+        var content = mode == OpenAiResponsesMode
+            ? ReadResponsesContent(root)
+            : ReadChatContent(root);
+        return new(content, OutputLimitReached(root, mode));
+    }
+
+    private static bool OutputLimitReached(JsonElement root, string mode)
+    {
+        if (mode == OpenAiResponsesMode)
+        {
+            return root.TryGetProperty("status", out var status)
+                && status.ValueKind == JsonValueKind.String
+                && string.Equals(status.GetString(), "incomplete", StringComparison.OrdinalIgnoreCase)
+                && root.TryGetProperty("incomplete_details", out var details)
+                && details.ValueKind == JsonValueKind.Object
+                && details.TryGetProperty("reason", out var reason)
+                && string.Equals(reason.GetString(), "max_output_tokens", StringComparison.OrdinalIgnoreCase);
+        }
+
+        if (!root.TryGetProperty("choices", out var choices)
+            || choices.ValueKind != JsonValueKind.Array
+            || choices.GetArrayLength() == 0
+            || !choices[0].TryGetProperty("finish_reason", out var finishReason)
+            || finishReason.ValueKind != JsonValueKind.String)
+            return false;
+
+        return finishReason.GetString() is string value
+            && (value.Equals("length", StringComparison.OrdinalIgnoreCase)
+                || value.Equals("max_tokens", StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static bool IncreaseOutputTokenLimit(
+        IDictionary<string, object?> payload,
+        string mode)
+    {
+        var property = mode == OpenAiResponsesMode ? "max_output_tokens" : "max_tokens";
+        if (!payload.TryGetValue(property, out var configured) || configured is not int current)
+            return false;
+
+        const int maximumRetryTokens = 8_000;
+        if (current >= maximumRetryTokens) return false;
+        payload[property] = Math.Min(maximumRetryTokens, Math.Max(current * 2, 4_000));
+        return true;
+    }
+
     private static void CollectModels(
         JsonElement element,
         IDictionary<string, AiModelCatalogItem> models)
@@ -451,4 +508,6 @@ public sealed class PfbAiGatewayModelProvider(
         bool IsSuccessStatusCode,
         string Body,
         string? RequestId);
+
+    private sealed record GeneratedContent(string Content, bool OutputLimitReached);
 }
