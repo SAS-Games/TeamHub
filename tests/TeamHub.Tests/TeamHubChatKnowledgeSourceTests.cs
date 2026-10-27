@@ -187,6 +187,10 @@ public sealed class TeamHubChatKnowledgeSourceTests
         effort.EndDate.Should().Be(today);
         effort.RequestingUserId.Should().Be(user.UserId);
         result.Single(item => item.Id == "teamhub-support-effort").Content.Should().Contain("Rohith");
+        result.Select(item => item.Id).Should().BeEquivalentTo(
+            ["teamhub-support-summary-period", "teamhub-support-effort"]);
+        result.Single(item => item.Id == "teamhub-support-summary-period").Content
+            .Should().NotContain("activeStudios");
     }
 
     [Fact]

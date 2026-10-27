@@ -119,8 +119,12 @@ public sealed class PfbAiGatewayModelProvider(
 
             var generated = ReadGeneratedContent(mode, result.Body);
             var usage = ReadTokenUsage(result.Body);
-            while (generated.OutputLimitReached && IncreaseOutputTokenLimit(payload, mode))
+            var retriedEmptyContent = false;
+            while ((generated.OutputLimitReached
+                    || (!retriedEmptyContent && string.IsNullOrWhiteSpace(generated.Content)))
+                && IncreaseOutputTokenLimit(payload, mode))
             {
+                if (string.IsNullOrWhiteSpace(generated.Content)) retriedEmptyContent = true;
                 result = await PostWithRetryAsync(client, path, payload, timeout.Token);
                 if (!result.IsSuccessStatusCode)
                     throw new AiModelProviderException(GatewayErrorMessage(result.StatusCode, result.Body));
@@ -300,25 +304,81 @@ public sealed class PfbAiGatewayModelProvider(
 
     private static string ReadChatContent(JsonElement root)
     {
-        if (root.TryGetProperty("output_text", out var rootOutputText)
-            && rootOutputText.ValueKind == JsonValueKind.String)
-            return rootOutputText.GetString() ?? string.Empty;
+        var direct = ReadFirstText(root, "output_text", "generated_text", "content");
+        if (!string.IsNullOrWhiteSpace(direct)) return direct;
+
         if (!root.TryGetProperty("choices", out var choices)
             || choices.ValueKind != JsonValueKind.Array
             || choices.GetArrayLength() == 0)
-            return string.Empty;
+            return ReadWrappedChatContent(root);
         if (choices[0].TryGetProperty("text", out var choiceText)
-            && choiceText.ValueKind == JsonValueKind.String)
-            return choiceText.GetString() ?? string.Empty;
+            && ReadText(choiceText) is { Length: > 0 } choiceValue)
+            return choiceValue;
         if (!choices[0].TryGetProperty("message", out var message)
             || message.ValueKind != JsonValueKind.Object)
-            return string.Empty;
-        if (!message.TryGetProperty("content", out var content)) return string.Empty;
-        if (content.ValueKind == JsonValueKind.String) return content.GetString() ?? string.Empty;
-        if (content.ValueKind != JsonValueKind.Array) return string.Empty;
-        return string.Join("\n", content.EnumerateArray()
-            .Where(item => item.TryGetProperty("text", out _))
-            .Select(item => item.GetProperty("text").GetString())
+            return ReadWrappedChatContent(root);
+        if (message.TryGetProperty("content", out var content))
+        {
+            var messageContent = ReadText(content);
+            if (!string.IsNullOrWhiteSpace(messageContent)) return messageContent;
+        }
+        if (choices[0].TryGetProperty("delta", out var delta)
+            && delta.ValueKind == JsonValueKind.Object
+            && delta.TryGetProperty("content", out var deltaContent))
+            return ReadText(deltaContent);
+        return string.Empty;
+    }
+
+    private static string ReadWrappedChatContent(JsonElement root)
+    {
+        foreach (var propertyName in new[] { "data", "result", "response", "body" })
+        {
+            if (!root.TryGetProperty(propertyName, out var wrapper)) continue;
+            if (wrapper.ValueKind == JsonValueKind.Object)
+            {
+                var value = ReadChatContent(wrapper);
+                if (!string.IsNullOrWhiteSpace(value)) return value;
+            }
+            else if (wrapper.ValueKind == JsonValueKind.String)
+            {
+                var value = wrapper.GetString();
+                if (string.IsNullOrWhiteSpace(value)) continue;
+                if (!value.TrimStart().StartsWith('{')) return value;
+                try
+                {
+                    using var nested = JsonDocument.Parse(value);
+                    var nestedContent = ReadChatContent(nested.RootElement);
+                    if (!string.IsNullOrWhiteSpace(nestedContent)) return nestedContent;
+                }
+                catch (JsonException)
+                {
+                    // A non-JSON wrapper string is not generated chat content.
+                }
+            }
+        }
+        return string.Empty;
+    }
+
+    private static string ReadFirstText(JsonElement element, params string[] propertyNames)
+    {
+        foreach (var propertyName in propertyNames)
+        {
+            if (!element.TryGetProperty(propertyName, out var value)) continue;
+            var text = ReadText(value);
+            if (!string.IsNullOrWhiteSpace(text)) return text;
+        }
+        return string.Empty;
+    }
+
+    private static string ReadText(JsonElement element)
+    {
+        if (element.ValueKind == JsonValueKind.String) return element.GetString() ?? string.Empty;
+        if (element.ValueKind == JsonValueKind.Object)
+            return ReadFirstText(element, "text", "value", "output_text", "content");
+        if (element.ValueKind != JsonValueKind.Array) return string.Empty;
+
+        return string.Join("\n", element.EnumerateArray()
+            .Select(ReadText)
             .Where(value => !string.IsNullOrWhiteSpace(value)));
     }
 

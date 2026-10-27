@@ -297,6 +297,51 @@ public sealed class AiModelProviderTests
     }
 
     [Fact]
+    public async Task Pfb_gateway_common_chat_reads_wrapped_content_blocks()
+    {
+        var handler = new StubHttpMessageHandler(_ => JsonResponse(
+            """{"data":{"choices":[{"message":{"content":[{"type":"output_text","text":{"value":"{\"answer\":true}"}}]}}]}}"""));
+        var provider = new PfbAiGatewayModelProvider(
+            new StubHttpClientFactory(handler),
+            new TokenCredentialAccessor("test-jwt"));
+        using var schema = JsonDocument.Parse("""{"type":"object"}""");
+
+        var result = await provider.GenerateStructuredAsync(
+            PfbSettings(),
+            new AiStructuredGenerationRequest("Return JSON.", "Create it.", schema.RootElement.Clone(), 1_000));
+
+        result.Content.Should().Be("{\"answer\":true}");
+    }
+
+    [Fact]
+    public async Task Pfb_gateway_retries_empty_success_once_and_combines_token_usage()
+    {
+        var requestCount = 0;
+        var handler = new StubHttpMessageHandler(request =>
+        {
+            requestCount++;
+            using var payload = JsonDocument.Parse(request.Content!.ReadAsStringAsync().GetAwaiter().GetResult());
+            payload.RootElement.GetProperty("max_tokens").GetInt32()
+                .Should().Be(requestCount == 1 ? 1_000 : 4_000);
+            return requestCount == 1
+                ? JsonResponse("""{"choices":[{"message":{"content":""},"finish_reason":"stop"}],"usage":{"prompt_tokens":100,"completion_tokens":0,"total_tokens":100}}""")
+                : JsonResponse("""{"choices":[{"message":{"content":"{\"answer\":true}"},"finish_reason":"stop"}],"usage":{"prompt_tokens":100,"completion_tokens":10,"total_tokens":110}}""");
+        });
+        var provider = new PfbAiGatewayModelProvider(
+            new StubHttpClientFactory(handler),
+            new TokenCredentialAccessor("test-jwt"));
+        using var schema = JsonDocument.Parse("""{"type":"object"}""");
+
+        var result = await provider.GenerateStructuredAsync(
+            PfbSettings(),
+            new AiStructuredGenerationRequest("Return JSON.", "Create it.", schema.RootElement.Clone(), 1_000));
+
+        result.Content.Should().Be("{\"answer\":true}");
+        requestCount.Should().Be(2);
+        result.Usage.Should().Be(new AiTokenUsage(200, 10, 210));
+    }
+
+    [Fact]
     public async Task Pfb_gateway_retries_length_limited_chat_responses_until_the_answer_is_complete()
     {
         var requestCount = 0;

@@ -50,59 +50,94 @@ public sealed class SupportSummaryChatKnowledgeSource(
 
         var today = DateOnly.FromDateTime(DateTime.Today);
         var (startDate, endDate) = ResolveReportingPeriod(question, today);
+        var wantsEffort = ContainsAny(question, "effort", "worklog", "work log", "logged hours", "hours spent");
+        var wantsJiraTickets = ContainsAny(question, "jira", "ticket", "tickets", "issue", "issues");
+        var wantsConfluence = ContainsAny(question, "confluence", "weekly update", "weekly updates",
+            "action item", "action items", "studio work", "hpgds support", "wmd support");
+        var wantsMilestones = ContainsAny(question, "milestone", "milestones");
+        var wantsDeliveries = ContainsAny(question, "expected delivery", "expected deliveries", "delivery", "deliveries");
+        var wantsBuildReviews = ContainsAny(question, "build review", "build reviews");
+        var broadSupportQuestion = ContainsAny(question,
+            "support summary", "support activity", "support activities", "current support", "ongoing support")
+            || !(wantsEffort || wantsJiraTickets || wantsConfluence
+                || wantsMilestones || wantsDeliveries || wantsBuildReviews);
         // Chat enrichment is intentionally limited to the signed-in user's own
         // Atlassian connection. Consent never authorizes a shared/default token.
         const bool allowSharedCredential = false;
         var sources = new List<AiChatSource>();
 
-        AddJsonSource(sources, "teamhub-support-summary-period", "Support Summary reporting period", new
+        if (broadSupportQuestion)
         {
-            StartDate = startDate,
-            EndDate = endDate,
-            ActiveStudios = activeStudios.Select(item => new
+            AddJsonSource(sources, "teamhub-support-summary-period", "Support Summary reporting period", new
             {
-                item.Id,
-                item.StudioName,
-                item.ProjectName,
-                item.StudioGroup
-            })
-        });
-
-        await AddActiveMilestonesAsync(sources, activeStudios, today, cancellationToken);
-
-        var expectedDeliveries = await planning.GetExpectedDeliveriesAsync(cancellationToken);
-        AddJsonSource(sources, "teamhub-support-expected-deliveries", "Support Summary expected milestone deliveries",
-            expectedDeliveries);
-        var buildReviews = await planning.GetBuildReviewsAsync(cancellationToken);
-        AddJsonSource(sources, "teamhub-support-build-reviews", "Support Summary milestone build reviews", buildReviews);
-
-        if (user.HasApprovedExternalSource(AiChatExternalSources.Jira))
-        {
-            await AddJiraAsync(
-                sources, activeStudios, user.UserId, allowSharedCredential, startDate, endDate, cancellationToken);
+                StartDate = startDate,
+                EndDate = endDate,
+                ActiveStudios = activeStudios.Select(item => new
+                {
+                    item.Id,
+                    item.StudioName,
+                    item.ProjectName,
+                    item.StudioGroup
+                })
+            });
         }
         else
         {
-            AddJsonSource(sources, "teamhub-support-jira-consent", "Support Summary Jira access", new
+            AddJsonSource(sources, "teamhub-support-summary-period", "Support Summary reporting period", new
             {
-                Message = "Jira was not accessed because the user did not approve Jira access for this question."
+                StartDate = startDate,
+                EndDate = endDate
             });
         }
 
-        if (user.HasApprovedExternalSource(AiChatExternalSources.Confluence))
+        if (broadSupportQuestion || wantsMilestones)
+            await AddActiveMilestonesAsync(sources, activeStudios, today, cancellationToken);
+
+        if (broadSupportQuestion || wantsDeliveries)
         {
-            await AddConfluenceAsync(
-                sources, activeStudios, user.UserId, allowSharedCredential, startDate, endDate, cancellationToken);
+            var expectedDeliveries = await planning.GetExpectedDeliveriesAsync(cancellationToken);
+            AddJsonSource(sources, "teamhub-support-expected-deliveries", "Support Summary expected milestone deliveries",
+                expectedDeliveries);
         }
-        else
+        if (broadSupportQuestion || wantsBuildReviews)
         {
-            AddJsonSource(sources, "teamhub-support-confluence-consent", "Support Summary Confluence access", new
-            {
-                Message = "Confluence was not accessed because the user did not approve Confluence access for this question."
-            });
+            var buildReviews = await planning.GetBuildReviewsAsync(cancellationToken);
+            AddJsonSource(sources, "teamhub-support-build-reviews", "Support Summary milestone build reviews", buildReviews);
         }
 
-        if (ContainsAny(question, "effort", "worklog", "work log", "logged hours", "hours spent"))
+        if (broadSupportQuestion || wantsJiraTickets)
+        {
+            if (user.HasApprovedExternalSource(AiChatExternalSources.Jira))
+            {
+                await AddJiraAsync(
+                    sources, activeStudios, user.UserId, allowSharedCredential, startDate, endDate, cancellationToken);
+            }
+            else
+            {
+                AddJsonSource(sources, "teamhub-support-jira-consent", "Support Summary Jira access", new
+                {
+                    Message = "Jira was not accessed because the user did not approve Jira access for this question."
+                });
+            }
+        }
+
+        if (broadSupportQuestion || wantsConfluence)
+        {
+            if (user.HasApprovedExternalSource(AiChatExternalSources.Confluence))
+            {
+                await AddConfluenceAsync(
+                    sources, activeStudios, user.UserId, allowSharedCredential, startDate, endDate, cancellationToken);
+            }
+            else
+            {
+                AddJsonSource(sources, "teamhub-support-confluence-consent", "Support Summary Confluence access", new
+                {
+                    Message = "Confluence was not accessed because the user did not approve Confluence access for this question."
+                });
+            }
+        }
+
+        if (wantsEffort)
         {
             if (user.HasApprovedExternalSource(AiChatExternalSources.Jira))
             {
