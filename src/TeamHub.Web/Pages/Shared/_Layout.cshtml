@@ -231,7 +231,7 @@
                         {
                             <button id="aiChatLauncher" class="btn btn-sm teamhub-ai-chat-launcher"
                                     type="button" aria-controls="aiChatPanel" aria-expanded="false"
-                                    aria-label="Open AI Chat" title="AI Chat">
+                                    aria-label="Open TeamHub Assistant" title="TeamHub Assistant">
                                 <svg viewBox="0 0 24 24" aria-hidden="true">
                                     <path d="M4 3.5h16A2.5 2.5 0 0 1 22.5 6v10A2.5 2.5 0 0 1 20 18.5H9l-5.8 3.2.9-3.2H4A2.5 2.5 0 0 1 1.5 16V6A2.5 2.5 0 0 1 4 3.5Zm4.1 6.25a1.25 1.25 0 1 0 0 2.5 1.25 1.25 0 0 0 0-2.5Zm3.9 0a1.25 1.25 0 1 0 0 2.5 1.25 1.25 0 0 0 0-2.5Zm3.9 0a1.25 1.25 0 1 0 0 2.5 1.25 1.25 0 0 0 0-2.5Z" />
                                 </svg>
@@ -284,18 +284,18 @@
     {
         <aside id="aiChatPanel" class="teamhub-ai-chat-panel" data-ai-chat data-ai-chat-widget
                data-ai-chat-user="@User.Identity?.Name" hidden
-               aria-label="AI Chat" aria-hidden="true">
+               aria-label="TeamHub Assistant" aria-hidden="true">
             <header class="teamhub-ai-chat-header">
                 <div>
-                    <strong>AI Chat</strong>
+                    <strong>TeamHub Assistant</strong>
                     <span id="aiChatProvider">Loading provider…</span>
                 </div>
                 <div class="teamhub-ai-chat-window-actions">
-                    <button id="aiChatMaximize" type="button" aria-label="Maximize AI Chat" title="Maximize">
+                    <button id="aiChatMaximize" type="button" aria-label="Maximize TeamHub Assistant" title="Maximize">
                         <svg class="maximize-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h6v2H6v4H4V4Zm10 0h6v6h-2V6h-4V4ZM4 14h2v4h4v2H4v-6Zm14 0h2v6h-6v-2h4v-4Z" /></svg>
                         <svg class="restore-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 3h13v13h-3v5H3V8h5V3Zm2 5h8v6h1V5h-9v3Zm6 3H5v8h11v-8Z" /></svg>
                     </button>
-                    <button id="aiChatClose" type="button" aria-label="Close AI Chat" title="Close">
+                    <button id="aiChatClose" type="button" aria-label="Close TeamHub Assistant" title="Close">
                         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6.4 5 5.6 5.6L17.6 5 19 6.4 13.4 12l5.6 5.6-1.4 1.4-5.6-5.6L6.4 19 5 17.6l5.6-5.6L5 6.4 6.4 5Z" /></svg>
                     </button>
                 </div>
@@ -324,22 +324,24 @@
                     <label for="aiChatFiles" id="aiChatFilesLabel">Attach documents</label>
                     <input id="aiChatFiles" type="file" class="form-control form-control-sm" multiple
                            accept=".txt,.md,.markdown,.csv,.json,.docx,.pdf,.chm,.png,.jpg,.jpeg,.webp,.gif,text/plain,text/markdown,text/csv,application/json,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/pdf,application/vnd.ms-htmlhelp,image/png,image/jpeg,image/webp,image/gif" />
-                    <div class="form-text">Text, Markdown, CSV, JSON, Word (.docx), PDF, CHM, PNG, JPEG, WebP, or GIF. Maximum 10 MB per binary file and 20 MB total.</div>
                 </div>
                 <div class="teamhub-ai-chat-compose-row">
                     <label for="aiChatPrompt" class="visually-hidden">Message</label>
                     <textarea id="aiChatPrompt" class="form-control" rows="2" maxlength="8000"
-                              placeholder="Ask a question…" required></textarea>
+                              placeholder="Ask a question…"></textarea>
                     <button id="aiChatSend" type="submit" class="btn btn-primary" disabled>Send</button>
                 </div>
                 <div id="aiChatUsage" class="ai-chat-session-usage" aria-live="polite">Session tokens: 0</div>
                 <div id="aiChatMeetingActions" class="d-none teamhub-ai-chat-meeting-actions">
-                    <div class="d-flex flex-wrap gap-1">
+                    <div class="teamhub-ai-chat-output-actions d-flex flex-wrap gap-1">
                         <button id="aiChatDownloadNotes" type="button" class="btn btn-sm btn-outline-secondary">Download .md</button>
-                        <button id="aiChatEditNotes" type="button" class="btn btn-sm btn-outline-primary">Edit / post</button>
+                        <button id="aiChatEditNotes" type="button" class="btn btn-sm btn-outline-primary">Review &amp; post</button>
                     </div>
-                    <div id="aiChatMeetingEditor" class="d-none mt-2">
-                        <label for="aiChatMeetingDraft" class="small fw-semibold">Review and edit before posting</label>
+                    <div id="aiChatMeetingEditor" class="teamhub-ai-chat-meeting-editor d-none mt-2">
+                        <div class="teamhub-ai-chat-meeting-review-header">
+                            <label for="aiChatMeetingDraft" class="small fw-semibold mb-0">Review meeting notes</label>
+                            <button id="aiChatCloseMeetingEditor" type="button" class="btn btn-sm btn-outline-secondary">Close review</button>
+                        </div>
                         <div class="teamhub-ai-chat-meeting-editor-toolbar d-flex flex-wrap gap-1 mt-1">
                             <select id="aiChatMeetingDestination" class="form-select form-select-sm flex-grow-1" aria-label="Studio"></select>
                             <button id="aiChatPublishNotes" type="button" class="btn btn-sm btn-primary">Post</button>

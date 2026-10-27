@@ -135,6 +135,21 @@
     resize: vertical;
 }
 
+.teamhub-ai-chat-meeting-editor {
+    padding: 1rem;
+    border: 1px solid var(--bs-border-color);
+    border-radius: .75rem;
+    background: var(--surface-subtle-color);
+}
+
+.teamhub-ai-chat-meeting-review-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    margin-bottom: .5rem;
+}
+
 .ai-chat-documents {
     margin-bottom: 1rem;
 }

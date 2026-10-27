@@ -272,6 +272,13 @@ html.teamhub-ai-chat-resizing * {
   margin-top: .5rem;
 }
 
+.teamhub-ai-chat-panel .teamhub-ai-chat-meeting-review-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: .75rem;
+}
+
 .teamhub-ai-chat-meeting-actions .form-select {
   min-width: 150px;
 }
@@ -290,6 +297,50 @@ html.teamhub-ai-chat-resizing * {
   top: 0;
   padding: .25rem 0 .4rem;
   background: var(--surface-bg-color);
+}
+
+.teamhub-ai-chat-panel.is-reviewing-notes {
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+.teamhub-ai-chat-panel.is-reviewing-notes .teamhub-ai-chat-controls,
+.teamhub-ai-chat-panel.is-reviewing-notes .teamhub-ai-chat-note,
+.teamhub-ai-chat-panel.is-reviewing-notes .teamhub-ai-chat-messages,
+.teamhub-ai-chat-panel.is-reviewing-notes .teamhub-ai-chat-documents,
+.teamhub-ai-chat-panel.is-reviewing-notes .teamhub-ai-chat-compose-row,
+.teamhub-ai-chat-panel.is-reviewing-notes .ai-chat-session-usage,
+.teamhub-ai-chat-panel.is-reviewing-notes .teamhub-ai-chat-output-actions,
+.teamhub-ai-chat-panel.is-reviewing-notes .teamhub-ai-chat-composer > [role="alert"] {
+  display: none;
+}
+
+.teamhub-ai-chat-panel.is-reviewing-notes .teamhub-ai-chat-composer {
+  display: flex;
+  height: 100%;
+  max-height: none;
+  flex-direction: column;
+  overflow: hidden;
+  padding: .85rem 1rem 1rem;
+}
+
+.teamhub-ai-chat-panel.is-reviewing-notes .teamhub-ai-chat-meeting-actions,
+.teamhub-ai-chat-panel.is-reviewing-notes .teamhub-ai-chat-meeting-editor {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  margin-top: 0 !important;
+}
+
+.teamhub-ai-chat-panel.is-reviewing-notes .teamhub-ai-chat-meeting-editor-toolbar {
+  position: static;
+}
+
+.teamhub-ai-chat-panel.is-reviewing-notes .teamhub-ai-chat-meeting-actions textarea {
+  height: auto;
+  min-height: 140px;
+  max-height: none;
+  flex: 1;
 }
 
 .teamhub-ai-chat-panel .ai-chat-message-actions {

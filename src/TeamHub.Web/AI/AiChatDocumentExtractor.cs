@@ -103,7 +103,7 @@ public sealed partial class AiChatDocumentExtractor : IAiChatDocumentExtractor
             if (totalCharacters > maximumCharacters)
                 throw new AiChatException(
                     $"Extracted document text exceeds the configured {maximumCharacters:N0}-character limit. "
-                    + "Attach a smaller document or ask an administrator to increase the AI Chat document limit.");
+                    + "Attach a smaller document or ask an administrator to increase the TeamHub Assistant document limit.");
             documents.Add(new AiChatDocument(name, mediaType, extracted));
         }
         return new AiChatPreparedAttachments(documents, images);
@@ -395,7 +395,7 @@ public sealed partial class AiChatDocumentExtractor : IAiChatDocumentExtractor
         if (actual <= maximum) return;
         throw new AiChatException(
             $"Extracted text from '{name}' exceeds the remaining {Math.Max(0, maximum):N0}-character limit. "
-            + "Attach a smaller document or ask an administrator to increase the AI Chat document limit.");
+            + "Attach a smaller document or ask an administrator to increase the TeamHub Assistant document limit.");
     }
 
     private static void TryKill(Process process)

@@ -23,6 +23,7 @@
     const downloadNotes = root.querySelector("#aiChatDownloadNotes");
     const editNotes = root.querySelector("#aiChatEditNotes");
     const meetingEditor = root.querySelector("#aiChatMeetingEditor");
+    const closeMeetingEditorButton = root.querySelector("#aiChatCloseMeetingEditor");
     const meetingDraft = root.querySelector("#aiChatMeetingDraft");
     const meetingDestination = root.querySelector("#aiChatMeetingDestination");
     const publishNotes = root.querySelector("#aiChatPublishNotes");
@@ -171,7 +172,7 @@
         showEmptyConversation();
         error.textContent = "";
         if (meetingActions) meetingActions.classList.add("d-none");
-        if (meetingEditor) meetingEditor.classList.add("d-none");
+        closeMeetingEditor(false);
         if (meetingDraft) meetingDraft.value = "";
         meetingDraftDirty = false;
         if (meetingStatus) meetingStatus.textContent = "";
@@ -244,6 +245,24 @@
     function currentPublishableResponse() {
         if (mode.value === "TeamHub") return "";
         return [...history].reverse().find(item => item.role === "assistant")?.content || "";
+    }
+
+    function closeMeetingEditor(restoreFocus = true) {
+        if (!meetingEditor) return;
+        meetingEditor.classList.add("d-none");
+        root.classList.remove("is-reviewing-notes");
+        if (meetingStatus) meetingStatus.textContent = "";
+        if (restoreFocus) editNotes?.focus();
+    }
+
+    async function openMeetingEditor() {
+        if (!meetingEditor) return;
+        if (meetingDraft && !meetingDraftDirty) meetingDraft.value = currentPublishableResponse();
+        meetingEditor.classList.remove("d-none");
+        root.classList.add("is-reviewing-notes");
+        if (meetingStatus) meetingStatus.textContent = "";
+        await loadMeetingDestinations();
+        window.requestAnimationFrame(() => meetingDraft?.focus({ preventScroll: widget }));
     }
 
     function refreshMeetingActions(replaceDraft = false) {
@@ -1035,12 +1054,14 @@
             root.classList.remove("is-fullscreen");
             if (normalBounds) applyWidgetBounds(normalBounds);
         }
-        maximize.setAttribute("aria-label", isFullscreen ? "Restore AI Chat" : "Maximize AI Chat");
+        maximize.setAttribute("aria-label", isFullscreen ? "Restore TeamHub Assistant" : "Maximize TeamHub Assistant");
         maximize.setAttribute("title", isFullscreen ? "Restore" : "Maximize");
         persistState();
     });
     document.addEventListener("keydown", event => {
-        if (event.key === "Escape" && widget && !root.hidden) setWidgetOpen(false);
+        if (event.key !== "Escape" || !widget || root.hidden) return;
+        if (root.classList.contains("is-reviewing-notes")) closeMeetingEditor();
+        else setWidgetOpen(false);
     });
 
     mode.addEventListener("change", () => updateMode(true));
@@ -1057,8 +1078,21 @@
             activeRequest.abort();
             return;
         }
-        const content = prompt.value.trim();
-        if (!content || !model.value || send.disabled) return;
+        const attachedFiles = mode.value === "TeamHub" ? [] : Array.from(files?.files || []);
+        let content = prompt.value.trim();
+        if (!content && attachedFiles.length > 0) {
+            content = mode.value === "MeetingNotes"
+                ? "Generate structured meeting notes from the attached transcript."
+                : "Analyze the attached file and provide a concise summary.";
+        }
+        if (!content) {
+            error.textContent = mode.value === "TeamHub"
+                ? "Enter a question. TeamHub mode does not accept file attachments."
+                : "Enter a message or attach a file.";
+            prompt.focus();
+            return;
+        }
+        if (!model.value || send.disabled) return;
         error.textContent = "";
         const requestRevision = conversationRevision;
         activeRequest = new AbortController();
@@ -1120,7 +1154,7 @@
             addMessage("assistant", assistantMessage.content, assistantMessage.citations, assistantMessage.usage);
             updateSessionUsage();
             meetingDraftDirty = false;
-            if (meetingEditor) meetingEditor.classList.add("d-none");
+            closeMeetingEditor(false);
             refreshMeetingActions(true);
             persistState();
         } catch (exception) {
@@ -1157,21 +1191,8 @@
     refreshMeetingActions();
 
     if (downloadNotes) downloadNotes.addEventListener("click", downloadMeetingNotes);
-    if (editNotes) editNotes.addEventListener("click", async () => {
-        if (!meetingEditor) return;
-        meetingEditor.classList.toggle("d-none");
-        if (meetingEditor.classList.contains("d-none")) return;
-        if (meetingDraft && !meetingDraftDirty) meetingDraft.value = currentPublishableResponse();
-        await loadMeetingDestinations();
-        if (widget) {
-            window.requestAnimationFrame(() => {
-                form.scrollTo({ top: Math.max(0, meetingEditor.offsetTop - 8), behavior: "smooth" });
-                meetingDraft?.focus({ preventScroll: true });
-            });
-        } else {
-            meetingDraft?.focus();
-        }
-    });
+    if (editNotes) editNotes.addEventListener("click", openMeetingEditor);
+    if (closeMeetingEditorButton) closeMeetingEditorButton.addEventListener("click", () => closeMeetingEditor());
     if (meetingDraft) meetingDraft.addEventListener("input", () => {
         meetingDraftDirty = true;
     });
@@ -1185,7 +1206,7 @@
         root.classList.toggle("is-fullscreen", savedState?.fullscreen === true);
         if (savedState?.fullscreen !== true && normalBounds) applyWidgetBounds(normalBounds);
         if (savedState?.fullscreen === true && maximize) {
-            maximize.setAttribute("aria-label", "Restore AI Chat");
+            maximize.setAttribute("aria-label", "Restore TeamHub Assistant");
             maximize.setAttribute("title", "Restore");
         }
         initializeWidgetResize();

@@ -151,12 +151,12 @@
     }
 
     <section class="content-section mb-4">
-        <div class="section-heading"><div><span>Feature</span><h2>AI Chat</h2></div></div>
+        <div class="section-heading"><div><span>Feature</span><h2>TeamHub Assistant</h2></div></div>
         <div class="p-4 row g-3">
             <div class="col-12">
               <div class="form-check">
                 <input asp-for="Settings.ChatEnabled" class="form-check-input" />
-                <label asp-for="Settings.ChatEnabled" class="form-check-label">Enable AI Chat</label>
+                <label asp-for="Settings.ChatEnabled" class="form-check-label">Enable TeamHub Assistant</label>
               </div>
               <div class="form-text">
                   Uses the active provider and lets users select from its available models. TeamHub mode applies access checks; General mode cannot access TeamHub data.
@@ -206,7 +206,7 @@
                 <div class="form-text">Initial response allowance. PFB can retry truncated responses up to 32,000 tokens.</div>
             </div>
             <div class="col-12 d-flex justify-content-end pt-2">
-                <button type="submit" asp-page-handler="SaveChat" formnovalidate class="btn btn-primary">Save AI Chat</button>
+                <button type="submit" asp-page-handler="SaveChat" formnovalidate class="btn btn-primary">Save TeamHub Assistant</button>
             </div>
         </div>
     </section>

@@ -2,13 +2,13 @@
 @model TeamHub.Web.Pages.AIChatModel
 @using TeamHub.AI.Contracts
 @{
-    ViewData["Title"] = "AI Chat";
+    ViewData["Title"] = "TeamHub Assistant";
 }
 
 <div class="page-hero ai-chat-hero">
     <div>
         <div class="eyebrow">Secure assistant</div>
-        <h1>AI Chat</h1>
+        <h1>TeamHub Assistant</h1>
         <p>Ask about information you are allowed to see in TeamHub, or switch to General mode for an isolated everyday assistant.</p>
     </div>
 </div>
@@ -65,24 +65,26 @@
             <label for="aiChatFiles" class="form-label" id="aiChatFilesLabel">Optional documents</label>
             <input id="aiChatFiles" type="file" class="form-control" multiple
                    accept=".txt,.md,.markdown,.csv,.json,.docx,.pdf,.chm,.png,.jpg,.jpeg,.webp,.gif,text/plain,text/markdown,text/csv,application/json,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/pdf,application/vnd.ms-htmlhelp,image/png,image/jpeg,image/webp,image/gif" />
-            <div class="form-text">General and Meeting Notes modes support text, Markdown, CSV, JSON, Word (.docx), PDF, CHM, PNG, JPEG, WebP, and GIF. Maximum five files; binary uploads are limited to 10 MB each and 20 MB total.</div>
         </div>
         <div class="d-flex gap-2 align-items-end">
             <div class="flex-grow-1">
                 <label for="aiChatPrompt" class="visually-hidden">Message</label>
                 <textarea id="aiChatPrompt" class="form-control" rows="3" maxlength="8000"
-                          placeholder="Ask a question..." required></textarea>
+                          placeholder="Ask a question..."></textarea>
             </div>
             <button id="aiChatSend" type="submit" class="btn btn-primary" disabled="@(Model.Models.Count == 0 ? "disabled" : null)">Send</button>
         </div>
         <div id="aiChatUsage" class="ai-chat-session-usage" aria-live="polite">Session tokens: 0</div>
         <div id="aiChatMeetingActions" class="d-none mt-2">
-            <div class="d-flex flex-wrap gap-2 align-items-center">
+            <div class="teamhub-ai-chat-output-actions d-flex flex-wrap gap-2 align-items-center">
                 <button id="aiChatDownloadNotes" type="button" class="btn btn-sm btn-outline-secondary">Download .md</button>
-                <button id="aiChatEditNotes" type="button" class="btn btn-sm btn-outline-primary">Edit / prepare Teams post</button>
+                <button id="aiChatEditNotes" type="button" class="btn btn-sm btn-outline-primary">Review &amp; post</button>
             </div>
-            <div id="aiChatMeetingEditor" class="d-none mt-2">
-                <label for="aiChatMeetingDraft" class="form-label">Review and edit before posting</label>
+            <div id="aiChatMeetingEditor" class="teamhub-ai-chat-meeting-editor d-none mt-2">
+                <div class="teamhub-ai-chat-meeting-review-header">
+                    <label for="aiChatMeetingDraft" class="form-label mb-0">Review meeting notes</label>
+                    <button id="aiChatCloseMeetingEditor" type="button" class="btn btn-sm btn-outline-secondary">Close review</button>
+                </div>
                 <div class="d-flex flex-wrap gap-2 align-items-center mb-2">
                     <label for="aiChatMeetingDestination" class="form-label mb-0">Post to studio</label>
                     <select id="aiChatMeetingDestination" class="form-select form-select-sm w-auto" aria-label="Studio"></select>

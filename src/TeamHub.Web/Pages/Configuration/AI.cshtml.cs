@@ -150,7 +150,7 @@ public sealed class AIModel(
                 AiConfigurationSection.Runtime => "Runtime settings saved.",
                 AiConfigurationSection.Models => "Provider profiles saved.",
                 AiConfigurationSection.Security => "Provider security settings saved.",
-                AiConfigurationSection.Chat => "AI Chat settings saved.",
+                AiConfigurationSection.Chat => "TeamHub Assistant settings saved.",
                 AiConfigurationSection.MeetingNotes => "Meeting Notes and Teams destinations saved.",
                 AiConfigurationSection.FlowDesigner => "Flow Designer AI settings saved.",
                 AiConfigurationSection.ReportGenerator => "Report Generator settings saved.",
@@ -362,7 +362,7 @@ public sealed class AiSettingsInput
     public string PfbAiGatewayApiMode { get; set; } = "CommonChat";
 
     public bool OfflineOnly { get; set; } = true;
-    [Display(Name = "Enable AI Chat")]
+    [Display(Name = "Enable TeamHub Assistant")]
     public bool ChatEnabled { get; set; }
     [Display(Name = "Maximum messages per conversation")]
     [Range(1, 100)] public int ChatMaximumMessages { get; set; } = 20;
