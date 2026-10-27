@@ -76,6 +76,54 @@ public sealed class AiChatServiceTests
             .Which.Should().Be(new AiChatCitation("workflow-a", "Workflow A"));
     }
 
+    [Theory]
+    [InlineData("Generate an image of a flower")]
+    [InlineData("Please draw a company logo")]
+    [InlineData("Make a photo of a mountain")]
+    public async Task TeamHub_mode_rejects_creative_image_generation(string question)
+    {
+        var provider = new RecordingProvider();
+        var source = new RecordingKnowledgeSource(
+            new AiChatSource("teamhub", "TeamHub source", "Authorized information"));
+        await using var services = CreateServices(provider, source);
+        var chat = services.GetRequiredService<IAiChatService>();
+
+        var response = await chat.SendAsync(
+            User(),
+            new AiChatRequest(
+                AiChatMode.TeamHub,
+                "model-a",
+                [new AiChatMessage("user", question)]));
+
+        response.Answer.Should().Contain("not available in TeamHub mode");
+        response.Answer.Should().Contain("General mode");
+        response.Citations.Should().BeEmpty();
+        source.CallCount.Should().Be(0);
+        provider.LastRequest.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task TeamHub_mode_allows_authorized_data_visualization_requests()
+    {
+        var provider = new RecordingProvider();
+        var source = new RecordingKnowledgeSource(
+            new AiChatSource("support", "Support Summary", "Studio A has 3 active support items"));
+        await using var services = CreateServices(provider, source);
+        var chat = services.GetRequiredService<IAiChatService>();
+
+        await chat.SendAsync(
+            User(),
+            new AiChatRequest(
+                AiChatMode.TeamHub,
+                "model-a",
+                [new AiChatMessage("user", "Generate an image chart of current support activity")]));
+
+        source.CallCount.Should().Be(1);
+        provider.LastRequest.Should().NotBeNull();
+        provider.LastRequest!.SystemPrompt.Should().Contain(
+            "chart or diagram only when it directly visualizes information from the authorized TeamHub sources");
+    }
+
     [Fact]
     public async Task Trusted_playbook_is_added_only_to_TeamHub_mode()
     {
