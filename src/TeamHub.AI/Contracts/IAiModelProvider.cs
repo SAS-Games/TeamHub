@@ -68,7 +68,13 @@ public sealed record AiStructuredGenerationRequest(
     string SystemPrompt,
     string UserPrompt,
     JsonElement ResponseSchema,
-    int? MaximumOutputTokens = null);
+    int? MaximumOutputTokens = null,
+    IReadOnlyList<AiImageInput>? Images = null);
+
+public sealed record AiImageInput(
+    string Name,
+    string MediaType,
+    string Base64Data);
 
 public sealed record AiStructuredGenerationResult(
     string Provider,

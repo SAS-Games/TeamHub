@@ -140,6 +140,7 @@ builder.Services.AddStudioDirectory(builder.Configuration);
 builder.Services.AddTeamHubAi(builder.Configuration);
 builder.Services.AddScoped<TeamHub.AI.Contracts.IAiProviderCredentialAccessor, TeamHub.Web.AI.PersonalAiProviderCredentialAccessor>();
 builder.Services.AddSingleton<IAiChatInstructionProvider, TeamHub.Web.AI.TeamHubAiInstructionFileProvider>();
+builder.Services.AddScoped<TeamHub.Web.AI.IAiChatDocumentExtractor, TeamHub.Web.AI.AiChatDocumentExtractor>();
 builder.Services.AddAiChat(builder.Configuration);
 builder.Services.AddScoped<IAiChatKnowledgeSource, TeamHub.Web.AI.TeamHubChatKnowledgeSource>();
 builder.Services.AddScoped<IAiChatKnowledgeSource, TeamHub.Web.AI.SupportSummaryChatKnowledgeSource>();

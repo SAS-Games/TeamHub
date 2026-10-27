@@ -691,11 +691,44 @@
         if (mode.value !== "General") return [];
         const selected = Array.from(files.files || []);
         if (selected.length > 5) throw new Error("Attach no more than five documents.");
-        return Promise.all(selected.map(async file => ({
-            name: file.name,
-            mediaType: file.type || mediaTypeFor(file.name),
-            content: await file.text()
-        })));
+        const maximumBinaryFileBytes = 10 * 1024 * 1024;
+        const maximumTotalBinaryBytes = 20 * 1024 * 1024;
+        let totalBinaryBytes = 0;
+        return Promise.all(selected.map(async file => {
+            const mediaType = file.type || mediaTypeFor(file.name);
+            const extension = file.name.split(".").pop().toLowerCase();
+            const binary = ["pdf", "chm", "png", "jpg", "jpeg", "webp", "gif"].includes(extension);
+            if (!binary) {
+                return { name: file.name, mediaType, content: await file.text() };
+            }
+            if (file.size > maximumBinaryFileBytes) {
+                throw new Error(`${file.name} exceeds the 10 MB binary file limit.`);
+            }
+            totalBinaryBytes += file.size;
+            if (totalBinaryBytes > maximumTotalBinaryBytes) {
+                throw new Error("Binary document and image uploads cannot exceed 20 MB in total.");
+            }
+            return {
+                name: file.name,
+                mediaType,
+                base64Content: await readFileAsBase64(file)
+            };
+        }));
+    }
+
+    function readFileAsBase64(file) {
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.addEventListener("load", () => {
+                const value = typeof reader.result === "string" ? reader.result : "";
+                const separator = value.indexOf(",");
+                if (separator < 0) reject(new Error(`${file.name} could not be read.`));
+                else resolve(value.slice(separator + 1));
+            }, { once: true });
+            reader.addEventListener("error", () => reject(
+                new Error(`${file.name} could not be read.`)), { once: true });
+            reader.readAsDataURL(file);
+        });
     }
 
     function mediaTypeFor(name) {
@@ -703,6 +736,12 @@
         if (extension === "md" || extension === "markdown") return "text/markdown";
         if (extension === "csv") return "text/csv";
         if (extension === "json") return "application/json";
+        if (extension === "pdf") return "application/pdf";
+        if (extension === "chm") return "application/vnd.ms-htmlhelp";
+        if (extension === "png") return "image/png";
+        if (extension === "jpg" || extension === "jpeg") return "image/jpeg";
+        if (extension === "webp") return "image/webp";
+        if (extension === "gif") return "image/gif";
         return "text/plain";
     }
 

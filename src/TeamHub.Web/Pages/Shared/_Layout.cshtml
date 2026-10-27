@@ -320,9 +320,10 @@
             <form id="aiChatForm" method="post" action="/AIChat?handler=Message" class="teamhub-ai-chat-composer">
                 @Html.AntiForgeryToken()
                 <div id="aiChatDocuments" class="teamhub-ai-chat-documents d-none">
-                    <label for="aiChatFiles">Attach text documents</label>
+                    <label for="aiChatFiles">Attach documents</label>
                     <input id="aiChatFiles" type="file" class="form-control form-control-sm" multiple
-                           accept=".txt,.md,.markdown,.csv,.json,text/plain,text/markdown,text/csv,application/json" />
+                           accept=".txt,.md,.markdown,.csv,.json,.pdf,.chm,.png,.jpg,.jpeg,.webp,.gif,text/plain,text/markdown,text/csv,application/json,application/pdf,application/vnd.ms-htmlhelp,image/png,image/jpeg,image/webp,image/gif" />
+                    <div class="form-text">Text, Markdown, CSV, JSON, PDF, CHM, PNG, JPEG, WebP, or GIF. Maximum 10 MB per binary file and 20 MB total.</div>
                 </div>
                 <div class="teamhub-ai-chat-compose-row">
                     <label for="aiChatPrompt" class="visually-hidden">Message</label>

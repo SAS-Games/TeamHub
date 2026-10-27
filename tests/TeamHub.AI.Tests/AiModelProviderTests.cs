@@ -297,6 +297,37 @@ public sealed class AiModelProviderTests
     }
 
     [Fact]
+    public async Task Pfb_gateway_common_chat_sends_images_as_multimodal_content()
+    {
+        var handler = new StubHttpMessageHandler(request =>
+        {
+            using var payload = JsonDocument.Parse(request.Content!.ReadAsStringAsync().GetAwaiter().GetResult());
+            var content = payload.RootElement.GetProperty("messages")[1].GetProperty("content");
+            content.ValueKind.Should().Be(JsonValueKind.Array);
+            content[0].GetProperty("type").GetString().Should().Be("text");
+            content[1].GetProperty("type").GetString().Should().Be("image_url");
+            content[1].GetProperty("image_url").GetProperty("url").GetString()
+                .Should().Be("data:image/png;base64,iVBORw0KGgo=");
+            return JsonResponse("""{"choices":[{"message":{"content":"{\"answer\":true}"}}]}""");
+        });
+        var provider = new PfbAiGatewayModelProvider(
+            new StubHttpClientFactory(handler),
+            new TokenCredentialAccessor("test-jwt"));
+        using var schema = JsonDocument.Parse("""{"type":"object"}""");
+
+        var result = await provider.GenerateStructuredAsync(
+            PfbSettings(),
+            new AiStructuredGenerationRequest(
+                "Return JSON.",
+                "Describe the image.",
+                schema.RootElement.Clone(),
+                1_000,
+                [new AiImageInput("screen.png", "image/png", "iVBORw0KGgo=")]));
+
+        result.Content.Should().Be("{\"answer\":true}");
+    }
+
+    [Fact]
     public async Task Pfb_gateway_common_chat_reads_wrapped_content_blocks()
     {
         var handler = new StubHttpMessageHandler(_ => JsonResponse(
@@ -414,6 +445,39 @@ public sealed class AiModelProviderTests
         var result = await provider.GenerateStructuredAsync(
             settings,
             new AiStructuredGenerationRequest("Return JSON.", "Create it.", schema.RootElement.Clone()));
+
+        result.Content.Should().Be("{\"answer\":true}");
+    }
+
+    [Fact]
+    public async Task Pfb_gateway_open_ai_responses_sends_multimodal_image_input()
+    {
+        var handler = new StubHttpMessageHandler(request =>
+        {
+            using var payload = JsonDocument.Parse(request.Content!.ReadAsStringAsync().GetAwaiter().GetResult());
+            var input = payload.RootElement.GetProperty("input");
+            input.ValueKind.Should().Be(JsonValueKind.Array);
+            var userContent = input[1].GetProperty("content");
+            userContent[0].GetProperty("type").GetString().Should().Be("input_text");
+            userContent[1].GetProperty("type").GetString().Should().Be("input_image");
+            userContent[1].GetProperty("image_url").GetString()
+                .Should().Be("data:image/webp;base64,UklGRg==");
+            return JsonResponse("""{"output_text":"{\"answer\":true}"}""");
+        });
+        var provider = new PfbAiGatewayModelProvider(
+            new StubHttpClientFactory(handler),
+            new TokenCredentialAccessor("test-jwt"));
+        using var schema = JsonDocument.Parse("""{"type":"object"}""");
+        var settings = PfbSettings() with { ApiMode = PfbAiGatewayModelProvider.OpenAiResponsesMode };
+
+        var result = await provider.GenerateStructuredAsync(
+            settings,
+            new AiStructuredGenerationRequest(
+                "Return JSON.",
+                "Describe it.",
+                schema.RootElement.Clone(),
+                1_000,
+                [new AiImageInput("photo.webp", "image/webp", "UklGRg==")]));
 
         result.Content.Should().Be("{\"answer\":true}");
     }

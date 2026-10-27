@@ -38,7 +38,8 @@ public sealed record AiChatRequest(
     AiChatMode Mode,
     string Model,
     IReadOnlyList<AiChatMessage> Messages,
-    IReadOnlyList<AiChatDocument>? Documents = null);
+    IReadOnlyList<AiChatDocument>? Documents = null,
+    IReadOnlyList<AiImageInput>? Images = null);
 
 public sealed record AiChatSource(
     string Id,

@@ -9,7 +9,8 @@ TeamHub web application, databases, or domain projects.
 - **TeamHub** calls registered `IAiChatKnowledgeSource` adapters. Each adapter must authorize the user
   before returning source text. The module never queries a host database directly.
 - **General** never calls an `IAiChatKnowledgeSource`. It can use only conversation messages and
-  explicitly attached text, Markdown, CSV, or JSON documents.
+  explicitly attached text, Markdown, CSV, JSON, PDF, CHM, or image files. The web host extracts
+  document text before calling this module and sends supported images as multimodal model inputs.
 
 AI Chat follows the provider selected in AI Services. Ollama and llama.cpp normally run without a
 credential; OpenAI-compatible providers use the configured encrypted shared credential or environment

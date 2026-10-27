@@ -56,6 +56,49 @@ public sealed class StructuredGenerationTests
         capturedRequest.Dispose();
     }
 
+    [Fact]
+    public async Task Provider_sends_images_using_open_ai_multimodal_content_parts()
+    {
+        JsonDocument? capturedRequest = null;
+        var handler = new StubHttpMessageHandler(request =>
+        {
+            capturedRequest = JsonDocument.Parse(request.Content!.ReadAsStringAsync().GetAwaiter().GetResult());
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(
+                    """{"choices":[{"message":{"role":"assistant","content":"{\"answer\":\"image\"}"}}]}""",
+                    Encoding.UTF8,
+                    "application/json")
+            };
+        });
+        var provider = new OllamaModelProvider(
+            new StubHttpClientFactory(handler),
+            new NullCredentialAccessor());
+        using var schema = JsonDocument.Parse("""{"type":"object"}""");
+        var settings = new AiProviderSettings(
+            AiModelProviderKeys.Ollama,
+            new Uri("http://localhost:11434"),
+            "vision-model",
+            0,
+            TimeSpan.FromSeconds(5),
+            string.Empty);
+
+        await provider.GenerateStructuredAsync(
+            settings,
+            new AiStructuredGenerationRequest(
+                "Return JSON.",
+                "Describe it.",
+                schema.RootElement.Clone(),
+                500,
+                [new AiImageInput("photo.jpeg", "image/jpeg", "/9j/")]));
+
+        var content = capturedRequest!.RootElement.GetProperty("messages")[1].GetProperty("content");
+        content[0].GetProperty("text").GetString().Should().Be("Describe it.");
+        content[1].GetProperty("image_url").GetProperty("url").GetString()
+            .Should().Be("data:image/jpeg;base64,/9j/");
+        capturedRequest.Dispose();
+    }
+
     private sealed class NullCredentialAccessor : IAiProviderCredentialAccessor
     {
         public ValueTask<string?> GetCredentialAsync(

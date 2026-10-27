@@ -14,7 +14,8 @@ namespace TeamHub.Web.Pages;
 public sealed class AIChatModel(
     IAiChatService chat,
     ICurrentAccessService access,
-    IAiConfigurationService configuration) : PageModel
+    IAiConfigurationService configuration,
+    IAiChatDocumentExtractor documentExtractor) : PageModel
 {
     public IReadOnlyList<AiModelCatalogItem> Models { get; private set; } = [];
     public string? LoadError { get; private set; }
@@ -69,6 +70,20 @@ public sealed class AIChatModel(
             if (!Enum.TryParse<AiChatMode>(input.Mode, true, out var mode))
                 return BadRequest(new { error = "Select TeamHub or General chat mode." });
 
+            IReadOnlyList<AiChatDocument> documents = [];
+            IReadOnlyList<AiImageInput> images = [];
+            if (mode == AiChatMode.General && input.Documents.Count > 0)
+            {
+                var chatSettings = (await configuration.GetAsync(cancellationToken)).Chat;
+                var attachments = await documentExtractor.ExtractAsync(
+                    input.Documents,
+                    chatSettings.MaximumDocuments,
+                    chatSettings.MaximumDocumentCharacters,
+                    cancellationToken);
+                documents = attachments.Documents;
+                images = attachments.Images;
+            }
+
             var latestQuestion = input.Messages.LastOrDefault(message =>
                 string.Equals(message.Role, "user", StringComparison.OrdinalIgnoreCase))?.Content ?? string.Empty;
             var requestedExternalSources = mode == AiChatMode.TeamHub
@@ -104,7 +119,7 @@ public sealed class AIChatModel(
                     current.User.DisplayName,
                     current.User.UserType,
                     approvedExternalSources),
-                new AiChatRequest(mode, input.Model, input.Messages, input.Documents),
+                new AiChatRequest(mode, input.Model, input.Messages, documents, images),
                 cancellationToken);
             return new JsonResult(response);
         }
@@ -136,7 +151,7 @@ public sealed class AIChatModel(
         public string Model { get; set; } = string.Empty;
 
         public List<AiChatMessage> Messages { get; set; } = [];
-        public List<AiChatDocument> Documents { get; set; } = [];
+        public List<AiChatUploadDocument> Documents { get; set; } = [];
         public string? ExternalAccessDecision { get; set; }
         public List<string> ApprovedExternalSources { get; set; } = [];
     }

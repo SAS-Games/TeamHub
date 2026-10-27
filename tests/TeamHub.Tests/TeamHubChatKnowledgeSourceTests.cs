@@ -31,6 +31,7 @@ public sealed class TeamHubChatKnowledgeSourceTests
         var page = new AIChatModel(
             chat,
             new ModuleAccessService(user, TeamHubModules.SupportSummary),
+            null!,
             null!);
 
         var result = await page.OnPostMessageAsync(new AIChatModel.ChatInput
@@ -59,6 +60,7 @@ public sealed class TeamHubChatKnowledgeSourceTests
         var page = new AIChatModel(
             chat,
             new ModuleAccessService(user, TeamHubModules.SupportSummary),
+            null!,
             null!);
 
         await page.OnPostMessageAsync(new AIChatModel.ChatInput

@@ -54,6 +54,28 @@ public sealed class AiChatServiceTests
     }
 
     [Fact]
+    public async Task General_mode_forwards_images_as_multimodal_inputs()
+    {
+        var provider = new RecordingProvider();
+        await using var services = CreateServices(provider, new RecordingKnowledgeSource());
+        var chat = services.GetRequiredService<IAiChatService>();
+        var image = new AiImageInput("screen.png", "image/png", "iVBORw0KGgo=");
+
+        await chat.SendAsync(
+            User(),
+            new AiChatRequest(
+                AiChatMode.General,
+                "model-a",
+                [new AiChatMessage("user", "What is visible in this screenshot?")],
+                Images: [image]));
+
+        provider.LastRequest!.Images.Should().ContainSingle().Which.Should().Be(image);
+        provider.LastRequest.UserPrompt.Should().Contain("screen.png (image/png)");
+        provider.LastRequest.UserPrompt.Should().Contain("images are supplied separately");
+        provider.LastRequest.SystemPrompt.Should().Contain("inspect and describe their visible content");
+    }
+
+    [Fact]
     public async Task TeamHub_mode_uses_only_sources_returned_by_the_authorizing_adapter()
     {
         var source = new RecordingKnowledgeSource(

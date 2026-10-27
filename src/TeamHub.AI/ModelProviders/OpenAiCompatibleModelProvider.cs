@@ -113,7 +113,7 @@ public class OpenAiCompatibleModelProvider(
                 settings.Model,
                 [
                     new("system", request.SystemPrompt),
-                    new("user", request.UserPrompt)
+                    new("user", BuildChatUserContent(request))
                 ],
                 settings.Temperature,
                 request.MaximumOutputTokens,
@@ -241,9 +241,22 @@ public class OpenAiCompatibleModelProvider(
         return source;
     }
 
+    private static object BuildChatUserContent(AiStructuredGenerationRequest request)
+    {
+        if (request.Images is not { Count: > 0 }) return request.UserPrompt;
+        var parts = new List<object> { new { type = "text", text = request.UserPrompt } };
+        parts.AddRange(request.Images.Select(image => new
+        {
+            type = "image_url",
+            image_url = new { url = $"data:{image.MediaType};base64,{image.Base64Data}" }
+        }));
+        return parts;
+    }
+
     private sealed record ModelListResponse(IReadOnlyList<ModelDescription>? Data);
     private sealed record ModelDescription(string Id);
-    private sealed record ChatMessage(string Role, string Content);
+    private sealed record ChatRequestMessage(string Role, object Content);
+    private sealed record ChatResponseMessage(string Role, string Content);
     private sealed record JsonSchemaDefinition(string Name, bool Strict, JsonElement Schema);
     private sealed record ResponseFormat(
         string Type,
@@ -252,7 +265,7 @@ public class OpenAiCompatibleModelProvider(
         [property: JsonPropertyName("enable_thinking")] bool EnableThinking);
     private sealed record ChatCompletionRequest(
         string Model,
-        IReadOnlyList<ChatMessage> Messages,
+        IReadOnlyList<ChatRequestMessage> Messages,
         double Temperature,
         [property: JsonPropertyName("max_tokens")] int? MaximumOutputTokens,
         [property: JsonPropertyName("response_format")] ResponseFormat ResponseFormat,
@@ -265,7 +278,7 @@ public class OpenAiCompatibleModelProvider(
         [property: JsonPropertyName("prompt_tokens")] int PromptTokens,
         [property: JsonPropertyName("completion_tokens")] int CompletionTokens,
         [property: JsonPropertyName("total_tokens")] int TotalTokens);
-    private sealed record ChatChoice(ChatMessage Message);
+    private sealed record ChatChoice(ChatResponseMessage Message);
 }
 
 public sealed class OllamaModelProvider(

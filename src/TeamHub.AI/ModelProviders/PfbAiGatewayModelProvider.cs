@@ -207,8 +207,8 @@ public sealed class PfbAiGatewayModelProvider(
             ["model"] = settings.Model,
             ["messages"] = new[]
             {
-                new Dictionary<string, string> { ["role"] = "system", ["content"] = request.SystemPrompt },
-                new Dictionary<string, string> { ["role"] = "user", ["content"] = request.UserPrompt }
+                new Dictionary<string, object?> { ["role"] = "system", ["content"] = request.SystemPrompt },
+                new Dictionary<string, object?> { ["role"] = "user", ["content"] = BuildChatUserContent(request) }
             },
             ["temperature"] = settings.Temperature
         };
@@ -239,7 +239,7 @@ public sealed class PfbAiGatewayModelProvider(
         var payload = new Dictionary<string, object?>
         {
             ["model"] = settings.Model,
-            ["input"] = $"{request.SystemPrompt}\n\nUser request:\n{request.UserPrompt}",
+            ["input"] = BuildResponsesInput(request),
             ["temperature"] = settings.Temperature,
             ["text"] = new
             {
@@ -258,6 +258,43 @@ public sealed class PfbAiGatewayModelProvider(
             payload["reasoning"] = new { effort = "low" };
         return payload;
     }
+
+    private static object BuildChatUserContent(AiStructuredGenerationRequest request)
+    {
+        if (request.Images is not { Count: > 0 }) return request.UserPrompt;
+        var parts = new List<object> { new { type = "text", text = request.UserPrompt } };
+        parts.AddRange(request.Images.Select(image => new
+        {
+            type = "image_url",
+            image_url = new { url = DataUrl(image) }
+        }));
+        return parts;
+    }
+
+    private static object BuildResponsesInput(AiStructuredGenerationRequest request)
+    {
+        if (request.Images is not { Count: > 0 })
+            return $"{request.SystemPrompt}\n\nUser request:\n{request.UserPrompt}";
+
+        var userContent = new List<object> { new { type = "input_text", text = request.UserPrompt } };
+        userContent.AddRange(request.Images.Select(image => new
+        {
+            type = "input_image",
+            image_url = DataUrl(image)
+        }));
+        return new object[]
+        {
+            new
+            {
+                role = "system",
+                content = new object[] { new { type = "input_text", text = request.SystemPrompt } }
+            },
+            new { role = "user", content = userContent }
+        };
+    }
+
+    private static string DataUrl(AiImageInput image) =>
+        $"data:{image.MediaType};base64,{image.Base64Data}";
 
     private static async Task<GatewayResponse> PostWithRetryAsync(
         HttpClient client,
