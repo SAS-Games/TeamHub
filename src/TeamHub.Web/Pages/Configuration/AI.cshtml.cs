@@ -166,6 +166,7 @@ public sealed class AiSettingsInput
     public string PfbAiGatewayApiMode { get; set; } = "CommonChat";
 
     public bool OfflineOnly { get; set; } = true;
+    public bool ChatEnabled { get; set; }
     [Range(0, 2)] public double Temperature { get; set; }
     [Range(1, 1800)] public int TimeoutSeconds { get; set; } = 180;
     [StringLength(256)] public string CredentialEnvironmentVariable { get; set; } = "TEAMHUB_AI_PROVIDER_API_KEY";
@@ -221,6 +222,7 @@ public sealed class AiSettingsInput
             Endpoint = selected.Endpoint,
             Model = selected.Model,
             Providers = profiles,
+            ChatEnabled = ChatEnabled,
             OfflineOnly = OfflineOnly,
             Temperature = Temperature,
             TimeoutSeconds = TimeoutSeconds,
@@ -263,6 +265,7 @@ public sealed class AiSettingsInput
             PfbAiGatewayEndpoint = pfb.Endpoint,
             PfbAiGatewayModel = pfb.Model,
             PfbAiGatewayApiMode = string.IsNullOrWhiteSpace(pfb.ApiMode) ? "CommonChat" : pfb.ApiMode,
+            ChatEnabled = runtime.ChatEnabled,
             OfflineOnly = runtime.OfflineOnly,
             Temperature = runtime.Temperature,
             TimeoutSeconds = runtime.TimeoutSeconds,

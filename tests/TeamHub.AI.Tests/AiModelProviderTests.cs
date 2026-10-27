@@ -124,6 +124,74 @@ public sealed class AiModelProviderTests
     }
 
     [Fact]
+    public async Task Llama_cpp_chat_disables_reasoning_so_structured_content_is_returned()
+    {
+        var handler = new StubHttpMessageHandler(request =>
+        {
+            request.RequestUri.Should().Be("http://127.0.0.1:8080/v1/chat/completions");
+            using var payload = JsonDocument.Parse(request.Content!.ReadAsStringAsync().GetAwaiter().GetResult());
+            payload.RootElement.GetProperty("chat_template_kwargs")
+                .GetProperty("enable_thinking").GetBoolean().Should().BeFalse();
+            return JsonResponse("""{"choices":[{"message":{"role":"assistant","content":"{\"answer\":\"Hello\",\"sourceIds\":[]}"}}]}""");
+        });
+        var provider = new LlamaCppModelProvider(
+            new StubHttpClientFactory(handler),
+            new NullCredentialAccessor());
+        using var schema = JsonDocument.Parse("""{"type":"object"}""");
+        var settings = new AiProviderSettings(
+            AiModelProviderKeys.LlamaCpp,
+            new Uri("http://127.0.0.1:8080"),
+            "qwen3:8b",
+            0.2,
+            TimeSpan.FromSeconds(5),
+            string.Empty);
+
+        var result = await provider.GenerateStructuredAsync(
+            settings,
+            new AiStructuredGenerationRequest(
+                "Return JSON.",
+                "Create it.",
+                schema.RootElement.Clone(),
+                500));
+
+        result.Content.Should().Contain("Hello");
+    }
+
+    [Fact]
+    public async Task Provider_http_error_includes_the_safe_error_message()
+    {
+        var handler = new StubHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.BadRequest)
+        {
+            Content = new StringContent(
+                """{"error":{"message":"request exceeds the available context size"}}""",
+                Encoding.UTF8,
+                "application/json")
+        });
+        var provider = new LlamaCppModelProvider(
+            new StubHttpClientFactory(handler),
+            new NullCredentialAccessor());
+        using var schema = JsonDocument.Parse("""{"type":"object"}""");
+        var settings = new AiProviderSettings(
+            AiModelProviderKeys.LlamaCpp,
+            new Uri("http://127.0.0.1:8080"),
+            "qwen3:8b",
+            0.2,
+            TimeSpan.FromSeconds(5),
+            string.Empty);
+
+        var action = () => provider.GenerateStructuredAsync(
+            settings,
+            new AiStructuredGenerationRequest(
+                "Return JSON.",
+                "Create it.",
+                schema.RootElement.Clone(),
+                500));
+
+        await action.Should().ThrowAsync<AiModelProviderException>()
+            .WithMessage("*request exceeds the available context size*");
+    }
+
+    [Fact]
     public async Task Generic_open_ai_provider_can_use_legacy_top_level_settings()
     {
         var handler = CreateHealthyHandler(

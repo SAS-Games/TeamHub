@@ -8,7 +8,7 @@ namespace TeamHub.AI.ModelProviders;
 
 public class OpenAiCompatibleModelProvider(
     IHttpClientFactory httpClientFactory,
-    IAiProviderCredentialAccessor credentials) : IAiModelProvider
+    IAiProviderCredentialAccessor credentials) : IAiModelProvider, IAiModelCatalogProvider
 {
     private static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web)
     {
@@ -46,11 +46,50 @@ public class OpenAiCompatibleModelProvider(
         }
         catch (HttpRequestException)
         {
-            return new(false, Key, settings.Model, false, "Provider endpoint could not be reached.");
+            return new(false, Key, settings.Model, false, ConnectionFailureMessage(settings));
         }
         catch (JsonException)
         {
             return new(false, Key, settings.Model, false, "Provider returned an invalid model-list response.");
+        }
+    }
+
+    public async Task<IReadOnlyList<AiModelCatalogItem>> GetModelsAsync(
+        AiProviderSettings settings,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            using var timeout = CreateTimeout(settings, cancellationToken);
+            using var client = await CreateClientAsync(settings, timeout.Token);
+            using var response = await client.GetAsync("models", timeout.Token);
+            if (!response.IsSuccessStatusCode)
+                throw await CreateResponseExceptionAsync(
+                    response,
+                    "loading available models",
+                    timeout.Token);
+
+            var models = await response.Content.ReadFromJsonAsync<ModelListResponse>(SerializerOptions, timeout.Token);
+            return models?.Data?
+                .Where(model => !string.IsNullOrWhiteSpace(model.Id))
+                .Select(model => new AiModelCatalogItem(
+                    model.Id.Trim(), "chat", string.Empty, ["chat/completions"]))
+                .DistinctBy(model => model.Id, StringComparer.OrdinalIgnoreCase)
+                .OrderBy(model => model.Id, StringComparer.OrdinalIgnoreCase)
+                .ToList()
+                ?? [];
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            throw new AiModelProviderException("AI provider model discovery timed out.");
+        }
+        catch (HttpRequestException exception)
+        {
+            throw new AiModelProviderException(ConnectionFailureMessage(settings), exception);
+        }
+        catch (JsonException exception)
+        {
+            throw new AiModelProviderException("AI provider returned an invalid model-list response.", exception);
         }
     }
 
@@ -78,13 +117,18 @@ public class OpenAiCompatibleModelProvider(
                 ],
                 settings.Temperature,
                 request.MaximumOutputTokens,
-                new("json_schema", new("teamhub_structured_response", true, request.ResponseSchema)));
+                new("json_schema", new("teamhub_structured_response", true, request.ResponseSchema)),
+                string.Equals(Key, AiModelProviderKeys.LlamaCpp, StringComparison.OrdinalIgnoreCase)
+                    ? new(false)
+                    : null);
 
             using var response = await client.PostAsJsonAsync("chat/completions", payload, SerializerOptions, timeout.Token);
             if (!response.IsSuccessStatusCode)
             {
-                throw new AiModelProviderException(
-                    $"AI provider returned HTTP {(int)response.StatusCode} while generating structured content.");
+                throw await CreateResponseExceptionAsync(
+                    response,
+                    "generating structured content",
+                    timeout.Token);
             }
 
             var completion = await response.Content.ReadFromJsonAsync<ChatCompletionResponse>(SerializerOptions, timeout.Token)
@@ -103,7 +147,7 @@ public class OpenAiCompatibleModelProvider(
         }
         catch (HttpRequestException exception)
         {
-            throw new AiModelProviderException("AI provider endpoint could not be reached.", exception);
+            throw new AiModelProviderException(ConnectionFailureMessage(settings), exception);
         }
         catch (JsonException exception)
         {
@@ -117,6 +161,54 @@ public class OpenAiCompatibleModelProvider(
         return endpoint.EndsWith("/v1", StringComparison.OrdinalIgnoreCase)
             ? new Uri(endpoint + "/")
             : new Uri(endpoint + "/v1/");
+    }
+
+    private string ConnectionFailureMessage(AiProviderSettings settings)
+    {
+        var endpoint = settings.Endpoint.AbsoluteUri.TrimEnd('/');
+        return Key switch
+        {
+            AiModelProviderKeys.Ollama =>
+                $"Ollama is not running or cannot be reached at {endpoint}. Start Ollama and try again.",
+            AiModelProviderKeys.LlamaCpp =>
+                $"llama.cpp is not running or cannot be reached at {endpoint}. Start the configured llama.cpp server and try again.",
+            _ => $"The AI provider cannot be reached at {endpoint}. Check the endpoint in AI Services."
+        };
+    }
+
+    private static async Task<AiModelProviderException> CreateResponseExceptionAsync(
+        HttpResponseMessage response,
+        string action,
+        CancellationToken cancellationToken)
+    {
+        var detail = string.Empty;
+        try
+        {
+            var content = await response.Content.ReadAsStringAsync(cancellationToken);
+            if (!string.IsNullOrWhiteSpace(content))
+            {
+                using var document = JsonDocument.Parse(content);
+                var root = document.RootElement;
+                if (root.TryGetProperty("error", out var error))
+                {
+                    detail = error.ValueKind == JsonValueKind.String
+                        ? error.GetString() ?? string.Empty
+                        : error.TryGetProperty("message", out var message)
+                            ? message.GetString() ?? string.Empty
+                            : string.Empty;
+                }
+            }
+        }
+        catch (JsonException)
+        {
+            // Keep the stable HTTP error when a provider returns HTML or invalid JSON.
+        }
+
+        detail = detail.Replace('\r', ' ').Replace('\n', ' ').Trim();
+        if (detail.Length > 500) detail = detail[..500] + "…";
+        var suffix = detail.Length == 0 ? string.Empty : $" {detail}";
+        return new AiModelProviderException(
+            $"AI provider returned HTTP {(int)response.StatusCode} while {action}.{suffix}");
     }
 
     private async Task<HttpClient> CreateClientAsync(AiProviderSettings settings, CancellationToken cancellationToken)
@@ -148,12 +240,15 @@ public class OpenAiCompatibleModelProvider(
     private sealed record ResponseFormat(
         string Type,
         [property: JsonPropertyName("json_schema")] JsonSchemaDefinition JsonSchema);
+    private sealed record ChatTemplateOptions(
+        [property: JsonPropertyName("enable_thinking")] bool EnableThinking);
     private sealed record ChatCompletionRequest(
         string Model,
         IReadOnlyList<ChatMessage> Messages,
         double Temperature,
         [property: JsonPropertyName("max_tokens")] int? MaximumOutputTokens,
-        [property: JsonPropertyName("response_format")] ResponseFormat ResponseFormat);
+        [property: JsonPropertyName("response_format")] ResponseFormat ResponseFormat,
+        [property: JsonPropertyName("chat_template_kwargs")] ChatTemplateOptions? ChatTemplateKwargs);
     private sealed record ChatCompletionResponse(string? Id, IReadOnlyList<ChatChoice> Choices);
     private sealed record ChatChoice(ChatMessage Message);
 }

@@ -609,6 +609,7 @@ internal sealed class UserAccessService(
             (TeamHubModules.StudioConfiguration, TeamHubUserTypes.Privileged) => AccessLevel.Edit,
             (TeamHubModules.SupportSummary, TeamHubUserTypes.Registered or TeamHubUserTypes.Privileged) => AccessLevel.ReadOnly,
             (TeamHubModules.AiReports, TeamHubUserTypes.Registered or TeamHubUserTypes.Privileged) => AccessLevel.NoAccess,
+            (TeamHubModules.AiChat, TeamHubUserTypes.Registered or TeamHubUserTypes.Privileged) => AccessLevel.ReadOnly,
             (TeamHubModules.AtlassianConnection, TeamHubUserTypes.Registered or TeamHubUserTypes.Privileged) => AccessLevel.Edit,
             (TeamHubModules.Notifications, TeamHubUserTypes.Registered or TeamHubUserTypes.Privileged) => AccessLevel.ReadOnly,
             _ => AccessLevel.NoAccess

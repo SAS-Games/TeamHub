@@ -141,6 +141,20 @@
     }
 
     <section class="content-section mb-4">
+        <div class="section-heading"><div><span>Feature</span><h2>AI Chat</h2></div></div>
+        <div class="p-4">
+            <div class="form-check">
+                <input asp-for="Settings.ChatEnabled" class="form-check-input" />
+                <label asp-for="Settings.ChatEnabled" class="form-check-label">Enable AI Chat</label>
+            </div>
+            <div class="form-text">
+                AI Chat uses the active provider and lets users select from that provider's available models.
+                TeamHub mode applies module and workflow-assignment access checks; General mode cannot access TeamHub data.
+            </div>
+        </div>
+    </section>
+
+    <section class="content-section mb-4">
         <div class="section-heading"><div><span>Feature</span><h2>Flow Designer</h2></div></div>
         <div class="p-4 row g-3">
             <div class="col-12"><div class="form-check"><input asp-for="Settings.FlowDesignerEnabled" class="form-check-input" /><label asp-for="Settings.FlowDesignerEnabled" class="form-check-label">Enable Create with AI</label></div></div>

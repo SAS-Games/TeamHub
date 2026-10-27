@@ -1,0 +1,83 @@
+@page "/AIChat"
+@model TeamHub.Web.Pages.AIChatModel
+@using TeamHub.AI.Contracts
+@{
+    ViewData["Title"] = "AI Chat";
+}
+
+<div class="page-hero ai-chat-hero">
+    <div>
+        <div class="eyebrow">Secure assistant</div>
+        <h1>AI Chat</h1>
+        <p>Ask about information you are allowed to see in TeamHub, or switch to General mode for an isolated everyday assistant.</p>
+    </div>
+</div>
+
+@if (!string.IsNullOrWhiteSpace(Model.LoadError))
+{
+    <div class="alert alert-warning">
+        @Model.LoadError
+        @if (Model.IsChatEnabled
+            && string.Equals(Model.ActiveProvider, AiModelProviderKeys.PfbAiGateway, StringComparison.OrdinalIgnoreCase))
+        {
+            <a asp-page="/Profile/Atlassian" class="alert-link">Open My Connections</a>
+        }
+    </div>
+}
+
+<section class="content-section ai-chat-shell" data-ai-chat>
+    <div class="ai-chat-toolbar">
+        <div>
+            <label for="aiChatMode" class="form-label">Mode</label>
+            <select id="aiChatMode" class="form-select">
+                <option value="TeamHub">TeamHub mode</option>
+                <option value="General">General chat</option>
+            </select>
+        </div>
+        <div>
+            <label for="aiChatModel" class="form-label">Model <span class="text-secondary">(@Model.ActiveProvider)</span></label>
+            <select id="aiChatModel" class="form-select" disabled="@(Model.Models.Count == 0 ? "disabled" : null)">
+                @foreach (var item in Model.Models)
+                {
+                    var label = string.IsNullOrWhiteSpace(item.CostTier)
+                        ? item.Id
+                        : $"{item.Id} [{item.CostTier}]";
+                    <option value="@item.Id">@label</option>
+                }
+            </select>
+        </div>
+        <div class="ai-chat-mode-note" id="aiChatModeNote">
+            Uses only TeamHub information authorized for your account. Workflow results are limited to workflows assigned to you.
+        </div>
+    </div>
+
+    <div id="aiChatMessages" class="ai-chat-messages" aria-live="polite">
+        <div class="ai-chat-empty">
+            <strong>What would you like to know?</strong>
+            <span>Choose a model and ask a question. Credentials stay on the server and are never sent to this page.</span>
+        </div>
+    </div>
+
+    <form id="aiChatForm" method="post" class="ai-chat-composer">
+        @Html.AntiForgeryToken()
+        <div id="aiChatDocuments" class="ai-chat-documents d-none">
+            <label for="aiChatFiles" class="form-label">Optional documents</label>
+            <input id="aiChatFiles" type="file" class="form-control" multiple
+                   accept=".txt,.md,.markdown,.csv,.json,text/plain,text/markdown,text/csv,application/json" />
+            <div class="form-text">General mode supports text, Markdown, CSV, and JSON files. Maximum five files.</div>
+        </div>
+        <div class="d-flex gap-2 align-items-end">
+            <div class="flex-grow-1">
+                <label for="aiChatPrompt" class="visually-hidden">Message</label>
+                <textarea id="aiChatPrompt" class="form-control" rows="3" maxlength="8000"
+                          placeholder="Ask a question..." required></textarea>
+            </div>
+            <button id="aiChatSend" type="submit" class="btn btn-primary" disabled="@(Model.Models.Count == 0 ? "disabled" : null)">Send</button>
+        </div>
+        <div id="aiChatError" class="text-danger small" role="alert"></div>
+    </form>
+</section>
+
+@section Scripts {
+    <script src="~/js/ai-chat.js" asp-append-version="true"></script>
+}
