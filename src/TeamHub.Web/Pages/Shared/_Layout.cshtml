@@ -340,13 +340,13 @@
                     </div>
                     <div id="aiChatMeetingEditor" class="d-none mt-2">
                         <label for="aiChatMeetingDraft" class="small fw-semibold">Review and edit before posting</label>
-                        <textarea id="aiChatMeetingDraft" class="form-control font-monospace mt-1" rows="8"></textarea>
-                        <div class="d-flex flex-wrap gap-1 mt-1">
+                        <div class="teamhub-ai-chat-meeting-editor-toolbar d-flex flex-wrap gap-1 mt-1">
                             <select id="aiChatMeetingDestination" class="form-select form-select-sm flex-grow-1" aria-label="Studio"></select>
                             <button id="aiChatPublishNotes" type="button" class="btn btn-sm btn-primary">Post</button>
                         </div>
+                        <div id="aiChatMeetingStatus" class="small" aria-live="polite"></div>
+                        <textarea id="aiChatMeetingDraft" class="form-control font-monospace mt-1" rows="6"></textarea>
                     </div>
-                    <div id="aiChatMeetingStatus" class="small" aria-live="polite"></div>
                 </div>
                 <div id="aiChatError" class="text-danger small" role="alert"></div>
             </form>

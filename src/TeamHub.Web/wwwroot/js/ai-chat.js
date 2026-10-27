@@ -1163,7 +1163,14 @@
         if (meetingEditor.classList.contains("d-none")) return;
         if (meetingDraft && !meetingDraftDirty) meetingDraft.value = currentPublishableResponse();
         await loadMeetingDestinations();
-        meetingDraft?.focus();
+        if (widget) {
+            window.requestAnimationFrame(() => {
+                form.scrollTo({ top: Math.max(0, meetingEditor.offsetTop - 8), behavior: "smooth" });
+                meetingDraft?.focus({ preventScroll: true });
+            });
+        } else {
+            meetingDraft?.focus();
+        }
     });
     if (meetingDraft) meetingDraft.addEventListener("input", () => {
         meetingDraftDirty = true;

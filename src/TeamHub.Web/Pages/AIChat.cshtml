@@ -83,14 +83,14 @@
             </div>
             <div id="aiChatMeetingEditor" class="d-none mt-2">
                 <label for="aiChatMeetingDraft" class="form-label">Review and edit before posting</label>
-                <textarea id="aiChatMeetingDraft" class="form-control font-monospace" rows="12"></textarea>
-                <div class="d-flex flex-wrap gap-2 align-items-center mt-2">
+                <div class="d-flex flex-wrap gap-2 align-items-center mb-2">
                     <label for="aiChatMeetingDestination" class="form-label mb-0">Post to studio</label>
                     <select id="aiChatMeetingDestination" class="form-select form-select-sm w-auto" aria-label="Studio"></select>
                     <button id="aiChatPublishNotes" type="button" class="btn btn-sm btn-primary">Post to Teams</button>
                 </div>
+                <div id="aiChatMeetingStatus" class="small mb-2" aria-live="polite"></div>
+                <textarea id="aiChatMeetingDraft" class="form-control font-monospace" rows="12"></textarea>
             </div>
-            <div id="aiChatMeetingStatus" class="small mt-1" aria-live="polite"></div>
         </div>
         <div id="aiChatError" class="text-danger small" role="alert"></div>
     </form>
