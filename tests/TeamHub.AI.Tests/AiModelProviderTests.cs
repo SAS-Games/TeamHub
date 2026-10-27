@@ -132,7 +132,7 @@ public sealed class AiModelProviderTests
             using var payload = JsonDocument.Parse(request.Content!.ReadAsStringAsync().GetAwaiter().GetResult());
             payload.RootElement.GetProperty("chat_template_kwargs")
                 .GetProperty("enable_thinking").GetBoolean().Should().BeFalse();
-            return JsonResponse("""{"choices":[{"message":{"role":"assistant","content":"{\"answer\":\"Hello\",\"sourceIds\":[]}"}}]}""");
+            return JsonResponse("""{"choices":[{"message":{"role":"assistant","content":"{\"answer\":\"Hello\",\"sourceIds\":[]}"}}],"usage":{"prompt_tokens":40,"completion_tokens":10,"total_tokens":50}}""");
         });
         var provider = new LlamaCppModelProvider(
             new StubHttpClientFactory(handler),
@@ -155,6 +155,7 @@ public sealed class AiModelProviderTests
                 500));
 
         result.Content.Should().Contain("Hello");
+        result.Usage.Should().Be(new AiTokenUsage(40, 10, 50));
     }
 
     [Fact]
@@ -267,11 +268,12 @@ public sealed class AiModelProviderTests
             request.Headers.Authorization!.Parameter.Should().Be("test-jwt");
             using var payload = JsonDocument.Parse(request.Content!.ReadAsStringAsync().GetAwaiter().GetResult());
             payload.RootElement.GetProperty("model").GetString().Should().Be("gpt-5-nano");
+            payload.RootElement.GetProperty("reasoning_effort").GetString().Should().Be("low");
             payload.RootElement.TryGetProperty("response_format", out _).Should().BeFalse();
             return new HttpResponseMessage(HttpStatusCode.OK)
             {
                 Content = new StringContent(
-                    """{"id":"request-1","choices":[{"message":{"role":"assistant","content":"```json\n{\"answer\":true}\n```"}}]}""",
+                    """{"id":"request-1","choices":[{"message":{"role":"assistant","content":"```json\n{\"answer\":true}\n```"}}],"usage":{"prompt_tokens":120,"completion_tokens":30,"total_tokens":150}}""",
                     Encoding.UTF8,
                     "application/json")
             };
@@ -291,21 +293,23 @@ public sealed class AiModelProviderTests
 
         result.Content.Should().Be("{\"answer\":true}");
         result.Provider.Should().Be(AiModelProviderKeys.PfbAiGateway);
+        result.Usage.Should().Be(new AiTokenUsage(120, 30, 150));
     }
 
     [Fact]
-    public async Task Pfb_gateway_retries_a_length_limited_chat_response_with_more_output_tokens()
+    public async Task Pfb_gateway_retries_length_limited_chat_responses_until_the_answer_is_complete()
     {
         var requestCount = 0;
+        var expectedTokenLimits = new[] { 1_000, 4_000, 8_000, 16_000 };
         var handler = new StubHttpMessageHandler(request =>
         {
             requestCount++;
             using var payload = JsonDocument.Parse(request.Content!.ReadAsStringAsync().GetAwaiter().GetResult());
             payload.RootElement.GetProperty("max_tokens").GetInt32()
-                .Should().Be(requestCount == 1 ? 1_000 : 4_000);
-            return requestCount == 1
-                ? JsonResponse("""{"choices":[{"message":{"role":"assistant","content":null},"finish_reason":"length"}]}""")
-                : JsonResponse("""{"choices":[{"message":{"role":"assistant","content":"{\"answer\":true}"},"finish_reason":"stop"}]}""");
+                .Should().Be(expectedTokenLimits[requestCount - 1]);
+            return requestCount < expectedTokenLimits.Length
+                ? JsonResponse("""{"choices":[{"message":{"role":"assistant","content":"{\"answer\":\"partial"},"finish_reason":"length"}],"usage":{"prompt_tokens":100,"completion_tokens":20,"total_tokens":120}}""")
+                : JsonResponse("""{"choices":[{"message":{"role":"assistant","content":"{\"answer\":true}"},"finish_reason":"stop"}],"usage":{"prompt_tokens":100,"completion_tokens":10,"total_tokens":110}}""");
         });
         var provider = new PfbAiGatewayModelProvider(
             new StubHttpClientFactory(handler),
@@ -317,7 +321,8 @@ public sealed class AiModelProviderTests
             new AiStructuredGenerationRequest("Return JSON.", "Create it.", schema.RootElement.Clone(), 1_000));
 
         result.Content.Should().Be("{\"answer\":true}");
-        requestCount.Should().Be(2);
+        requestCount.Should().Be(4);
+        result.Usage.Should().Be(new AiTokenUsage(400, 70, 470));
     }
 
     [Fact]

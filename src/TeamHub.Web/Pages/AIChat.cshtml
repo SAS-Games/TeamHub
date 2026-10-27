@@ -74,6 +74,7 @@
             </div>
             <button id="aiChatSend" type="submit" class="btn btn-primary" disabled="@(Model.Models.Count == 0 ? "disabled" : null)">Send</button>
         </div>
+        <div id="aiChatUsage" class="ai-chat-session-usage" aria-live="polite">Session tokens: 0</div>
         <div id="aiChatError" class="text-danger small" role="alert"></div>
     </form>
 </section>

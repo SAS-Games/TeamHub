@@ -139,7 +139,15 @@ public class OpenAiCompatibleModelProvider(
                 throw new AiModelProviderException("AI provider response did not contain generated content.");
             }
 
-            return new(Key, settings.Model, content, completion.Id);
+            var usage = completion.Usage is null
+                ? null
+                : new AiTokenUsage(
+                    completion.Usage.PromptTokens,
+                    completion.Usage.CompletionTokens,
+                    completion.Usage.TotalTokens > 0
+                        ? completion.Usage.TotalTokens
+                        : completion.Usage.PromptTokens + completion.Usage.CompletionTokens);
+            return new(Key, settings.Model, content, completion.Id, usage);
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
@@ -249,7 +257,14 @@ public class OpenAiCompatibleModelProvider(
         [property: JsonPropertyName("max_tokens")] int? MaximumOutputTokens,
         [property: JsonPropertyName("response_format")] ResponseFormat ResponseFormat,
         [property: JsonPropertyName("chat_template_kwargs")] ChatTemplateOptions? ChatTemplateKwargs);
-    private sealed record ChatCompletionResponse(string? Id, IReadOnlyList<ChatChoice> Choices);
+    private sealed record ChatCompletionResponse(
+        string? Id,
+        IReadOnlyList<ChatChoice> Choices,
+        ChatCompletionUsage? Usage);
+    private sealed record ChatCompletionUsage(
+        [property: JsonPropertyName("prompt_tokens")] int PromptTokens,
+        [property: JsonPropertyName("completion_tokens")] int CompletionTokens,
+        [property: JsonPropertyName("total_tokens")] int TotalTokens);
     private sealed record ChatChoice(ChatMessage Message);
 }
 

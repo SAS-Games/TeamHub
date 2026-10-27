@@ -74,6 +74,7 @@ public sealed class AiChatServiceTests
         provider.LastRequest!.UserPrompt.Should().Contain("Only authorized workflow A");
         response.Citations.Should().ContainSingle()
             .Which.Should().Be(new AiChatCitation("workflow-a", "Workflow A"));
+        response.Usage.Should().Be(new AiTokenUsage(80, 20, 100));
     }
 
     [Theory]
@@ -339,7 +340,8 @@ public sealed class AiChatServiceTests
                 Key,
                 settings.Model,
                 $$"""{"answer":"Safe answer","sourceIds":{{sourceIds}}}""",
-                "request-1"));
+                "request-1",
+                new AiTokenUsage(80, 20, 100)));
         }
     }
 
@@ -359,7 +361,6 @@ public sealed class AiChatServiceTests
                 Runtime = new AiRuntimeOptions
                 {
                     Provider = providerKey,
-                    ChatEnabled = chatEnabled,
                     OfflineOnly = false,
                     Temperature = 0.2,
                     TimeoutSeconds = 30,
@@ -372,7 +373,8 @@ public sealed class AiChatServiceTests
                             ApiMode = "CommonChat"
                         }
                     }
-                }
+                },
+                Chat = new AiChatOptions { Enabled = chatEnabled }
             });
 
         public Task SaveAsync(

@@ -17,6 +17,7 @@ internal sealed class AiConfigurationService : IAiConfigurationService
     private readonly WorkflowDbContext dbContext;
     private readonly IDataProtector protector;
     private readonly IOptionsMonitor<AiRuntimeOptions> runtimeDefaults;
+    private readonly IOptionsMonitor<AiChatOptions> chatDefaults;
     private readonly IOptionsMonitor<AiFlowDesignerOptions> flowDefaults;
     private readonly IOptionsMonitor<AiReportGeneratorOptions> reportDefaults;
 
@@ -24,12 +25,14 @@ internal sealed class AiConfigurationService : IAiConfigurationService
         WorkflowDbContext dbContext,
         IDataProtectionProvider dataProtectionProvider,
         IOptionsMonitor<AiRuntimeOptions> runtimeDefaults,
+        IOptionsMonitor<AiChatOptions> chatDefaults,
         IOptionsMonitor<AiFlowDesignerOptions> flowDefaults,
         IOptionsMonitor<AiReportGeneratorOptions> reportDefaults)
     {
         this.dbContext = dbContext;
         protector = dataProtectionProvider.CreateProtector(ProtectorPurpose);
         this.runtimeDefaults = runtimeDefaults;
+        this.chatDefaults = chatDefaults;
         this.flowDefaults = flowDefaults;
         this.reportDefaults = reportDefaults;
     }
@@ -67,6 +70,7 @@ internal sealed class AiConfigurationService : IAiConfigurationService
         var snapshot = new AiConfigurationSnapshot
         {
             Runtime = request.Runtime,
+            Chat = request.Chat,
             FlowDesigner = request.FlowDesigner,
             ReportGenerator = request.ReportGenerator
         };
@@ -111,19 +115,37 @@ internal sealed class AiConfigurationService : IAiConfigurationService
             : Environment.GetEnvironmentVariable(settings.CredentialEnvironmentVariable);
     }
 
-    private AiConfigurationSnapshot CreateDefaults() => new()
+    private AiConfigurationSnapshot CreateDefaults()
     {
-        Runtime = Clone(runtimeDefaults.CurrentValue),
-        FlowDesigner = Clone(flowDefaults.CurrentValue),
-        ReportGenerator = Clone(reportDefaults.CurrentValue)
-    };
+        var runtime = Clone(runtimeDefaults.CurrentValue);
+        var chat = Clone(chatDefaults.CurrentValue);
+#pragma warning disable CS0618
+        if (!chat.Enabled && runtime.ChatEnabled) chat.Enabled = true;
+#pragma warning restore CS0618
+        return new AiConfigurationSnapshot
+        {
+            Runtime = runtime,
+            Chat = chat,
+            FlowDesigner = Clone(flowDefaults.CurrentValue),
+            ReportGenerator = Clone(reportDefaults.CurrentValue)
+        };
+    }
 
-    private static AiConfigurationSnapshot Deserialize(string json)
+    private AiConfigurationSnapshot Deserialize(string json)
     {
         try
         {
-            return JsonSerializer.Deserialize<AiConfigurationSnapshot>(json, SerializerOptions)
+            var snapshot = JsonSerializer.Deserialize<AiConfigurationSnapshot>(json, SerializerOptions)
                 ?? throw new InvalidOperationException("The saved AI configuration is empty.");
+            using var document = JsonDocument.Parse(json);
+            if (!document.RootElement.TryGetProperty("chat", out _))
+            {
+                snapshot.Chat = Clone(chatDefaults.CurrentValue);
+#pragma warning disable CS0618
+                snapshot.Chat.Enabled = snapshot.Runtime.ChatEnabled;
+#pragma warning restore CS0618
+            }
+            return snapshot;
         }
         catch (JsonException exception)
         {
@@ -171,6 +193,22 @@ internal sealed class AiConfigurationService : IAiConfigurationService
             throw new ArgumentException("Temperature must be between 0 and 2.");
         if (request.Runtime.TimeoutSeconds is < 1 or > 1800)
             throw new ArgumentException("Timeout must be between 1 and 1,800 seconds.");
+        if (request.Chat.MaximumMessages is < 1 or > 100)
+            throw new ArgumentException("AI Chat maximum messages must be between 1 and 100.");
+        if (request.Chat.MaximumMessageCharacters is < 100 or > 100_000)
+            throw new ArgumentException("AI Chat maximum message characters must be between 100 and 100,000.");
+        if (request.Chat.MaximumDocuments is < 0 or > 20)
+            throw new ArgumentException("AI Chat maximum documents must be between 0 and 20.");
+        if (request.Chat.MaximumDocumentCharacters is < 1_000 or > 1_000_000)
+            throw new ArgumentException("AI Chat maximum document characters must be between 1,000 and 1,000,000.");
+        if (request.Chat.MaximumKnowledgeCharacters is < 1_000 or > 1_000_000)
+            throw new ArgumentException("AI Chat maximum knowledge characters must be between 1,000 and 1,000,000.");
+        if (request.Chat.MaximumLocalPromptCharacters is < 2_000 or > 200_000)
+            throw new ArgumentException("AI Chat maximum local prompt characters must be between 2,000 and 200,000.");
+        if (request.Chat.MaximumInstructionCharacters is < 1_000 or > 200_000)
+            throw new ArgumentException("AI Chat maximum instruction characters must be between 1,000 and 200,000.");
+        if (request.Chat.MaximumOutputTokens is < 128 or > 32_000)
+            throw new ArgumentException("AI Chat maximum output tokens must be between 128 and 32,000.");
         if (request.FlowDesigner.MaximumSourceDocuments is < 1 or > 50)
             throw new ArgumentException("Maximum source documents must be between 1 and 50.");
         if (request.FlowDesigner.MaximumSourceCharacters is < 1_000 or > 2_000_000)

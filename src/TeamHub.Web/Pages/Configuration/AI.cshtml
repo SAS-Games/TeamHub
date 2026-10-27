@@ -142,14 +142,58 @@
 
     <section class="content-section mb-4">
         <div class="section-heading"><div><span>Feature</span><h2>AI Chat</h2></div></div>
-        <div class="p-4">
-            <div class="form-check">
+        <div class="p-4 row g-3">
+            <div class="col-12">
+              <div class="form-check">
                 <input asp-for="Settings.ChatEnabled" class="form-check-input" />
                 <label asp-for="Settings.ChatEnabled" class="form-check-label">Enable AI Chat</label>
+              </div>
+              <div class="form-text">
+                  Uses the active provider and lets users select from its available models. TeamHub mode applies access checks; General mode cannot access TeamHub data.
+              </div>
             </div>
-            <div class="form-text">
-                AI Chat uses the active provider and lets users select from that provider's available models.
-                TeamHub mode applies module and workflow-assignment access checks; General mode cannot access TeamHub data.
+            <div class="col-md-6 col-xl-3">
+                <label asp-for="Settings.ChatMaximumMessages" class="form-label"></label>
+                <input asp-for="Settings.ChatMaximumMessages" class="form-control" />
+                <span asp-validation-for="Settings.ChatMaximumMessages" class="text-danger"></span>
+            </div>
+            <div class="col-md-6 col-xl-3">
+                <label asp-for="Settings.ChatMaximumMessageCharacters" class="form-label"></label>
+                <input asp-for="Settings.ChatMaximumMessageCharacters" class="form-control" />
+                <span asp-validation-for="Settings.ChatMaximumMessageCharacters" class="text-danger"></span>
+            </div>
+            <div class="col-md-6 col-xl-3">
+                <label asp-for="Settings.ChatMaximumDocuments" class="form-label"></label>
+                <input asp-for="Settings.ChatMaximumDocuments" class="form-control" />
+                <span asp-validation-for="Settings.ChatMaximumDocuments" class="text-danger"></span>
+            </div>
+            <div class="col-md-6 col-xl-3">
+                <label asp-for="Settings.ChatMaximumDocumentCharacters" class="form-label"></label>
+                <input asp-for="Settings.ChatMaximumDocumentCharacters" class="form-control" />
+                <span asp-validation-for="Settings.ChatMaximumDocumentCharacters" class="text-danger"></span>
+            </div>
+            <div class="col-md-6 col-xl-3">
+                <label asp-for="Settings.ChatMaximumKnowledgeCharacters" class="form-label"></label>
+                <input asp-for="Settings.ChatMaximumKnowledgeCharacters" class="form-control" />
+                <span asp-validation-for="Settings.ChatMaximumKnowledgeCharacters" class="text-danger"></span>
+                <div class="form-text">Caps authorized TeamHub source content supplied to one request.</div>
+            </div>
+            <div class="col-md-6 col-xl-3">
+                <label asp-for="Settings.ChatMaximumLocalPromptCharacters" class="form-label"></label>
+                <input asp-for="Settings.ChatMaximumLocalPromptCharacters" class="form-control" />
+                <span asp-validation-for="Settings.ChatMaximumLocalPromptCharacters" class="text-danger"></span>
+                <div class="form-text">Applies when the selected provider runs locally.</div>
+            </div>
+            <div class="col-md-6 col-xl-3">
+                <label asp-for="Settings.ChatMaximumInstructionCharacters" class="form-label"></label>
+                <input asp-for="Settings.ChatMaximumInstructionCharacters" class="form-control" />
+                <span asp-validation-for="Settings.ChatMaximumInstructionCharacters" class="text-danger"></span>
+            </div>
+            <div class="col-md-6 col-xl-3">
+                <label asp-for="Settings.ChatMaximumOutputTokens" class="form-label"></label>
+                <input asp-for="Settings.ChatMaximumOutputTokens" class="form-control" />
+                <span asp-validation-for="Settings.ChatMaximumOutputTokens" class="text-danger"></span>
+                <div class="form-text">Initial response allowance. PFB can retry truncated responses up to 32,000 tokens.</div>
             </div>
         </div>
     </section>

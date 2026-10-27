@@ -52,6 +52,7 @@ public sealed class AIModel(
         {
             await configuration.SaveAsync(new SaveAiConfigurationRequest(
                 Settings.ToRuntimeOptions(),
+                Settings.ToChatOptions(),
                 Settings.ToFlowDesignerOptions(),
                 Settings.ToReportGeneratorOptions(),
                 Settings.Provider == AiModelProviderKeys.PfbAiGateway ? null : Credential,
@@ -166,7 +167,24 @@ public sealed class AiSettingsInput
     public string PfbAiGatewayApiMode { get; set; } = "CommonChat";
 
     public bool OfflineOnly { get; set; } = true;
+    [Display(Name = "Enable AI Chat")]
     public bool ChatEnabled { get; set; }
+    [Display(Name = "Maximum messages per conversation")]
+    [Range(1, 100)] public int ChatMaximumMessages { get; set; } = 20;
+    [Display(Name = "Maximum characters per message")]
+    [Range(100, 100_000)] public int ChatMaximumMessageCharacters { get; set; } = 8_000;
+    [Display(Name = "Maximum attached documents")]
+    [Range(0, 20)] public int ChatMaximumDocuments { get; set; } = 5;
+    [Display(Name = "Maximum combined document characters")]
+    [Range(1_000, 1_000_000)] public int ChatMaximumDocumentCharacters { get; set; } = 120_000;
+    [Display(Name = "Maximum TeamHub knowledge characters")]
+    [Range(1_000, 1_000_000)] public int ChatMaximumKnowledgeCharacters { get; set; } = 120_000;
+    [Display(Name = "Maximum local-model prompt characters")]
+    [Range(2_000, 200_000)] public int ChatMaximumLocalPromptCharacters { get; set; } = 18_000;
+    [Display(Name = "Maximum TeamHub instruction characters")]
+    [Range(1_000, 200_000)] public int ChatMaximumInstructionCharacters { get; set; } = 40_000;
+    [Display(Name = "Maximum output tokens per AI request")]
+    [Range(128, 32_000)] public int ChatMaximumOutputTokens { get; set; } = 2_000;
     [Range(0, 2)] public double Temperature { get; set; }
     [Range(1, 1800)] public int TimeoutSeconds { get; set; } = 180;
     [StringLength(256)] public string CredentialEnvironmentVariable { get; set; } = "TEAMHUB_AI_PROVIDER_API_KEY";
@@ -201,6 +219,19 @@ public sealed class AiSettingsInput
         WeeklyWorkSummaryPromptPath = WeeklyWorkSummaryPromptPath.Trim()
     };
 
+    public AiChatOptions ToChatOptions() => new()
+    {
+        Enabled = ChatEnabled,
+        MaximumMessages = ChatMaximumMessages,
+        MaximumMessageCharacters = ChatMaximumMessageCharacters,
+        MaximumDocuments = ChatMaximumDocuments,
+        MaximumDocumentCharacters = ChatMaximumDocumentCharacters,
+        MaximumKnowledgeCharacters = ChatMaximumKnowledgeCharacters,
+        MaximumLocalPromptCharacters = ChatMaximumLocalPromptCharacters,
+        MaximumInstructionCharacters = ChatMaximumInstructionCharacters,
+        MaximumOutputTokens = ChatMaximumOutputTokens
+    };
+
     public AiRuntimeOptions ToRuntimeOptions()
     {
         var profiles = new Dictionary<string, AiProviderProfileOptions>(StringComparer.OrdinalIgnoreCase)
@@ -222,7 +253,6 @@ public sealed class AiSettingsInput
             Endpoint = selected.Endpoint,
             Model = selected.Model,
             Providers = profiles,
-            ChatEnabled = ChatEnabled,
             OfflineOnly = OfflineOnly,
             Temperature = Temperature,
             TimeoutSeconds = TimeoutSeconds,
@@ -265,7 +295,15 @@ public sealed class AiSettingsInput
             PfbAiGatewayEndpoint = pfb.Endpoint,
             PfbAiGatewayModel = pfb.Model,
             PfbAiGatewayApiMode = string.IsNullOrWhiteSpace(pfb.ApiMode) ? "CommonChat" : pfb.ApiMode,
-            ChatEnabled = runtime.ChatEnabled,
+            ChatEnabled = snapshot.Chat.Enabled,
+            ChatMaximumMessages = snapshot.Chat.MaximumMessages,
+            ChatMaximumMessageCharacters = snapshot.Chat.MaximumMessageCharacters,
+            ChatMaximumDocuments = snapshot.Chat.MaximumDocuments,
+            ChatMaximumDocumentCharacters = snapshot.Chat.MaximumDocumentCharacters,
+            ChatMaximumKnowledgeCharacters = snapshot.Chat.MaximumKnowledgeCharacters,
+            ChatMaximumLocalPromptCharacters = snapshot.Chat.MaximumLocalPromptCharacters,
+            ChatMaximumInstructionCharacters = snapshot.Chat.MaximumInstructionCharacters,
+            ChatMaximumOutputTokens = snapshot.Chat.MaximumOutputTokens,
             OfflineOnly = runtime.OfflineOnly,
             Temperature = runtime.Temperature,
             TimeoutSeconds = runtime.TimeoutSeconds,

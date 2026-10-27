@@ -118,21 +118,24 @@ public sealed class PfbAiGatewayModelProvider(
                 throw new AiModelProviderException(GatewayErrorMessage(result.StatusCode, result.Body));
 
             var generated = ReadGeneratedContent(mode, result.Body);
-            if (string.IsNullOrWhiteSpace(generated.Content)
-                && generated.OutputLimitReached
-                && IncreaseOutputTokenLimit(payload, mode))
+            var usage = ReadTokenUsage(result.Body);
+            while (generated.OutputLimitReached && IncreaseOutputTokenLimit(payload, mode))
             {
                 result = await PostWithRetryAsync(client, path, payload, timeout.Token);
                 if (!result.IsSuccessStatusCode)
                     throw new AiModelProviderException(GatewayErrorMessage(result.StatusCode, result.Body));
                 generated = ReadGeneratedContent(mode, result.Body);
+                usage = AddTokenUsage(usage, ReadTokenUsage(result.Body));
             }
 
             var content = generated.Content;
+            if (generated.OutputLimitReached)
+                throw new AiModelProviderException(
+                    "PFB AI Gateway exhausted the output-token limit before completing the answer. Try again with a smaller date range or a larger chat output-token limit.");
             if (string.IsNullOrWhiteSpace(content))
                 throw new AiModelProviderException("PFB AI Gateway response did not contain generated content.");
 
-            return new(Key, settings.Model, StripCodeFence(content), result.RequestId);
+            return new(Key, settings.Model, StripCodeFence(content), result.RequestId, usage);
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
@@ -207,6 +210,8 @@ public sealed class PfbAiGatewayModelProvider(
         };
         if (request.MaximumOutputTokens.HasValue)
             payload["max_tokens"] = request.MaximumOutputTokens.Value;
+        if (UsesReasoningEffort(settings.Model))
+            payload["reasoning_effort"] = "low";
         if (includeSchema)
         {
             payload["response_format"] = new
@@ -245,6 +250,8 @@ public sealed class PfbAiGatewayModelProvider(
         };
         if (request.MaximumOutputTokens.HasValue)
             payload["max_output_tokens"] = request.MaximumOutputTokens.Value;
+        if (UsesReasoningEffort(settings.Model))
+            payload["reasoning"] = new { effort = "low" };
         return payload;
     }
 
@@ -258,12 +265,17 @@ public sealed class PfbAiGatewayModelProvider(
         {
             using var response = await client.PostAsJsonAsync(path, payload, cancellationToken);
             var body = await response.Content.ReadAsStringAsync(cancellationToken);
-            if (response.StatusCode == HttpStatusCode.BadRequest
-                && payload.Remove("temperature")
-                && body.Contains("temperature", StringComparison.OrdinalIgnoreCase)
-                && attempt < MaximumAttempts - 1)
+            if (response.StatusCode == HttpStatusCode.BadRequest && attempt < MaximumAttempts - 1)
             {
-                continue;
+                if (body.Contains("temperature", StringComparison.OrdinalIgnoreCase)
+                    && payload.Remove("temperature"))
+                    continue;
+                if (body.Contains("reasoning_effort", StringComparison.OrdinalIgnoreCase)
+                    && payload.Remove("reasoning_effort"))
+                    continue;
+                if (body.Contains("reasoning", StringComparison.OrdinalIgnoreCase)
+                    && payload.Remove("reasoning"))
+                    continue;
             }
 
             if (response.StatusCode is HttpStatusCode.TooManyRequests
@@ -288,11 +300,19 @@ public sealed class PfbAiGatewayModelProvider(
 
     private static string ReadChatContent(JsonElement root)
     {
+        if (root.TryGetProperty("output_text", out var rootOutputText)
+            && rootOutputText.ValueKind == JsonValueKind.String)
+            return rootOutputText.GetString() ?? string.Empty;
         if (!root.TryGetProperty("choices", out var choices)
             || choices.ValueKind != JsonValueKind.Array
             || choices.GetArrayLength() == 0)
             return string.Empty;
-        var message = choices[0].GetProperty("message");
+        if (choices[0].TryGetProperty("text", out var choiceText)
+            && choiceText.ValueKind == JsonValueKind.String)
+            return choiceText.GetString() ?? string.Empty;
+        if (!choices[0].TryGetProperty("message", out var message)
+            || message.ValueKind != JsonValueKind.Object)
+            return string.Empty;
         if (!message.TryGetProperty("content", out var content)) return string.Empty;
         if (content.ValueKind == JsonValueKind.String) return content.GetString() ?? string.Empty;
         if (content.ValueKind != JsonValueKind.Array) return string.Empty;
@@ -367,11 +387,55 @@ public sealed class PfbAiGatewayModelProvider(
         if (!payload.TryGetValue(property, out var configured) || configured is not int current)
             return false;
 
-        const int maximumRetryTokens = 8_000;
+        const int maximumRetryTokens = 32_000;
         if (current >= maximumRetryTokens) return false;
         payload[property] = Math.Min(maximumRetryTokens, Math.Max(current * 2, 4_000));
         return true;
     }
+
+    private static AiTokenUsage? ReadTokenUsage(string body)
+    {
+        using var document = JsonDocument.Parse(body);
+        var root = document.RootElement;
+        if (!root.TryGetProperty("usage", out var usage) || usage.ValueKind != JsonValueKind.Object)
+            return null;
+
+        var input = ReadUsageValue(usage, "input_tokens", "prompt_tokens", "inputTokens", "promptTokens");
+        var output = ReadUsageValue(usage, "output_tokens", "completion_tokens", "outputTokens", "completionTokens");
+        var total = ReadUsageValue(usage, "total_tokens", "totalTokens");
+        if (input == 0 && output == 0 && total == 0) return null;
+        if (total == 0) total = input + output;
+        return new AiTokenUsage(input, output, total);
+    }
+
+    private static int ReadUsageValue(JsonElement usage, params string[] names)
+    {
+        foreach (var name in names)
+        {
+            if (usage.TryGetProperty(name, out var value)
+                && value.ValueKind == JsonValueKind.Number
+                && value.TryGetInt32(out var count)
+                && count >= 0)
+                return count;
+        }
+        return 0;
+    }
+
+    private static AiTokenUsage? AddTokenUsage(AiTokenUsage? current, AiTokenUsage? next)
+    {
+        if (current is null) return next;
+        if (next is null) return current;
+        return new AiTokenUsage(
+            checked(current.InputTokens + next.InputTokens),
+            checked(current.OutputTokens + next.OutputTokens),
+            checked(current.TotalTokens + next.TotalTokens));
+    }
+
+    private static bool UsesReasoningEffort(string model) =>
+        model.StartsWith("gpt-5", StringComparison.OrdinalIgnoreCase)
+        || model.StartsWith("o1", StringComparison.OrdinalIgnoreCase)
+        || model.StartsWith("o3", StringComparison.OrdinalIgnoreCase)
+        || model.StartsWith("o4", StringComparison.OrdinalIgnoreCase);
 
     private static void CollectModels(
         JsonElement element,

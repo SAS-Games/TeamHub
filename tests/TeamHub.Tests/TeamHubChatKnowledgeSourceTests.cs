@@ -153,6 +153,43 @@ public sealed class TeamHubChatKnowledgeSourceTests
     }
 
     [Fact]
+    public async Task Team_mode_uses_the_requested_three_month_period_for_effort_charts()
+    {
+        var user = new AuthorizedUserRecord(
+            Guid.NewGuid(), "user@example.com", null, "Test User", TeamHubUserTypes.Registered,
+            true, true, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow);
+        var effort = new RecordingEffortService();
+        var source = new SupportSummaryChatKnowledgeSource(
+            new ModuleAccessService(user, TeamHubModules.SupportSummary),
+            new StubStudioService(new StudioDetails
+            {
+                Id = "studio-1",
+                StudioName = "Example Studio",
+                ProjectName = "Example Project",
+                IsActive = true
+            }),
+            new StubMilestoneService(),
+            new StubPlanningService(),
+            new StubJiraService(),
+            new ThrowingConfluenceService(),
+            effort);
+
+        var result = await source.SearchAsync(
+            new AiChatUserContext(
+                user.UserId,
+                user.DisplayName,
+                user.UserType,
+                new HashSet<string>([AiChatExternalSources.Jira], StringComparer.OrdinalIgnoreCase)),
+            "Create an effort chart for Rohith for the last 3 months.");
+
+        var today = DateOnly.FromDateTime(DateTime.Today);
+        effort.StartDate.Should().Be(today.AddMonths(-3));
+        effort.EndDate.Should().Be(today);
+        effort.RequestingUserId.Should().Be(user.UserId);
+        result.Single(item => item.Id == "teamhub-support-effort").Content.Should().Contain("Rohith");
+    }
+
+    [Fact]
     public async Task Team_mode_does_not_access_jira_or_confluence_without_question_consent()
     {
         var user = new AuthorizedUserRecord(
@@ -459,6 +496,34 @@ public sealed class TeamHubChatKnowledgeSourceTests
             string requestingUserId,
             bool allowPrivilegedDefaultCredential,
             CancellationToken cancellationToken = default) => throw new NotSupportedException();
+    }
+
+    private sealed class RecordingEffortService : IWorklogEffortService
+    {
+        public DateOnly StartDate { get; private set; }
+        public DateOnly EndDate { get; private set; }
+        public string? RequestingUserId { get; private set; }
+
+        public Task<WorklogEffortReport> GetActualEffortAsync(
+            DateOnly startDate,
+            DateOnly endDate,
+            string requestingUserId,
+            bool allowPrivilegedDefaultCredential,
+            CancellationToken cancellationToken = default)
+        {
+            StartDate = startDate;
+            EndDate = endDate;
+            RequestingUserId = requestingUserId;
+            return Task.FromResult(new WorklogEffortReport
+            {
+                EmployeeEffortBreakdowns =
+                [
+                    new WorklogEmployeeEffort(
+                        "Rohith Nathan Baskaran",
+                        [new WorklogEffortSlice("Studio support", 42)])
+                ]
+            });
+        }
     }
 
     private sealed class EmptyReviewService : IMilestoneReviewService

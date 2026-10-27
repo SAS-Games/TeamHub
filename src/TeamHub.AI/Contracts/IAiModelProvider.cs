@@ -74,7 +74,13 @@ public sealed record AiStructuredGenerationResult(
     string Provider,
     string Model,
     string Content,
-    string? RequestId = null);
+    string? RequestId = null,
+    AiTokenUsage? Usage = null);
+
+public sealed record AiTokenUsage(
+    int InputTokens,
+    int OutputTokens,
+    int TotalTokens);
 
 public sealed class AiModelProviderException : Exception
 {

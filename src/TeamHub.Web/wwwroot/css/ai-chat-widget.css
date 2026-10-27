@@ -251,6 +251,21 @@ html.teamhub-ai-chat-resizing * {
   font-size: .72rem;
 }
 
+.teamhub-ai-chat-panel .ai-chat-token-usage,
+.teamhub-ai-chat-panel .ai-chat-session-usage {
+  color: var(--text-muted-color);
+  font-size: .7rem;
+}
+
+.teamhub-ai-chat-panel .ai-chat-token-usage {
+  margin-top: .4rem;
+}
+
+.teamhub-ai-chat-panel .ai-chat-session-usage {
+  margin-top: .35rem;
+  text-align: right;
+}
+
 .teamhub-ai-chat-panel .ai-chat-message-actions {
   display: flex;
   justify-content: flex-end;

@@ -10,6 +10,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
 using TeamHub.AI;
 using TeamHub.AI.Contracts;
+using TeamHub.Domain.Entities;
 using TeamHub.Infrastructure.Persistence;
 using TeamHub.Infrastructure.Services;
 using TeamHub.Web.Pages.Configuration;
@@ -28,9 +29,10 @@ public sealed class AiConfigurationTests
         using var defaults = CreateOptions();
         var configuration = new AiConfigurationService(context, new EphemeralDataProtectionProvider(),
             defaults.GetRequiredService<IOptionsMonitor<AiRuntimeOptions>>(),
+            defaults.GetRequiredService<IOptionsMonitor<AiChatOptions>>(),
             defaults.GetRequiredService<IOptionsMonitor<AiFlowDesignerOptions>>(),
             defaults.GetRequiredService<IOptionsMonitor<AiReportGeneratorOptions>>());
-        await configuration.SaveAsync(new(new(), new(), new(), "shared-token", false, "admin"));
+        await configuration.SaveAsync(new(new(), new(), new(), new(), "shared-token", false, "admin"));
         var personal = new PersonalGatewayCredentials();
         await personal.SaveTokenAsync("one@example.com", "one-token");
         await personal.SaveTokenAsync("two@example.com", "two-token");
@@ -64,9 +66,10 @@ public sealed class AiConfigurationTests
         using var defaults = CreateOptions();
         var configuration = new AiConfigurationService(context, new EphemeralDataProtectionProvider(),
             defaults.GetRequiredService<IOptionsMonitor<AiRuntimeOptions>>(),
+            defaults.GetRequiredService<IOptionsMonitor<AiChatOptions>>(),
             defaults.GetRequiredService<IOptionsMonitor<AiFlowDesignerOptions>>(),
             defaults.GetRequiredService<IOptionsMonitor<AiReportGeneratorOptions>>());
-        await configuration.SaveAsync(new(new(), new(), new(), "shared-token", false, "admin"));
+        await configuration.SaveAsync(new(new(), new(), new(), new(), "shared-token", false, "admin"));
         var accessor = new PersonalAiProviderCredentialAccessor(new HttpContextAccessor(), new PersonalGatewayCredentials(), configuration);
         var settings = new AiRuntimeOptions { Provider = providerKey }.ToProviderSettings();
         (await accessor.GetCredentialAsync(settings)).Should().Be("shared-token");
@@ -98,6 +101,7 @@ public sealed class AiConfigurationTests
             context,
             new EphemeralDataProtectionProvider(),
             options.GetRequiredService<IOptionsMonitor<AiRuntimeOptions>>(),
+            options.GetRequiredService<IOptionsMonitor<AiChatOptions>>(),
             options.GetRequiredService<IOptionsMonitor<AiFlowDesignerOptions>>(),
             options.GetRequiredService<IOptionsMonitor<AiReportGeneratorOptions>>());
 
@@ -118,6 +122,7 @@ public sealed class AiConfigurationTests
                 TimeoutSeconds = 90,
                 CredentialEnvironmentVariable = "AI_TEST_KEY"
             },
+            new AiChatOptions { Enabled = true, MaximumOutputTokens = 6_000 },
             new AiFlowDesignerOptions { Enabled = true },
             new AiReportGeneratorOptions { Enabled = false },
             "super-secret",
@@ -132,6 +137,8 @@ public sealed class AiConfigurationTests
 
         var current = await service.GetAsync();
         current.Runtime.Provider.Should().Be(AiModelProviderKeys.LlamaCpp);
+        current.Chat.Enabled.Should().BeTrue();
+        current.Chat.MaximumOutputTokens.Should().Be(6_000);
         current.FlowDesigner.Enabled.Should().BeTrue();
         current.HasCredential.Should().BeTrue();
         current.UpdatedBy.Should().Be("admin@example.com");
@@ -157,6 +164,33 @@ public sealed class AiConfigurationTests
     }
 
     [Fact]
+    public async Task Legacy_saved_chat_enabled_setting_migrates_to_the_AI_Chat_section()
+    {
+        await using var context = CreateDbContext();
+        context.AiConfiguration.Add(new AiConfigurationRecord
+        {
+            Id = 1,
+            SettingsJson = """{"runtime":{"chatEnabled":true},"flowDesigner":{},"reportGenerator":{}}""",
+            UpdatedAtUtc = DateTime.UtcNow,
+            UpdatedBy = "legacy-admin"
+        });
+        await context.SaveChangesAsync();
+        using var defaults = CreateOptions();
+        var configuration = new AiConfigurationService(
+            context, new EphemeralDataProtectionProvider(),
+            defaults.GetRequiredService<IOptionsMonitor<AiRuntimeOptions>>(),
+            defaults.GetRequiredService<IOptionsMonitor<AiChatOptions>>(),
+            defaults.GetRequiredService<IOptionsMonitor<AiFlowDesignerOptions>>(),
+            defaults.GetRequiredService<IOptionsMonitor<AiReportGeneratorOptions>>());
+
+        var snapshot = await configuration.GetAsync();
+
+        snapshot.Chat.Enabled.Should().BeTrue();
+        snapshot.Chat.MaximumMessages.Should().Be(20);
+        snapshot.Chat.MaximumOutputTokens.Should().Be(2_000);
+    }
+
+    [Fact]
     public async Task Ai_page_saves_and_reloads_report_settings_and_uses_shared_provider_and_credential()
     {
         await using var context = CreateDbContext();
@@ -164,6 +198,7 @@ public sealed class AiConfigurationTests
         var configuration = new AiConfigurationService(
             context, new EphemeralDataProtectionProvider(),
             defaults.GetRequiredService<IOptionsMonitor<AiRuntimeOptions>>(),
+            defaults.GetRequiredService<IOptionsMonitor<AiChatOptions>>(),
             defaults.GetRequiredService<IOptionsMonitor<AiFlowDesignerOptions>>(),
             defaults.GetRequiredService<IOptionsMonitor<AiReportGeneratorOptions>>());
         var probe = new RecordingProvider(configuration);
@@ -182,6 +217,14 @@ public sealed class AiConfigurationTests
             {
                 Provider = AiModelProviderKeys.LlamaCpp,
                 ChatEnabled = true,
+                ChatMaximumMessages = 30,
+                ChatMaximumMessageCharacters = 9000,
+                ChatMaximumDocuments = 7,
+                ChatMaximumDocumentCharacters = 130000,
+                ChatMaximumKnowledgeCharacters = 140000,
+                ChatMaximumLocalPromptCharacters = 20000,
+                ChatMaximumInstructionCharacters = 50000,
+                ChatMaximumOutputTokens = 6000,
                 LlamaCppModel = "saved-model",
                 FlowDesignerEnabled = true,
                 ReportGeneratorEnabled = true,
@@ -202,13 +245,22 @@ public sealed class AiConfigurationTests
         page.Settings.WeeklyWorkSummaryPromptPath.Should().Be("Prompts/custom.md");
         page.Settings.FlowDesignerEnabled.Should().BeTrue();
         page.Settings.ChatEnabled.Should().BeTrue();
+        page.Settings.ChatMaximumMessages.Should().Be(30);
+        page.Settings.ChatMaximumMessageCharacters.Should().Be(9000);
+        page.Settings.ChatMaximumDocuments.Should().Be(7);
+        page.Settings.ChatMaximumDocumentCharacters.Should().Be(130000);
+        page.Settings.ChatMaximumKnowledgeCharacters.Should().Be(140000);
+        page.Settings.ChatMaximumLocalPromptCharacters.Should().Be(20000);
+        page.Settings.ChatMaximumInstructionCharacters.Should().Be(50000);
+        page.Settings.ChatMaximumOutputTokens.Should().Be(6000);
         page.Credential = null;
         (await page.OnPostTestAsync(CancellationToken.None)).Should().BeOfType<PageResult>();
         page.TestResult!.IsAvailable.Should().BeTrue();
         probe.Settings!.Model.Should().Be("saved-model");
         probe.Credential.Should().Be("synthetic-provider-key");
         (await configuration.GetAsync()).ReportGenerator.Enabled.Should().BeTrue();
-        (await configuration.GetAsync()).Runtime.ChatEnabled.Should().BeTrue();
+        (await configuration.GetAsync()).Chat.Enabled.Should().BeTrue();
+        (await configuration.GetAsync()).Chat.MaximumOutputTokens.Should().Be(6000);
 
         page.Settings.ReportGeneratorEnabled = false;
         await page.OnPostSaveAsync(CancellationToken.None);
@@ -239,10 +291,11 @@ public sealed class AiConfigurationTests
         var configuration = new AiConfigurationService(
             context, new EphemeralDataProtectionProvider(),
             defaults.GetRequiredService<IOptionsMonitor<AiRuntimeOptions>>(),
+            defaults.GetRequiredService<IOptionsMonitor<AiChatOptions>>(),
             defaults.GetRequiredService<IOptionsMonitor<AiFlowDesignerOptions>>(),
             defaults.GetRequiredService<IOptionsMonitor<AiReportGeneratorOptions>>());
         var save = () => configuration.SaveAsync(new SaveAiConfigurationRequest(
-            new AiRuntimeOptions(), new AiFlowDesignerOptions(),
+            new AiRuntimeOptions(), new AiChatOptions(), new AiFlowDesignerOptions(),
             new AiReportGeneratorOptions
             {
                 Enabled = true, MaximumConcurrentRequests = concurrency,
@@ -250,6 +303,39 @@ public sealed class AiConfigurationTests
                 WeeklyWorkSummaryPromptPath = prompt
             }, null, false, "admin@example.com"));
         await save.Should().ThrowAsync<ArgumentException>();
+        (await context.AiConfiguration.AnyAsync()).Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task Saved_chat_settings_reject_invalid_limits()
+    {
+        await using var context = CreateDbContext();
+        using var defaults = CreateOptions();
+        var configuration = new AiConfigurationService(
+            context, new EphemeralDataProtectionProvider(),
+            defaults.GetRequiredService<IOptionsMonitor<AiRuntimeOptions>>(),
+            defaults.GetRequiredService<IOptionsMonitor<AiChatOptions>>(),
+            defaults.GetRequiredService<IOptionsMonitor<AiFlowDesignerOptions>>(),
+            defaults.GetRequiredService<IOptionsMonitor<AiReportGeneratorOptions>>());
+        var invalidSettings = new AiChatOptions[]
+        {
+            new() { MaximumMessages = 0 },
+            new() { MaximumMessageCharacters = 99 },
+            new() { MaximumDocuments = 21 },
+            new() { MaximumDocumentCharacters = 999 },
+            new() { MaximumKnowledgeCharacters = 1_000_001 },
+            new() { MaximumLocalPromptCharacters = 1_999 },
+            new() { MaximumInstructionCharacters = 999 },
+            new() { MaximumOutputTokens = 32_001 }
+        };
+
+        foreach (var chat in invalidSettings)
+        {
+            var save = () => configuration.SaveAsync(new SaveAiConfigurationRequest(
+                new AiRuntimeOptions(), chat, new AiFlowDesignerOptions(), new AiReportGeneratorOptions(),
+                null, false, "admin@example.com"));
+            await save.Should().ThrowAsync<ArgumentException>();
+        }
         (await context.AiConfiguration.AnyAsync()).Should().BeFalse();
     }
 
@@ -285,6 +371,7 @@ public sealed class AiConfigurationTests
             options.Model = "bootstrap-model";
         });
         services.AddOptions<AiFlowDesignerOptions>();
+        services.AddOptions<AiChatOptions>();
         services.AddOptions<AiReportGeneratorOptions>();
         return services.BuildServiceProvider();
     }

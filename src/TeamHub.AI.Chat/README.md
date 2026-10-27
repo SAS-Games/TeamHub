@@ -25,5 +25,21 @@ used only in the server-side provider client and are never included in prompts o
    perform module and row-level authorization before returning data.
 5. Call `IAiChatService.GetModelsAsync` and `IAiChatService.SendAsync` from the host UI or API.
 
+## Token limits and usage
+
+`MaximumOutputTokens` is the initial output allowance sent with each chat generation request. It
+defaults to `2000` and accepts values from `128` through `32000`. Administrators manage it, together
+with the other Chat limits, in **Configuration > AI Services > AI Chat**. Saved values apply to new
+requests immediately and are stored with the AI Services configuration. Configuration-provider
+values under `AI:Chat` can optionally override bootstrap defaults before an administrator saves the
+first configuration. Higher values can increase response time and provider usage.
+The PFB gateway adapter can retry a response that ends at the token limit, progressively increasing
+the allowance up to `32000`.
+
+When a provider returns its token-usage metadata, `AiChatResponse.Usage` contains the input, output,
+and total token counts. The web chat displays these counts on each response and totals them for the
+current browser chat session. Providers that omit usage metadata are shown as not reported; the UI
+does not present an estimate as an actual provider charge.
+
 Do not place API keys, bearer tokens, connection strings, or authorization metadata in an
 `AiChatSource`.

@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace TeamHub.AI.Contracts;
 
 public sealed class AiRuntimeOptions
@@ -8,6 +10,8 @@ public sealed class AiRuntimeOptions
     public string Endpoint { get; set; } = "http://127.0.0.1:11434";
     public string Model { get; set; } = "qwen3:8b";
     public string ApiMode { get; set; } = string.Empty;
+    [Obsolete("Use AiConfigurationSnapshot.Chat.Enabled.")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
     public bool ChatEnabled { get; set; }
     public Dictionary<string, AiProviderProfileOptions> Providers { get; set; } =
         new(StringComparer.OrdinalIgnoreCase);
@@ -69,6 +73,21 @@ public sealed class AiRuntimeOptions
         && endpoint.IsLoopback;
 }
 
+public sealed class AiChatOptions
+{
+    public const string SectionName = "AI:Chat";
+
+    public bool Enabled { get; set; } = true;
+    public int MaximumMessages { get; set; } = 20;
+    public int MaximumMessageCharacters { get; set; } = 8_000;
+    public int MaximumDocuments { get; set; } = 5;
+    public int MaximumDocumentCharacters { get; set; } = 120_000;
+    public int MaximumKnowledgeCharacters { get; set; } = 120_000;
+    public int MaximumLocalPromptCharacters { get; set; } = 18_000;
+    public int MaximumInstructionCharacters { get; set; } = 40_000;
+    public int MaximumOutputTokens { get; set; } = 2_000;
+}
+
 public sealed class AiFlowDesignerOptions
 {
     public const string SectionName = "AI:FlowDesigner";
@@ -97,6 +116,7 @@ public sealed class AiReportGeneratorOptions
 public sealed class AiConfigurationSnapshot
 {
     public AiRuntimeOptions Runtime { get; set; } = new();
+    public AiChatOptions Chat { get; set; } = new();
     public AiFlowDesignerOptions FlowDesigner { get; set; } = new();
     public AiReportGeneratorOptions ReportGenerator { get; set; } = new();
     public bool HasCredential { get; set; }
@@ -106,6 +126,7 @@ public sealed class AiConfigurationSnapshot
 
 public sealed record SaveAiConfigurationRequest(
     AiRuntimeOptions Runtime,
+    AiChatOptions Chat,
     AiFlowDesignerOptions FlowDesigner,
     AiReportGeneratorOptions ReportGenerator,
     string? Credential,

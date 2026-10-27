@@ -5,6 +5,7 @@ namespace TeamHub.AI.Application;
 
 internal sealed class OptionsAiConfigurationService(
     IOptionsMonitor<AiRuntimeOptions> runtimeOptions,
+    IOptionsMonitor<AiChatOptions> chatOptions,
     IOptionsMonitor<AiFlowDesignerOptions> flowDesignerOptions,
     IOptionsMonitor<AiReportGeneratorOptions> reportGeneratorOptions) : IAiConfigurationService
 {
@@ -12,10 +13,15 @@ internal sealed class OptionsAiConfigurationService(
     {
         cancellationToken.ThrowIfCancellationRequested();
         var runtime = runtimeOptions.CurrentValue;
+        var chat = chatOptions.CurrentValue;
+#pragma warning disable CS0618
+        if (!chat.Enabled && runtime.ChatEnabled) chat.Enabled = true;
+#pragma warning restore CS0618
         var credentialName = runtime.GetSelectedCredentialEnvironmentVariable();
         return Task.FromResult(new AiConfigurationSnapshot
         {
             Runtime = runtime,
+            Chat = chat,
             FlowDesigner = flowDesignerOptions.CurrentValue,
             ReportGenerator = reportGeneratorOptions.CurrentValue,
             HasCredential = !string.IsNullOrWhiteSpace(credentialName)

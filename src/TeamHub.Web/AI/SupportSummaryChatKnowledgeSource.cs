@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using TeamHub.AI.Chat.Contracts;
 using TeamHub.Authentication;
 using TeamHub.Milestones;
@@ -21,6 +22,10 @@ public sealed class SupportSummaryChatKnowledgeSource(
     IStudioConfluenceUpdateService confluence,
     IWorklogEffortService effort) : IAiChatKnowledgeSource
 {
+    private static readonly Regex RelativePeriodPattern = new(
+        @"\b(?:last|past|previous)\s+(?<count>\d{1,2})\s*(?<unit>days?|weeks?|months?)\b",
+        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant,
+        TimeSpan.FromMilliseconds(100));
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
     {
         WriteIndented = true
@@ -44,14 +49,13 @@ public sealed class SupportSummaryChatKnowledgeSource(
         if (!IsSupportSummaryQuestion(question, activeStudios)) return [];
 
         var today = DateOnly.FromDateTime(DateTime.Today);
-        var startDate = today.AddDays(-(((int)today.DayOfWeek + 6) % 7));
-        var endDate = startDate.AddDays(4);
+        var (startDate, endDate) = ResolveReportingPeriod(question, today);
         // Chat enrichment is intentionally limited to the signed-in user's own
         // Atlassian connection. Consent never authorizes a shared/default token.
         const bool allowSharedCredential = false;
         var sources = new List<AiChatSource>();
 
-        AddJsonSource(sources, "teamhub-support-summary-period", "Support Summary current reporting period", new
+        AddJsonSource(sources, "teamhub-support-summary-period", "Support Summary reporting period", new
         {
             StartDate = startDate,
             EndDate = endDate,
@@ -301,6 +305,25 @@ public sealed class SupportSummaryChatKnowledgeSource(
             "action item", "expected delivery", "build review", "effort", "worklog", "logged hours")
         || activeStudios.Any(studio =>
             ContainsPhrase(question, studio.StudioName) || ContainsPhrase(question, studio.ProjectName));
+
+    private static (DateOnly StartDate, DateOnly EndDate) ResolveReportingPeriod(
+        string question,
+        DateOnly today)
+    {
+        var match = RelativePeriodPattern.Match(question);
+        if (match.Success && int.TryParse(match.Groups["count"].Value, out var requestedCount))
+        {
+            var unit = match.Groups["unit"].Value;
+            if (unit.StartsWith("month", StringComparison.OrdinalIgnoreCase))
+                return (today.AddMonths(-Math.Clamp(requestedCount, 1, 12)), today);
+            if (unit.StartsWith("week", StringComparison.OrdinalIgnoreCase))
+                return (today.AddDays(-7 * Math.Clamp(requestedCount, 1, 52)), today);
+            return (today.AddDays(-Math.Clamp(requestedCount, 1, 366)), today);
+        }
+
+        var startOfWeek = today.AddDays(-(((int)today.DayOfWeek + 6) % 7));
+        return (startOfWeek, startOfWeek.AddDays(4));
+    }
 
     /// <summary>
     /// Determines which external systems could enrich a Support Summary question.

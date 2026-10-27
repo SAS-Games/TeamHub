@@ -23,9 +23,9 @@ public sealed class AIChatModel(
 
     public async Task OnGetAsync(CancellationToken cancellationToken)
     {
-        var runtime = (await configuration.GetAsync(cancellationToken)).Runtime;
-        ActiveProvider = runtime.Provider;
-        IsChatEnabled = runtime.ChatEnabled;
+        var snapshot = await configuration.GetAsync(cancellationToken);
+        ActiveProvider = snapshot.Runtime.Provider;
+        IsChatEnabled = snapshot.Chat.Enabled;
         try
         {
             Models = await chat.GetModelsAsync(cancellationToken);

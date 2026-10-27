@@ -1,4 +1,3 @@
-using Microsoft.Extensions.Options;
 using TeamHub.AI.Chat.Contracts;
 
 namespace TeamHub.Web.AI;
@@ -10,11 +9,9 @@ namespace TeamHub.Web.AI;
 /// </summary>
 public sealed class TeamHubAiInstructionFileProvider(
     IWebHostEnvironment environment,
-    IOptions<AiChatOptions> options,
     ILogger<TeamHubAiInstructionFileProvider> logger) : IAiChatInstructionProvider
 {
     private readonly string path = Path.Combine(environment.ContentRootPath, "AI", "TeamHubAI.md");
-    private readonly int maximumCharacters = options.Value.MaximumInstructionCharacters;
 
     public async Task<string> GetTeamHubInstructionsAsync(CancellationToken cancellationToken = default)
     {
@@ -27,14 +24,7 @@ public sealed class TeamHubAiInstructionFileProvider(
             }
 
             var content = await File.ReadAllTextAsync(path, cancellationToken);
-            if (content.Length <= maximumCharacters) return content.Trim();
-
-            logger.LogWarning(
-                "TeamHub AI playbook at {Path} exceeds {MaximumCharacters} characters and will be truncated.",
-                path,
-                maximumCharacters);
-            return content[..maximumCharacters]
-                + "\n\n[Playbook truncated by TeamHub at the configured character limit.]";
+            return content.Trim();
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
         {

@@ -76,6 +76,21 @@
     font-size: .8rem;
 }
 
+.ai-chat-token-usage,
+.ai-chat-session-usage {
+    color: var(--bs-secondary-color);
+    font-size: .75rem;
+}
+
+.ai-chat-token-usage {
+    margin-top: .45rem;
+}
+
+.ai-chat-session-usage {
+    margin-top: .45rem;
+    text-align: right;
+}
+
 .ai-chat-message-actions {
     display: flex;
     justify-content: flex-end;

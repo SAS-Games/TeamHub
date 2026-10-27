@@ -51,7 +51,8 @@ public sealed record AiChatResponse(
     string Answer,
     string Model,
     IReadOnlyList<AiChatCitation> Citations,
-    string? RequestId = null);
+    string? RequestId = null,
+    AiTokenUsage? Usage = null);
 
 public interface IAiChatService
 {
@@ -84,20 +85,6 @@ public interface IAiChatKnowledgeSource
 public interface IAiChatInstructionProvider
 {
     Task<string> GetTeamHubInstructionsAsync(CancellationToken cancellationToken = default);
-}
-
-public sealed class AiChatOptions
-{
-    public const string SectionName = "AI:Chat";
-
-    public int MaximumMessages { get; set; } = 20;
-    public int MaximumMessageCharacters { get; set; } = 8_000;
-    public int MaximumDocuments { get; set; } = 5;
-    public int MaximumDocumentCharacters { get; set; } = 120_000;
-    public int MaximumKnowledgeCharacters { get; set; } = 120_000;
-    public int MaximumLocalPromptCharacters { get; set; } = 18_000;
-    public int MaximumInstructionCharacters { get; set; } = 40_000;
-    public int MaximumOutputTokens { get; set; } = 2_000;
 }
 
 public sealed class AiChatException(string message, Exception? innerException = null)

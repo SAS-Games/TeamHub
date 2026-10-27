@@ -1,7 +1,6 @@
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
-using Microsoft.Extensions.Options;
 using TeamHub.AI.Chat.Contracts;
 using TeamHub.AI.Contracts;
 
@@ -11,8 +10,7 @@ internal sealed class AiChatService(
     IAiConfigurationService configuration,
     IAiModelProviderRegistry providers,
     IEnumerable<IAiChatKnowledgeSource> knowledgeSources,
-    IAiChatInstructionProvider instructions,
-    IOptions<AiChatOptions> options) : IAiChatService
+    IAiChatInstructionProvider instructions) : IAiChatService
 {
     private static readonly JsonElement ResponseSchema = CreateResponseSchema();
     private static readonly Regex ImageCreationVerb = new(
@@ -24,13 +22,12 @@ internal sealed class AiChatService(
     private static readonly Regex TeamHubDataVisual = new(
         @"\b(chart|dashboard|diagram|flowchart|graph|infographic|visuali[sz]ation)\b",
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
-    private readonly AiChatOptions settings = options.Value;
-
     public async Task<IReadOnlyList<AiModelCatalogItem>> GetModelsAsync(
         CancellationToken cancellationToken = default)
     {
-        var runtime = (await configuration.GetAsync(cancellationToken)).Runtime;
-        EnsureEnabled(runtime);
+        var snapshot = await configuration.GetAsync(cancellationToken);
+        var runtime = snapshot.Runtime;
+        EnsureEnabled(snapshot.Chat);
         var provider = providers.GetRequired(runtime.Provider);
         if (provider is not IAiModelCatalogProvider catalog)
             throw new AiChatException($"The {runtime.Provider} model catalog is not available.");
@@ -69,9 +66,11 @@ internal sealed class AiChatService(
         ValidateUser(user);
         ArgumentNullException.ThrowIfNull(request);
 
-        var runtime = (await configuration.GetAsync(cancellationToken)).Runtime;
-        EnsureEnabled(runtime);
-        var messages = NormalizeMessages(request.Messages);
+        var snapshot = await configuration.GetAsync(cancellationToken);
+        var runtime = snapshot.Runtime;
+        var chatSettings = snapshot.Chat;
+        EnsureEnabled(chatSettings);
+        var messages = NormalizeMessages(request.Messages, chatSettings);
         var question = messages[^1].Content;
         var requestedModel = request.Model?.Trim() ?? string.Empty;
         if (requestedModel.Length == 0)
@@ -117,8 +116,9 @@ internal sealed class AiChatService(
 
         var sources = request.Mode switch
         {
-            AiChatMode.TeamHub => await LoadTeamHubSourcesAsync(user, question, cancellationToken),
-            AiChatMode.General => PrepareDocuments(request.Documents),
+            AiChatMode.TeamHub => await LoadTeamHubSourcesAsync(
+                user, question, chatSettings, cancellationToken),
+            AiChatMode.General => PrepareDocuments(request.Documents, chatSettings),
             _ => throw new AiChatException("Select a supported chat mode.")
         };
 
@@ -128,17 +128,17 @@ internal sealed class AiChatService(
             userPrompt = LimitLocalPrompt(
                 userPrompt,
                 question,
-                settings.MaximumLocalPromptCharacters);
+                chatSettings.MaximumLocalPromptCharacters);
         }
 
         var teamHubInstructions = request.Mode == AiChatMode.TeamHub
-            ? await LoadTeamHubInstructionsAsync(cancellationToken)
+            ? await LoadTeamHubInstructionsAsync(chatSettings, cancellationToken)
             : string.Empty;
         var generationRequest = new AiStructuredGenerationRequest(
             BuildSystemPrompt(request.Mode, teamHubInstructions),
             userPrompt,
             ResponseSchema,
-            settings.MaximumOutputTokens);
+            chatSettings.MaximumOutputTokens);
 
         try
         {
@@ -155,17 +155,20 @@ internal sealed class AiChatService(
         }
     }
 
-    private async Task<string> LoadTeamHubInstructionsAsync(CancellationToken cancellationToken)
+    private async Task<string> LoadTeamHubInstructionsAsync(
+        AiChatOptions chatSettings,
+        CancellationToken cancellationToken)
     {
         var value = NormalizeText(await instructions.GetTeamHubInstructionsAsync(cancellationToken));
-        if (value.Length <= settings.MaximumInstructionCharacters) return value;
-        return value[..settings.MaximumInstructionCharacters]
+        if (value.Length <= chatSettings.MaximumInstructionCharacters) return value;
+        return value[..chatSettings.MaximumInstructionCharacters]
             + "\n\n[The trusted TeamHub playbook was truncated at the configured server limit.]";
     }
 
     private async Task<IReadOnlyList<AiChatSource>> LoadTeamHubSourcesAsync(
         AiChatUserContext user,
         string question,
+        AiChatOptions chatSettings,
         CancellationToken cancellationToken)
     {
         var collected = new List<AiChatSource>();
@@ -179,20 +182,22 @@ internal sealed class AiChatService(
                 var normalized = NormalizeSource(item);
                 if (!ids.Add(normalized.Id)) continue;
                 characterCount += normalized.Content.Length;
-                if (characterCount > settings.MaximumKnowledgeCharacters)
+                if (characterCount > chatSettings.MaximumKnowledgeCharacters)
                     throw new AiChatException(
-                        $"The authorized TeamHub context exceeds the {settings.MaximumKnowledgeCharacters:N0}-character limit.");
+                        $"The authorized TeamHub context exceeds the {chatSettings.MaximumKnowledgeCharacters:N0}-character limit.");
                 collected.Add(normalized);
             }
         }
         return collected;
     }
 
-    private IReadOnlyList<AiChatSource> PrepareDocuments(IReadOnlyList<AiChatDocument>? documents)
+    private static IReadOnlyList<AiChatSource> PrepareDocuments(
+        IReadOnlyList<AiChatDocument>? documents,
+        AiChatOptions chatSettings)
     {
         if (documents is null || documents.Count == 0) return [];
-        if (documents.Count > settings.MaximumDocuments)
-            throw new AiChatException($"Attach no more than {settings.MaximumDocuments} documents.");
+        if (documents.Count > chatSettings.MaximumDocuments)
+            throw new AiChatException($"Attach no more than {chatSettings.MaximumDocuments} documents.");
 
         var result = new List<AiChatSource>(documents.Count);
         var total = 0;
@@ -207,20 +212,22 @@ internal sealed class AiChatService(
             if (mediaType is not ("text/plain" or "text/markdown" or "text/csv" or "application/json"))
                 throw new AiChatException($"Document '{name}' is not a supported text, Markdown, CSV, or JSON file.");
             total += content.Length;
-            if (total > settings.MaximumDocumentCharacters)
+            if (total > chatSettings.MaximumDocumentCharacters)
                 throw new AiChatException(
-                    $"Attached documents exceed the {settings.MaximumDocumentCharacters:N0}-character limit.");
+                    $"Attached documents exceed the {chatSettings.MaximumDocumentCharacters:N0}-character limit.");
             result.Add(new AiChatSource($"document-{index + 1}", name, content));
         }
         return result;
     }
 
-    private IReadOnlyList<AiChatMessage> NormalizeMessages(IReadOnlyList<AiChatMessage>? messages)
+    private static IReadOnlyList<AiChatMessage> NormalizeMessages(
+        IReadOnlyList<AiChatMessage>? messages,
+        AiChatOptions chatSettings)
     {
         if (messages is null || messages.Count == 0)
             throw new AiChatException("Enter a message.");
-        if (messages.Count > settings.MaximumMessages)
-            throw new AiChatException($"A chat can contain no more than {settings.MaximumMessages} messages.");
+        if (messages.Count > chatSettings.MaximumMessages)
+            throw new AiChatException($"A chat can contain no more than {chatSettings.MaximumMessages} messages.");
 
         var result = new List<AiChatMessage>(messages.Count);
         foreach (var message in messages)
@@ -230,9 +237,9 @@ internal sealed class AiChatService(
             var content = NormalizeText(message.Content);
             if (role is not ("user" or "assistant"))
                 throw new AiChatException("Chat messages must use the user or assistant role.");
-            if (content.Length == 0 || content.Length > settings.MaximumMessageCharacters)
+            if (content.Length == 0 || content.Length > chatSettings.MaximumMessageCharacters)
                 throw new AiChatException(
-                    $"Each message must contain 1 to {settings.MaximumMessageCharacters:N0} characters.");
+                    $"Each message must contain 1 to {chatSettings.MaximumMessageCharacters:N0} characters.");
             result.Add(new AiChatMessage(role, content));
         }
         if (result[^1].Role != "user") throw new AiChatException("The latest message must be from the user.");
@@ -281,6 +288,8 @@ internal sealed class AiChatService(
           Format the answer with standard Markdown when it improves readability. Use Markdown tables for tabular reports.
           Do not generate creative images, artwork, logos, photographs, illustrations, or other unrelated visuals in TeamHub mode. Tell the user to switch to General mode for those requests.
           You may create a chart or diagram only when it directly visualizes information from the authorized TeamHub sources. Never invent source data for a visual.
+          Return an authorized data chart as a compact, self-contained SVG inside a fenced svg block so the TeamHub chat UI can render it. Include an accessible title and description. Never include scripts, event handlers, foreignObject, embedded HTML, external images, external stylesheets, or remote resources.
+          Accompany a chart with a short text summary and clearly state when the requested person, period, or values are absent from the authorized sources instead of fabricating a chart.
           Return only JSON matching the response schema. Include only source IDs that directly support the answer.
           """;
 
@@ -361,12 +370,12 @@ internal sealed class AiChatService(
                     citations.Add(new AiChatCitation(source.Id, source.Title));
             }
         }
-        return new AiChatResponse(answer, model, citations, result.RequestId);
+        return new AiChatResponse(answer, model, citations, result.RequestId, result.Usage);
     }
 
-    private static void EnsureEnabled(AiRuntimeOptions runtime)
+    private static void EnsureEnabled(AiChatOptions settings)
     {
-        if (!runtime.ChatEnabled) throw new AiChatException("AI Chat is disabled in AI Services.");
+        if (!settings.Enabled) throw new AiChatException("AI Chat is disabled in AI Services.");
     }
 
     private static void ValidateUser(AiChatUserContext user)

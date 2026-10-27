@@ -17,6 +17,7 @@
     const prompt = root.querySelector("#aiChatPrompt");
     const send = root.querySelector("#aiChatSend");
     const error = root.querySelector("#aiChatError");
+    const usageElement = root.querySelector("#aiChatUsage");
     const token = form.querySelector('input[name="__RequestVerificationToken"]');
     const storageKey = `teamhub.aiChat.widget.v2:${root.dataset.aiChatUser || "page"}`;
     let history = [];
@@ -28,6 +29,54 @@
     let normalBounds = null;
     const copyIcon = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 7V3h13v13h-4v5H3V7h5Zm2 0h7v7h2V5h-9v2Zm5 2H5v10h10V9Z" /></svg>';
     const copiedIcon = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9.2 17.2-4.4-4.4 1.4-1.4 3 3L17.8 5.8l1.4 1.4-10 10Z" /></svg>';
+
+    function normalizeTokenUsage(value) {
+        if (!value || typeof value !== "object") return null;
+        const inputTokens = Number(value.inputTokens);
+        const outputTokens = Number(value.outputTokens);
+        const reportedTotal = Number(value.totalTokens);
+        if (![inputTokens, outputTokens, reportedTotal]
+            .every(item => Number.isInteger(item) && item >= 0)) return null;
+        const totalTokens = reportedTotal || inputTokens + outputTokens;
+        if (totalTokens === 0) return null;
+        return { inputTokens, outputTokens, totalTokens };
+    }
+
+    function formatTokenCount(value) {
+        return new Intl.NumberFormat().format(value);
+    }
+
+    function formatTokenUsage(usage) {
+        return `${formatTokenCount(usage.totalTokens)} total (${formatTokenCount(usage.inputTokens)} input + ${formatTokenCount(usage.outputTokens)} output)`;
+    }
+
+    function updateSessionUsage() {
+        if (!usageElement) return;
+        let inputTokens = 0;
+        let outputTokens = 0;
+        let totalTokens = 0;
+        let unavailableResponses = 0;
+        for (const item of history) {
+            if (item.role !== "assistant") continue;
+            const usage = normalizeTokenUsage(item.usage);
+            if (!usage) {
+                unavailableResponses += 1;
+                continue;
+            }
+            inputTokens += usage.inputTokens;
+            outputTokens += usage.outputTokens;
+            totalTokens += usage.totalTokens;
+        }
+
+        if (totalTokens > 0) {
+            usageElement.textContent = `Session tokens: ${formatTokenUsage({ inputTokens, outputTokens, totalTokens })}`
+                + (unavailableResponses > 0 ? ` · ${unavailableResponses} response not reported` : "");
+        } else if (unavailableResponses > 0) {
+            usageElement.textContent = "Session tokens: unavailable from this provider";
+        } else {
+            usageElement.textContent = "Session tokens: 0";
+        }
+    }
 
     function readState() {
         if (!widget) return null;
@@ -43,7 +92,8 @@
                                 ? [{ id: String(citation.id || ""), title: citation.title.slice(0, 200) }]
                                 : [])
                         : [];
-                    return [{ role: item.role, content: item.content.slice(0, 8000), citations }];
+                    const usage = normalizeTokenUsage(item.usage);
+                    return [{ role: item.role, content: item.content.slice(0, 8000), citations, usage }];
                 })
                 : [];
             return {
@@ -105,6 +155,7 @@
         prompt.value = "";
         showEmptyConversation();
         error.textContent = "";
+        updateSessionUsage();
         persistState();
     }
 
@@ -461,7 +512,7 @@
         }
     }
 
-    function addMessage(role, content, citations) {
+    function addMessage(role, content, citations, usage) {
         const empty = messagesElement.querySelector(".ai-chat-empty");
         if (empty) empty.remove();
         const row = document.createElement("div");
@@ -482,6 +533,15 @@
             sourceLine.className = "ai-chat-citations";
             sourceLine.textContent = `Sources: ${citations.map(item => item.title).join(", ")}`;
             bubble.append(sourceLine);
+        }
+        const normalizedUsage = normalizeTokenUsage(usage);
+        if (role === "assistant") {
+            const usageLine = document.createElement("div");
+            usageLine.className = "ai-chat-token-usage";
+            usageLine.textContent = normalizedUsage
+                ? `Tokens: ${formatTokenUsage(normalizedUsage)}`
+                : "Tokens: not reported by provider";
+            bubble.append(usageLine);
         }
         if (role === "assistant") {
             const actions = document.createElement("div");
@@ -880,11 +940,13 @@
             const assistantMessage = {
                 role: "assistant",
                 content: payload.answer,
-                citations: Array.isArray(payload.citations) ? payload.citations : []
+                citations: Array.isArray(payload.citations) ? payload.citations : [],
+                usage: normalizeTokenUsage(payload.usage)
             };
             history = [...requestHistory, assistantMessage];
             thinkingMessage.remove();
-            addMessage("assistant", assistantMessage.content, assistantMessage.citations);
+            addMessage("assistant", assistantMessage.content, assistantMessage.citations, assistantMessage.usage);
+            updateSessionUsage();
             persistState();
         } catch (exception) {
             if (requestRevision === conversationRevision) {
@@ -912,10 +974,11 @@
     updateMode(false);
     messagesElement.replaceChildren();
     if (history.length) {
-        for (const item of history) addMessage(item.role, item.content, item.citations);
+        for (const item of history) addMessage(item.role, item.content, item.citations, item.usage);
     } else {
         showEmptyConversation();
     }
+    updateSessionUsage();
 
     if (widget) {
         root.classList.toggle("is-fullscreen", savedState?.fullscreen === true);
