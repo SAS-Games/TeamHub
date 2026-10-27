@@ -26,6 +26,7 @@ public static class TeamHubModules
     public const string StudioConfiguration = "Studio Configuration";
     public const string SupportSummary = "Support Summary";
     public const string AiReports = "AI Reports";
+    public const string AiChat = "AI Chat";
     public const string AtlassianConnection = "Atlassian Connection";
     public const string Notifications = "Notifications";
     public const string Administration = "Administration";
@@ -44,6 +45,7 @@ public static class TeamHubModules
         StudioConfiguration,
         SupportSummary,
         AiReports,
+        AiChat,
         AtlassianConnection,
         Notifications,
         Administration,
@@ -70,6 +72,7 @@ public static class TeamHubModuleAccess
     public static IReadOnlyList<AccessLevel> SupportedLevels(string module) => module switch
     {
         TeamHubModules.Home or TeamHubModules.UsefulLinks or TeamHubModules.Milestones
+            or TeamHubModules.AiChat
             or TeamHubModules.Notifications => ReadOnly,
         TeamHubModules.Team => ReadOnly,
         TeamHubModules.WorkCenter => WorkItems,
@@ -106,6 +109,7 @@ public static class TeamHubModuleAccess
         TeamHubModules.StudioConfiguration => "Read views studios, Create adds studios, Edit updates them, and Delete removes them.",
         TeamHubModules.SupportSummary => "Read views support information; Edit updates Confluence and support comments. Planning administration remains Admin-only.",
         TeamHubModules.AiReports => "Create generates AI reports; No Access disables report generation.",
+        TeamHubModules.AiChat => "Use the permission-aware TeamHub assistant and isolated General chat mode.",
         TeamHubModules.AtlassianConnection => "Read views connection status; Edit changes the user's connection.",
         TeamHubModules.Notifications => "Read views notifications and manages the user's read state.",
         _ => "Read views the page; Edit changes its content."

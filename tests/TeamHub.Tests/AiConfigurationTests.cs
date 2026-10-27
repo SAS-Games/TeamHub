@@ -181,6 +181,7 @@ public sealed class AiConfigurationTests
             Settings = new AiSettingsInput
             {
                 Provider = AiModelProviderKeys.LlamaCpp,
+                ChatEnabled = true,
                 LlamaCppModel = "saved-model",
                 FlowDesignerEnabled = true,
                 ReportGeneratorEnabled = true,
@@ -200,12 +201,14 @@ public sealed class AiConfigurationTests
         page.Settings.ReportMaximumOutputTokens.Should().Be(2500);
         page.Settings.WeeklyWorkSummaryPromptPath.Should().Be("Prompts/custom.md");
         page.Settings.FlowDesignerEnabled.Should().BeTrue();
+        page.Settings.ChatEnabled.Should().BeTrue();
         page.Credential = null;
         (await page.OnPostTestAsync(CancellationToken.None)).Should().BeOfType<PageResult>();
         page.TestResult!.IsAvailable.Should().BeTrue();
         probe.Settings!.Model.Should().Be("saved-model");
         probe.Credential.Should().Be("synthetic-provider-key");
         (await configuration.GetAsync()).ReportGenerator.Enabled.Should().BeTrue();
+        (await configuration.GetAsync()).Runtime.ChatEnabled.Should().BeTrue();
 
         page.Settings.ReportGeneratorEnabled = false;
         await page.OnPostSaveAsync(CancellationToken.None);

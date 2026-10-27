@@ -6,20 +6,41 @@
 @using TeamHub.Web.AccessControl
 @using TeamHub.Web.Navigation
 @using TeamHub.Web.Options
+@using TeamHub.AI.Contracts
 @inject IOptions<List<NavigationTabOptions>> NavigationTabsOptions
 @inject IOptions<ApplicationOptions> ApplicationOptions
 @inject IStudioDirectoryService StudioDirectoryService
 @inject ICustomTeamTabService CustomTabs
 @inject ICurrentAccessService CurrentAccess
 @inject IPageLayoutService PageLayouts
+@inject IAiConfigurationService AiConfiguration
 @{
     var applicationName = ApplicationOptions.Value.Name;
     var currentModule = Context.Items["TeamHub.Module"] as string
         ?? TeamHubAccessRoutes.ResolveModule(Context.Request.Path);
     var currentPageAccess = currentModule is null ? AccessLevel.FullAccess : await CurrentAccess.GetAccessLevelAsync(currentModule);
     var navigationTabs = new List<NavigationTabOptions>();
+    var aiChatEnabled = false;
+    var canUseAiChat = false;
+    try
+    {
+        aiChatEnabled = (await AiConfiguration.GetAsync(Context.RequestAborted)).Runtime.ChatEnabled;
+    }
+    catch
+    {
+        aiChatEnabled = false;
+    }
+    if (aiChatEnabled && User.Identity?.IsAuthenticated == true)
+    {
+        canUseAiChat = await CurrentAccess.CanAsync(TeamHubModules.AiChat);
+    }
+    var showAiChatWidget = canUseAiChat && !Context.Request.Path.StartsWithSegments("/AIChat");
     foreach (var tab in NavigationTabsOptions.Value.OrderBy(tab => tab.Order))
     {
+        if (string.Equals(tab.Page, "/AIChat", StringComparison.OrdinalIgnoreCase) && !aiChatEnabled)
+        {
+            continue;
+        }
         if (string.Equals(tab.Page, "/Logout", StringComparison.OrdinalIgnoreCase))
         {
             if (User.Identity?.IsAuthenticated == true) navigationTabs.Add(tab);
@@ -108,6 +129,10 @@
     <link rel="stylesheet" href="~/lib/bootstrap/dist/css/bootstrap.min.css" />
     <link rel="stylesheet" href="~/css/site.css" asp-append-version="true" />
     <link rel="stylesheet" href="~/_content/TeamHub.Notifications/notifications.css" asp-append-version="true" />
+    @if (showAiChatWidget)
+    {
+        <link rel="stylesheet" href="~/css/ai-chat-widget.css" asp-append-version="true" />
+    }
     <link rel="stylesheet" href="~/TeamHub.Web.styles.css" asp-append-version="true" />
     @await RenderSectionAsync("Styles", required: false)
 </head>
@@ -186,6 +211,16 @@
                     </ul>
                     @if (User.Identity?.IsAuthenticated == true)
                     {
+                        @if (showAiChatWidget)
+                        {
+                            <button id="aiChatLauncher" class="btn btn-sm teamhub-ai-chat-launcher"
+                                    type="button" aria-controls="aiChatPanel" aria-expanded="false"
+                                    aria-label="Open AI Chat" title="AI Chat">
+                                <svg viewBox="0 0 24 24" aria-hidden="true">
+                                    <path d="M4 3.5h16A2.5 2.5 0 0 1 22.5 6v10A2.5 2.5 0 0 1 20 18.5H9l-5.8 3.2.9-3.2H4A2.5 2.5 0 0 1 1.5 16V6A2.5 2.5 0 0 1 4 3.5Zm4.1 6.25a1.25 1.25 0 1 0 0 2.5 1.25 1.25 0 0 0 0-2.5Zm3.9 0a1.25 1.25 0 1 0 0 2.5 1.25 1.25 0 0 0 0-2.5Zm3.9 0a1.25 1.25 0 1 0 0 2.5 1.25 1.25 0 0 0 0-2.5Z" />
+                                </svg>
+                            </button>
+                        }
                         @if (await CurrentAccess.CanAsync(TeamHubModules.Notifications))
                         {
                             @await Component.InvokeAsync("NotificationBell")
@@ -229,6 +264,61 @@
         </div>
     </div>
 
+    @if (showAiChatWidget)
+    {
+        <aside id="aiChatPanel" class="teamhub-ai-chat-panel" data-ai-chat data-ai-chat-widget
+               data-ai-chat-user="@User.Identity?.Name" hidden
+               aria-label="AI Chat" aria-hidden="true">
+            <header class="teamhub-ai-chat-header">
+                <div>
+                    <strong>AI Chat</strong>
+                    <span id="aiChatProvider">Loading provider…</span>
+                </div>
+                <div class="teamhub-ai-chat-window-actions">
+                    <button id="aiChatMaximize" type="button" aria-label="Maximize AI Chat" title="Maximize">
+                        <svg class="maximize-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h6v2H6v4H4V4Zm10 0h6v6h-2V6h-4V4ZM4 14h2v4h4v2H4v-6Zm14 0h2v6h-6v-2h4v-4Z" /></svg>
+                        <svg class="restore-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 3h13v13h-3v5H3V8h5V3Zm2 5h8v6h1V5h-9v3Zm6 3H5v8h11v-8Z" /></svg>
+                    </button>
+                    <button id="aiChatClose" type="button" aria-label="Close AI Chat" title="Close">
+                        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6.4 5 5.6 5.6L17.6 5 19 6.4 13.4 12l5.6 5.6-1.4 1.4-5.6-5.6L6.4 19 5 17.6l5.6-5.6L5 6.4 6.4 5Z" /></svg>
+                    </button>
+                </div>
+            </header>
+            <div class="teamhub-ai-chat-controls">
+                <div>
+                    <label for="aiChatMode">Mode</label>
+                    <select id="aiChatMode" class="form-select form-select-sm">
+                        <option value="TeamHub">TeamHub</option>
+                        <option value="General">General</option>
+                    </select>
+                </div>
+                <div>
+                    <label for="aiChatModel">Model</label>
+                    <select id="aiChatModel" class="form-select form-select-sm" disabled>
+                        <option value="">Loading models…</option>
+                    </select>
+                </div>
+            </div>
+            <div id="aiChatModeNote" class="teamhub-ai-chat-note"></div>
+            <div id="aiChatMessages" class="teamhub-ai-chat-messages" aria-live="polite"></div>
+            <form id="aiChatForm" method="post" action="/AIChat?handler=Message" class="teamhub-ai-chat-composer">
+                @Html.AntiForgeryToken()
+                <div id="aiChatDocuments" class="teamhub-ai-chat-documents d-none">
+                    <label for="aiChatFiles">Attach text documents</label>
+                    <input id="aiChatFiles" type="file" class="form-control form-control-sm" multiple
+                           accept=".txt,.md,.markdown,.csv,.json,text/plain,text/markdown,text/csv,application/json" />
+                </div>
+                <div class="teamhub-ai-chat-compose-row">
+                    <label for="aiChatPrompt" class="visually-hidden">Message</label>
+                    <textarea id="aiChatPrompt" class="form-control" rows="2" maxlength="8000"
+                              placeholder="Ask a question…" required></textarea>
+                    <button id="aiChatSend" type="submit" class="btn btn-primary" disabled>Send</button>
+                </div>
+                <div id="aiChatError" class="text-danger small" role="alert"></div>
+            </form>
+        </aside>
+    }
+
     <script src="~/lib/jquery/dist/jquery.min.js"></script>
     <script src="~/lib/bootstrap/dist/js/bootstrap.bundle.min.js"></script>
     <script src="~/js/site.js" asp-append-version="true"></script>
@@ -239,6 +329,7 @@
                 const target = new URL(url, window.location.href);
                 const handler = target.searchParams.get("handler") || "";
                 const path = target.pathname;
+                if (/^\/AIChat\/?$/i.test(path)) return 1;
                 if (/^\/Notifications(?:\/|$)/i.test(path)) return 1;
                 if (/^\/Team\/Configuration(?:\/|$)/i.test(path)) return 5;
                 if (/^\/WorkCenter\/Configuration(?:\/|$)/i.test(path)) {
@@ -279,6 +370,11 @@
             });
         })();
     </script>
+
+    @if (showAiChatWidget)
+    {
+        <script src="~/js/ai-chat.js" asp-append-version="true"></script>
+    }
 
     @await RenderSectionAsync("Scripts", required: false)
 </body>

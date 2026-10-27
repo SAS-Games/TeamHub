@@ -8,6 +8,7 @@ public sealed class AiRuntimeOptions
     public string Endpoint { get; set; } = "http://127.0.0.1:11434";
     public string Model { get; set; } = "qwen3:8b";
     public string ApiMode { get; set; } = string.Empty;
+    public bool ChatEnabled { get; set; }
     public Dictionary<string, AiProviderProfileOptions> Providers { get; set; } =
         new(StringComparer.OrdinalIgnoreCase);
     public bool OfflineOnly { get; set; } = true;
