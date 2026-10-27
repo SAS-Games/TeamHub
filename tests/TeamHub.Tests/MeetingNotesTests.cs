@@ -24,18 +24,18 @@ public sealed class MeetingNotesTests
         const string webhook = "https://prod-01.westus.logic.azure.com/workflows/test/triggers/manual/paths/invoke";
 
         await configuration.SaveAsync([
-            new SaveMeetingNotesTeamsChannel("studio-a", "MOM", webhook, false)
+            new SaveMeetingNotesTeamsChannel("studio-a", webhook, false)
         ], "admin@example.com");
         context.ChangeTracker.Clear();
         await configuration.SaveAsync([
-            new SaveMeetingNotesTeamsChannel("studio-a", "Meeting Notes", null, false)
+            new SaveMeetingNotesTeamsChannel("studio-a", null, false)
         ], "admin@example.com");
 
         var record = await context.MeetingNotesTeamsChannels.AsNoTracking().SingleAsync();
         record.WebhookUrlProtected.Should().NotBe(webhook).And.NotContain("logic.azure.com");
         (await configuration.GetWebhookAsync("studio-a"))!.AbsoluteUri.Should().Be(webhook);
         (await configuration.ListAsync()).Should().ContainSingle().Which.Should().Be(
-            new MeetingNotesTeamsChannelStatus("studio-a", "Meeting Notes", true));
+            new MeetingNotesTeamsChannelStatus("studio-a", true));
     }
 
     [Fact]
@@ -46,16 +46,16 @@ public sealed class MeetingNotesTests
             context,
             new EphemeralDataProtectionProvider());
         var invalid = () => configuration.SaveAsync([
-            new SaveMeetingNotesTeamsChannel("studio-a", "General", "https://example.com/hook", false)
+            new SaveMeetingNotesTeamsChannel("studio-a", "https://example.com/hook", false)
         ], "admin@example.com");
 
         await invalid.Should().ThrowAsync<ArgumentException>().WithMessage("*Microsoft Teams Workflow*");
         await configuration.SaveAsync([
             new SaveMeetingNotesTeamsChannel(
-                "studio-a", "General", "https://prod-01.westus.logic.azure.com/test", false)
+                "studio-a", "https://prod-01.westus.logic.azure.com/test", false)
         ], "admin@example.com");
         await configuration.SaveAsync([
-            new SaveMeetingNotesTeamsChannel("studio-a", "General", null, true)
+            new SaveMeetingNotesTeamsChannel("studio-a", null, true)
         ], "admin@example.com");
 
         (await configuration.ListAsync()).Should().BeEmpty();
@@ -67,9 +67,9 @@ public sealed class MeetingNotesTests
         var webhook = "https://prod-01.westus.logic.azure.com/workflows/test/triggers/manual/paths/invoke";
         var handler = new RecordingHandler();
         var teams = new TeamsConfigurationStub([
-            new MeetingNotesTeamsChannelStatus("studio-a", "General", true),
-            new MeetingNotesTeamsChannelStatus("studio-b", "General", false),
-            new MeetingNotesTeamsChannelStatus("studio-c", "MOM", true)
+            new MeetingNotesTeamsChannelStatus("studio-a", true),
+            new MeetingNotesTeamsChannelStatus("studio-b", false),
+            new MeetingNotesTeamsChannelStatus("studio-c", true)
         ], new Uri(webhook));
         var publisher = new MeetingNotesTeamsPublisher(
             new ConfigurationStub(),
@@ -86,7 +86,7 @@ public sealed class MeetingNotesTests
         await publisher.PublishAsync("studio-a", "# Notes\n\n- Decision", "Test User");
 
         destinations.Should().ContainSingle().Which.Should().Be(
-            new MeetingNotesTeamsDestination("studio-a", "Studio A", "General"));
+            new MeetingNotesTeamsDestination("studio-a", "Studio A"));
         handler.RequestUri.Should().Be(webhook);
         using var payload = JsonDocument.Parse(handler.Body!);
         payload.RootElement.GetProperty("text").GetString().Should().Be("# Notes\n\n- Decision");
@@ -98,7 +98,7 @@ public sealed class MeetingNotesTests
         var publisher = new MeetingNotesTeamsPublisher(
             new ConfigurationStub(),
             new TeamsConfigurationStub([
-                new MeetingNotesTeamsChannelStatus("studio-a", "General", true)
+                new MeetingNotesTeamsChannelStatus("studio-a", true)
             ], new Uri("https://prod-01.westus.logic.azure.com/test")),
             new StudioDirectoryStub([
                 new StudioDetails { Id = "studio-a", StudioName = "Studio A", IsActive = false }

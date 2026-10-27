@@ -34,7 +34,7 @@ used only in the server-side provider client and are never included in prompts o
 The TeamHub host loads the editable `AI/MeetingNotes.md` file for every Meeting Notes request. Its
 path and optional Teams destinations are managed under **Configuration > AI Services > AI Chat**.
 The page creates one destination row for every active studio from Studio Configuration. An
-administrator enters the channel name and the HTTPS URL created by the Teams **Workflows** webhook
+administrator enters the HTTPS URL created by the Teams **Workflows** webhook
 template for that channel. Webhook URLs are encrypted and are never displayed again or returned to
 the browser. Publishing is a separate user action after generation, and users can copy, edit, or
 download the generated `.md` content without publishing it. The host exposes this publishing step

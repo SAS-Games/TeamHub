@@ -2,12 +2,10 @@ namespace TeamHub.AI.Contracts;
 
 public sealed record MeetingNotesTeamsChannelStatus(
     string StudioId,
-    string ChannelName,
     bool IsConfigured);
 
 public sealed record SaveMeetingNotesTeamsChannel(
     string StudioId,
-    string ChannelName,
     string? WebhookUrl,
     bool Remove);
 

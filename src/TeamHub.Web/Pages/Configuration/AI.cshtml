@@ -49,6 +49,10 @@
                     <label asp-for="Settings.OfflineOnly" class="form-check-label">Offline-only: require the active endpoint to use localhost or another loopback address</label>
                 </div>
             </div>
+            <div class="col-12 d-flex flex-wrap justify-content-end gap-2 pt-2">
+                <button type="submit" asp-page-handler="TestConnection" formnovalidate class="btn btn-outline-primary">Test saved connection</button>
+                <button type="submit" asp-page-handler="SaveRuntime" formnovalidate class="btn btn-primary">Save runtime</button>
+            </div>
         </div>
     </section>
 
@@ -104,6 +108,9 @@
                     <div class="form-text">Model discovery uses <code>/portal/pfb/models</code>. Remote gateway use requires Offline-only to be cleared. Reload this page to refresh the catalog.</div>
                 </div>
             </div>
+            <div class="d-flex justify-content-end mt-4">
+                <button type="submit" asp-page-handler="SaveModels" formnovalidate class="btn btn-primary">Save provider profiles</button>
+            </div>
         </div>
     </section>
 
@@ -135,6 +142,9 @@
                 {
                     <div class="form-check mt-2"><input asp-for="RemoveCredential" class="form-check-input" /><label asp-for="RemoveCredential" class="form-check-label">Remove the stored credential</label></div>
                 }
+            </div>
+            <div class="col-12 d-flex justify-content-end pt-2">
+                <button type="submit" asp-page-handler="SaveSecurity" formnovalidate class="btn btn-primary">Save security</button>
             </div>
         </div>
     </section>
@@ -195,7 +205,15 @@
                 <span asp-validation-for="Settings.ChatMaximumOutputTokens" class="text-danger"></span>
                 <div class="form-text">Initial response allowance. PFB can retry truncated responses up to 32,000 tokens.</div>
             </div>
-            <div class="col-12"><hr class="my-2" /></div>
+            <div class="col-12 d-flex justify-content-end pt-2">
+                <button type="submit" asp-page-handler="SaveChat" formnovalidate class="btn btn-primary">Save AI Chat</button>
+            </div>
+        </div>
+    </section>
+
+    <section class="content-section mb-4">
+        <div class="section-heading"><div><span>Feature</span><h2>Meeting Notes</h2></div></div>
+        <div class="p-4 row g-3">
             <div class="col-12">
                 <div class="form-check">
                     <input asp-for="Settings.MeetingNotesEnabled" class="form-check-input" />
@@ -212,9 +230,9 @@
             <div class="col-12">
                 <h3 class="h6 mb-2">Teams publishing destinations</h3>
                 <p class="form-text mb-3">
-                    These rows come from active studios in Studio Configuration. In Teams, open the required studio channel,
+                    These rows come from active studios in Studio Configuration. In Teams, open the required destination,
                     select <strong>… → Workflows → Send webhook alerts to a channel</strong>, create the workflow, and paste its URL below.
-                    The URL is encrypted and is never displayed again. The workflow itself determines the exact destination channel.
+                    The URL is encrypted and is never displayed again. The Power Automate workflow determines the exact Team and channel.
                 </p>
                 @if (Model.MeetingNotesTeamsChannels.Count == 0)
                 {
@@ -224,7 +242,7 @@
                 {
                     <div class="table-responsive teams-destination-table-wrap">
                         <table class="table align-middle mb-0 teams-destination-table">
-                            <thead><tr><th>Studio</th><th>Teams channel</th><th>Workflow webhook URL</th><th>Status</th></tr></thead>
+                            <thead><tr><th>Studio</th><th>Workflow webhook URL</th><th>Status</th></tr></thead>
                             <tbody>
                             @for (var index = 0; index < Model.MeetingNotesTeamsChannels.Count; index++)
                             {
@@ -232,10 +250,6 @@
                                     <td>
                                         <strong>@Model.MeetingNotesTeamsChannels[index].StudioName</strong>
                                         <input asp-for="MeetingNotesTeamsChannels[index].StudioId" type="hidden" />
-                                    </td>
-                                    <td>
-                                        <input asp-for="MeetingNotesTeamsChannels[index].ChannelName" class="form-control form-control-sm" placeholder="e.g. General" />
-                                        <span asp-validation-for="MeetingNotesTeamsChannels[index].ChannelName" class="text-danger small"></span>
                                     </td>
                                     <td>
                                         <input asp-for="MeetingNotesTeamsChannels[index].WebhookUrl" class="form-control form-control-sm" type="password"
@@ -259,6 +273,9 @@
                         </table>
                     </div>
                 }
+            </div>
+            <div class="col-12 d-flex justify-content-end pt-2">
+                <button type="submit" asp-page-handler="SaveMeetingNotes" formnovalidate class="btn btn-primary">Save Meeting Notes</button>
             </div>
         </div>
     </section>
@@ -289,6 +306,9 @@
             </div>
             <div class="col-6 col-lg-4"><label asp-for="Settings.MaximumDiagrams" class="form-label">Maximum diagrams</label><input asp-for="Settings.MaximumDiagrams" class="form-control" /></div>
             <div class="col-6 col-lg-4"><label asp-for="Settings.MaximumHierarchyDepth" class="form-label">Maximum hierarchy depth</label><input asp-for="Settings.MaximumHierarchyDepth" class="form-control" /></div>
+            <div class="col-12 d-flex justify-content-end pt-2">
+                <button type="submit" asp-page-handler="SaveFlowDesigner" formnovalidate class="btn btn-primary">Save Flow Designer</button>
+            </div>
         </div>
     </section>
 
@@ -325,6 +345,9 @@
                 <span asp-validation-for="Settings.WeeklyWorkSummaryPromptPath" class="text-danger"></span>
                 <div class="form-text">Relative paths resolve from the application directory. Instruction file changes are read for each report.</div>
             </div>
+            <div class="col-12 d-flex justify-content-end pt-2">
+                <button type="submit" asp-page-handler="SaveReportGenerator" formnovalidate class="btn btn-primary">Save Report Generator</button>
+            </div>
         </div>
     </section>
 
@@ -334,8 +357,6 @@
     }
 
     <div class="d-flex flex-wrap gap-2">
-        <button type="submit" asp-page-handler="Save" class="btn btn-primary">Save configuration</button>
-        <button type="submit" asp-page-handler="Test" class="btn btn-outline-primary">Save and test connection</button>
         <a asp-page="/Configuration/Index" class="btn btn-outline-secondary">Back to Configuration</a>
     </div>
 </form>

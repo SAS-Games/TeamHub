@@ -301,7 +301,7 @@ body {
   border-radius: 8px;
 }
 .teams-destination-table {
-  min-width: 900px;
+  min-width: 680px;
   --bs-table-color: var(--text-color);
   --bs-table-bg: var(--surface-bg-color);
   --bs-table-border-color: var(--divider-color);

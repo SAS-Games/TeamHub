@@ -1,7 +1,10 @@
 using System.Diagnostics;
+using System.IO.Compression;
 using System.Net;
 using System.Text;
 using System.Text.RegularExpressions;
+using System.Xml;
+using System.Xml.Linq;
 using TeamHub.AI.Chat.Contracts;
 using TeamHub.AI.Contracts;
 using UglyToad.PdfPig;
@@ -36,6 +39,8 @@ public sealed partial class AiChatDocumentExtractor : IAiChatDocumentExtractor
     public const int MaximumTotalBinaryBytes = 20 * 1024 * 1024;
     private const long MaximumChmExpandedBytes = 50L * 1024 * 1024;
     private const int MaximumChmFiles = 2_000;
+    private const long MaximumDocxExpandedBytes = 50L * 1024 * 1024;
+    private const int MaximumDocxEntries = 2_000;
 
     public async Task<AiChatPreparedAttachments> ExtractAsync(
         IReadOnlyList<AiChatUploadDocument> uploads,
@@ -71,7 +76,7 @@ public sealed partial class AiChatDocumentExtractor : IAiChatDocumentExtractor
 
             string extracted;
             string mediaType;
-            if (extension is ".pdf" or ".chm")
+            if (extension is ".pdf" or ".chm" or ".docx")
             {
                 var bytes = DecodeBinary(upload, name);
                 totalBinaryBytes = checked(totalBinaryBytes + bytes.Length);
@@ -79,9 +84,12 @@ public sealed partial class AiChatDocumentExtractor : IAiChatDocumentExtractor
                     throw new AiChatException("Binary document and image uploads cannot exceed 20 MB in total.");
 
                 var remaining = maximumCharacters - totalCharacters;
-                extracted = extension == ".pdf"
-                    ? ExtractPdf(bytes, name, remaining, cancellationToken)
-                    : await ExtractChmAsync(bytes, name, remaining, cancellationToken);
+                extracted = extension switch
+                {
+                    ".pdf" => ExtractPdf(bytes, name, remaining, cancellationToken),
+                    ".docx" => ExtractDocx(bytes, name, remaining, cancellationToken),
+                    _ => await ExtractChmAsync(bytes, name, remaining, cancellationToken)
+                };
                 mediaType = "text/markdown";
             }
             else
@@ -157,7 +165,84 @@ public sealed partial class AiChatDocumentExtractor : IAiChatDocumentExtractor
         if (mediaType is "text/plain" or "text/markdown" or "text/csv" or "application/json")
             return mediaType;
         throw new AiChatException(
-            $"Document '{name}' is not a supported text, Markdown, CSV, JSON, PDF, or CHM file.");
+            $"Document '{name}' is not a supported text, Markdown, CSV, JSON, Word (.docx), PDF, or CHM file.");
+    }
+
+    private static string ExtractDocx(
+        byte[] bytes,
+        string name,
+        int maximumCharacters,
+        CancellationToken cancellationToken)
+    {
+        if (bytes.Length < 4
+            || bytes[0] != 0x50
+            || bytes[1] != 0x4b
+            || (bytes[2] != 0x03 && bytes[2] != 0x05 && bytes[2] != 0x07))
+            throw new AiChatException($"Document '{name}' is not a valid Word (.docx) file.");
+
+        try
+        {
+            using var input = new MemoryStream(bytes, writable: false);
+            using var archive = new ZipArchive(input, ZipArchiveMode.Read, leaveOpen: false);
+            if (archive.Entries.Count > MaximumDocxEntries)
+                throw new AiChatException($"Document '{name}' contains too many embedded files.");
+
+            long expandedBytes = 0;
+            foreach (var entry in archive.Entries)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                expandedBytes = checked(expandedBytes + entry.Length);
+                if (expandedBytes > MaximumDocxExpandedBytes)
+                    throw new AiChatException($"Document '{name}' expands beyond the 50 MB safety limit.");
+            }
+
+            var documentEntry = archive.Entries.SingleOrDefault(entry =>
+                entry.FullName.Equals("word/document.xml", StringComparison.OrdinalIgnoreCase));
+            if (documentEntry is null)
+                throw new AiChatException($"Document '{name}' does not contain a readable Word document body.");
+
+            using var documentStream = documentEntry.Open();
+            using var xmlReader = XmlReader.Create(documentStream, new XmlReaderSettings
+            {
+                DtdProcessing = DtdProcessing.Prohibit,
+                XmlResolver = null,
+                MaxCharactersInDocument = MaximumDocxExpandedBytes
+            });
+            var document = XDocument.Load(xmlReader, LoadOptions.None);
+            XNamespace word = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
+            var result = new StringBuilder();
+            foreach (var paragraph in document.Descendants(word + "p"))
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                var line = new StringBuilder();
+                foreach (var element in paragraph.Descendants())
+                {
+                    if (element.Name == word + "t") line.Append(element.Value);
+                    else if (element.Name == word + "tab") line.Append('\t');
+                    else if (element.Name == word + "br" || element.Name == word + "cr") line.AppendLine();
+                }
+
+                var text = line.ToString().Trim();
+                if (text.Length == 0) continue;
+                if (result.Length > 0) result.AppendLine();
+                result.Append(text);
+                EnsureWithinLimit(result.Length, maximumCharacters, name);
+            }
+
+            if (result.Length == 0)
+                throw new AiChatException($"Document '{name}' contains no extractable text.");
+            return result.ToString();
+        }
+        catch (AiChatException)
+        {
+            throw;
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            throw new AiChatException(
+                $"Document '{name}' could not be read as Word (.docx). It may be damaged or password protected.",
+                exception);
+        }
     }
 
     private static string ExtractPdf(

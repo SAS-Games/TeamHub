@@ -73,8 +73,7 @@ public sealed class AIChatModel(
             {
                 id = item.Id,
                 studio = item.Studio,
-                channel = item.Channel,
-                label = $"{item.Studio} — {item.Channel}"
+                label = item.Studio
             })
         });
     }

@@ -5,7 +5,7 @@ using TeamHub.Studio;
 
 namespace TeamHub.Web.AI;
 
-public sealed record MeetingNotesTeamsDestination(string Id, string Studio, string Channel);
+public sealed record MeetingNotesTeamsDestination(string Id, string Studio);
 
 public interface IMeetingNotesTeamsPublisher
 {
@@ -35,13 +35,11 @@ public sealed class MeetingNotesTeamsPublisher(
             .Where(studio => studio.IsActive)
             .ToDictionary(studio => studio.Id, StringComparer.OrdinalIgnoreCase);
         return (await teamsConfiguration.ListAsync(cancellationToken))
-            .Where(channel => channel.IsConfigured && activeStudios.ContainsKey(channel.StudioId))
-            .Select(channel => new MeetingNotesTeamsDestination(
-                channel.StudioId,
-                activeStudios[channel.StudioId].StudioName,
-                channel.ChannelName))
-            .OrderBy(channel => channel.Studio, StringComparer.OrdinalIgnoreCase)
-            .ThenBy(channel => channel.Channel, StringComparer.OrdinalIgnoreCase)
+            .Where(destination => destination.IsConfigured && activeStudios.ContainsKey(destination.StudioId))
+            .Select(destination => new MeetingNotesTeamsDestination(
+                destination.StudioId,
+                activeStudios[destination.StudioId].StudioName))
+            .OrderBy(destination => destination.Studio, StringComparer.OrdinalIgnoreCase)
             .ToList();
     }
 
@@ -53,7 +51,7 @@ public sealed class MeetingNotesTeamsPublisher(
     {
         var normalizedId = destinationId?.Trim() ?? string.Empty;
         var content = markdown?.Trim() ?? string.Empty;
-        if (normalizedId.Length == 0) throw new ArgumentException("Select a Teams channel.");
+        if (normalizedId.Length == 0) throw new ArgumentException("Select a studio destination.");
         if (content.Length == 0) throw new ArgumentException("Generate meeting notes before publishing.");
         if (Encoding.UTF8.GetByteCount(content) > MaximumMessageBytes)
             throw new ArgumentException("The meeting notes exceed the 28 KB Teams message limit. Download the Markdown file and attach it in Teams instead.");
@@ -63,12 +61,12 @@ public sealed class MeetingNotesTeamsPublisher(
         var studio = await studios.GetStudioAsync(normalizedId, cancellationToken);
         if (studio is null || !studio.IsActive)
             throw new ArgumentException("The selected studio is not active.");
-        var channel = (await teamsConfiguration.ListAsync(cancellationToken)).SingleOrDefault(item =>
+        var destination = (await teamsConfiguration.ListAsync(cancellationToken)).SingleOrDefault(item =>
             item.IsConfigured && string.Equals(item.StudioId, normalizedId, StringComparison.OrdinalIgnoreCase))
-            ?? throw new ArgumentException("The selected Teams channel is not configured.");
-        var webhook = await teamsConfiguration.GetWebhookAsync(channel.StudioId, cancellationToken);
+            ?? throw new ArgumentException("The selected studio does not have a Teams destination configured.");
+        var webhook = await teamsConfiguration.GetWebhookAsync(destination.StudioId, cancellationToken);
         if (webhook is null)
-            throw new InvalidOperationException("The selected Teams channel webhook is not available on this server.");
+            throw new InvalidOperationException("The selected Teams destination webhook is not available on this server.");
 
         using var response = await httpClient.PostAsJsonAsync(
             webhook,
@@ -78,7 +76,7 @@ public sealed class MeetingNotesTeamsPublisher(
         {
             logger.LogWarning(
                 "Publishing Meeting Notes to destination {DestinationId} by {PublishedBy} failed with status {StatusCode}.",
-                channel.StudioId,
+                destination.StudioId,
                 publishedBy,
                 (int)response.StatusCode);
             throw new InvalidOperationException(
@@ -87,7 +85,7 @@ public sealed class MeetingNotesTeamsPublisher(
 
         logger.LogInformation(
             "Meeting Notes were published to destination {DestinationId} by {PublishedBy}.",
-            channel.StudioId,
+            destination.StudioId,
             publishedBy);
     }
 }

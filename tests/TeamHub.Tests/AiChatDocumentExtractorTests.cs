@@ -1,3 +1,5 @@
+using System.IO.Compression;
+using System.Text;
 using FluentAssertions;
 using TeamHub.AI.Chat.Contracts;
 using TeamHub.Web.AI;
@@ -50,6 +52,42 @@ public sealed class AiChatDocumentExtractorTests
     }
 
     [Fact]
+    public async Task Docx_attachment_is_extracted_as_prompt_text()
+    {
+        var bytes = CreateDocx("""
+            <w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+              <w:body>
+                <w:p><w:r><w:t>Weekly sync-up transcript</w:t></w:r></w:p>
+                <w:tbl><w:tr><w:tc><w:p><w:r><w:t>Action: update the milestone</w:t></w:r></w:p></w:tc></w:tr></w:tbl>
+              </w:body>
+            </w:document>
+            """);
+
+        var result = await extractor.ExtractAsync(
+            [Binary("weekly-sync.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", bytes)],
+            5,
+            20_000);
+
+        result.Images.Should().BeEmpty();
+        result.Documents.Should().ContainSingle();
+        result.Documents[0].MediaType.Should().Be("text/markdown");
+        result.Documents[0].Content.Should().Contain("Weekly sync-up transcript")
+            .And.Contain("Action: update the milestone");
+    }
+
+    [Fact]
+    public async Task Invalid_docx_signature_is_rejected()
+    {
+        var action = () => extractor.ExtractAsync(
+            [Binary("transcript.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "not a docx"u8.ToArray())],
+            5,
+            20_000);
+
+        await action.Should().ThrowAsync<AiChatException>()
+            .WithMessage("*not a valid Word (.docx)*");
+    }
+
+    [Fact]
     public async Task Invalid_chm_signature_is_rejected_before_decompilation()
     {
         var action = () => extractor.ExtractAsync(
@@ -79,4 +117,17 @@ public sealed class AiChatDocumentExtractorTests
         MediaType = mediaType,
         Base64Content = Convert.ToBase64String(bytes)
     };
+
+    private static byte[] CreateDocx(string documentXml)
+    {
+        using var output = new MemoryStream();
+        using (var archive = new ZipArchive(output, ZipArchiveMode.Create, leaveOpen: true))
+        {
+            var entry = archive.CreateEntry("word/document.xml");
+            using var stream = entry.Open();
+            using var writer = new StreamWriter(stream, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
+            writer.Write(documentXml);
+        }
+        return output.ToArray();
+    }
 }

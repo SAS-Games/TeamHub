@@ -20,7 +20,6 @@ internal sealed class MeetingNotesTeamsConfigurationService(
             .OrderBy(item => item.StudioId)
             .Select(item => new MeetingNotesTeamsChannelStatus(
                 item.StudioId,
-                item.ChannelName,
                 item.WebhookUrlProtected != string.Empty))
             .ToListAsync(cancellationToken);
 
@@ -32,7 +31,7 @@ internal sealed class MeetingNotesTeamsConfigurationService(
         ArgumentNullException.ThrowIfNull(channels);
         var actor = updatedBy?.Trim() ?? string.Empty;
         if (actor.Length == 0) throw new ArgumentException("The administrator identity is required.");
-        if (channels.Count > 500) throw new ArgumentException("Too many Teams channel rows were submitted.");
+        if (channels.Count > 500) throw new ArgumentException("Too many Teams destination rows were submitted.");
 
         var ids = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var existing = await dbContext.MeetingNotesTeamsChannels.ToListAsync(cancellationToken);
@@ -40,10 +39,9 @@ internal sealed class MeetingNotesTeamsConfigurationService(
         foreach (var change in channels)
         {
             var studioId = change.StudioId?.Trim() ?? string.Empty;
-            var channelName = change.ChannelName?.Trim() ?? string.Empty;
             var webhookValue = change.WebhookUrl?.Trim() ?? string.Empty;
             if (studioId.Length is 0 or > 100 || !ids.Add(studioId))
-                throw new ArgumentException("Every Teams channel row must have a unique valid studio.");
+                throw new ArgumentException("Every Teams destination row must have a unique valid studio.");
 
             byStudio.TryGetValue(studioId, out var record);
             if (change.Remove)
@@ -52,25 +50,21 @@ internal sealed class MeetingNotesTeamsConfigurationService(
                 continue;
             }
 
-            if (channelName.Length is 0 or > 200)
-            {
-                if (record is not null || webhookValue.Length > 0)
-                    throw new ArgumentException($"Enter a channel name for studio '{studioId}'.");
-                continue;
-            }
-
             if (record is null && webhookValue.Length == 0) continue;
             if (webhookValue.Length > 0)
             {
                 var webhook = ParseMicrosoftWorkflowUrl(webhookValue);
-                record ??= new MeetingNotesTeamsChannelRecord { StudioId = studioId };
+                record ??= new MeetingNotesTeamsChannelRecord
+                {
+                    StudioId = studioId,
+                    ChannelName = string.Empty
+                };
                 record.WebhookUrlProtected = protector.Protect(webhook.AbsoluteUri);
                 if (record.StudioId == studioId && dbContext.Entry(record).State == EntityState.Detached)
                     dbContext.MeetingNotesTeamsChannels.Add(record);
             }
 
             if (record is null) continue;
-            record.ChannelName = channelName;
             record.UpdatedAtUtc = DateTime.UtcNow;
             record.UpdatedBy = actor;
         }

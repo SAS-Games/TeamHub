@@ -64,8 +64,8 @@
         <div id="aiChatDocuments" class="ai-chat-documents d-none">
             <label for="aiChatFiles" class="form-label" id="aiChatFilesLabel">Optional documents</label>
             <input id="aiChatFiles" type="file" class="form-control" multiple
-                   accept=".txt,.md,.markdown,.csv,.json,.pdf,.chm,.png,.jpg,.jpeg,.webp,.gif,text/plain,text/markdown,text/csv,application/json,application/pdf,application/vnd.ms-htmlhelp,image/png,image/jpeg,image/webp,image/gif" />
-            <div class="form-text">General and Meeting Notes modes support text, Markdown, CSV, JSON, PDF, CHM, PNG, JPEG, WebP, and GIF. Maximum five files; binary uploads are limited to 10 MB each and 20 MB total.</div>
+                   accept=".txt,.md,.markdown,.csv,.json,.docx,.pdf,.chm,.png,.jpg,.jpeg,.webp,.gif,text/plain,text/markdown,text/csv,application/json,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/pdf,application/vnd.ms-htmlhelp,image/png,image/jpeg,image/webp,image/gif" />
+            <div class="form-text">General and Meeting Notes modes support text, Markdown, CSV, JSON, Word (.docx), PDF, CHM, PNG, JPEG, WebP, and GIF. Maximum five files; binary uploads are limited to 10 MB each and 20 MB total.</div>
         </div>
         <div class="d-flex gap-2 align-items-end">
             <div class="flex-grow-1">
@@ -86,7 +86,7 @@
                 <textarea id="aiChatMeetingDraft" class="form-control font-monospace" rows="12"></textarea>
                 <div class="d-flex flex-wrap gap-2 align-items-center mt-2">
                     <label for="aiChatMeetingDestination" class="form-label mb-0">Post to studio</label>
-                    <select id="aiChatMeetingDestination" class="form-select form-select-sm w-auto" aria-label="Studio and Teams channel"></select>
+                    <select id="aiChatMeetingDestination" class="form-select form-select-sm w-auto" aria-label="Studio"></select>
                     <button id="aiChatPublishNotes" type="button" class="btn btn-sm btn-primary">Post to Teams</button>
                 </div>
             </div>

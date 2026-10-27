@@ -262,6 +262,24 @@ public sealed class AiConfigurationTests
         (await configuration.GetAsync()).Chat.Enabled.Should().BeTrue();
         (await configuration.GetAsync()).Chat.MaximumOutputTokens.Should().Be(6000);
 
+        var originalMeetingNotesPath = (await configuration.GetAsync()).Chat.MeetingNotes.InstructionPath;
+        page.Settings.ChatMaximumMessages = 31;
+        page.Settings.MeetingNotesInstructionPath = "AI/must-not-change.md";
+        (await page.OnPostSaveChatAsync(CancellationToken.None)).Should().BeOfType<RedirectToPageResult>();
+        var chatOnlySave = await configuration.GetAsync();
+        chatOnlySave.Chat.MaximumMessages.Should().Be(31);
+        chatOnlySave.Chat.MeetingNotes.InstructionPath.Should().Be(originalMeetingNotesPath);
+        chatOnlySave.FlowDesigner.Enabled.Should().BeTrue();
+        chatOnlySave.ReportGenerator.Enabled.Should().BeTrue();
+
+        page.Settings.MeetingNotesEnabled = true;
+        page.Settings.MeetingNotesInstructionPath = "AI/custom-meeting-notes.md";
+        page.Settings.ChatMaximumMessages = 99;
+        (await page.OnPostSaveMeetingNotesAsync(CancellationToken.None)).Should().BeOfType<RedirectToPageResult>();
+        var meetingNotesOnlySave = await configuration.GetAsync();
+        meetingNotesOnlySave.Chat.MeetingNotes.InstructionPath.Should().Be("AI/custom-meeting-notes.md");
+        meetingNotesOnlySave.Chat.MaximumMessages.Should().Be(31);
+
         page.Settings.ReportGeneratorEnabled = false;
         await page.OnPostSaveAsync(CancellationToken.None);
         (await configuration.GetAsync()).ReportGenerator.Enabled.Should().BeFalse();

@@ -211,14 +211,14 @@
 
     async function loadMeetingDestinations() {
         if (!meetingDestination || meetingDestinationsLoaded) return;
-        meetingDestination.replaceChildren(new Option("Loading Teams channels…", ""));
+        meetingDestination.replaceChildren(new Option("Loading studios…", ""));
         meetingDestination.disabled = true;
         try {
             const response = await fetch("/AIChat?handler=MeetingNotesDestinations", {
                 headers: { "Accept": "application/json" }
             });
             const payload = await response.json().catch(() => ({}));
-            if (!response.ok) throw new Error(payload.error || "Teams channels could not be loaded.");
+            if (!response.ok) throw new Error(payload.error || "Teams destinations could not be loaded.");
             meetingDestination.replaceChildren();
             for (const item of payload.destinations || []) {
                 meetingDestination.add(new Option(item.label, item.id));
@@ -237,7 +237,7 @@
             meetingDestination.disabled = true;
             meetingDestination.classList.add("d-none");
             if (publishNotes) publishNotes.classList.add("d-none");
-            if (meetingStatus) meetingStatus.textContent = exception.message || "Teams channels could not be loaded.";
+            if (meetingStatus) meetingStatus.textContent = exception.message || "Teams destinations could not be loaded.";
         }
     }
 
@@ -256,7 +256,7 @@
             && meetingDestinationsLoaded
             && !meetingEditor?.classList.contains("d-none")
             && meetingStatus) {
-            meetingStatus.textContent = "No Teams Workflow channel is configured; you can download the Markdown file.";
+            meetingStatus.textContent = "No Teams destination is configured; you can download the Markdown file.";
         }
         if (publishNotes) publishNotes.disabled = !meetingDestination?.value;
     }
@@ -278,7 +278,7 @@
     async function publishMeetingNotes() {
         const notes = meetingDraft?.value.trim() || "";
         if (!notes || !meetingDestination?.value || !publishNotes) return;
-        const destinationLabel = meetingDestination.selectedOptions[0]?.textContent || "the selected Teams channel";
+        const destinationLabel = meetingDestination.selectedOptions[0]?.textContent || "the selected studio";
         if (!window.confirm(`Publish these meeting notes to ${destinationLabel}?`)) return;
         publishNotes.disabled = true;
         if (meetingStatus) {
@@ -829,7 +829,7 @@
         return Promise.all(selected.map(async file => {
             const mediaType = file.type || mediaTypeFor(file.name);
             const extension = file.name.split(".").pop().toLowerCase();
-            const binary = ["pdf", "chm", "png", "jpg", "jpeg", "webp", "gif"].includes(extension);
+            const binary = ["docx", "pdf", "chm", "png", "jpg", "jpeg", "webp", "gif"].includes(extension);
             if (!binary) {
                 return { name: file.name, mediaType, content: await file.text() };
             }
@@ -868,6 +868,7 @@
         if (extension === "md" || extension === "markdown") return "text/markdown";
         if (extension === "csv") return "text/csv";
         if (extension === "json") return "application/json";
+        if (extension === "docx") return "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
         if (extension === "pdf") return "application/pdf";
         if (extension === "chm") return "application/vnd.ms-htmlhelp";
         if (extension === "png") return "image/png";

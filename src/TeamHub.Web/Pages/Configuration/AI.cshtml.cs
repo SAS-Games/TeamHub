@@ -46,6 +46,130 @@ public sealed class AIModel(
     public Task<IActionResult> OnPostTestAsync(CancellationToken cancellationToken) =>
         SaveAsync(testConnection: true, cancellationToken);
 
+    public Task<IActionResult> OnPostSaveRuntimeAsync(CancellationToken cancellationToken) =>
+        SaveSectionAsync(AiConfigurationSection.Runtime, cancellationToken);
+
+    public Task<IActionResult> OnPostSaveModelsAsync(CancellationToken cancellationToken) =>
+        SaveSectionAsync(AiConfigurationSection.Models, cancellationToken);
+
+    public Task<IActionResult> OnPostSaveSecurityAsync(CancellationToken cancellationToken) =>
+        SaveSectionAsync(AiConfigurationSection.Security, cancellationToken);
+
+    public Task<IActionResult> OnPostSaveChatAsync(CancellationToken cancellationToken) =>
+        SaveSectionAsync(AiConfigurationSection.Chat, cancellationToken);
+
+    public Task<IActionResult> OnPostSaveMeetingNotesAsync(CancellationToken cancellationToken) =>
+        SaveSectionAsync(AiConfigurationSection.MeetingNotes, cancellationToken);
+
+    public Task<IActionResult> OnPostSaveFlowDesignerAsync(CancellationToken cancellationToken) =>
+        SaveSectionAsync(AiConfigurationSection.FlowDesigner, cancellationToken);
+
+    public Task<IActionResult> OnPostSaveReportGeneratorAsync(CancellationToken cancellationToken) =>
+        SaveSectionAsync(AiConfigurationSection.ReportGenerator, cancellationToken);
+
+    public async Task<IActionResult> OnPostTestConnectionAsync(CancellationToken cancellationToken)
+    {
+        ModelState.Clear();
+        TestResult = await modelService.TestConnectionAsync(cancellationToken);
+        StatusMessage = TestResult.IsAvailable && TestResult.IsModelAvailable
+            ? $"Connection succeeded. {TestResult.Provider} model '{TestResult.Model}' is available."
+            : $"Connection check failed. {TestResult.Message}";
+        await LoadAsync(cancellationToken);
+        return Page();
+    }
+
+    private async Task<IActionResult> SaveSectionAsync(
+        AiConfigurationSection section,
+        CancellationToken cancellationToken)
+    {
+        ModelState.Clear();
+        try
+        {
+            var snapshot = await configuration.GetAsync(cancellationToken);
+            switch (section)
+            {
+                case AiConfigurationSection.Runtime:
+                    snapshot.Runtime.Provider = Settings.Provider?.Trim() ?? string.Empty;
+                    snapshot.Runtime.OfflineOnly = Settings.OfflineOnly;
+                    snapshot.Runtime.Temperature = Settings.Temperature;
+                    snapshot.Runtime.TimeoutSeconds = Settings.TimeoutSeconds;
+                    break;
+                case AiConfigurationSection.Models:
+                    snapshot.Runtime.Providers = Settings.ToRuntimeOptions().Providers;
+                    break;
+                case AiConfigurationSection.Security:
+                    snapshot.Runtime.CredentialEnvironmentVariable =
+                        Settings.CredentialEnvironmentVariable?.Trim() ?? string.Empty;
+                    break;
+                case AiConfigurationSection.Chat:
+                    var meetingNotes = snapshot.Chat.MeetingNotes;
+                    snapshot.Chat = Settings.ToChatOptions();
+                    snapshot.Chat.MeetingNotes = meetingNotes;
+                    break;
+                case AiConfigurationSection.MeetingNotes:
+                    snapshot.Chat.MeetingNotes = new AiMeetingNotesOptions
+                    {
+                        Enabled = Settings.MeetingNotesEnabled,
+                        InstructionPath = Settings.MeetingNotesInstructionPath?.Trim() ?? string.Empty
+                    };
+                    break;
+                case AiConfigurationSection.FlowDesigner:
+                    snapshot.FlowDesigner = Settings.ToFlowDesignerOptions();
+                    break;
+                case AiConfigurationSection.ReportGenerator:
+                    snapshot.ReportGenerator = Settings.ToReportGeneratorOptions();
+                    break;
+                default:
+                    throw new ArgumentOutOfRangeException(nameof(section));
+            }
+
+            var savesCredential = section == AiConfigurationSection.Security
+                && snapshot.Runtime.Provider != AiModelProviderKeys.PfbAiGateway;
+            await configuration.SaveAsync(new SaveAiConfigurationRequest(
+                snapshot.Runtime,
+                snapshot.Chat,
+                snapshot.FlowDesigner,
+                snapshot.ReportGenerator,
+                savesCredential ? Credential : null,
+                savesCredential && RemoveCredential,
+                User.Identity?.Name ?? "Administrator"), cancellationToken);
+
+            if (section == AiConfigurationSection.MeetingNotes && meetingNotesTeams is not null)
+            {
+                await meetingNotesTeams.SaveAsync(
+                    MeetingNotesTeamsChannels.Select(row => new SaveMeetingNotesTeamsChannel(
+                        row.StudioId,
+                        row.WebhookUrl,
+                        row.Remove)).ToList(),
+                    User.Identity?.Name ?? "Administrator",
+                    cancellationToken);
+            }
+
+            StatusMessage = section switch
+            {
+                AiConfigurationSection.Runtime => "Runtime settings saved.",
+                AiConfigurationSection.Models => "Provider profiles saved.",
+                AiConfigurationSection.Security => "Provider security settings saved.",
+                AiConfigurationSection.Chat => "AI Chat settings saved.",
+                AiConfigurationSection.MeetingNotes => "Meeting Notes and Teams destinations saved.",
+                AiConfigurationSection.FlowDesigner => "Flow Designer AI settings saved.",
+                AiConfigurationSection.ReportGenerator => "Report Generator settings saved.",
+                _ => "AI settings saved."
+            };
+            return RedirectToPage();
+        }
+        catch (Exception exception) when (exception is ArgumentException
+            or InvalidOperationException
+            or AiModelProviderException)
+        {
+            ModelState.AddModelError(string.Empty, exception.Message);
+            await LoadMetadataAsync(cancellationToken);
+            await LoadMeetingNotesChannelsAsync(preserveInput: true, cancellationToken);
+            await LoadPfbModelsAsync(cancellationToken);
+            return Page();
+        }
+    }
+
     private async Task<IActionResult> SaveAsync(bool testConnection, CancellationToken cancellationToken)
     {
         if (!ModelState.IsValid)
@@ -71,7 +195,6 @@ public sealed class AIModel(
                 await meetingNotesTeams.SaveAsync(
                     MeetingNotesTeamsChannels.Select(row => new SaveMeetingNotesTeamsChannel(
                         row.StudioId,
-                        row.ChannelName,
                         row.WebhookUrl,
                         row.Remove)).ToList(),
                     User.Identity?.Name ?? "Administrator",
@@ -134,7 +257,6 @@ public sealed class AIModel(
                 {
                     StudioId = studio.Id,
                     StudioName = studio.StudioName,
-                    ChannelName = input?.ChannelName ?? status?.ChannelName ?? "General",
                     WebhookUrl = input?.WebhookUrl,
                     IsConfigured = status?.IsConfigured == true,
                     Remove = input?.Remove == true
@@ -195,12 +317,21 @@ public sealed class MeetingNotesTeamsChannelInput
     [Required, StringLength(100)]
     public string StudioId { get; set; } = string.Empty;
     public string StudioName { get; set; } = string.Empty;
-    [Required, StringLength(200)]
-    public string ChannelName { get; set; } = "General";
     [StringLength(4096), DataType(DataType.Password)]
     public string? WebhookUrl { get; set; }
     public bool IsConfigured { get; set; }
     public bool Remove { get; set; }
+}
+
+internal enum AiConfigurationSection
+{
+    Runtime,
+    Models,
+    Security,
+    Chat,
+    MeetingNotes,
+    FlowDesigner,
+    ReportGenerator
 }
 
 public sealed class AiSettingsInput
@@ -284,7 +415,7 @@ public sealed class AiSettingsInput
         MaximumConcurrentRequests = ReportMaximumConcurrentRequests,
         MaximumSourceCharactersPerStudio = ReportMaximumSourceCharactersPerStudio,
         MaximumOutputTokens = ReportMaximumOutputTokens,
-        WeeklyWorkSummaryPromptPath = WeeklyWorkSummaryPromptPath.Trim()
+        WeeklyWorkSummaryPromptPath = WeeklyWorkSummaryPromptPath?.Trim() ?? string.Empty
     };
 
     public AiChatOptions ToChatOptions() => new()
@@ -301,7 +432,7 @@ public sealed class AiSettingsInput
         MeetingNotes = new AiMeetingNotesOptions
         {
             Enabled = MeetingNotesEnabled,
-            InstructionPath = MeetingNotesInstructionPath.Trim()
+            InstructionPath = MeetingNotesInstructionPath?.Trim() ?? string.Empty
         }
     };
 
@@ -404,8 +535,8 @@ public sealed class AiSettingsInput
         string model,
         string? apiMode = null) => new()
     {
-        Endpoint = endpoint.Trim(),
-        Model = model.Trim(),
+        Endpoint = endpoint?.Trim() ?? string.Empty,
+        Model = model?.Trim() ?? string.Empty,
         ApiMode = apiMode?.Trim()
     };
 
