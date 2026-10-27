@@ -13,11 +13,20 @@
     const messagesElement = root.querySelector("#aiChatMessages");
     const documentsElement = root.querySelector("#aiChatDocuments");
     const files = root.querySelector("#aiChatFiles");
+    const filesLabel = root.querySelector("#aiChatFilesLabel");
     const form = root.querySelector("#aiChatForm");
     const prompt = root.querySelector("#aiChatPrompt");
     const send = root.querySelector("#aiChatSend");
     const error = root.querySelector("#aiChatError");
     const usageElement = root.querySelector("#aiChatUsage");
+    const meetingActions = root.querySelector("#aiChatMeetingActions");
+    const downloadNotes = root.querySelector("#aiChatDownloadNotes");
+    const editNotes = root.querySelector("#aiChatEditNotes");
+    const meetingEditor = root.querySelector("#aiChatMeetingEditor");
+    const meetingDraft = root.querySelector("#aiChatMeetingDraft");
+    const meetingDestination = root.querySelector("#aiChatMeetingDestination");
+    const publishNotes = root.querySelector("#aiChatPublishNotes");
+    const meetingStatus = root.querySelector("#aiChatMeetingStatus");
     const token = form.querySelector('input[name="__RequestVerificationToken"]');
     const storageKey = `teamhub.aiChat.widget.v2:${root.dataset.aiChatUser || "page"}`;
     let history = [];
@@ -27,6 +36,8 @@
     let activeRequest = null;
     let conversationRevision = 0;
     let normalBounds = null;
+    let meetingDestinationsLoaded = false;
+    let meetingDraftDirty = false;
     const copyIcon = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 7V3h13v13h-4v5H3V7h5Zm2 0h7v7h2V5h-9v2Zm5 2H5v10h10V9Z" /></svg>';
     const copiedIcon = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9.2 17.2-4.4-4.4 1.4-1.4 3 3L17.8 5.8l1.4 1.4-10 10Z" /></svg>';
 
@@ -99,7 +110,9 @@
             return {
                 open: state.open === true,
                 fullscreen: state.fullscreen === true,
-                mode: state.mode === "TeamHub" ? "TeamHub" : "General",
+                mode: ["General", "TeamHub", "MeetingNotes"].includes(state.mode)
+                    ? state.mode
+                    : "General",
                 model: typeof state.model === "string" ? state.model.slice(0, 200) : "",
                 history: savedHistory,
                 bounds: state.bounds
@@ -143,7 +156,9 @@
         const detail = document.createElement("span");
         detail.textContent = mode.value === "TeamHub"
             ? "Ask about TeamHub information available to your account."
-            : "Ask a general question or attach your own documents.";
+            : mode.value === "MeetingNotes"
+                ? "Paste a transcript or attach transcript files to generate structured meeting notes."
+                : "Ask a general question or attach your own documents.";
         empty.append(title, detail);
         messagesElement.append(empty);
     }
@@ -155,16 +170,28 @@
         prompt.value = "";
         showEmptyConversation();
         error.textContent = "";
+        if (meetingActions) meetingActions.classList.add("d-none");
+        if (meetingEditor) meetingEditor.classList.add("d-none");
+        if (meetingDraft) meetingDraft.value = "";
+        meetingDraftDirty = false;
+        if (meetingStatus) meetingStatus.textContent = "";
         updateSessionUsage();
         persistState();
     }
 
     function updateMode(reset = true) {
         const teamHubMode = mode.value === "TeamHub";
+        const meetingNotesMode = mode.value === "MeetingNotes";
         documentsElement.classList.toggle("d-none", teamHubMode);
         note.textContent = teamHubMode
             ? "Uses only TeamHub information authorized for your account. Workflow results are limited to workflows assigned to you."
-            : "Isolated from TeamHub. Documents are optional; ordinary questions use the model's general knowledge.";
+            : meetingNotesMode
+                ? "Generates Markdown notes only from the pasted or attached transcript. It does not use TeamHub data or general knowledge for meeting facts."
+                : "Isolated from TeamHub. Documents are optional; ordinary questions use the model's general knowledge.";
+        if (filesLabel) filesLabel.textContent = meetingNotesMode ? "Attach transcript files" : "Optional documents";
+        prompt.placeholder = meetingNotesMode
+            ? "Paste the meeting transcript or describe the requested notes…"
+            : "Ask a question…";
         if (reset) resetConversation();
     }
 
@@ -173,12 +200,117 @@
         model.disabled = generating || !modelsLoaded;
         prompt.disabled = generating;
         if (files) files.disabled = generating;
+        if (publishNotes) publishNotes.disabled = generating || !meetingDestination?.value;
         send.disabled = false;
         send.textContent = generating ? "Cancel" : "Send";
         send.classList.toggle("btn-danger", generating);
         send.classList.toggle("btn-primary", !generating);
         send.setAttribute("aria-label", generating ? "Cancel response generation" : "Send message");
         root.classList.toggle("is-generating", generating);
+    }
+
+    async function loadMeetingDestinations() {
+        if (!meetingDestination || meetingDestinationsLoaded) return;
+        meetingDestination.replaceChildren(new Option("Loading Teams channels…", ""));
+        meetingDestination.disabled = true;
+        try {
+            const response = await fetch("/AIChat?handler=MeetingNotesDestinations", {
+                headers: { "Accept": "application/json" }
+            });
+            const payload = await response.json().catch(() => ({}));
+            if (!response.ok) throw new Error(payload.error || "Teams channels could not be loaded.");
+            meetingDestination.replaceChildren();
+            for (const item of payload.destinations || []) {
+                meetingDestination.add(new Option(item.label, item.id));
+            }
+            meetingDestinationsLoaded = true;
+            const hasDestinations = meetingDestination.options.length > 0;
+            meetingDestination.disabled = !hasDestinations;
+            meetingDestination.classList.toggle("d-none", !hasDestinations);
+            if (publishNotes) {
+                publishNotes.classList.toggle("d-none", !hasDestinations);
+                publishNotes.disabled = !meetingDestination.value;
+            }
+            refreshMeetingActions();
+        } catch (exception) {
+            meetingDestination.replaceChildren();
+            meetingDestination.disabled = true;
+            meetingDestination.classList.add("d-none");
+            if (publishNotes) publishNotes.classList.add("d-none");
+            if (meetingStatus) meetingStatus.textContent = exception.message || "Teams channels could not be loaded.";
+        }
+    }
+
+    function currentPublishableResponse() {
+        if (mode.value === "TeamHub") return "";
+        return [...history].reverse().find(item => item.role === "assistant")?.content || "";
+    }
+
+    function refreshMeetingActions(replaceDraft = false) {
+        if (!meetingActions) return;
+        const notes = currentPublishableResponse();
+        meetingActions.classList.toggle("d-none", !notes);
+        if (!notes) return;
+        if (meetingDraft && (replaceDraft || !meetingDraftDirty)) meetingDraft.value = notes;
+        if (meetingDestination?.options.length === 0
+            && meetingDestinationsLoaded
+            && !meetingEditor?.classList.contains("d-none")
+            && meetingStatus) {
+            meetingStatus.textContent = "No Teams Workflow channel is configured; you can download the Markdown file.";
+        }
+        if (publishNotes) publishNotes.disabled = !meetingDestination?.value;
+    }
+
+    function downloadMeetingNotes() {
+        const notes = meetingDraftDirty ? meetingDraft?.value.trim() : currentPublishableResponse();
+        if (!notes) return;
+        const blob = new Blob([notes], { type: "text/markdown;charset=utf-8" });
+        const link = document.createElement("a");
+        const url = URL.createObjectURL(blob);
+        link.href = url;
+        link.download = `meeting-notes-${new Date().toISOString().slice(0, 10)}.md`;
+        document.body.append(link);
+        link.click();
+        link.remove();
+        window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+    }
+
+    async function publishMeetingNotes() {
+        const notes = meetingDraft?.value.trim() || "";
+        if (!notes || !meetingDestination?.value || !publishNotes) return;
+        const destinationLabel = meetingDestination.selectedOptions[0]?.textContent || "the selected Teams channel";
+        if (!window.confirm(`Publish these meeting notes to ${destinationLabel}?`)) return;
+        publishNotes.disabled = true;
+        if (meetingStatus) {
+            meetingStatus.className = "small text-secondary";
+            meetingStatus.textContent = "Publishing to Teams…";
+        }
+        try {
+            const response = await fetch("/AIChat?handler=PublishMeetingNotes", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    "RequestVerificationToken": token.value
+                },
+                body: JSON.stringify({
+                    destinationId: meetingDestination.value,
+                    markdown: notes
+                })
+            });
+            const payload = await response.json().catch(() => ({}));
+            if (!response.ok) throw new Error(payload.error || "Meeting notes could not be published.");
+            if (meetingStatus) {
+                meetingStatus.className = "small text-success";
+                meetingStatus.textContent = payload.message || "Meeting notes published to Teams.";
+            }
+        } catch (exception) {
+            if (meetingStatus) {
+                meetingStatus.className = "small text-danger";
+                meetingStatus.textContent = exception.message || "Meeting notes could not be published.";
+            }
+        } finally {
+            publishNotes.disabled = false;
+        }
     }
 
     async function copyResponse(content, button) {
@@ -688,7 +820,7 @@
     }
 
     async function readDocuments() {
-        if (mode.value !== "General") return [];
+        if (mode.value === "TeamHub") return [];
         const selected = Array.from(files.files || []);
         if (selected.length > 5) throw new Error("Attach no more than five documents.");
         const maximumBinaryFileBytes = 10 * 1024 * 1024;
@@ -986,6 +1118,9 @@
             thinkingMessage.remove();
             addMessage("assistant", assistantMessage.content, assistantMessage.citations, assistantMessage.usage);
             updateSessionUsage();
+            meetingDraftDirty = false;
+            if (meetingEditor) meetingEditor.classList.add("d-none");
+            refreshMeetingActions(true);
             persistState();
         } catch (exception) {
             if (requestRevision === conversationRevision) {
@@ -1018,6 +1153,25 @@
         showEmptyConversation();
     }
     updateSessionUsage();
+    refreshMeetingActions();
+
+    if (downloadNotes) downloadNotes.addEventListener("click", downloadMeetingNotes);
+    if (editNotes) editNotes.addEventListener("click", async () => {
+        if (!meetingEditor) return;
+        meetingEditor.classList.toggle("d-none");
+        if (meetingEditor.classList.contains("d-none")) return;
+        if (meetingDraft && !meetingDraftDirty) meetingDraft.value = currentPublishableResponse();
+        await loadMeetingDestinations();
+        meetingDraft?.focus();
+    });
+    if (meetingDraft) meetingDraft.addEventListener("input", () => {
+        meetingDraftDirty = true;
+    });
+    if (publishNotes) publishNotes.addEventListener("click", publishMeetingNotes);
+    if (meetingDestination) meetingDestination.addEventListener("change", () => {
+        if (publishNotes) publishNotes.disabled = !meetingDestination.value;
+        if (meetingStatus) meetingStatus.textContent = "";
+    });
 
     if (widget) {
         root.classList.toggle("is-fullscreen", savedState?.fullscreen === true);

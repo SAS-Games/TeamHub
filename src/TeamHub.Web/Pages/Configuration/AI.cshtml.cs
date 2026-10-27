@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
 using TeamHub.AI.Contracts;
+using TeamHub.Studio;
 
 namespace TeamHub.Web.Pages.Configuration;
 
@@ -10,7 +11,9 @@ namespace TeamHub.Web.Pages.Configuration;
 public sealed class AIModel(
     IAiConfigurationService configuration,
     IAiModelService modelService,
-    IAiModelProviderRegistry providers) : PageModel
+    IAiModelProviderRegistry providers,
+    IMeetingNotesTeamsConfigurationService? meetingNotesTeams = null,
+    IStudioDirectoryService? studioDirectory = null) : PageModel
 {
     [BindProperty]
     public AiSettingsInput Settings { get; set; } = new();
@@ -20,6 +23,9 @@ public sealed class AIModel(
 
     [BindProperty]
     public bool RemoveCredential { get; set; }
+
+    [BindProperty]
+    public List<MeetingNotesTeamsChannelInput> MeetingNotesTeamsChannels { get; set; } = [];
 
     public bool HasCredential { get; private set; }
     public DateTime? UpdatedAtUtc { get; private set; }
@@ -45,6 +51,7 @@ public sealed class AIModel(
         if (!ModelState.IsValid)
         {
             await LoadMetadataAsync(cancellationToken);
+            await LoadMeetingNotesChannelsAsync(preserveInput: true, cancellationToken);
             return Page();
         }
 
@@ -58,6 +65,18 @@ public sealed class AIModel(
                 Settings.Provider == AiModelProviderKeys.PfbAiGateway ? null : Credential,
                 Settings.Provider != AiModelProviderKeys.PfbAiGateway && RemoveCredential,
                 User.Identity?.Name ?? "Administrator"), cancellationToken);
+
+            if (meetingNotesTeams is not null)
+            {
+                await meetingNotesTeams.SaveAsync(
+                    MeetingNotesTeamsChannels.Select(row => new SaveMeetingNotesTeamsChannel(
+                        row.StudioId,
+                        row.ChannelName,
+                        row.WebhookUrl,
+                        row.Remove)).ToList(),
+                    User.Identity?.Name ?? "Administrator",
+                    cancellationToken);
+            }
 
             if (!testConnection)
             {
@@ -78,6 +97,7 @@ public sealed class AIModel(
         {
             ModelState.AddModelError(string.Empty, exception.Message);
             await LoadMetadataAsync(cancellationToken);
+            await LoadMeetingNotesChannelsAsync(preserveInput: true, cancellationToken);
             return Page();
         }
     }
@@ -89,7 +109,38 @@ public sealed class AIModel(
         HasCredential = snapshot.HasCredential;
         UpdatedAtUtc = snapshot.UpdatedAtUtc;
         UpdatedBy = snapshot.UpdatedBy;
+        await LoadMeetingNotesChannelsAsync(preserveInput: false, cancellationToken);
         await LoadPfbModelsAsync(cancellationToken);
+    }
+
+    private async Task LoadMeetingNotesChannelsAsync(
+        bool preserveInput,
+        CancellationToken cancellationToken)
+    {
+        if (meetingNotesTeams is null || studioDirectory is null) return;
+        var statuses = (await meetingNotesTeams.ListAsync(cancellationToken))
+            .ToDictionary(item => item.StudioId, StringComparer.OrdinalIgnoreCase);
+        var submitted = preserveInput
+            ? MeetingNotesTeamsChannels.ToDictionary(item => item.StudioId, StringComparer.OrdinalIgnoreCase)
+            : new Dictionary<string, MeetingNotesTeamsChannelInput>(StringComparer.OrdinalIgnoreCase);
+        MeetingNotesTeamsChannels = (await studioDirectory.GetStudiosAsync(cancellationToken))
+            .Where(studio => studio.IsActive)
+            .OrderBy(studio => studio.StudioName, StringComparer.OrdinalIgnoreCase)
+            .Select(studio =>
+            {
+                statuses.TryGetValue(studio.Id, out var status);
+                submitted.TryGetValue(studio.Id, out var input);
+                return new MeetingNotesTeamsChannelInput
+                {
+                    StudioId = studio.Id,
+                    StudioName = studio.StudioName,
+                    ChannelName = input?.ChannelName ?? status?.ChannelName ?? "General",
+                    WebhookUrl = input?.WebhookUrl,
+                    IsConfigured = status?.IsConfigured == true,
+                    Remove = input?.Remove == true
+                };
+            })
+            .ToList();
     }
 
     private async Task LoadMetadataAsync(CancellationToken cancellationToken)
@@ -139,6 +190,19 @@ public sealed class AIModel(
     }
 }
 
+public sealed class MeetingNotesTeamsChannelInput
+{
+    [Required, StringLength(100)]
+    public string StudioId { get; set; } = string.Empty;
+    public string StudioName { get; set; } = string.Empty;
+    [Required, StringLength(200)]
+    public string ChannelName { get; set; } = "General";
+    [StringLength(4096), DataType(DataType.Password)]
+    public string? WebhookUrl { get; set; }
+    public bool IsConfigured { get; set; }
+    public bool Remove { get; set; }
+}
+
 public sealed class AiSettingsInput
 {
     [Required]
@@ -185,6 +249,10 @@ public sealed class AiSettingsInput
     [Range(1_000, 200_000)] public int ChatMaximumInstructionCharacters { get; set; } = 40_000;
     [Display(Name = "Maximum output tokens per AI request")]
     [Range(128, 32_000)] public int ChatMaximumOutputTokens { get; set; } = 2_000;
+    [Display(Name = "Enable Meeting Notes mode")]
+    public bool MeetingNotesEnabled { get; set; } = true;
+    [Required, StringLength(2048), Display(Name = "Meeting Notes instruction file")]
+    public string MeetingNotesInstructionPath { get; set; } = Path.Combine("AI", "MeetingNotes.md");
     [Range(0, 2)] public double Temperature { get; set; }
     [Range(1, 1800)] public int TimeoutSeconds { get; set; } = 180;
     [StringLength(256)] public string CredentialEnvironmentVariable { get; set; } = "TEAMHUB_AI_PROVIDER_API_KEY";
@@ -229,7 +297,12 @@ public sealed class AiSettingsInput
         MaximumKnowledgeCharacters = ChatMaximumKnowledgeCharacters,
         MaximumLocalPromptCharacters = ChatMaximumLocalPromptCharacters,
         MaximumInstructionCharacters = ChatMaximumInstructionCharacters,
-        MaximumOutputTokens = ChatMaximumOutputTokens
+        MaximumOutputTokens = ChatMaximumOutputTokens,
+        MeetingNotes = new AiMeetingNotesOptions
+        {
+            Enabled = MeetingNotesEnabled,
+            InstructionPath = MeetingNotesInstructionPath.Trim()
+        }
     };
 
     public AiRuntimeOptions ToRuntimeOptions()
@@ -304,6 +377,8 @@ public sealed class AiSettingsInput
             ChatMaximumLocalPromptCharacters = snapshot.Chat.MaximumLocalPromptCharacters,
             ChatMaximumInstructionCharacters = snapshot.Chat.MaximumInstructionCharacters,
             ChatMaximumOutputTokens = snapshot.Chat.MaximumOutputTokens,
+            MeetingNotesEnabled = snapshot.Chat.MeetingNotes.Enabled,
+            MeetingNotesInstructionPath = snapshot.Chat.MeetingNotes.InstructionPath,
             OfflineOnly = runtime.OfflineOnly,
             Temperature = runtime.Temperature,
             TimeoutSeconds = runtime.TimeoutSeconds,
@@ -322,6 +397,7 @@ public sealed class AiSettingsInput
             WeeklyWorkSummaryPromptPath = snapshot.ReportGenerator.WeeklyWorkSummaryPromptPath
         };
     }
+
 
     private static AiProviderProfileOptions Profile(
         string endpoint,

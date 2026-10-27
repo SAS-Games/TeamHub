@@ -32,6 +32,7 @@
             <select id="aiChatMode" class="form-select">
                 <option value="General">General chat</option>
                 <option value="TeamHub">TeamHub mode</option>
+                <option value="MeetingNotes">Meeting Notes (MOM)</option>
             </select>
         </div>
         <div>
@@ -61,10 +62,10 @@
     <form id="aiChatForm" method="post" class="ai-chat-composer">
         @Html.AntiForgeryToken()
         <div id="aiChatDocuments" class="ai-chat-documents d-none">
-            <label for="aiChatFiles" class="form-label">Optional documents</label>
+            <label for="aiChatFiles" class="form-label" id="aiChatFilesLabel">Optional documents</label>
             <input id="aiChatFiles" type="file" class="form-control" multiple
                    accept=".txt,.md,.markdown,.csv,.json,.pdf,.chm,.png,.jpg,.jpeg,.webp,.gif,text/plain,text/markdown,text/csv,application/json,application/pdf,application/vnd.ms-htmlhelp,image/png,image/jpeg,image/webp,image/gif" />
-            <div class="form-text">General mode supports text, Markdown, CSV, JSON, PDF, CHM, PNG, JPEG, WebP, and GIF. Maximum five files; binary uploads are limited to 10 MB each and 20 MB total.</div>
+            <div class="form-text">General and Meeting Notes modes support text, Markdown, CSV, JSON, PDF, CHM, PNG, JPEG, WebP, and GIF. Maximum five files; binary uploads are limited to 10 MB each and 20 MB total.</div>
         </div>
         <div class="d-flex gap-2 align-items-end">
             <div class="flex-grow-1">
@@ -75,6 +76,22 @@
             <button id="aiChatSend" type="submit" class="btn btn-primary" disabled="@(Model.Models.Count == 0 ? "disabled" : null)">Send</button>
         </div>
         <div id="aiChatUsage" class="ai-chat-session-usage" aria-live="polite">Session tokens: 0</div>
+        <div id="aiChatMeetingActions" class="d-none mt-2">
+            <div class="d-flex flex-wrap gap-2 align-items-center">
+                <button id="aiChatDownloadNotes" type="button" class="btn btn-sm btn-outline-secondary">Download .md</button>
+                <button id="aiChatEditNotes" type="button" class="btn btn-sm btn-outline-primary">Edit / prepare Teams post</button>
+            </div>
+            <div id="aiChatMeetingEditor" class="d-none mt-2">
+                <label for="aiChatMeetingDraft" class="form-label">Review and edit before posting</label>
+                <textarea id="aiChatMeetingDraft" class="form-control font-monospace" rows="12"></textarea>
+                <div class="d-flex flex-wrap gap-2 align-items-center mt-2">
+                    <label for="aiChatMeetingDestination" class="form-label mb-0">Post to studio</label>
+                    <select id="aiChatMeetingDestination" class="form-select form-select-sm w-auto" aria-label="Studio and Teams channel"></select>
+                    <button id="aiChatPublishNotes" type="button" class="btn btn-sm btn-primary">Post to Teams</button>
+                </div>
+            </div>
+            <div id="aiChatMeetingStatus" class="small mt-1" aria-live="polite"></div>
+        </div>
         <div id="aiChatError" class="text-danger small" role="alert"></div>
     </form>
 </section>

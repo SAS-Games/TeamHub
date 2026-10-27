@@ -86,6 +86,13 @@ public sealed class AiChatOptions
     public int MaximumLocalPromptCharacters { get; set; } = 18_000;
     public int MaximumInstructionCharacters { get; set; } = 40_000;
     public int MaximumOutputTokens { get; set; } = 2_000;
+    public AiMeetingNotesOptions MeetingNotes { get; set; } = new();
+}
+
+public sealed class AiMeetingNotesOptions
+{
+    public bool Enabled { get; set; } = true;
+    public string InstructionPath { get; set; } = Path.Combine("AI", "MeetingNotes.md");
 }
 
 public sealed class AiFlowDesignerOptions

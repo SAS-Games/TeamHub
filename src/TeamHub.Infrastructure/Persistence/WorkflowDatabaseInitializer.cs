@@ -48,6 +48,14 @@ internal sealed class WorkflowDatabaseInitializer(WorkflowDbContext dbContext) :
                 UpdatedBy TEXT NOT NULL
             );
 
+            CREATE TABLE IF NOT EXISTS MeetingNotesTeamsChannels (
+                StudioId TEXT NOT NULL CONSTRAINT PK_MeetingNotesTeamsChannels PRIMARY KEY,
+                ChannelName TEXT NOT NULL,
+                WebhookUrlProtected TEXT NOT NULL,
+                UpdatedAtUtc TEXT NOT NULL,
+                UpdatedBy TEXT NOT NULL
+            );
+
             INSERT OR IGNORE INTO EmailNotificationSettings (
                 Id, Enabled, Host, Port, Username, PasswordProtected, FromAddress, UseSsl,
                 DefaultCc, DefaultBcc, CompletionRecipient, MaxDeliveryAttempts, RetryDelayMinutes,

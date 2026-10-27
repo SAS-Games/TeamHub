@@ -15,7 +15,8 @@ public sealed class AIChatModel(
     IAiChatService chat,
     ICurrentAccessService access,
     IAiConfigurationService configuration,
-    IAiChatDocumentExtractor documentExtractor) : PageModel
+    IAiChatDocumentExtractor documentExtractor,
+    IMeetingNotesTeamsPublisher? meetingNotesPublisher = null) : PageModel
 {
     public IReadOnlyList<AiModelCatalogItem> Models { get; private set; } = [];
     public string? LoadError { get; private set; }
@@ -59,6 +60,51 @@ public sealed class AIChatModel(
         }
     }
 
+    public async Task<IActionResult> OnGetMeetingNotesDestinationsAsync(CancellationToken cancellationToken)
+    {
+        if (meetingNotesPublisher is null) return new JsonResult(new { destinations = Array.Empty<object>() });
+        var snapshot = await configuration.GetAsync(cancellationToken);
+        if (!snapshot.Chat.Enabled || !snapshot.Chat.MeetingNotes.Enabled)
+            return new JsonResult(new { destinations = Array.Empty<object>() });
+        var destinations = await meetingNotesPublisher.ListDestinationsAsync(cancellationToken);
+        return new JsonResult(new
+        {
+            destinations = destinations.Select(item => new
+            {
+                id = item.Id,
+                studio = item.Studio,
+                channel = item.Channel,
+                label = $"{item.Studio} — {item.Channel}"
+            })
+        });
+    }
+
+    public async Task<IActionResult> OnPostPublishMeetingNotesAsync(
+        [FromBody] PublishMeetingNotesInput input,
+        CancellationToken cancellationToken)
+    {
+        if (meetingNotesPublisher is null)
+            return BadRequest(new { error = "Teams publishing is not configured." });
+        var current = await access.GetCurrentAsync(cancellationToken);
+        if (current.User is null) return Unauthorized();
+        try
+        {
+            await meetingNotesPublisher.PublishAsync(
+                input.DestinationId,
+                input.Markdown,
+                current.User.DisplayName,
+                cancellationToken);
+            return new JsonResult(new { message = "Meeting notes published to Teams." });
+        }
+        catch (Exception exception) when (exception is ArgumentException
+            or InvalidOperationException
+            or HttpRequestException
+            or TaskCanceledException)
+        {
+            return BadRequest(new { error = exception.Message });
+        }
+    }
+
     public async Task<IActionResult> OnPostMessageAsync(
         [FromBody] ChatInput input,
         CancellationToken cancellationToken)
@@ -68,11 +114,11 @@ public sealed class AIChatModel(
             var current = await access.GetCurrentAsync(cancellationToken);
             if (current.User is null) return Unauthorized();
             if (!Enum.TryParse<AiChatMode>(input.Mode, true, out var mode))
-                return BadRequest(new { error = "Select TeamHub or General chat mode." });
+                return BadRequest(new { error = "Select General, TeamHub, or Meeting Notes mode." });
 
             IReadOnlyList<AiChatDocument> documents = [];
             IReadOnlyList<AiImageInput> images = [];
-            if (mode == AiChatMode.General && input.Documents.Count > 0)
+            if ((mode is AiChatMode.General or AiChatMode.MeetingNotes) && input.Documents.Count > 0)
             {
                 var chatSettings = (await configuration.GetAsync(cancellationToken)).Chat;
                 var attachments = await documentExtractor.ExtractAsync(
@@ -145,7 +191,7 @@ public sealed class AIChatModel(
     public sealed class ChatInput
     {
         [Required]
-        public string Mode { get; set; } = nameof(AiChatMode.TeamHub);
+        public string Mode { get; set; } = nameof(AiChatMode.General);
 
         [Required, StringLength(200)]
         public string Model { get; set; } = string.Empty;
@@ -154,5 +200,14 @@ public sealed class AIChatModel(
         public List<AiChatUploadDocument> Documents { get; set; } = [];
         public string? ExternalAccessDecision { get; set; }
         public List<string> ApprovedExternalSources { get; set; } = [];
+    }
+
+    public sealed class PublishMeetingNotesInput
+    {
+        [Required, StringLength(100)]
+        public string DestinationId { get; set; } = string.Empty;
+
+        [Required, StringLength(100_000)]
+        public string Markdown { get; set; } = string.Empty;
     }
 }

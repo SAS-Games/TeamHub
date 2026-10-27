@@ -13,6 +13,7 @@ public static class AiChatServiceCollectionExtensions
         IConfiguration configuration)
     {
         services.TryAddSingleton<IAiChatInstructionProvider, EmptyAiChatInstructionProvider>();
+        services.TryAddSingleton<IAiMeetingNotesInstructionProvider, EmptyAiMeetingNotesInstructionProvider>();
         services.AddScoped<IAiChatService, AiChatService>();
         return services;
     }

@@ -266,6 +266,19 @@ html.teamhub-ai-chat-resizing * {
   text-align: right;
 }
 
+.teamhub-ai-chat-meeting-actions {
+  margin-top: .5rem;
+}
+
+.teamhub-ai-chat-meeting-actions .form-select {
+  min-width: 150px;
+}
+
+.teamhub-ai-chat-meeting-actions textarea {
+  max-height: 220px;
+  resize: vertical;
+}
+
 .teamhub-ai-chat-panel .ai-chat-message-actions {
   display: flex;
   justify-content: flex-end;

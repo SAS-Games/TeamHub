@@ -5,7 +5,8 @@ namespace TeamHub.AI.Chat.Contracts;
 public enum AiChatMode
 {
     TeamHub,
-    General
+    General,
+    MeetingNotes
 }
 
 public static class AiChatExternalSources
@@ -89,6 +90,15 @@ public interface IAiChatInstructionProvider
         string question,
         IReadOnlyList<AiChatSource> sources,
         CancellationToken cancellationToken = default);
+}
+
+/// <summary>
+/// Supplies trusted, application-owned instructions for formatting meeting notes.
+/// Transcript content is supplied separately and is always treated as untrusted data.
+/// </summary>
+public interface IAiMeetingNotesInstructionProvider
+{
+    Task<string> GetInstructionsAsync(CancellationToken cancellationToken = default);
 }
 
 public sealed class AiChatException(string message, Exception? innerException = null)

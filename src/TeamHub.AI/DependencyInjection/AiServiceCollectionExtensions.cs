@@ -75,6 +75,9 @@ public static class AiServiceCollectionExtensions
                 "AI:Chat:MaximumInstructionCharacters must be between 1,000 and 200,000.")
             .Validate(options => options.MaximumOutputTokens is >= 128 and <= 32_000,
                 "AI:Chat:MaximumOutputTokens must be between 128 and 32,000.")
+            .Validate(options => !options.MeetingNotes.Enabled
+                    || !string.IsNullOrWhiteSpace(options.MeetingNotes.InstructionPath),
+                "AI:Chat:MeetingNotes:InstructionPath is required when Meeting Notes mode is enabled.")
             .ValidateOnStart();
         services.AddOptions<AiReportGeneratorOptions>()
             .Bind(configuration.GetSection(AiReportGeneratorOptions.SectionName));

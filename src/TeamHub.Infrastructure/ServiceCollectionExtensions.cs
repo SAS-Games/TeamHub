@@ -34,6 +34,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<INotificationService, SmtpNotificationService>();
         services.AddScoped<IEmailOutboxProcessor, SmtpEmailOutboxProcessor>();
         services.AddScoped<IAiConfigurationService, AiConfigurationService>();
+        services.AddScoped<IMeetingNotesTeamsConfigurationService, MeetingNotesTeamsConfigurationService>();
         services.AddScoped<IWorkflowDatabaseInitializer, WorkflowDatabaseInitializer>();
         services.AddSingleton<IClock, SystemClock>();
 

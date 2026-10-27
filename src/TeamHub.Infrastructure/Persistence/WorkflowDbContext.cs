@@ -16,6 +16,7 @@ public sealed class WorkflowDbContext(DbContextOptions<WorkflowDbContext> option
     public DbSet<NotificationOutboxItem> NotificationOutbox => Set<NotificationOutboxItem>();
     public DbSet<EmailNotificationSettingsRecord> EmailNotificationSettings => Set<EmailNotificationSettingsRecord>();
     public DbSet<AiConfigurationRecord> AiConfiguration => Set<AiConfigurationRecord>();
+    public DbSet<MeetingNotesTeamsChannelRecord> MeetingNotesTeamsChannels => Set<MeetingNotesTeamsChannelRecord>();
     public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
     public DbSet<WorkflowDraftDefinition> WorkflowDraftDefinitions => Set<WorkflowDraftDefinition>();
     public DbSet<WorkflowDraftStepDefinition> WorkflowDraftStepDefinitions => Set<WorkflowDraftStepDefinition>();
@@ -148,6 +149,15 @@ public sealed class WorkflowDbContext(DbContextOptions<WorkflowDbContext> option
         {
             e.ToTable("AiConfiguration");
             e.Property(x => x.SettingsJson).IsRequired();
+            e.Property(x => x.UpdatedBy).HasMaxLength(320);
+        });
+
+        modelBuilder.Entity<MeetingNotesTeamsChannelRecord>(e =>
+        {
+            e.ToTable("MeetingNotesTeamsChannels");
+            e.HasKey(x => x.StudioId);
+            e.Property(x => x.StudioId).HasMaxLength(100);
+            e.Property(x => x.ChannelName).HasMaxLength(200);
             e.Property(x => x.UpdatedBy).HasMaxLength(320);
         });
 

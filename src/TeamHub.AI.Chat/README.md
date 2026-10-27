@@ -1,6 +1,6 @@
 # TeamHub AI Chat
 
-`TeamHub.AI.Chat` is a reusable application module for a two-mode AI assistant. It depends only on
+`TeamHub.AI.Chat` is a reusable application module for a three-mode AI assistant. It depends only on
 `TeamHub.AI` and Microsoft dependency-injection/configuration abstractions; it does not reference the
 TeamHub web application, databases, or domain projects.
 
@@ -11,6 +11,9 @@ TeamHub web application, databases, or domain projects.
 - **General** never calls an `IAiChatKnowledgeSource`. It can use only conversation messages and
   explicitly attached text, Markdown, CSV, JSON, PDF, CHM, or image files. The web host extracts
   document text before calling this module and sends supported images as multimodal model inputs.
+- **Meeting Notes** also never calls an `IAiChatKnowledgeSource`. It treats pasted text and
+  attachments as the transcript, applies trusted host-provided formatting instructions, and must
+  not invent missing meeting facts.
 
 AI Chat follows the provider selected in AI Services. Ollama and llama.cpp normally run without a
 credential; OpenAI-compatible providers use the configured encrypted shared credential or environment
@@ -25,6 +28,18 @@ used only in the server-side provider client and are never included in prompts o
 4. For application-aware chat, register one or more `IAiChatKnowledgeSource` implementations that
    perform module and row-level authorization before returning data.
 5. Call `IAiChatService.GetModelsAsync` and `IAiChatService.SendAsync` from the host UI or API.
+
+## Meeting Notes and Teams
+
+The TeamHub host loads the editable `AI/MeetingNotes.md` file for every Meeting Notes request. Its
+path and optional Teams destinations are managed under **Configuration > AI Services > AI Chat**.
+The page creates one destination row for every active studio from Studio Configuration. An
+administrator enters the channel name and the HTTPS URL created by the Teams **Workflows** webhook
+template for that channel. Webhook URLs are encrypted and are never displayed again or returned to
+the browser. Publishing is a separate user action after generation, and users can copy, edit, or
+download the generated `.md` content without publishing it. The host exposes this publishing step
+as an optional response action in both Meeting Notes and General modes; it is not part of AI
+generation and never posts automatically.
 
 ## Token limits and usage
 

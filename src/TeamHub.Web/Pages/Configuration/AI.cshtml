@@ -195,6 +195,71 @@
                 <span asp-validation-for="Settings.ChatMaximumOutputTokens" class="text-danger"></span>
                 <div class="form-text">Initial response allowance. PFB can retry truncated responses up to 32,000 tokens.</div>
             </div>
+            <div class="col-12"><hr class="my-2" /></div>
+            <div class="col-12">
+                <div class="form-check">
+                    <input asp-for="Settings.MeetingNotesEnabled" class="form-check-input" />
+                    <label asp-for="Settings.MeetingNotesEnabled" class="form-check-label"></label>
+                </div>
+                <div class="form-text">Generates Markdown meeting notes only from a pasted or attached transcript.</div>
+            </div>
+            <div class="col-12 col-lg-6">
+                <label asp-for="Settings.MeetingNotesInstructionPath" class="form-label"></label>
+                <input asp-for="Settings.MeetingNotesInstructionPath" class="form-control" />
+                <span asp-validation-for="Settings.MeetingNotesInstructionPath" class="text-danger"></span>
+                <div class="form-text">Relative to the TeamHub application directory. Changes are loaded for every request.</div>
+            </div>
+            <div class="col-12">
+                <h3 class="h6 mb-2">Teams publishing destinations</h3>
+                <p class="form-text mb-3">
+                    These rows come from active studios in Studio Configuration. In Teams, open the required studio channel,
+                    select <strong>… → Workflows → Send webhook alerts to a channel</strong>, create the workflow, and paste its URL below.
+                    The URL is encrypted and is never displayed again. The workflow itself determines the exact destination channel.
+                </p>
+                @if (Model.MeetingNotesTeamsChannels.Count == 0)
+                {
+                    <div class="alert alert-secondary mb-0">No active studios are configured.</div>
+                }
+                else
+                {
+                    <div class="table-responsive teams-destination-table-wrap">
+                        <table class="table align-middle mb-0 teams-destination-table">
+                            <thead><tr><th>Studio</th><th>Teams channel</th><th>Workflow webhook URL</th><th>Status</th></tr></thead>
+                            <tbody>
+                            @for (var index = 0; index < Model.MeetingNotesTeamsChannels.Count; index++)
+                            {
+                                <tr>
+                                    <td>
+                                        <strong>@Model.MeetingNotesTeamsChannels[index].StudioName</strong>
+                                        <input asp-for="MeetingNotesTeamsChannels[index].StudioId" type="hidden" />
+                                    </td>
+                                    <td>
+                                        <input asp-for="MeetingNotesTeamsChannels[index].ChannelName" class="form-control form-control-sm" placeholder="e.g. General" />
+                                        <span asp-validation-for="MeetingNotesTeamsChannels[index].ChannelName" class="text-danger small"></span>
+                                    </td>
+                                    <td>
+                                        <input asp-for="MeetingNotesTeamsChannels[index].WebhookUrl" class="form-control form-control-sm" type="password"
+                                               autocomplete="new-password" placeholder="@(Model.MeetingNotesTeamsChannels[index].IsConfigured ? "Leave blank to keep existing URL" : "Paste Teams Workflow URL")" />
+                                    </td>
+                                    <td class="teams-destination-status-cell">
+                                        <span class="teams-destination-status @(Model.MeetingNotesTeamsChannels[index].IsConfigured ? "is-configured" : "is-unconfigured")">
+                                            @(Model.MeetingNotesTeamsChannels[index].IsConfigured ? "Configured" : "Not configured")
+                                        </span>
+                                        @if (Model.MeetingNotesTeamsChannels[index].IsConfigured)
+                                        {
+                                            <div class="form-check teams-destination-remove">
+                                                <input asp-for="MeetingNotesTeamsChannels[index].Remove" class="form-check-input" />
+                                                <label asp-for="MeetingNotesTeamsChannels[index].Remove" class="form-check-label">Remove saved webhook</label>
+                                            </div>
+                                        }
+                                    </td>
+                                </tr>
+                            }
+                            </tbody>
+                        </table>
+                    </div>
+                }
+            </div>
         </div>
     </section>
 

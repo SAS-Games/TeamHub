@@ -76,6 +76,56 @@ public sealed class AiChatServiceTests
     }
 
     [Fact]
+    public async Task Meeting_Notes_mode_uses_only_transcript_content_and_trusted_template()
+    {
+        var source = new RecordingKnowledgeSource(
+            new AiChatSource("private", "Private TeamHub source", "Do not expose this"));
+        var provider = new RecordingProvider();
+        await using var services = CreateServices(
+            provider,
+            source,
+            meetingNotesInstructions: "Use an Action, Owner, and Due date table.");
+        var chat = services.GetRequiredService<IAiChatService>();
+
+        await chat.SendAsync(
+            User(),
+            new AiChatRequest(
+                AiChatMode.MeetingNotes,
+                "model-a",
+                [new AiChatMessage("user", "Transcript: Mina agreed to send the build on Friday.")],
+                [new AiChatDocument("transcript.md", "text/markdown", "The review starts at 10:00.")]));
+
+        source.CallCount.Should().Be(0);
+        provider.LastRequest!.UserPrompt.Should().Contain("Mina agreed to send the build on Friday");
+        provider.LastRequest.UserPrompt.Should().Contain("The review starts at 10:00");
+        provider.LastRequest.UserPrompt.Should().NotContain("Do not expose this");
+        provider.LastRequest.SystemPrompt.Should().Contain("only the conversation transcript");
+        provider.LastRequest.SystemPrompt.Should().Contain("Use an Action, Owner, and Due date table.");
+        provider.LastRequest.SystemPrompt.Should().Contain("assign an owner or due date unless the transcript explicitly supports it");
+    }
+
+    [Fact]
+    public async Task Disabled_Meeting_Notes_mode_is_rejected_before_generation()
+    {
+        var provider = new RecordingProvider();
+        await using var services = CreateServices(
+            provider,
+            new RecordingKnowledgeSource(),
+            meetingNotesEnabled: false);
+        var chat = services.GetRequiredService<IAiChatService>();
+
+        var action = () => chat.SendAsync(
+            User(),
+            new AiChatRequest(
+                AiChatMode.MeetingNotes,
+                "model-a",
+                [new AiChatMessage("user", "Transcript text")])) ;
+
+        await action.Should().ThrowAsync<AiChatException>().WithMessage("*disabled in AI Services*");
+        provider.LastRequest.Should().BeNull();
+    }
+
+    [Fact]
     public async Task TeamHub_mode_uses_only_sources_returned_by_the_authorizing_adapter()
     {
         var source = new RecordingKnowledgeSource(
@@ -287,17 +337,22 @@ public sealed class AiChatServiceTests
         RecordingProvider provider,
         RecordingKnowledgeSource source,
         bool chatEnabled = true,
-        string? teamHubInstructions = null)
+        string? teamHubInstructions = null,
+        string? meetingNotesInstructions = null,
+        bool meetingNotesEnabled = true)
     {
         var services = new ServiceCollection();
         services.AddAiChat(new ConfigurationBuilder().Build());
         services.AddSingleton<IAiConfigurationService>(
-            new TestConfigurationService(provider.Key, chatEnabled));
+            new TestConfigurationService(provider.Key, chatEnabled, meetingNotesEnabled));
         services.AddSingleton<IAiModelProviderRegistry>(new TestProviderRegistry(provider));
         services.AddSingleton<IAiChatKnowledgeSource>(source);
         if (teamHubInstructions is not null)
             services.AddSingleton<IAiChatInstructionProvider>(
                 new TestInstructionProvider(teamHubInstructions));
+        if (meetingNotesInstructions is not null)
+            services.AddSingleton<IAiMeetingNotesInstructionProvider>(
+                new TestMeetingNotesInstructionProvider(meetingNotesInstructions));
         return services.BuildServiceProvider();
     }
 
@@ -324,6 +379,13 @@ public sealed class AiChatServiceTests
             string question,
             IReadOnlyList<AiChatSource> sources,
             CancellationToken cancellationToken = default) =>
+            Task.FromResult(content);
+    }
+
+    private sealed class TestMeetingNotesInstructionProvider(string content)
+        : IAiMeetingNotesInstructionProvider
+    {
+        public Task<string> GetInstructionsAsync(CancellationToken cancellationToken = default) =>
             Task.FromResult(content);
     }
 
@@ -378,7 +440,8 @@ public sealed class AiChatServiceTests
 
     private sealed class TestConfigurationService(
         string providerKey,
-        bool chatEnabled) : IAiConfigurationService
+        bool chatEnabled,
+        bool meetingNotesEnabled) : IAiConfigurationService
     {
         public Task<AiConfigurationSnapshot> GetAsync(CancellationToken cancellationToken = default) =>
             Task.FromResult(new AiConfigurationSnapshot
@@ -399,7 +462,11 @@ public sealed class AiChatServiceTests
                         }
                     }
                 },
-                Chat = new AiChatOptions { Enabled = chatEnabled }
+                Chat = new AiChatOptions
+                {
+                    Enabled = chatEnabled,
+                    MeetingNotes = new AiMeetingNotesOptions { Enabled = meetingNotesEnabled }
+                }
             });
 
         public Task SaveAsync(

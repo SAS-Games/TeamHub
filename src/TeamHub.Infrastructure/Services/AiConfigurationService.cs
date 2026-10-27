@@ -145,6 +145,7 @@ internal sealed class AiConfigurationService : IAiConfigurationService
                 snapshot.Chat.Enabled = snapshot.Runtime.ChatEnabled;
 #pragma warning restore CS0618
             }
+            snapshot.Chat.MeetingNotes ??= new AiMeetingNotesOptions();
             return snapshot;
         }
         catch (JsonException exception)
@@ -209,6 +210,11 @@ internal sealed class AiConfigurationService : IAiConfigurationService
             throw new ArgumentException("AI Chat maximum instruction characters must be between 1,000 and 200,000.");
         if (request.Chat.MaximumOutputTokens is < 128 or > 32_000)
             throw new ArgumentException("AI Chat maximum output tokens must be between 128 and 32,000.");
+        if (request.Chat.MeetingNotes.Enabled
+            && string.IsNullOrWhiteSpace(request.Chat.MeetingNotes.InstructionPath))
+            throw new ArgumentException("The Meeting Notes instruction path is required.");
+        if (request.Chat.MeetingNotes.InstructionPath.Length > 2_048)
+            throw new ArgumentException("The Meeting Notes instruction path is too long.");
         if (request.FlowDesigner.MaximumSourceDocuments is < 1 or > 50)
             throw new ArgumentException("Maximum source documents must be between 1 and 50.");
         if (request.FlowDesigner.MaximumSourceCharacters is < 1_000 or > 2_000_000)

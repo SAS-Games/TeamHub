@@ -10,3 +10,9 @@ internal sealed class EmptyAiChatInstructionProvider : IAiChatInstructionProvide
         CancellationToken cancellationToken = default) =>
         Task.FromResult(string.Empty);
 }
+
+internal sealed class EmptyAiMeetingNotesInstructionProvider : IAiMeetingNotesInstructionProvider
+{
+    public Task<string> GetInstructionsAsync(CancellationToken cancellationToken = default) =>
+        Task.FromResult(string.Empty);
+}

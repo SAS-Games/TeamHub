@@ -296,6 +296,81 @@ body {
   opacity: 1;
 }
 .form-check-input { border-color: var(--field-border-color); }
+.teams-destination-table-wrap {
+  border: 1px solid var(--divider-color);
+  border-radius: 8px;
+}
+.teams-destination-table {
+  min-width: 900px;
+  --bs-table-color: var(--text-color);
+  --bs-table-bg: var(--surface-bg-color);
+  --bs-table-border-color: var(--divider-color);
+  --bs-table-striped-color: var(--text-color);
+  --bs-table-hover-color: var(--text-color);
+  --bs-table-hover-bg: var(--surface-hover-color);
+}
+.teams-destination-table > :not(caption) > * > * {
+  padding: .75rem;
+  color: var(--text-color);
+  background-color: var(--surface-bg-color);
+  border-color: var(--divider-color);
+}
+.teams-destination-table thead th {
+  color: var(--text-secondary-color);
+  background-color: var(--surface-muted-color);
+  font-size: .75rem;
+  font-weight: 700;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.teams-destination-table tbody tr:last-child > * { border-bottom: 0; }
+.teams-destination-table .form-control {
+  min-width: 180px;
+  color: var(--text-color);
+  background-color: var(--surface-bg-color);
+}
+.teams-destination-status {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: .25rem .6rem;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  font-size: .75rem;
+  font-weight: 700;
+  line-height: 1;
+  white-space: nowrap;
+}
+.teams-destination-status.is-configured {
+  color: #215f42;
+  background-color: #d9f2e4;
+  border-color: #9dd5b7;
+}
+.teams-destination-status.is-unconfigured {
+  color: var(--text-secondary-color);
+  background-color: var(--surface-muted-color);
+  border-color: var(--surface-border-color);
+}
+.teams-destination-status-cell {
+  min-width: 190px;
+}
+.teams-destination-remove {
+  margin-top: .55rem;
+  color: var(--text-secondary-color);
+  font-size: .8rem;
+  white-space: nowrap;
+}
+[data-bs-theme="dark"] .teams-destination-status.is-configured {
+  color: #bce8ce;
+  background-color: #204434;
+  border-color: #397b5b;
+}
+[data-bs-theme="dark"] .teams-destination-status.is-unconfigured {
+  color: #c5d1c9;
+  background-color: #303932;
+  border-color: #58675e;
+}
 .configured-text { font-weight: 400 !important; font-style: normal; }
 .configured-text-bold { font-weight: 700 !important; }
 .configured-text-italic { font-style: italic; }
