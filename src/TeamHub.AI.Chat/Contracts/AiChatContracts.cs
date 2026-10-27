@@ -84,7 +84,10 @@ public interface IAiChatKnowledgeSource
 /// </summary>
 public interface IAiChatInstructionProvider
 {
-    Task<string> GetTeamHubInstructionsAsync(CancellationToken cancellationToken = default);
+    Task<string> GetTeamHubInstructionsAsync(
+        string question,
+        IReadOnlyList<AiChatSource> sources,
+        CancellationToken cancellationToken = default);
 }
 
 public sealed class AiChatException(string message, Exception? innerException = null)

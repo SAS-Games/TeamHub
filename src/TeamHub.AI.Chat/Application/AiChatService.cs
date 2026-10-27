@@ -132,7 +132,7 @@ internal sealed class AiChatService(
         }
 
         var teamHubInstructions = request.Mode == AiChatMode.TeamHub
-            ? await LoadTeamHubInstructionsAsync(chatSettings, cancellationToken)
+            ? await LoadTeamHubInstructionsAsync(question, sources, chatSettings, cancellationToken)
             : string.Empty;
         var generationRequest = new AiStructuredGenerationRequest(
             BuildSystemPrompt(request.Mode, teamHubInstructions),
@@ -156,10 +156,15 @@ internal sealed class AiChatService(
     }
 
     private async Task<string> LoadTeamHubInstructionsAsync(
+        string question,
+        IReadOnlyList<AiChatSource> sources,
         AiChatOptions chatSettings,
         CancellationToken cancellationToken)
     {
-        var value = NormalizeText(await instructions.GetTeamHubInstructionsAsync(cancellationToken));
+        var value = NormalizeText(await instructions.GetTeamHubInstructionsAsync(
+            question,
+            sources,
+            cancellationToken));
         if (value.Length <= chatSettings.MaximumInstructionCharacters) return value;
         return value[..chatSettings.MaximumInstructionCharacters]
             + "\n\n[The trusted TeamHub playbook was truncated at the configured server limit.]";

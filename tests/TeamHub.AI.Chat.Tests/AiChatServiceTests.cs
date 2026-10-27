@@ -298,7 +298,10 @@ public sealed class AiChatServiceTests
 
     private sealed class TestInstructionProvider(string content) : IAiChatInstructionProvider
     {
-        public Task<string> GetTeamHubInstructionsAsync(CancellationToken cancellationToken = default) =>
+        public Task<string> GetTeamHubInstructionsAsync(
+            string question,
+            IReadOnlyList<AiChatSource> sources,
+            CancellationToken cancellationToken = default) =>
             Task.FromResult(content);
     }
 
