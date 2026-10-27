@@ -76,6 +76,16 @@ public interface IAiChatKnowledgeSource
         CancellationToken cancellationToken = default);
 }
 
+/// <summary>
+/// Supplies trusted, application-owned instructions that describe how TeamHub
+/// knowledge should be routed and presented. This is never populated from a
+/// user attachment or from retrieved page content.
+/// </summary>
+public interface IAiChatInstructionProvider
+{
+    Task<string> GetTeamHubInstructionsAsync(CancellationToken cancellationToken = default);
+}
+
 public sealed class AiChatOptions
 {
     public const string SectionName = "AI:Chat";
@@ -86,6 +96,7 @@ public sealed class AiChatOptions
     public int MaximumDocumentCharacters { get; set; } = 120_000;
     public int MaximumKnowledgeCharacters { get; set; } = 120_000;
     public int MaximumLocalPromptCharacters { get; set; } = 18_000;
+    public int MaximumInstructionCharacters { get; set; } = 40_000;
     public int MaximumOutputTokens { get; set; } = 2_000;
 }
 

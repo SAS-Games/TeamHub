@@ -77,6 +77,37 @@ public sealed class AiChatServiceTests
     }
 
     [Fact]
+    public async Task Trusted_playbook_is_added_only_to_TeamHub_mode()
+    {
+        var provider = new RecordingProvider();
+        await using var services = CreateServices(
+            provider,
+            new RecordingKnowledgeSource(),
+            teamHubInstructions: "## Test routing\nUse the test source for project status.");
+        var chat = services.GetRequiredService<IAiChatService>();
+
+        await chat.SendAsync(
+            User(),
+            new AiChatRequest(
+                AiChatMode.TeamHub,
+                "model-a",
+                [new AiChatMessage("user", "What is the project status?")]));
+
+        provider.LastRequest!.SystemPrompt.Should().Contain("<teamhub_playbook>");
+        provider.LastRequest.SystemPrompt.Should().Contain("Use the test source for project status.");
+
+        await chat.SendAsync(
+            User(),
+            new AiChatRequest(
+                AiChatMode.General,
+                "model-a",
+                [new AiChatMessage("user", "What is a project?")]));
+
+        provider.LastRequest!.SystemPrompt.Should().NotContain("<teamhub_playbook>");
+        provider.LastRequest.SystemPrompt.Should().NotContain("Use the test source for project status.");
+    }
+
+    [Fact]
     public async Task A_model_not_in_the_gateway_catalog_is_rejected_before_generation()
     {
         var provider = new RecordingProvider();
@@ -184,7 +215,8 @@ public sealed class AiChatServiceTests
     private static ServiceProvider CreateServices(
         RecordingProvider provider,
         RecordingKnowledgeSource source,
-        bool chatEnabled = true)
+        bool chatEnabled = true,
+        string? teamHubInstructions = null)
     {
         var services = new ServiceCollection();
         services.AddAiChat(new ConfigurationBuilder().Build());
@@ -192,6 +224,9 @@ public sealed class AiChatServiceTests
             new TestConfigurationService(provider.Key, chatEnabled));
         services.AddSingleton<IAiModelProviderRegistry>(new TestProviderRegistry(provider));
         services.AddSingleton<IAiChatKnowledgeSource>(source);
+        if (teamHubInstructions is not null)
+            services.AddSingleton<IAiChatInstructionProvider>(
+                new TestInstructionProvider(teamHubInstructions));
         return services.BuildServiceProvider();
     }
 
@@ -210,6 +245,12 @@ public sealed class AiChatServiceTests
             CallCount++;
             return Task.FromResult<IReadOnlyList<AiChatSource>>(sources);
         }
+    }
+
+    private sealed class TestInstructionProvider(string content) : IAiChatInstructionProvider
+    {
+        public Task<string> GetTeamHubInstructionsAsync(CancellationToken cancellationToken = default) =>
+            Task.FromResult(content);
     }
 
     private sealed class RecordingProvider(
