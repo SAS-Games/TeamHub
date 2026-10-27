@@ -65,12 +65,35 @@
         {
             <input type="hidden" name="WorkflowKey" value="@Model.WorkflowKey" />
         }
-        <div class="form-text">Publishing this review automatically starts an instance of the selected workflow.</div>
+        @if (workflowLocked && string.IsNullOrWhiteSpace(Model.WorkflowKey))
+        {
+            <div class="form-text">This published review has no workflow assignment. Its details and user assignments can still be updated, but a workflow cannot be added after publication.</div>
+        }
+        else
+        {
+            <div class="form-text">Publishing this review automatically starts an instance of the selected workflow.</div>
+        }
     </div>
     <div class="col-12">
         <label asp-for="JiraTicketId" class="form-label">Jira Ticket ID (optional)</label>
         <input asp-for="JiraTicketId" class="form-control" maxlength="64" placeholder="e.g. GAME-123" />
         <div class="form-text">Each reviewer's save creates or updates their comment on this ticket. Reviewers need their own Jira connection with comment edit permission. Changing the ticket leaves old comments untouched; existing feedback syncs to the new ticket on each reviewer's next save.</div>
+    </div>
+    <div class="col-12">
+        <label asp-for="PicId" class="form-label">Person in Charge (PIC)</label>
+        @{ var picLocked = Model.EditingReview is not null && !Model.IsAdmin; }
+        <select asp-for="PicId" class="form-select" disabled="@(picLocked ? "disabled" : null)">
+            <option value="">No PIC assigned</option>
+            @foreach (var user in Model.AvailableReviewers)
+            {
+                <option value="@user.Id">@user.DisplayName (@user.UserId)</option>
+            }
+        </select>
+        @if (picLocked)
+        {
+            <input type="hidden" name="PicId" value="@Model.PicId" />
+        }
+        <div class="form-text">The assigned PIC can edit this review after publication, including its contributor and report-generator assignments. Only an administrator can assign or change the PIC.</div>
     </div>
     <div class="col-12">
         <label class="form-label">Feedback contributors</label>
@@ -88,7 +111,7 @@
                 </label>
             }
         </div>
-        <div class="form-text">Selected users can edit only their own row; all page readers can view every row. Removing a contributor preserves their existing feedback as read-only for that user.</div>
+        <div class="form-text">Selected users can edit only their own row; all page readers can view rows for currently selected contributors. Removing a contributor hides their row while preserving its feedback and any existing Jira comment in case they are reassigned.</div>
     </div>
     <div class="col-12">
         <label class="form-label">Report generators</label>

@@ -12,6 +12,9 @@ internal sealed class MilestoneReviewRecord
     public string? JiraTicketId { get; set; }
     public string? WorkflowKey { get; set; }
     public Guid? WorkflowInstanceId { get; set; }
+    public Guid? PicId { get; set; }
+    public string? Pic { get; set; }
+    public string? PicUserId { get; set; }
     public MilestoneReviewStatus Status { get; set; }
     public string CreatedBy { get; set; } = string.Empty;
     public DateTimeOffset CreatedAt { get; set; }
@@ -69,6 +72,8 @@ public sealed class MilestoneReviewDbContext(DbContextOptions<MilestoneReviewDbC
             entity.Property(item => item.Description).HasMaxLength(4000).IsRequired();
             entity.Property(item => item.JiraTicketId).HasMaxLength(64);
             entity.Property(item => item.WorkflowKey).HasMaxLength(128);
+            entity.Property(item => item.Pic).HasMaxLength(160);
+            entity.Property(item => item.PicUserId).HasMaxLength(320);
             entity.Property(item => item.CreatedBy).HasMaxLength(320).IsRequired();
             entity.HasIndex(item => item.Status).IsUnique().HasFilter("\"Status\" = 0");
         });
@@ -129,6 +134,9 @@ internal sealed class SqliteMilestoneReviewDatabaseInitializer(MilestoneReviewDb
         await AddColumnIfMissingAsync("MilestoneReviews", "JiraTicketId", "TEXT NULL", cancellationToken);
         await AddColumnIfMissingAsync("MilestoneReviews", "WorkflowKey", "TEXT NULL", cancellationToken);
         await AddColumnIfMissingAsync("MilestoneReviews", "WorkflowInstanceId", "TEXT NULL", cancellationToken);
+        await AddColumnIfMissingAsync("MilestoneReviews", "PicId", "TEXT NULL", cancellationToken);
+        await AddColumnIfMissingAsync("MilestoneReviews", "Pic", "TEXT NULL", cancellationToken);
+        await AddColumnIfMissingAsync("MilestoneReviews", "PicUserId", "TEXT NULL", cancellationToken);
         await AddColumnIfMissingAsync("MilestoneReviewAssignments", "ReviewerUserId", "TEXT NOT NULL DEFAULT ''", cancellationToken);
         await dbContext.Database.ExecuteSqlRawAsync("""
             CREATE TABLE IF NOT EXISTS "MilestoneReviewReportGenerators" (

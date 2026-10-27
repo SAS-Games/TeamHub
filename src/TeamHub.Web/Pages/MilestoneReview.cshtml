@@ -22,7 +22,7 @@
 }
 <div asp-validation-summary="ModelOnly" class="text-danger mb-3"></div>
 
-@if (Model.IsAdmin)
+@if (Model.IsAdmin || Model.EditingReview is not null)
 {
     @if (Model.EditingReview is not null)
     {
@@ -65,6 +65,9 @@
                 <p><strong>Report generators:</strong> @(Model.Draft.ReportGenerators.Count == 0
                     ? "None assigned"
                     : string.Join(", ", Model.Draft.ReportGenerators.Select(item => $"{item.DisplayName} ({item.UserId})")))</p>
+                <p><strong>PIC:</strong> @(Model.Draft.Pic is null
+                    ? "None assigned"
+                    : $"{Model.Draft.Pic.DisplayName} ({Model.Draft.Pic.UserId})")</p>
                 @if (!string.IsNullOrWhiteSpace(Model.Draft.JiraTicketId))
                 {
                     <p><strong>Jira ticket:</strong> @Model.Draft.JiraTicketId</p>
@@ -125,6 +128,7 @@ else
                         </button>
                     </div>
                 }
+                <div class="small text-secondary">PIC: @(Model.CurrentReview.Pic?.DisplayName ?? "Not assigned")</div>
             </div>
             <div class="d-flex flex-wrap align-items-center gap-2">
                 <small class="text-secondary">Published @Model.CurrentReview.PublishedAt?.ToLocalTime().ToString("g")</small>
@@ -135,6 +139,12 @@ else
                         <button type="submit" class="btn btn-sm btn-primary">Generate Report</button>
                     </form>
                 }
+                @if (Model.CanEditReview(Model.CurrentReview))
+                {
+                    <a asp-page="/MilestoneReview" asp-route-selectedReviewId="@Model.CurrentReview.Id"
+                       asp-route-editReviewId="@Model.CurrentReview.Id"
+                       class="btn btn-sm btn-outline-primary">Edit Review</a>
+                }
                 @if (Model.IsAdmin)
                 {
                     @if (!string.IsNullOrWhiteSpace(Model.CurrentReview.JiraTicketId))
@@ -144,9 +154,6 @@ else
                             <button type="submit" class="btn btn-sm btn-outline-primary">Restore feedback from Jira</button>
                         </form>
                     }
-                    <a asp-page="/MilestoneReview" asp-route-selectedReviewId="@Model.CurrentReview.Id"
-                       asp-route-editReviewId="@Model.CurrentReview.Id"
-                       class="btn btn-sm btn-outline-primary">Edit Review</a>
                     <form method="post" asp-page-handler="Archive"
                           onsubmit="return confirm('Archive this review? Feedback will be preserved in Review History and can no longer be edited.')">
                         <input type="hidden" name="ReviewId" value="@Model.CurrentReview.Id" />

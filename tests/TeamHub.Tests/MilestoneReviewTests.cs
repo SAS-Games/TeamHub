@@ -9,6 +9,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using TeamHub.Authentication;
+using TeamHub.Infrastructure.Persistence;
 using TeamHub.Milestones;
 using TeamHub.MilestoneReview;
 using TeamHub.Studio;
@@ -97,7 +98,7 @@ public sealed class MilestoneReviewTests : IAsyncLifetime
                 var addedColumns = new List<string>();
                 while (await reader.ReadAsync()) addedColumns.Add(reader.GetString(0));
                 addedColumns.Should().Contain("JiraTicketId", "WorkflowKey", "WorkflowInstanceId",
-                    "ReviewerUserId", "JiraCommentId", "JiraSyncError");
+                    "PicId", "Pic", "PicUserId", "ReviewerUserId", "JiraCommentId", "JiraSyncError");
                 addedColumns.Should().Contain("SessionDetails", "AdditionalFeedback");
                 addedColumns.Should().NotContain("WhatsBad");
                 await reader.DisposeAsync();
@@ -686,6 +687,69 @@ public sealed class MilestoneReviewTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task PicCanEditOnlyTheirAssignedPublishedReview()
+    {
+        await service.CreateDraftAsync(
+            new("Project One", "Milestone One", "Description", null, [reviewerTwo], PicId: reviewerOne),
+            "admin@example.com");
+        var assignedReview = (await service.PublishDraftAsync("admin@example.com"))!;
+        assignedReview.Pic.Should().Be(new MilestoneReviewPic(
+            reviewerOne, "Reviewer One", "reviewer.one@example.com"));
+
+        await service.CreateDraftAsync(
+            new("Project Two", "Milestone Two", "Description", null, [reviewerOne], PicId: reviewerTwo),
+            "admin@example.com");
+        var otherReview = (await service.PublishDraftAsync("admin@example.com"))!;
+
+        var picModel = CreateModel(service, true, user: ReviewUser());
+        SetRole(picModel, TeamHubUserTypes.Registered);
+        picModel.EditReviewId = assignedReview.Id;
+        picModel.SelectedReviewId = assignedReview.Id;
+        (await picModel.OnGetAsync(CancellationToken.None)).Should().BeOfType<PageResult>();
+        picModel.EditingReview!.Id.Should().Be(assignedReview.Id);
+        picModel.CanEditReview(picModel.EditingReview).Should().BeTrue();
+
+        picModel.ReviewerIds = [reviewerOne, reviewerTwo];
+        var saved = await picModel.OnPostEditAsync(CancellationToken.None);
+        saved.Should().BeOfType<RedirectToPageResult>();
+        (await service.GetActiveAsync()).Single(item => item.Id == assignedReview.Id)
+            .AssignedReviewers.Should().HaveCount(2);
+
+        var otherModel = CreateModel(service, true, user: ReviewUser());
+        SetRole(otherModel, TeamHubUserTypes.Registered);
+        otherModel.EditReviewId = otherReview.Id;
+        otherModel.SelectedReviewId = otherReview.Id;
+        (await otherModel.OnGetAsync(CancellationToken.None)).Should().BeOfType<ForbidResult>();
+    }
+
+    [Fact]
+    public async Task PicCannotChangePicAssignmentOrEditAnotherReviewThroughService()
+    {
+        await service.CreateDraftAsync(
+            new("Project", "Milestone", "Description", null, [reviewerOne], PicId: reviewerOne),
+            "admin@example.com");
+        var review = (await service.PublishDraftAsync("admin@example.com"))!;
+        var changedPic = new CreateMilestoneReviewRequest(
+            review.ProjectName,
+            review.MilestoneName,
+            review.Description,
+            review.JiraTicketId,
+            [reviewerOne],
+            review.WorkflowKey,
+            PicId: reviewerTwo);
+
+        var changePic = () => service.UpdateAsync(review.Id, changedPic, reviewerOne, false);
+        await changePic.Should().ThrowAsync<UnauthorizedAccessException>().WithMessage("*administrators*PIC*");
+
+        var otherActor = () => service.UpdateAsync(
+            review.Id,
+            changedPic with { PicId = reviewerOne },
+            reviewerTwo,
+            false);
+        await otherActor.Should().ThrowAsync<UnauthorizedAccessException>().WithMessage("*assigned PIC*");
+    }
+
+    [Fact]
     public async Task GenerateReportVisibilityRequiresExplicitReportGeneratorAssignment()
     {
         await service.CreateDraftAsync(
@@ -807,7 +871,7 @@ public sealed class MilestoneReviewTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task PublishedEditPreservesFeedbackAndRevokesRemovedContributorsWithoutDeletingTheirRows()
+    public async Task PublishedEditHidesRemovedContributorRowsAndRestoresThemWhenReassigned()
     {
         await CreateAndPublishAsync([reviewerOne]);
         var current = (await service.GetCurrentAsync())!;
@@ -820,8 +884,8 @@ public sealed class MilestoneReviewTests : IAsyncLifetime
         var edited = (await service.GetCurrentAsync())!;
         edited.PublishedAt.Should().Be(current.PublishedAt);
         edited.CreatedAt.Should().Be(current.CreatedAt);
-        edited.Feedback.Should().HaveCount(2);
-        edited.Feedback.Single(item => item.ReviewerId == reviewerOne).Should().Be(savedRow);
+        edited.Feedback.Should().ContainSingle().Which.ReviewerId.Should().Be(reviewerTwo);
+        edited.Feedback.Should().NotContain(item => item.ReviewerId == reviewerOne);
         edited.AssignedReviewers.Should().ContainSingle().Which.Id.Should().Be(reviewerTwo);
         var unauthorized = () => service.SaveFeedbackAsync(
             new(current.Id, savedRow.Id, savedRow.Version, "", "Changed", "", ""), reviewerOne, false);
@@ -832,6 +896,53 @@ public sealed class MilestoneReviewTests : IAsyncLifetime
         var restored = (await service.GetCurrentAsync())!;
         restored.Feedback.Should().HaveCount(2);
         restored.Feedback.Single(item => item.ReviewerId == reviewerOne).Should().Be(savedRow);
+    }
+
+    [Fact]
+    public async Task PublishedEditRemovesDeselectedReportGeneratorAssignment()
+    {
+        await service.CreateDraftAsync(
+            new("Project", "Milestone", "", null, [reviewerOne], ReportGeneratorIds: [reviewerTwo]),
+            "admin@example.com");
+        await service.PublishDraftAsync("admin@example.com");
+        var current = (await service.GetCurrentAsync())!;
+        current.ReportGenerators.Should().ContainSingle().Which.Id.Should().Be(reviewerTwo);
+
+        await service.UpdateAsync(
+            current.Id,
+            new("Project", "Milestone", "", null, [reviewerOne], ReportGeneratorIds: []),
+            true);
+
+        var edited = (await service.GetCurrentAsync())!;
+        edited.ReportGenerators.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task PublishedReviewWithoutWorkflowCanStillUpdateUserAssignments()
+    {
+        await CreateAndPublishAsync([reviewerOne]);
+        var current = (await service.GetCurrentAsync())!;
+        current.WorkflowKey.Should().BeNull();
+        var workflowOptions = new DbContextOptionsBuilder<WorkflowDbContext>()
+            .UseInMemoryDatabase($"workflow-{Guid.NewGuid():N}")
+            .Options;
+        await using var workflowDbContext = new WorkflowDbContext(workflowOptions);
+        var model = CreateModel(service, true, workflowDbContext: workflowDbContext);
+        SetRole(model, TeamHubUserTypes.Admin);
+        model.ReviewId = current.Id;
+        model.ProjectName = current.ProjectName;
+        model.MilestoneName = current.MilestoneName;
+        model.Description = current.Description;
+        model.WorkflowKey = null;
+        model.ReviewerIds = [reviewerTwo];
+
+        var result = await model.OnPostEditAsync(CancellationToken.None);
+
+        result.Should().BeOfType<RedirectToPageResult>();
+        model.ModelState.IsValid.Should().BeTrue();
+        var updated = (await service.GetCurrentAsync())!;
+        updated.AssignedReviewers.Should().ContainSingle().Which.Id.Should().Be(reviewerTwo);
+        updated.Feedback.Should().ContainSingle().Which.ReviewerId.Should().Be(reviewerTwo);
     }
 
     [Theory]
@@ -1466,7 +1577,8 @@ public sealed class MilestoneReviewTests : IAsyncLifetime
     private static MilestoneReviewModel CreateModel(IMilestoneReviewService reviewService, bool allowed,
         StubCommentService? comments = null, Microsoft.AspNetCore.DataProtection.IDataProtectionProvider? protection = null,
         AccessLevel? level = null, AuthorizedUserRecord? user = null,
-        IStudioDirectoryService? studios = null, IMilestoneTrackerService? milestones = null) =>
+        IStudioDirectoryService? studios = null, IMilestoneTrackerService? milestones = null,
+        WorkflowDbContext? workflowDbContext = null) =>
         new(reviewService,
             new StubUserDirectory([]),
             new StubAccess(allowed, level, user),
@@ -1475,7 +1587,8 @@ public sealed class MilestoneReviewTests : IAsyncLifetime
             new TeamHub.Web.Formatting.SafeMarkdownRenderer(),
             NullLogger<MilestoneReviewModel>.Instance,
             studios,
-            milestones)
+            milestones,
+            workflowDbContext)
         {
             PageContext = new PageContext { HttpContext = new DefaultHttpContext() }
         };

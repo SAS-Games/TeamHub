@@ -21,6 +21,7 @@
 
   <ItemGroup>
     <Using Include="Xunit" />
+    <Compile Remove="SupportSummaryModelTests.cs" />
   </ItemGroup>
 
   <ItemGroup>

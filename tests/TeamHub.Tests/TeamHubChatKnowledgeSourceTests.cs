@@ -489,6 +489,7 @@ public sealed class TeamHubChatKnowledgeSourceTests
         public Task UpdateAsync(
             Guid reviewId,
             CreateMilestoneReviewRequest request,
+            Guid actorId,
             bool isAdmin,
             CancellationToken cancellationToken = default) => throw new NotSupportedException();
 

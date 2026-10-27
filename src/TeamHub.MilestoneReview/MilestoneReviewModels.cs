@@ -25,6 +25,8 @@ public sealed record MilestoneReviewAssignedReviewer(Guid Id, string DisplayName
 
 public sealed record MilestoneReviewReportGenerator(Guid Id, string DisplayName, string UserId);
 
+public sealed record MilestoneReviewPic(Guid Id, string DisplayName, string UserId);
+
 public sealed record MilestoneReview(
     Guid Id,
     string ProjectName,
@@ -38,7 +40,8 @@ public sealed record MilestoneReview(
     IReadOnlyList<MilestoneReviewReportGenerator> ReportGenerators,
     IReadOnlyList<MilestoneReviewFeedback> Feedback,
     string? WorkflowKey,
-    Guid? WorkflowInstanceId);
+    Guid? WorkflowInstanceId,
+    MilestoneReviewPic? Pic);
 
 public sealed record CreateMilestoneReviewRequest(
     string ProjectName,
@@ -47,7 +50,8 @@ public sealed record CreateMilestoneReviewRequest(
     string? JiraTicketId,
     IReadOnlyCollection<Guid> ReviewerIds,
     string? WorkflowKey = null,
-    IReadOnlyCollection<Guid>? ReportGeneratorIds = null);
+    IReadOnlyCollection<Guid>? ReportGeneratorIds = null,
+    Guid? PicId = null);
 
 public sealed record MilestoneReviewWorkflowStartRequest(
     Guid ReviewId,
@@ -122,6 +126,7 @@ public interface IMilestoneReviewService
     Task UpdateAsync(
         Guid reviewId,
         CreateMilestoneReviewRequest request,
+        Guid actorId,
         bool isAdmin,
         CancellationToken cancellationToken = default);
     Task ArchiveAsync(Guid reviewId, bool isAdmin, CancellationToken cancellationToken = default);

@@ -150,6 +150,11 @@ public sealed class TeamHubChatKnowledgeSource(
                 Status = item.Status.ToString(),
                 item.PublishedAt,
                 item.JiraTicketId,
+                Pic = item.Pic is null ? null : new
+                {
+                    item.Pic.DisplayName,
+                    item.Pic.UserId
+                },
                 AssignedReviewers = item.AssignedReviewers.Select(reviewer => new
                 {
                     reviewer.DisplayName,
