@@ -32,14 +32,26 @@ used only in the server-side provider client and are never included in prompts o
 ## Meeting Notes and Teams
 
 The TeamHub host loads the editable `AI/MeetingNotes.md` file for every Meeting Notes request. Its
-path and optional Teams destinations are managed under **Configuration > AI Services > AI Chat**.
-The page creates one destination row for every active studio from Studio Configuration. An
+path, optional studio instruction uploads, and optional Teams destinations are managed under
+**Configuration > AI Services > Meeting Notes**. The user may select an active studio before
+generation. When that studio has an uploaded overlay, the host appends it to the shared file;
+otherwise it uses only the shared instructions. Overlays should contain only studio-specific
+differences so shared rules are not duplicated and token usage stays low. The uploaded filename and
+Markdown content are stored in the database-backed AI configuration. Administrators can replace,
+download, or remove a saved overlay. Legacy server-file paths remain readable during migration.
+The page creates one
+configuration row for every active studio from Studio Configuration. An
 administrator enters the HTTPS URL created by the Teams **Workflows** webhook
 template for that channel. Webhook URLs are encrypted and are never displayed again or returned to
 the browser. Publishing is a separate user action after generation, and users can copy, edit, or
 download the generated `.md` content without publishing it. The host exposes this publishing step
 as an optional response action in both Meeting Notes and General modes; it is not part of AI
 generation and never posts automatically.
+
+Normal users do not upload the configured instructions. They select a studio and TeamHub resolves
+the saved overlay automatically. A collapsed, optional `.md` override is available for one-off
+formatting changes. It is applied only as user-provided presentation guidance for that request and
+cannot override transcript accuracy, source isolation, or security rules.
 
 ## Token limits and usage
 

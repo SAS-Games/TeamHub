@@ -17,6 +17,7 @@ using TeamHub.Web.Pages.Configuration;
 using TeamHub.Studio;
 using TeamHub.Web.AI;
 using System.Security.Claims;
+using System.Text;
 
 namespace TeamHub.Tests;
 
@@ -325,6 +326,61 @@ public sealed class AiConfigurationTests
     }
 
     [Fact]
+    public async Task Meeting_notes_configuration_uploads_downloads_and_removes_studio_overlay()
+    {
+        await using var context = CreateDbContext();
+        using var defaults = CreateOptions();
+        var configuration = new AiConfigurationService(
+            context, new EphemeralDataProtectionProvider(),
+            defaults.GetRequiredService<IOptionsMonitor<AiRuntimeOptions>>(),
+            defaults.GetRequiredService<IOptionsMonitor<AiChatOptions>>(),
+            defaults.GetRequiredService<IOptionsMonitor<AiFlowDesignerOptions>>(),
+            defaults.GetRequiredService<IOptionsMonitor<AiReportGeneratorOptions>>());
+        var studioDirectory = new ActiveStudioDirectoryStub(
+            new StudioDetails { Id = "studio-a", StudioName = "Studio A", IsActive = true });
+        var page = new AIModel(configuration, null!, null!, null, studioDirectory)
+        {
+            PageContext = new PageContext { HttpContext = new DefaultHttpContext() },
+            Settings = AiSettingsInput.FromSnapshot(await configuration.GetAsync())
+        };
+        var content = "# Studio A overlay\n\n- Use the studio milestone terminology.";
+        var bytes = Encoding.UTF8.GetBytes(content);
+        await using var stream = new MemoryStream(bytes);
+        page.MeetingNotesTeamsChannels =
+        [
+            new MeetingNotesTeamsChannelInput
+            {
+                StudioId = "studio-a",
+                StudioName = "Studio A",
+                InstructionFile = new FormFile(stream, 0, bytes.Length, "instruction", "StudioA.md")
+            }
+        ];
+
+        (await page.OnPostSaveMeetingNotesAsync(CancellationToken.None))
+            .Should().BeOfType<RedirectToPageResult>();
+        var saved = (await configuration.GetAsync()).Chat.MeetingNotes.StudioInstructions["studio-a"];
+        saved.FileName.Should().Be("StudioA.md");
+        saved.Content.Should().Be(content);
+        var download = await page.OnGetDownloadMeetingNotesInstructionAsync("studio-a", CancellationToken.None);
+        var file = download.Should().BeOfType<FileContentResult>().Subject;
+        file.FileDownloadName.Should().Be("StudioA.md");
+        Encoding.UTF8.GetString(file.FileContents).Should().Be(content);
+
+        page.MeetingNotesTeamsChannels =
+        [
+            new MeetingNotesTeamsChannelInput
+            {
+                StudioId = "studio-a",
+                StudioName = "Studio A",
+                RemoveInstruction = true
+            }
+        ];
+        (await page.OnPostSaveMeetingNotesAsync(CancellationToken.None))
+            .Should().BeOfType<RedirectToPageResult>();
+        (await configuration.GetAsync()).Chat.MeetingNotes.StudioInstructions.Should().BeEmpty();
+    }
+
+    [Fact]
     public async Task Saved_chat_settings_reject_invalid_limits()
     {
         await using var context = CreateDbContext();
@@ -372,6 +428,22 @@ public sealed class AiConfigurationTests
         public Task<AiStructuredGenerationResult> GenerateStructuredAsync(AiProviderSettings settings,
             AiStructuredGenerationRequest request, CancellationToken cancellationToken = default) =>
             Task.FromResult(new AiStructuredGenerationResult(Key, settings.Model, request.UserPrompt));
+    }
+
+    private sealed class ActiveStudioDirectoryStub(params StudioDetails[] studios) : IStudioDirectoryService
+    {
+        public Task<IReadOnlyList<StudioDetails>> GetStudiosAsync(CancellationToken cancellationToken = default) =>
+            Task.FromResult<IReadOnlyList<StudioDetails>>(studios);
+
+        public Task<StudioDetails?> GetStudioAsync(string id, CancellationToken cancellationToken = default) =>
+            Task.FromResult(studios.SingleOrDefault(studio =>
+                string.Equals(studio.Id, id, StringComparison.OrdinalIgnoreCase)));
+
+        public Task<StudioDetails> SaveStudioAsync(StudioDetails studio, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+
+        public Task DeleteStudioAsync(string id, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
     }
 
     private static WorkflowDbContext CreateDbContext() => new(

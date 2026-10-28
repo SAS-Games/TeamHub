@@ -146,6 +146,8 @@ internal sealed class AiConfigurationService : IAiConfigurationService
 #pragma warning restore CS0618
             }
             snapshot.Chat.MeetingNotes ??= new AiMeetingNotesOptions();
+            snapshot.Chat.MeetingNotes.StudioInstructions ??= new(StringComparer.OrdinalIgnoreCase);
+            snapshot.Chat.MeetingNotes.StudioInstructionPaths ??= new(StringComparer.OrdinalIgnoreCase);
             return snapshot;
         }
         catch (JsonException exception)
@@ -215,6 +217,31 @@ internal sealed class AiConfigurationService : IAiConfigurationService
             throw new ArgumentException("The Meeting Notes instruction path is required.");
         if (request.Chat.MeetingNotes.InstructionPath.Length > 2_048)
             throw new ArgumentException("The Meeting Notes instruction path is too long.");
+        request.Chat.MeetingNotes.StudioInstructions ??= new(StringComparer.OrdinalIgnoreCase);
+        if (request.Chat.MeetingNotes.StudioInstructions.Count > 500)
+            throw new ArgumentException("Too many Meeting Notes studio instruction files were supplied.");
+        foreach (var studioInstruction in request.Chat.MeetingNotes.StudioInstructions)
+        {
+            if (string.IsNullOrWhiteSpace(studioInstruction.Key) || studioInstruction.Key.Length > 100)
+                throw new ArgumentException("Every Meeting Notes studio instruction needs a valid studio.");
+            var fileName = studioInstruction.Value?.FileName?.Trim() ?? string.Empty;
+            var content = studioInstruction.Value?.Content?.Trim() ?? string.Empty;
+            if (fileName.Length is 0 or > 200 || !string.Equals(Path.GetFileName(fileName), fileName, StringComparison.Ordinal))
+                throw new ArgumentException("Every Meeting Notes studio instruction needs a valid Markdown filename.");
+            if (content.Length == 0 || content.Length > request.Chat.MaximumInstructionCharacters)
+                throw new ArgumentException(
+                    $"Every Meeting Notes studio instruction must contain 1 to {request.Chat.MaximumInstructionCharacters:N0} characters.");
+        }
+        request.Chat.MeetingNotes.StudioInstructionPaths ??= new(StringComparer.OrdinalIgnoreCase);
+        if (request.Chat.MeetingNotes.StudioInstructionPaths.Count > 500)
+            throw new ArgumentException("Too many Meeting Notes studio instruction paths were supplied.");
+        foreach (var studioInstruction in request.Chat.MeetingNotes.StudioInstructionPaths)
+        {
+            if (string.IsNullOrWhiteSpace(studioInstruction.Key) || studioInstruction.Key.Length > 100)
+                throw new ArgumentException("Every Meeting Notes studio instruction needs a valid studio.");
+            if (string.IsNullOrWhiteSpace(studioInstruction.Value) || studioInstruction.Value.Length > 2_048)
+                throw new ArgumentException("Every Meeting Notes studio instruction path must contain 1 to 2,048 characters.");
+        }
         if (request.FlowDesigner.MaximumSourceDocuments is < 1 or > 50)
             throw new ArgumentException("Maximum source documents must be between 1 and 50.");
         if (request.FlowDesigner.MaximumSourceCharacters is < 1_000 or > 2_000_000)

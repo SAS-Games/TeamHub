@@ -10,10 +10,14 @@
     const mode = root.querySelector("#aiChatMode");
     const model = root.querySelector("#aiChatModel");
     const note = root.querySelector("#aiChatModeNote");
+    const meetingStudioContext = root.querySelector("#aiChatMeetingStudioContext");
+    const meetingStudio = root.querySelector("#aiChatMeetingStudio");
     const messagesElement = root.querySelector("#aiChatMessages");
     const documentsElement = root.querySelector("#aiChatDocuments");
     const files = root.querySelector("#aiChatFiles");
     const filesLabel = root.querySelector("#aiChatFilesLabel");
+    const meetingOverrideContext = root.querySelector("#aiChatMeetingOverrideContext");
+    const meetingOverride = root.querySelector("#aiChatMeetingOverride");
     const form = root.querySelector("#aiChatForm");
     const prompt = root.querySelector("#aiChatPrompt");
     const send = root.querySelector("#aiChatSend");
@@ -38,6 +42,8 @@
     let conversationRevision = 0;
     let normalBounds = null;
     let meetingDestinationsLoaded = false;
+    let meetingStudiosLoaded = false;
+    let pendingMeetingStudioId = null;
     let meetingDraftDirty = false;
     const copyIcon = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 7V3h13v13h-4v5H3V7h5Zm2 0h7v7h2V5h-9v2Zm5 2H5v10h10V9Z" /></svg>';
     const copiedIcon = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9.2 17.2-4.4-4.4 1.4-1.4 3 3L17.8 5.8l1.4 1.4-10 10Z" /></svg>';
@@ -115,6 +121,9 @@
                     ? state.mode
                     : "General",
                 model: typeof state.model === "string" ? state.model.slice(0, 200) : "",
+                meetingStudioId: typeof state.meetingStudioId === "string"
+                    ? state.meetingStudioId.slice(0, 100)
+                    : "",
                 history: savedHistory,
                 bounds: state.bounds
                     && [state.bounds.left, state.bounds.top, state.bounds.width, state.bounds.height]
@@ -140,6 +149,7 @@
                 fullscreen: root.classList.contains("is-fullscreen"),
                 mode: mode.value,
                 model: pendingModel || model.value,
+                meetingStudioId: meetingStudio?.value || pendingMeetingStudioId || "",
                 history: history.slice(-20),
                 bounds: normalBounds
             }));
@@ -168,6 +178,7 @@
         conversationRevision += 1;
         history = [];
         if (files) files.value = "";
+        if (meetingOverride) meetingOverride.value = "";
         prompt.value = "";
         showEmptyConversation();
         error.textContent = "";
@@ -184,6 +195,9 @@
         const teamHubMode = mode.value === "TeamHub";
         const meetingNotesMode = mode.value === "MeetingNotes";
         documentsElement.classList.toggle("d-none", teamHubMode);
+        meetingStudioContext?.classList.toggle("d-none", !meetingNotesMode);
+        meetingOverrideContext?.classList.toggle("d-none", !meetingNotesMode);
+        if (meetingNotesMode) loadMeetingStudios();
         note.textContent = teamHubMode
             ? "Uses only TeamHub information authorized for your account. Workflow results are limited to workflows assigned to you."
             : meetingNotesMode
@@ -199,8 +213,10 @@
     function setGenerating(generating) {
         mode.disabled = generating;
         model.disabled = generating || !modelsLoaded;
+        if (meetingStudio) meetingStudio.disabled = generating || !meetingStudiosLoaded;
         prompt.disabled = generating;
         if (files) files.disabled = generating;
+        if (meetingOverride) meetingOverride.disabled = generating;
         if (publishNotes) publishNotes.disabled = generating || !meetingDestination?.value;
         send.disabled = false;
         send.textContent = generating ? "Cancel" : "Send";
@@ -208,6 +224,35 @@
         send.classList.toggle("btn-primary", !generating);
         send.setAttribute("aria-label", generating ? "Cancel response generation" : "Send message");
         root.classList.toggle("is-generating", generating);
+    }
+
+    async function loadMeetingStudios() {
+        if (!meetingStudio || meetingStudiosLoaded) return;
+        meetingStudio.replaceChildren(new Option("Loading studios...", ""));
+        meetingStudio.disabled = true;
+        try {
+            const response = await fetch("/AIChat?handler=MeetingNotesStudios", {
+                headers: { "Accept": "application/json" }
+            });
+            const payload = await response.json().catch(() => ({}));
+            if (!response.ok) throw new Error(payload.error || "Meeting studios could not be loaded.");
+            meetingStudio.replaceChildren(new Option("Default meeting-note format", ""));
+            for (const item of payload.studios || []) {
+                meetingStudio.add(new Option(item.label, item.id));
+            }
+            meetingStudiosLoaded = true;
+            if (pendingMeetingStudioId
+                && Array.from(meetingStudio.options).some(option => option.value === pendingMeetingStudioId)) {
+                meetingStudio.value = pendingMeetingStudioId;
+            }
+            pendingMeetingStudioId = null;
+            meetingStudio.disabled = false;
+            persistState();
+        } catch (exception) {
+            meetingStudio.replaceChildren(new Option("Default meeting-note format", ""));
+            meetingStudio.disabled = true;
+            error.textContent = exception.message || "Meeting studios could not be loaded.";
+        }
     }
 
     async function loadMeetingDestinations() {
@@ -223,6 +268,10 @@
             meetingDestination.replaceChildren();
             for (const item of payload.destinations || []) {
                 meetingDestination.add(new Option(item.label, item.id));
+            }
+            if (meetingStudio?.value
+                && Array.from(meetingDestination.options).some(option => option.value === meetingStudio.value)) {
+                meetingDestination.value = meetingStudio.value;
             }
             meetingDestinationsLoaded = true;
             const hasDestinations = meetingDestination.options.length > 0;
@@ -867,6 +916,19 @@
         }));
     }
 
+    async function readMeetingNotesOverride() {
+        if (mode.value !== "MeetingNotes" || !meetingOverride?.files?.length) return null;
+        const file = meetingOverride.files[0];
+        const extension = file.name.split(".").pop().toLowerCase();
+        if (!["md", "markdown"].includes(extension))
+            throw new Error("The additional Meeting Notes override must be a Markdown (.md) file.");
+        if (file.size > 256 * 1024)
+            throw new Error("The additional Meeting Notes override cannot exceed 256 KB.");
+        const content = (await file.text()).trim();
+        if (!content) throw new Error("The additional Meeting Notes override is empty.");
+        return content;
+    }
+
     function readFileAsBase64(file) {
         return new Promise((resolve, reject) => {
             const reader = new FileReader();
@@ -1066,6 +1128,10 @@
 
     mode.addEventListener("change", () => updateMode(true));
     model.addEventListener("change", persistState);
+    if (meetingStudio) meetingStudio.addEventListener("change", () => {
+        if (mode.value === "MeetingNotes") resetConversation();
+        persistState();
+    });
     window.addEventListener("beforeunload", persistState);
     prompt.addEventListener("keydown", event => {
         if (event.key !== "Enter" || event.shiftKey || event.isComposing) return;
@@ -1110,6 +1176,7 @@
 
         try {
             const documents = await readDocuments();
+            const meetingNotesOverride = await readMeetingNotesOverride();
             let externalAccessDecision = null;
             let approvedExternalSources = [];
             let payload;
@@ -1126,6 +1193,10 @@
                         model: model.value,
                         messages: requestHistory,
                         documents,
+                        meetingNotesStudioId: mode.value === "MeetingNotes"
+                            ? meetingStudio?.value || null
+                            : null,
+                        meetingNotesOverride,
                         externalAccessDecision,
                         approvedExternalSources
                     })
@@ -1177,6 +1248,7 @@
     if (savedState) {
         mode.value = savedState.mode;
         pendingModel = savedState.model;
+        pendingMeetingStudioId = savedState.meetingStudioId;
         history = savedState.history;
         normalBounds = savedState.bounds;
     }

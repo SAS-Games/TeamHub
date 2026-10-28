@@ -40,7 +40,9 @@ public sealed record AiChatRequest(
     string Model,
     IReadOnlyList<AiChatMessage> Messages,
     IReadOnlyList<AiChatDocument>? Documents = null,
-    IReadOnlyList<AiImageInput>? Images = null);
+    IReadOnlyList<AiImageInput>? Images = null,
+    string? StudioId = null,
+    string? MeetingNotesOverride = null);
 
 public sealed record AiChatSource(
     string Id,
@@ -98,7 +100,9 @@ public interface IAiChatInstructionProvider
 /// </summary>
 public interface IAiMeetingNotesInstructionProvider
 {
-    Task<string> GetInstructionsAsync(CancellationToken cancellationToken = default);
+    Task<string> GetInstructionsAsync(
+        string? studioId,
+        CancellationToken cancellationToken = default);
 }
 
 public sealed class AiChatException(string message, Exception? innerException = null)

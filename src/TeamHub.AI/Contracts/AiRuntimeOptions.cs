@@ -93,6 +93,15 @@ public sealed class AiMeetingNotesOptions
 {
     public bool Enabled { get; set; } = true;
     public string InstructionPath { get; set; } = Path.Combine("AI", "MeetingNotes.md");
+    public Dictionary<string, AiMeetingNotesStudioInstructionOptions> StudioInstructions { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+    // Legacy server-file paths remain readable so existing installations migrate without downtime.
+    public Dictionary<string, string> StudioInstructionPaths { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+}
+
+public sealed class AiMeetingNotesStudioInstructionOptions
+{
+    public string FileName { get; set; } = string.Empty;
+    public string Content { get; set; } = string.Empty;
 }
 
 public sealed class AiFlowDesignerOptions

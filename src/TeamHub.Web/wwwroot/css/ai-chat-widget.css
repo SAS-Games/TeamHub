@@ -180,12 +180,48 @@ html.teamhub-ai-chat-resizing * {
 }
 
 .teamhub-ai-chat-controls label,
+.teamhub-ai-chat-studio-context label,
 .teamhub-ai-chat-documents label {
   display: block;
   margin-bottom: .2rem;
   color: var(--text-secondary-color);
   font-size: .72rem;
   font-weight: 700;
+}
+
+.teamhub-ai-chat-studio-context {
+  display: grid;
+  grid-template-columns: minmax(110px, auto) minmax(160px, 1fr);
+  align-items: center;
+  gap: .3rem .65rem;
+  padding: 0 1rem .55rem;
+}
+
+.teamhub-ai-chat-studio-context label {
+  margin: 0;
+}
+
+.teamhub-ai-chat-studio-context span {
+  grid-column: 2;
+  color: var(--text-muted-color);
+  font-size: .7rem;
+}
+
+.teamhub-ai-chat-override {
+  padding: .35rem 1rem;
+  color: var(--text-secondary-color);
+  font-size: .72rem;
+}
+
+.teamhub-ai-chat-override summary {
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.teamhub-ai-chat-override span {
+  display: block;
+  margin-top: .2rem;
+  color: var(--text-muted-color);
 }
 
 .teamhub-ai-chat-note {
@@ -304,9 +340,11 @@ html.teamhub-ai-chat-resizing * {
 }
 
 .teamhub-ai-chat-panel.is-reviewing-notes .teamhub-ai-chat-controls,
+.teamhub-ai-chat-panel.is-reviewing-notes .teamhub-ai-chat-studio-context,
 .teamhub-ai-chat-panel.is-reviewing-notes .teamhub-ai-chat-note,
 .teamhub-ai-chat-panel.is-reviewing-notes .teamhub-ai-chat-messages,
 .teamhub-ai-chat-panel.is-reviewing-notes .teamhub-ai-chat-documents,
+.teamhub-ai-chat-panel.is-reviewing-notes .teamhub-ai-chat-override,
 .teamhub-ai-chat-panel.is-reviewing-notes .teamhub-ai-chat-compose-row,
 .teamhub-ai-chat-panel.is-reviewing-notes .ai-chat-session-usage,
 .teamhub-ai-chat-panel.is-reviewing-notes .teamhub-ai-chat-output-actions,

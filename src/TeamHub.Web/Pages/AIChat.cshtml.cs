@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Mvc.RazorPages;
 using TeamHub.AI.Chat.Contracts;
 using TeamHub.AI.Contracts;
 using TeamHub.Authentication;
+using TeamHub.Studio;
 using TeamHub.Web.AccessControl;
 using TeamHub.Web.AI;
 
@@ -16,7 +17,8 @@ public sealed class AIChatModel(
     ICurrentAccessService access,
     IAiConfigurationService configuration,
     IAiChatDocumentExtractor documentExtractor,
-    IMeetingNotesTeamsPublisher? meetingNotesPublisher = null) : PageModel
+    IMeetingNotesTeamsPublisher? meetingNotesPublisher = null,
+    IStudioDirectoryService? studioDirectory = null) : PageModel
 {
     public IReadOnlyList<AiModelCatalogItem> Models { get; private set; } = [];
     public string? LoadError { get; private set; }
@@ -76,6 +78,19 @@ public sealed class AIChatModel(
                 label = item.Studio
             })
         });
+    }
+
+    public async Task<IActionResult> OnGetMeetingNotesStudiosAsync(CancellationToken cancellationToken)
+    {
+        if (studioDirectory is null) return new JsonResult(new { studios = Array.Empty<object>() });
+        var snapshot = await configuration.GetAsync(cancellationToken);
+        if (!snapshot.Chat.Enabled || !snapshot.Chat.MeetingNotes.Enabled)
+            return new JsonResult(new { studios = Array.Empty<object>() });
+        var studios = (await studioDirectory.GetStudiosAsync(cancellationToken))
+            .Where(studio => studio.IsActive)
+            .OrderBy(studio => studio.StudioName, StringComparer.OrdinalIgnoreCase)
+            .Select(studio => new { id = studio.Id, label = studio.StudioName });
+        return new JsonResult(new { studios });
     }
 
     public async Task<IActionResult> OnPostPublishMeetingNotesAsync(
@@ -158,13 +173,31 @@ public sealed class AIChatModel(
                         .ToHashSet(StringComparer.OrdinalIgnoreCase)
                     : new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
+            string? meetingNotesStudioId = null;
+            if (mode == AiChatMode.MeetingNotes && !string.IsNullOrWhiteSpace(input.MeetingNotesStudioId))
+            {
+                if (studioDirectory is null)
+                    return BadRequest(new { error = "Studio-specific Meeting Notes instructions are not available." });
+                var selectedStudio = await studioDirectory.GetStudioAsync(input.MeetingNotesStudioId.Trim(), cancellationToken);
+                if (selectedStudio is null || !selectedStudio.IsActive)
+                    return BadRequest(new { error = "Select an active studio for Meeting Notes." });
+                meetingNotesStudioId = selectedStudio.Id;
+            }
+
             var response = await chat.SendAsync(
                 new AiChatUserContext(
                     current.User.UserId,
                     current.User.DisplayName,
                     current.User.UserType,
                     approvedExternalSources),
-                new AiChatRequest(mode, input.Model, input.Messages, documents, images),
+                new AiChatRequest(
+                    mode,
+                    input.Model,
+                    input.Messages,
+                    documents,
+                    images,
+                    meetingNotesStudioId,
+                    input.MeetingNotesOverride),
                 cancellationToken);
             return new JsonResult(response);
         }
@@ -197,6 +230,10 @@ public sealed class AIChatModel(
 
         public List<AiChatMessage> Messages { get; set; } = [];
         public List<AiChatUploadDocument> Documents { get; set; } = [];
+        [StringLength(100)]
+        public string? MeetingNotesStudioId { get; set; }
+        [StringLength(200_000)]
+        public string? MeetingNotesOverride { get; set; }
         public string? ExternalAccessDecision { get; set; }
         public List<string> ApprovedExternalSources { get; set; } = [];
     }

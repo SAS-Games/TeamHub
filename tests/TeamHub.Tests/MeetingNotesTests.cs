@@ -1,8 +1,10 @@
 using System.Net;
 using System.Text.Json;
 using FluentAssertions;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.FileProviders;
 using Microsoft.Extensions.Logging.Abstractions;
 using TeamHub.AI.Contracts;
 using TeamHub.Infrastructure.Persistence;
@@ -14,6 +16,49 @@ namespace TeamHub.Tests;
 
 public sealed class MeetingNotesTests
 {
+    [Fact]
+    public async Task Instruction_provider_prefers_managed_overlay_and_keeps_legacy_path_fallback()
+    {
+        var root = Path.Combine(Path.GetTempPath(), $"teamhub-meeting-notes-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(Path.Combine(root, "AI", "MeetingNotes"));
+        try
+        {
+            await File.WriteAllTextAsync(Path.Combine(root, "AI", "MeetingNotes.md"), "Shared format");
+            await File.WriteAllTextAsync(Path.Combine(root, "AI", "MeetingNotes", "StudioB.md"), "Studio B legacy terminology");
+            var provider = new MeetingNotesInstructionFileProvider(
+                new WebHostEnvironmentStub(root),
+                new InstructionConfigurationStub(new AiMeetingNotesOptions
+                {
+                    InstructionPath = Path.Combine("AI", "MeetingNotes.md"),
+                    StudioInstructions = new(StringComparer.OrdinalIgnoreCase)
+                    {
+                        ["studio-a"] = new AiMeetingNotesStudioInstructionOptions
+                        {
+                            FileName = "StudioA.md",
+                            Content = "Studio A managed terminology"
+                        }
+                    },
+                    StudioInstructionPaths = new(StringComparer.OrdinalIgnoreCase)
+                    {
+                        ["studio-b"] = Path.Combine("AI", "MeetingNotes", "StudioB.md")
+                    }
+                }),
+                NullLogger<MeetingNotesInstructionFileProvider>.Instance);
+
+            var studioInstructions = await provider.GetInstructionsAsync("STUDIO-A");
+            var legacyInstructions = await provider.GetInstructionsAsync("studio-b");
+            var defaultInstructions = await provider.GetInstructionsAsync("studio-without-overlay");
+
+            studioInstructions.Should().Contain("Shared format").And.Contain("Studio A managed terminology");
+            legacyInstructions.Should().Contain("Shared format").And.Contain("Studio B legacy terminology");
+            defaultInstructions.Should().Be("Shared format");
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
     [Fact]
     public async Task Teams_configuration_encrypts_webhook_and_blank_input_keeps_it()
     {
@@ -144,6 +189,32 @@ public sealed class MeetingNotesTests
         public ValueTask<string?> GetCredentialAsync(
             AiProviderSettings settings,
             CancellationToken cancellationToken = default) => ValueTask.FromResult<string?>(null);
+    }
+
+    private sealed class InstructionConfigurationStub(AiMeetingNotesOptions options) : IAiConfigurationService
+    {
+        public Task<AiConfigurationSnapshot> GetAsync(CancellationToken cancellationToken = default) =>
+            Task.FromResult(new AiConfigurationSnapshot
+            {
+                Chat = new AiChatOptions { Enabled = true, MeetingNotes = options }
+            });
+
+        public Task SaveAsync(SaveAiConfigurationRequest request, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+
+        public ValueTask<string?> GetCredentialAsync(
+            AiProviderSettings settings,
+            CancellationToken cancellationToken = default) => ValueTask.FromResult<string?>(null);
+    }
+
+    private sealed class WebHostEnvironmentStub(string contentRoot) : IWebHostEnvironment
+    {
+        public string ApplicationName { get; set; } = "TeamHub.Tests";
+        public IFileProvider WebRootFileProvider { get; set; } = new NullFileProvider();
+        public string WebRootPath { get; set; } = contentRoot;
+        public string EnvironmentName { get; set; } = "Testing";
+        public string ContentRootPath { get; set; } = contentRoot;
+        public IFileProvider ContentRootFileProvider { get; set; } = new NullFileProvider();
     }
 
     private sealed class TeamsConfigurationStub(

@@ -51,6 +51,13 @@
             Isolated from TeamHub. Documents are optional; ordinary questions use the model's general knowledge.
         </div>
     </div>
+    <div id="aiChatMeetingStudioContext" class="ai-chat-meeting-studio-context d-none">
+        <label for="aiChatMeetingStudio" class="form-label mb-0">Meeting studio</label>
+        <select id="aiChatMeetingStudio" class="form-select form-select-sm">
+            <option value="">Default meeting-note format</option>
+        </select>
+        <span class="form-text mt-0">Optional. Selecting a studio applies its configured Markdown instruction overlay.</span>
+    </div>
 
     <div id="aiChatMessages" class="ai-chat-messages" aria-live="polite">
         <div class="ai-chat-empty">
@@ -66,6 +73,13 @@
             <input id="aiChatFiles" type="file" class="form-control" multiple
                    accept=".txt,.md,.markdown,.csv,.json,.docx,.pdf,.chm,.png,.jpg,.jpeg,.webp,.gif,text/plain,text/markdown,text/csv,application/json,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/pdf,application/vnd.ms-htmlhelp,image/png,image/jpeg,image/webp,image/gif" />
         </div>
+        <details id="aiChatMeetingOverrideContext" class="ai-chat-meeting-override d-none">
+            <summary>Additional format override (.md)</summary>
+            <label for="aiChatMeetingOverride" class="visually-hidden">Additional Meeting Notes format override</label>
+            <input id="aiChatMeetingOverride" type="file" class="form-control form-control-sm mt-2"
+                   accept=".md,.markdown,text/markdown,text/plain" />
+            <span class="form-text">Optional. The configured studio format is used automatically.</span>
+        </details>
         <div class="d-flex gap-2 align-items-end">
             <div class="flex-grow-1">
                 <label for="aiChatPrompt" class="visually-hidden">Message</label>

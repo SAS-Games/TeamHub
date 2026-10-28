@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations;
+using System.Text;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
@@ -8,6 +9,7 @@ using TeamHub.Studio;
 namespace TeamHub.Web.Pages.Configuration;
 
 [Authorize(Roles = "Admin")]
+[RequestFormLimits(MultipartBodyLengthLimit = 20 * 1024 * 1024)]
 public sealed class AIModel(
     IAiConfigurationService configuration,
     IAiModelService modelService,
@@ -67,6 +69,27 @@ public sealed class AIModel(
     public Task<IActionResult> OnPostSaveReportGeneratorAsync(CancellationToken cancellationToken) =>
         SaveSectionAsync(AiConfigurationSection.ReportGenerator, cancellationToken);
 
+    public async Task<IActionResult> OnGetDownloadMeetingNotesInstructionAsync(
+        string studioId,
+        CancellationToken cancellationToken)
+    {
+        var normalizedStudioId = studioId?.Trim() ?? string.Empty;
+        var options = (await configuration.GetAsync(cancellationToken)).Chat.MeetingNotes;
+        var instruction = (options.StudioInstructions ?? [])
+            .FirstOrDefault(item => string.Equals(
+                item.Key,
+                normalizedStudioId,
+                StringComparison.OrdinalIgnoreCase))
+            .Value;
+        if (instruction is null || string.IsNullOrWhiteSpace(instruction.Content)) return NotFound();
+        var fileName = Path.GetFileName(instruction.FileName?.Trim() ?? string.Empty);
+        if (fileName.Length == 0) fileName = "meeting-notes-overlay.md";
+        return File(
+            Encoding.UTF8.GetBytes(instruction.Content),
+            "text/markdown; charset=utf-8",
+            fileName);
+    }
+
     public async Task<IActionResult> OnPostTestConnectionAsync(CancellationToken cancellationToken)
     {
         ModelState.Clear();
@@ -107,12 +130,19 @@ public sealed class AIModel(
                     snapshot.Chat.MeetingNotes = meetingNotes;
                     break;
                 case AiConfigurationSection.MeetingNotes:
+                {
+                    var studioInstructions = await BuildStudioInstructionConfigurationAsync(
+                        snapshot.Chat.MeetingNotes,
+                        cancellationToken);
                     snapshot.Chat.MeetingNotes = new AiMeetingNotesOptions
                     {
                         Enabled = Settings.MeetingNotesEnabled,
-                        InstructionPath = Settings.MeetingNotesInstructionPath?.Trim() ?? string.Empty
+                        InstructionPath = Settings.MeetingNotesInstructionPath?.Trim() ?? string.Empty,
+                        StudioInstructions = studioInstructions.Managed,
+                        StudioInstructionPaths = studioInstructions.LegacyPaths
                     };
                     break;
+                }
                 case AiConfigurationSection.FlowDesigner:
                     snapshot.FlowDesigner = Settings.ToFlowDesignerOptions();
                     break;
@@ -181,9 +211,16 @@ public sealed class AIModel(
 
         try
         {
+            var current = await configuration.GetAsync(cancellationToken);
+            var studioInstructions = await BuildStudioInstructionConfigurationAsync(
+                current.Chat.MeetingNotes,
+                cancellationToken);
+            var chatOptions = Settings.ToChatOptions();
+            chatOptions.MeetingNotes.StudioInstructions = studioInstructions.Managed;
+            chatOptions.MeetingNotes.StudioInstructionPaths = studioInstructions.LegacyPaths;
             await configuration.SaveAsync(new SaveAiConfigurationRequest(
                 Settings.ToRuntimeOptions(),
-                Settings.ToChatOptions(),
+                chatOptions,
                 Settings.ToFlowDesignerOptions(),
                 Settings.ToReportGeneratorOptions(),
                 Settings.Provider == AiModelProviderKeys.PfbAiGateway ? null : Credential,
@@ -241,6 +278,9 @@ public sealed class AIModel(
         CancellationToken cancellationToken)
     {
         if (meetingNotesTeams is null || studioDirectory is null) return;
+        var meetingNotes = (await configuration.GetAsync(cancellationToken)).Chat.MeetingNotes;
+        var configuredPaths = meetingNotes.StudioInstructionPaths ?? [];
+        var configuredInstructions = meetingNotes.StudioInstructions ?? [];
         var statuses = (await meetingNotesTeams.ListAsync(cancellationToken))
             .ToDictionary(item => item.StudioId, StringComparer.OrdinalIgnoreCase);
         var submitted = preserveInput
@@ -253,16 +293,117 @@ public sealed class AIModel(
             {
                 statuses.TryGetValue(studio.Id, out var status);
                 submitted.TryGetValue(studio.Id, out var input);
+                var configuredPath = configuredPaths.FirstOrDefault(item => string.Equals(
+                    item.Key,
+                    studio.Id,
+                    StringComparison.OrdinalIgnoreCase)).Value;
+                var configuredInstruction = configuredInstructions.FirstOrDefault(item => string.Equals(
+                    item.Key,
+                    studio.Id,
+                    StringComparison.OrdinalIgnoreCase)).Value;
                 return new MeetingNotesTeamsChannelInput
                 {
                     StudioId = studio.Id,
                     StudioName = studio.StudioName,
+                    InstructionFile = input?.InstructionFile,
+                    InstructionFileName = input?.InstructionFile?.FileName
+                        ?? input?.InstructionFileName
+                        ?? configuredInstruction?.FileName
+                        ?? (string.IsNullOrWhiteSpace(configuredPath) ? null : Path.GetFileName(configuredPath)),
+                    HasInstruction = configuredInstruction is not null || !string.IsNullOrWhiteSpace(configuredPath),
+                    InstructionStoredInDatabase = configuredInstruction is not null,
+                    RemoveInstruction = input?.RemoveInstruction == true,
                     WebhookUrl = input?.WebhookUrl,
                     IsConfigured = status?.IsConfigured == true,
                     Remove = input?.Remove == true
                 };
             })
             .ToList();
+    }
+
+    private async Task<StudioInstructionConfiguration> BuildStudioInstructionConfigurationAsync(
+        AiMeetingNotesOptions existing,
+        CancellationToken cancellationToken)
+    {
+        var managed = (existing.StudioInstructions ?? [])
+            .Where(item => item.Value is not null)
+            .ToDictionary(
+                item => item.Key,
+                item => new AiMeetingNotesStudioInstructionOptions
+                {
+                    FileName = item.Value.FileName,
+                    Content = item.Value.Content
+                },
+                StringComparer.OrdinalIgnoreCase);
+        var legacyPaths = new Dictionary<string, string>(
+            existing.StudioInstructionPaths ?? [],
+            StringComparer.OrdinalIgnoreCase);
+        var activeStudioIds = studioDirectory is null
+            ? new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+            : (await studioDirectory.GetStudiosAsync(cancellationToken))
+                .Where(studio => studio.IsActive)
+                .Select(studio => studio.Id)
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var row in MeetingNotesTeamsChannels)
+        {
+            var studioId = row.StudioId?.Trim() ?? string.Empty;
+            if (studioId.Length == 0) continue;
+            if ((row.InstructionFile is not null || row.RemoveInstruction)
+                && !activeStudioIds.Contains(studioId))
+                throw new ArgumentException("A Meeting Notes instruction was submitted for an inactive studio.");
+
+            if (row.InstructionFile is not null)
+            {
+                managed[studioId] = await ReadStudioInstructionAsync(row.InstructionFile, cancellationToken);
+                legacyPaths.Remove(studioId);
+                continue;
+            }
+            if (row.RemoveInstruction)
+            {
+                managed.Remove(studioId);
+                legacyPaths.Remove(studioId);
+                continue;
+            }
+        }
+
+        return new StudioInstructionConfiguration(managed, legacyPaths);
+    }
+
+    private static async Task<AiMeetingNotesStudioInstructionOptions> ReadStudioInstructionAsync(
+        IFormFile file,
+        CancellationToken cancellationToken)
+    {
+        const long maximumBytes = 256 * 1024;
+        var fileName = Path.GetFileName(file.FileName?.Trim() ?? string.Empty);
+        var extension = Path.GetExtension(fileName).ToLowerInvariant();
+        if (fileName.Length is 0 or > 200
+            || extension is not (".md" or ".markdown"))
+            throw new ArgumentException("Select a valid Markdown (.md) studio instruction file.");
+        if (file.Length is <= 0 or > maximumBytes)
+            throw new ArgumentException("The studio instruction file must contain data and cannot exceed 256 KB.");
+
+        string content;
+        try
+        {
+            await using var stream = file.OpenReadStream();
+            using var reader = new StreamReader(
+                stream,
+                new UTF8Encoding(encoderShouldEmitUTF8Identifier: false, throwOnInvalidBytes: true),
+                detectEncodingFromByteOrderMarks: true);
+            content = (await reader.ReadToEndAsync(cancellationToken)).Trim();
+        }
+        catch (DecoderFallbackException exception)
+        {
+            throw new ArgumentException("The studio instruction file must use UTF-8 text encoding.", exception);
+        }
+        if (content.Length == 0)
+            throw new ArgumentException("The studio instruction file is empty.");
+        return new AiMeetingNotesStudioInstructionOptions
+        {
+            FileName = fileName,
+            Content = content
+        };
     }
 
     private async Task LoadMetadataAsync(CancellationToken cancellationToken)
@@ -317,11 +458,20 @@ public sealed class MeetingNotesTeamsChannelInput
     [Required, StringLength(100)]
     public string StudioId { get; set; } = string.Empty;
     public string StudioName { get; set; } = string.Empty;
+    public IFormFile? InstructionFile { get; set; }
+    public string? InstructionFileName { get; set; }
+    public bool HasInstruction { get; set; }
+    public bool InstructionStoredInDatabase { get; set; }
+    public bool RemoveInstruction { get; set; }
     [StringLength(4096), DataType(DataType.Password)]
     public string? WebhookUrl { get; set; }
     public bool IsConfigured { get; set; }
     public bool Remove { get; set; }
 }
+
+internal sealed record StudioInstructionConfiguration(
+    Dictionary<string, AiMeetingNotesStudioInstructionOptions> Managed,
+    Dictionary<string, string> LegacyPaths);
 
 internal enum AiConfigurationSection
 {
