@@ -1,0 +1,133 @@
+@page "/Confluence"
+@model TeamHub.Web.Pages.ConfluenceModel
+@{
+    ViewData["Title"] = "Confluence";
+    ViewData["PageWidth"] = "Full";
+}
+
+<div class="page-hero confluence-browser-hero">
+    <div>
+        <div class="eyebrow">Knowledge base</div>
+        <h1>Confluence</h1>
+        <p>Browse pages below the administrator-configured Confluence root without making their content or images public.</p>
+    </div>
+    @if (Model.PageContent.Succeeded && !string.IsNullOrWhiteSpace(Model.PageContent.PageUrl))
+    {
+        <a class="btn btn-outline-secondary" href="@Model.PageContent.PageUrl" target="_blank" rel="noopener noreferrer">Open in Confluence</a>
+    }
+</div>
+
+@if (Model.Tabs.Count > 0)
+{
+    <nav class="confluence-category-tabs" aria-label="Confluence categories">
+        <div class="nav nav-tabs">
+            @foreach (var category in Model.Tabs)
+            {
+                var selectedCategory = category.Id == Model.SelectedTab?.Id;
+                <a asp-page="/Confluence" asp-route-tabId="@category.Id"
+                   class="nav-link @(selectedCategory ? "active" : null)"
+                   aria-current="@(selectedCategory ? "page" : null)">@category.Name</a>
+            }
+        </div>
+    </nav>
+}
+
+@if (!string.IsNullOrWhiteSpace(Model.Navigation.Message) && Model.Navigation.Pages.Count == 0)
+{
+    <div class="alert alert-warning">@Model.Navigation.Message</div>
+}
+else
+{
+    @if (Model.Navigation.IsUsingSharedCredential || Model.PageContent.IsUsingSharedCredential)
+    {
+        <div class="alert alert-secondary small">Pages are displayed using the configured shared read-only Confluence connection.</div>
+    }
+    <div class="confluence-browser-shell">
+        <aside class="confluence-browser-sidebar" aria-label="Confluence pages">
+            <div class="confluence-browser-sidebar-header">
+                <label for="confluence-page-search" class="form-label">Pages</label>
+                <input id="confluence-page-search" class="form-control form-control-sm" type="search"
+                       placeholder="Filter pages" autocomplete="off" data-confluence-page-search />
+            </div>
+            <nav class="confluence-page-tree" data-confluence-page-tree>
+                @foreach (var treePage in Model.OrderedPages)
+                {
+                    var selected = string.Equals(treePage.Id, Model.PageId ?? Model.Navigation.RootPageId, StringComparison.Ordinal);
+                    <a asp-page="/Confluence" asp-route-tabId="@Model.SelectedTab?.Id" asp-route-pageId="@treePage.Id"
+                       class="confluence-page-tree-item @(selected ? "active" : null)"
+                       style="--confluence-page-depth: @treePage.Depth"
+                       aria-current="@(selected ? "page" : null)"
+                       data-confluence-page-title="@treePage.Title">
+                        <span aria-hidden="true">@(treePage.Depth == 0 ? "Root" : "Page")</span>
+                        <span>@treePage.Title</span>
+                    </a>
+                }
+                <div class="confluence-page-tree-empty text-secondary" hidden data-confluence-page-empty>No matching pages.</div>
+            </nav>
+        </aside>
+
+        <main class="confluence-browser-main">
+            @if (!string.IsNullOrWhiteSpace(Model.PageContent.Message))
+            {
+                <div class="alert alert-warning m-4">@Model.PageContent.Message</div>
+            }
+            else if (Model.PageContent.Succeeded)
+            {
+                <header class="confluence-browser-page-header">
+                    @if (Model.PageContent.Breadcrumbs.Count > 1)
+                    {
+                        <nav aria-label="Breadcrumb">
+                            <ol class="breadcrumb small mb-2">
+                                @foreach (var crumb in Model.PageContent.Breadcrumbs)
+                                {
+                                    var current = string.Equals(crumb.Id, Model.PageContent.PageId, StringComparison.Ordinal);
+                                    <li class="breadcrumb-item @(current ? "active" : null)" aria-current="@(current ? "page" : null)">
+                                        @if (current)
+                                        {
+                                            @crumb.Title
+                                        }
+                                        else
+                                        {
+                                            <a asp-page="/Confluence" asp-route-tabId="@Model.SelectedTab?.Id" asp-route-pageId="@crumb.Id">@crumb.Title</a>
+                                        }
+                                    </li>
+                                }
+                            </ol>
+                        </nav>
+                    }
+                    <h2>@Model.PageContent.Title</h2>
+                </header>
+                @if (string.IsNullOrWhiteSpace(Model.RenderedHtml))
+                {
+                    <div class="section-body text-secondary">This page has no displayable content.</div>
+                }
+                else
+                {
+                    <article class="confluence-page-content">@Html.Raw(Model.RenderedHtml)</article>
+                }
+            }
+        </main>
+    </div>
+}
+
+@section Scripts {
+<script>
+(() => {
+    const search = document.querySelector('[data-confluence-page-search]');
+    const tree = document.querySelector('[data-confluence-page-tree]');
+    if (!search || !tree) return;
+    const pages = [...tree.querySelectorAll('[data-confluence-page-title]')];
+    const empty = tree.querySelector('[data-confluence-page-empty]');
+    search.addEventListener('input', () => {
+        const query = search.value.trim().toLocaleLowerCase();
+        let visible = 0;
+        pages.forEach(page => {
+            const matches = !query || page.dataset.confluencePageTitle.toLocaleLowerCase().includes(query);
+            page.hidden = !matches;
+            if (matches) visible++;
+        });
+        if (empty) empty.hidden = visible !== 0;
+    });
+})();
+</script>
+}

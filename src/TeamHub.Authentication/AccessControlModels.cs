@@ -25,6 +25,7 @@ public static class TeamHubModules
     public const string FlowDesigner = "Flow Designer";
     public const string StudioConfiguration = "Studio Configuration";
     public const string SupportSummary = "Support Summary";
+    public const string Confluence = "Confluence";
     public const string AiReports = "AI Reports";
     public const string AiChat = "AI Chat";
     public const string AtlassianConnection = "Atlassian Connection";
@@ -44,6 +45,7 @@ public static class TeamHubModules
         FlowDesigner,
         StudioConfiguration,
         SupportSummary,
+        Confluence,
         AiReports,
         AiChat,
         AtlassianConnection,
@@ -72,6 +74,7 @@ public static class TeamHubModuleAccess
     public static IReadOnlyList<AccessLevel> SupportedLevels(string module) => module switch
     {
         TeamHubModules.Home or TeamHubModules.UsefulLinks or TeamHubModules.Milestones
+            or TeamHubModules.Confluence
             or TeamHubModules.AiChat
             or TeamHubModules.Notifications => ReadOnly,
         TeamHubModules.Team => ReadOnly,
@@ -108,6 +111,7 @@ public static class TeamHubModuleAccess
         TeamHubModules.FlowDesigner => "Read views flows, Create adds flows, Edit changes owned flows, and Full Access manages shared flows and templates. Publication review remains Admin-only.",
         TeamHubModules.StudioConfiguration => "Read views studios, Create adds studios, Edit updates them, and Delete removes them.",
         TeamHubModules.SupportSummary => "Read views support information; Edit updates Confluence and support comments. Planning administration remains Admin-only.",
+        TeamHubModules.Confluence => "View pages below the configured Confluence root. Confluence permissions and credentials still apply.",
         TeamHubModules.AiReports => "Create generates AI reports; No Access disables report generation.",
         TeamHubModules.AiChat => "Use the permission-aware TeamHub assistant and isolated General chat mode.",
         TeamHubModules.AtlassianConnection => "Read views connection status; Edit changes the user's connection.",

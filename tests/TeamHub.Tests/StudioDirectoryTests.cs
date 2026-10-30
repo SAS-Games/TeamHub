@@ -320,6 +320,49 @@ public sealed class StudioDirectoryTests
     }
 
     [Fact]
+    public async Task SaveConfluenceBrowserTabs_PersistsOrdersAndRemovesDeletedTabs()
+    {
+        var dbPath = Path.Combine(Path.GetTempPath(), $"teamhub-studio-{Guid.NewGuid():N}.db");
+        try
+        {
+            await using var provider = CreateServices(dbPath);
+            await using var scope = provider.CreateAsyncScope();
+            await scope.ServiceProvider.GetRequiredService<IStudioDatabaseInitializer>().InitializeAsync();
+            var service = scope.ServiceProvider.GetRequiredService<IAtlassianConfigurationService>();
+            var processId = Guid.NewGuid();
+            var skillsId = Guid.NewGuid();
+
+            await service.SaveConfluenceBrowserTabsAsync([
+                new(processId, "Process", "200", 20, true),
+                new(skillsId, "Skills", "300", 10, true)
+            ]);
+
+            var saved = await service.ListConfluenceBrowserTabsAsync();
+            saved.Select(item => item.Name).Should().Equal("Skills", "Process");
+            saved.Select(item => item.DisplayOrder).Should().Equal(0, 1);
+
+            await service.SaveConfluenceBrowserTabsAsync([
+                new(processId, "Processes", "200", 0, false)
+            ]);
+
+            saved = await service.ListConfluenceBrowserTabsAsync();
+            saved.Should().ContainSingle().Which.Should().BeEquivalentTo(new
+            {
+                Id = processId,
+                Name = "Processes",
+                RootPageId = "200",
+                DisplayOrder = 0,
+                IsEnabled = false
+            });
+        }
+        finally
+        {
+            SqliteConnection.ClearAllPools();
+            if (File.Exists(dbPath)) File.Delete(dbPath);
+        }
+    }
+
+    [Fact]
     public async Task GetUpdatesAsync_ReadsConfiguredStudioRowFromMatchingWeeklyConfluencePage()
     {
         var dbPath = Path.Combine(Path.GetTempPath(), $"teamhub-studio-{Guid.NewGuid():N}.db");

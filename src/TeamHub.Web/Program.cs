@@ -70,6 +70,7 @@ builder.Services.AddRazorPages()
     .AddApplicationPart(typeof(NotificationModuleMarker).Assembly);
 builder.Services.AddMemoryCache();
 builder.Services.AddSingleton<ISafeMarkdownRenderer, SafeMarkdownRenderer>();
+builder.Services.AddSingleton<TeamHub.Web.Confluence.IConfluenceContentRenderer, TeamHub.Web.Confluence.ConfluenceContentRenderer>();
 builder.Services.Configure<ExternalProcessCatalogOptions>(
     builder.Configuration.GetSection(ExternalProcessCatalogOptions.SectionName));
 var legacyWorklogSection = builder.Configuration.GetSection("WorklogAnalytics");

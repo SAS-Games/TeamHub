@@ -135,6 +135,16 @@ internal sealed class AtlassianIntegrationSettingsRecord
     public DateTime UpdatedAtUtc { get; set; } = DateTime.UtcNow;
 }
 
+internal sealed class ConfluenceBrowserTabRecord
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public string Name { get; set; } = string.Empty;
+    public string RootPageId { get; set; } = string.Empty;
+    public int DisplayOrder { get; set; }
+    public bool IsEnabled { get; set; } = true;
+    public DateTime UpdatedAtUtc { get; set; } = DateTime.UtcNow;
+}
+
 internal sealed class AtlassianPrivilegedAccessRecord
 {
     public Guid Id { get; set; } = Guid.NewGuid();
@@ -182,6 +192,7 @@ internal sealed class StudioDbContext(DbContextOptions<StudioDbContext> options)
     public DbSet<StudioDevelopmentToolsRecord> StudioDevelopmentTools => Set<StudioDevelopmentToolsRecord>();
     public DbSet<StudioImportantLinkRecord> StudioImportantLinks => Set<StudioImportantLinkRecord>();
     public DbSet<AtlassianIntegrationSettingsRecord> AtlassianIntegrationSettings => Set<AtlassianIntegrationSettingsRecord>();
+    public DbSet<ConfluenceBrowserTabRecord> ConfluenceBrowserTabs => Set<ConfluenceBrowserTabRecord>();
     public DbSet<StudioAtlassianMappingRecord> StudioAtlassianMappings => Set<StudioAtlassianMappingRecord>();
     public DbSet<AtlassianUserCredentialRecord> AtlassianUserCredentials => Set<AtlassianUserCredentialRecord>();
     public DbSet<AtlassianPrivilegedAccessRecord> AtlassianPrivilegedAccess => Set<AtlassianPrivilegedAccessRecord>();
@@ -268,6 +279,14 @@ internal sealed class StudioDbContext(DbContextOptions<StudioDbContext> options)
             entity.Property(x => x.ConfluenceYearTitlePattern).HasMaxLength(256);
             entity.Property(x => x.ConfluenceMonthTitlePattern).HasMaxLength(256);
             entity.Property(x => x.ConfluenceWeeklyTitlePattern).HasMaxLength(512);
+        });
+
+        modelBuilder.Entity<ConfluenceBrowserTabRecord>(entity =>
+        {
+            entity.ToTable("ConfluenceBrowserTabs");
+            entity.Property(x => x.Name).HasMaxLength(100);
+            entity.Property(x => x.RootPageId).HasMaxLength(256);
+            entity.HasIndex(x => x.DisplayOrder);
         });
 
         modelBuilder.Entity<AtlassianPrivilegedAccessRecord>(entity =>
@@ -545,6 +564,22 @@ internal sealed class SqliteStudioDatabaseInitializer(
                      'StudioSupport', 0, '', '/rest/api/content', '', '',
                      '{{Year}}', '{{Month}}/{{Year}}',
                      '{{WeekStart:dd/MM}}-{{WeekEnd:dd/MM}}', NULL, NULL, CURRENT_TIMESTAMP);
+                """, cancellationToken);
+
+            await dbContext.Database.ExecuteSqlRawAsync("""
+                CREATE TABLE IF NOT EXISTS ConfluenceBrowserTabs (
+                    Id TEXT NOT NULL CONSTRAINT PK_ConfluenceBrowserTabs PRIMARY KEY,
+                    Name TEXT NOT NULL,
+                    RootPageId TEXT NOT NULL,
+                    DisplayOrder INTEGER NOT NULL,
+                    IsEnabled INTEGER NOT NULL DEFAULT 1,
+                    UpdatedAtUtc TEXT NOT NULL
+                );
+                """, cancellationToken);
+
+            await dbContext.Database.ExecuteSqlRawAsync("""
+                CREATE INDEX IF NOT EXISTS IX_ConfluenceBrowserTabs_DisplayOrder
+                ON ConfluenceBrowserTabs (DisplayOrder);
                 """, cancellationToken);
 
             await dbContext.Database.ExecuteSqlRawAsync("""
@@ -1271,6 +1306,8 @@ public static class StudioDirectoryServiceCollectionExtensions
         services.AddHttpClient<IStudioJiraCommentService, JiraStudioCommentService>()
             .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false });
         services.AddHttpClient<IStudioConfluenceUpdateService, ConfluenceStudioUpdateService>();
+        services.AddHttpClient<IConfluenceBrowserService, ConfluenceBrowserService>()
+            .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false });
         return services;
     }
 }

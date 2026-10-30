@@ -181,6 +181,27 @@ fetches consolidated updates with source week, page ID/version, studio identity,
 HPGDS Support, Notes and other columns. Missing pages, studios and configuration
 are explicit results. Confluence source access remains read-only.
 
+## Confluence browser
+
+The top-level Confluence tab uses its own fail-closed `Confluence` access-matrix
+module. Admin has Full Access; other roles see no navigation entry until an
+administrator grants Read Only access. TeamHub access does not bypass Confluence:
+the requesting user's personal token or explicitly granted shared read-only
+credential must also be able to read the configured root and descendants.
+
+Administrators configure ordered, enabled browser categories such as Process or
+Skills under Jira & Confluence Configuration. Each category has its own root
+page ID, while the single global Confluence permission controls visibility of
+the entire section. `IConfluenceBrowserService` lists descendants below the
+selected category root and rejects direct page requests outside that hierarchy. The page uses
+Confluence `body.view` so user-authored tables, images, links, lists and standard
+macros retain their rendered structure. A strict allowlist removes scripts,
+forms, event handlers and unsafe attributes. Interactive embeds receive a clear
+fallback to Open in Confluence. Same-origin images use time-limited protected
+TeamHub URLs and are fetched again with the current user's credential; redirects,
+non-image responses and images over 15 MB are rejected. External images are not
+loaded automatically.
+
 ## Weekly Work Summary boundary
 
 The web adapter selects all active studios for the selected weekly period and
