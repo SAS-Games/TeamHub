@@ -1,0 +1,30 @@
+@model TeamHub.Web.Pages.ConfluenceTreePartialModel
+
+<ul class="confluence-tree-level">
+@foreach (var node in Model.Nodes)
+{
+    var selected = string.Equals(node.Page.Id, Model.SelectedPageId, StringComparison.Ordinal);
+    <li data-confluence-tree-node data-confluence-tree-title="@node.Page.Title">
+        @if (node.Children.Count > 0)
+        {
+            <details open>
+                <summary>
+                    <a asp-page="/Confluence" asp-route-tabId="@Model.TabId" asp-route-pageId="@node.Page.Id"
+                       class="confluence-page-tree-item @(selected ? "active" : null)"
+                       aria-current="@(selected ? "page" : null)"
+                       onclick="event.stopPropagation()">@node.Page.Title</a>
+                </summary>
+                <partial name="_ConfluenceTree" model="@(new TeamHub.Web.Pages.ConfluenceTreePartialModel(Model.TabId, Model.SelectedPageId, node.Children))" />
+            </details>
+        }
+        else
+        {
+            <a asp-page="/Confluence" asp-route-tabId="@Model.TabId" asp-route-pageId="@node.Page.Id"
+               class="confluence-page-tree-item confluence-page-tree-leaf @(selected ? "active" : null)"
+               aria-current="@(selected ? "page" : null)">
+                <span aria-hidden="true">&bull;</span><span>@node.Page.Title</span>
+            </a>
+        }
+    </li>
+}
+</ul>

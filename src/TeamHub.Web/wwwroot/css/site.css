@@ -475,8 +475,16 @@ body {
 .confluence-browser-sidebar-header { position: sticky; top: 0; z-index: 2; padding: 16px; background: var(--surface-subtle-color); border-bottom: 1px solid var(--divider-color); }
 .confluence-browser-sidebar-header .form-label { margin-bottom: 7px; color: var(--text-heading-color); font-weight: 800; }
 .confluence-page-tree { max-height: calc(100vh - 230px); overflow: auto; padding: 8px; }
-.confluence-page-tree-item { display: flex; align-items: flex-start; gap: 8px; min-width: 0; margin: 2px 0; padding: 8px 10px 8px calc(10px + var(--confluence-page-depth, 0) * 16px); color: var(--text-secondary-color); border-radius: 6px; text-decoration: none; }
-.confluence-page-tree-item > span:first-child { flex: 0 0 auto; margin-top: .2em; color: var(--text-muted-color); font-size: .62rem; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; }
+.confluence-tree-level { margin: 0; padding: 0; list-style: none; }
+.confluence-tree-level .confluence-tree-level { padding-left: 18px; }
+.confluence-tree-level li { min-width: 0; }
+.confluence-tree-level details > summary { display: flex; align-items: flex-start; min-width: 0; list-style: none; cursor: pointer; }
+.confluence-tree-level details > summary::-webkit-details-marker { display: none; }
+.confluence-tree-level details > summary::before { width: 8px; height: 8px; flex: 0 0 auto; margin: 13px 4px 0 7px; border-right: 2px solid var(--text-muted-color); border-bottom: 2px solid var(--text-muted-color); content: ""; transform: rotate(-45deg); transition: transform .15s ease; }
+.confluence-tree-level details[open] > summary::before { transform: rotate(45deg); }
+.confluence-tree-level details > summary .confluence-page-tree-item { flex: 1 1 auto; }
+.confluence-page-tree-item { display: flex; align-items: flex-start; gap: 8px; min-width: 0; margin: 2px 0; padding: 8px 10px; color: var(--text-secondary-color); border-radius: 6px; text-decoration: none; }
+.confluence-page-tree-leaf > span:first-child { flex: 0 0 auto; margin-top: .08em; color: var(--text-muted-color); font-size: 1rem; line-height: 1; }
 .confluence-page-tree-item > span:last-child { min-width: 0; overflow-wrap: anywhere; }
 .confluence-page-tree-item:hover { color: var(--text-color); background: var(--surface-hover-color); }
 .confluence-page-tree-item.active { color: var(--text-heading-color); background: var(--surface-muted-color); font-weight: 750; }

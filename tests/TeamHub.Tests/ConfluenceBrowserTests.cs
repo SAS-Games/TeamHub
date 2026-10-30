@@ -44,6 +44,38 @@ public sealed class ConfluenceBrowserTests
     }
 
     [Fact]
+    public async Task BrowserRecursivelyLoadsChildrenWhenDescendantEndpointIsUnavailable()
+    {
+        var service = CreateService(request => request.RequestUri!.AbsolutePath switch
+        {
+            "/rest/api/content/100" => Json("""
+                {"id":"100","title":"Knowledge","ancestors":[],"_links":{"webui":"/pages/viewpage.action?pageId=100"}}
+                """),
+            "/rest/api/content/100/descendant/page" => new HttpResponseMessage(HttpStatusCode.NotFound),
+            "/rest/api/content/100/child/page" => Json("""
+                {"results":[{"id":"101","title":"Unity","_links":{"webui":"/pages/viewpage.action?pageId=101"}}],"size":1}
+                """),
+            "/rest/api/content/101/child/page" => Json("""
+                {"results":[{"id":"102","title":"License","_links":{"webui":"/pages/viewpage.action?pageId=102"}}],"size":1}
+                """),
+            "/rest/api/content/102/child/page" => Json("""{"results":[],"size":0}"""),
+            _ => new HttpResponseMessage(HttpStatusCode.NotFound)
+        });
+
+        var navigation = await service.GetNavigationAsync("100", "reader@example.com", false);
+
+        navigation.Pages.Select(page => page.Id).Should().Equal("100", "101", "102");
+        navigation.Pages.Single(page => page.Id == "101").Should().BeEquivalentTo(new
+        {
+            ParentId = "100", Depth = 1
+        });
+        navigation.Pages.Single(page => page.Id == "102").Should().BeEquivalentTo(new
+        {
+            ParentId = "101", Depth = 2
+        });
+    }
+
+    [Fact]
     public async Task BrowserRejectsPageOutsideConfiguredRoot()
     {
         var service = CreateService(request => Json("""

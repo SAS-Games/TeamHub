@@ -21,6 +21,7 @@ public sealed class ConfluenceModel(
     public ConfluenceBrowserNavigationResult Navigation { get; private set; } = new();
     public ConfluenceBrowserContentResult PageContent { get; private set; } = new();
     public IReadOnlyList<ConfluenceBrowserPage> OrderedPages { get; private set; } = [];
+    public ConfluenceTreePartialModel Tree { get; private set; } = new(Guid.Empty, string.Empty, []);
     public string RenderedHtml { get; private set; } = string.Empty;
 
     public async Task OnGetAsync(CancellationToken cancellationToken)
@@ -53,6 +54,7 @@ public sealed class ConfluenceModel(
             OrderedPages = OrderPages(Navigation.Pages, Navigation.RootPageId);
             var selectedPageId = string.IsNullOrWhiteSpace(PageId) ? Navigation.RootPageId : PageId.Trim();
             if (string.IsNullOrWhiteSpace(selectedPageId)) return;
+            Tree = new ConfluenceTreePartialModel(SelectedTab.Id, selectedPageId, BuildTree(Navigation.Pages));
 
             PageContent = await browser.GetPageAsync(SelectedTab.RootPageId, selectedPageId, userId, allowShared, cancellationToken);
             if (!PageContent.Succeeded && !string.IsNullOrWhiteSpace(PageId))
@@ -66,6 +68,7 @@ public sealed class ConfluenceModel(
                     PageContent = candidate;
                     Navigation = await browser.GetNavigationAsync(alternative.RootPageId, userId, allowShared, cancellationToken);
                     OrderedPages = OrderPages(Navigation.Pages, Navigation.RootPageId);
+                    Tree = new ConfluenceTreePartialModel(alternative.Id, selectedPageId, BuildTree(Navigation.Pages));
                     break;
                 }
             }
@@ -131,4 +134,33 @@ public sealed class ConfluenceModel(
         foreach (var page in pages.OrderBy(page => page.Depth).ThenBy(page => page.Title, StringComparer.OrdinalIgnoreCase)) Add(page.Id);
         return result;
     }
+
+    private static IReadOnlyList<ConfluenceTreeNode> BuildTree(IReadOnlyList<ConfluenceBrowserPage> pages)
+    {
+        var children = pages
+            .GroupBy(page => page.ParentId, StringComparer.Ordinal)
+            .ToDictionary(
+                group => group.Key,
+                group => group.OrderBy(page => page.Title, StringComparer.OrdinalIgnoreCase).ToList(),
+                StringComparer.Ordinal);
+        var visited = new HashSet<string>(StringComparer.Ordinal);
+        IReadOnlyList<ConfluenceTreeNode> Build(string parentId)
+        {
+            if (!children.TryGetValue(parentId, out var nested)) return [];
+            return nested
+                .Where(page => visited.Add(page.Id))
+                .Select(page => new ConfluenceTreeNode(page, Build(page.Id)))
+                .ToList();
+        }
+        return Build(string.Empty);
+    }
 }
+
+public sealed record ConfluenceTreeNode(
+    ConfluenceBrowserPage Page,
+    IReadOnlyList<ConfluenceTreeNode> Children);
+
+public sealed record ConfluenceTreePartialModel(
+    Guid TabId,
+    string SelectedPageId,
+    IReadOnlyList<ConfluenceTreeNode> Nodes);
