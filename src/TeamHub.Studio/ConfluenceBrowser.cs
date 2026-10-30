@@ -120,6 +120,14 @@ internal sealed class ConfluenceBrowserService(
             if (count < PageLimit) break;
         }
 
+        // Older Confluence Server/Data Center versions can reject the descendant endpoint
+        // even though the direct-child endpoint is available. Recursively walk children as
+        // a compatibility fallback so the browser never silently degrades to root-only.
+        if (pages.Count == 1)
+        {
+            await AddChildrenRecursivelyAsync(context, settings, root.Id, pages, cancellationToken);
+        }
+
         return new ConfluenceBrowserNavigationResult
         {
             IsConfigured = true,
@@ -237,6 +245,46 @@ internal sealed class ConfluenceBrowserService(
         var uri = $"{BuildContentItemUri(context.Settings!, pageId)}?expand={Uri.EscapeDataString(expand)}";
         using var document = await GetJsonAsync(context, uri, cancellationToken);
         return document is null ? null : ParsePage(document.RootElement);
+    }
+
+    private async Task AddChildrenRecursivelyAsync(
+        BrowserContext context,
+        AtlassianIntegrationSettings settings,
+        string rootPageId,
+        List<ConfluenceBrowserPage> pages,
+        CancellationToken cancellationToken)
+    {
+        var visited = new HashSet<string>(StringComparer.Ordinal) { rootPageId };
+        var pending = new Queue<(string ParentId, int Depth)>();
+        pending.Enqueue((rootPageId, 1));
+        while (pending.Count > 0 && pages.Count < MaximumPages)
+        {
+            var (parentId, depth) = pending.Dequeue();
+            for (var start = 0; pages.Count < MaximumPages; start += PageLimit)
+            {
+                var requestUri = $"{BuildContentItemUri(settings, parentId)}/child/page?limit={PageLimit}&start={start}";
+                using var document = await GetJsonAsync(context, requestUri, cancellationToken);
+                if (document is null || !document.RootElement.TryGetProperty("results", out var results)
+                    || results.ValueKind != JsonValueKind.Array) break;
+
+                var count = 0;
+                foreach (var item in results.EnumerateArray())
+                {
+                    count++;
+                    var child = ParsePage(item);
+                    if (string.IsNullOrWhiteSpace(child.Id) || !visited.Add(child.Id)) continue;
+                    pages.Add(new ConfluenceBrowserPage(
+                        child.Id,
+                        child.Title,
+                        parentId,
+                        depth,
+                        BuildPageUrl(settings.ConfluenceBaseUrl, child.Id, child.WebUiPath)));
+                    pending.Enqueue((child.Id, depth + 1));
+                    if (pages.Count >= MaximumPages) break;
+                }
+                if (count < PageLimit) break;
+            }
+        }
     }
 
     private async Task<JsonDocument?> GetJsonAsync(BrowserContext context, string uri, CancellationToken cancellationToken)

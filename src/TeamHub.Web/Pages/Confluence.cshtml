@@ -50,18 +50,7 @@ else
                        placeholder="Filter pages" autocomplete="off" data-confluence-page-search />
             </div>
             <nav class="confluence-page-tree" data-confluence-page-tree>
-                @foreach (var treePage in Model.OrderedPages)
-                {
-                    var selected = string.Equals(treePage.Id, Model.PageId ?? Model.Navigation.RootPageId, StringComparison.Ordinal);
-                    <a asp-page="/Confluence" asp-route-tabId="@Model.SelectedTab?.Id" asp-route-pageId="@treePage.Id"
-                       class="confluence-page-tree-item @(selected ? "active" : null)"
-                       style="--confluence-page-depth: @treePage.Depth"
-                       aria-current="@(selected ? "page" : null)"
-                       data-confluence-page-title="@treePage.Title">
-                        <span aria-hidden="true">@(treePage.Depth == 0 ? "Root" : "Page")</span>
-                        <span>@treePage.Title</span>
-                    </a>
-                }
+                <partial name="_ConfluenceTree" model="Model.Tree" />
                 <div class="confluence-page-tree-empty text-secondary" hidden data-confluence-page-empty>No matching pages.</div>
             </nav>
         </aside>
@@ -116,17 +105,21 @@ else
     const search = document.querySelector('[data-confluence-page-search]');
     const tree = document.querySelector('[data-confluence-page-tree]');
     if (!search || !tree) return;
-    const pages = [...tree.querySelectorAll('[data-confluence-page-title]')];
+    const nodes = [...tree.querySelectorAll('[data-confluence-tree-node]')];
     const empty = tree.querySelector('[data-confluence-page-empty]');
     search.addEventListener('input', () => {
         const query = search.value.trim().toLocaleLowerCase();
-        let visible = 0;
-        pages.forEach(page => {
-            const matches = !query || page.dataset.confluencePageTitle.toLocaleLowerCase().includes(query);
-            page.hidden = !matches;
-            if (matches) visible++;
+        nodes.forEach(node => {
+            const ownMatch = node.dataset.confluenceTreeTitle.toLocaleLowerCase().includes(query);
+            const descendantMatch = [...node.querySelectorAll('[data-confluence-tree-title]')]
+                .some(child => child !== node && child.dataset.confluenceTreeTitle.toLocaleLowerCase().includes(query));
+            node.hidden = Boolean(query) && !ownMatch && !descendantMatch;
+            if (query && descendantMatch) {
+                const details = node.querySelector(':scope > details');
+                if (details) details.open = true;
+            }
         });
-        if (empty) empty.hidden = visible !== 0;
+        if (empty) empty.hidden = nodes.some(node => !node.hidden);
     });
 })();
 </script>
