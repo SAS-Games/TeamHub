@@ -96,7 +96,12 @@ internal static partial class ConfluenceMarkdown
 
     public static string PreserveStorageFormatting(string html)
     {
-        html = SectionLabel().Replace(html, match => $"{match.Groups[1].Value}:");
+        // Confluence commonly applies bold to the whole section line (for example,
+        // "HPGDS Support: NIL"), not only to the label. Strip that presentation
+        // formatting here so the label parser does not leave a trailing "**" in
+        // the section value.
+        html = SectionLabel().Replace(html, match =>
+            $"{match.Groups[1].Value}: {match.Groups[2].Value}".TrimEnd());
         html = StrongEmphasis().Replace(html, match => $"***{match.Groups[1].Value}***");
         html = EmphasisStrong().Replace(html, match => $"***{match.Groups[1].Value}***");
         html = Strong().Replace(html, match => $"**{match.Groups[1].Value}**");
@@ -226,7 +231,8 @@ internal static partial class ConfluenceMarkdown
         content = string.Empty;
         end = start.Index;
         var depth = 1;
-        var position = start.Index + start.Length;
+        var contentStart = start.Index + start.Length;
+        var position = contentStart;
         while (true)
         {
             var tag = tagMatcher.Match(source, position);
@@ -236,7 +242,7 @@ internal static partial class ConfluenceMarkdown
             {
                 if (--depth == 0)
                 {
-                    content = source[position..tag.Index];
+                    content = source[contentStart..tag.Index];
                     end = tag.Index + tag.Length;
                     return true;
                 }
@@ -308,7 +314,7 @@ internal static partial class ConfluenceMarkdown
     [GeneratedRegex(@"(?<!\*)\*([^*\r\n]+)\*(?!\*)")]
     private static partial Regex Italic();
 
-    [GeneratedRegex(@"<strong\b[^>]*>\s*(Studio Work|HPGDS Support|WMD Support|Action Items?)\s*:\s*</strong>", RegexOptions.IgnoreCase)]
+    [GeneratedRegex(@"<strong\b[^>]*>\s*(Studio Work|HPGDS Support|WMD Support|Action Items?)\s*:\s*(.*?)</strong>", RegexOptions.IgnoreCase | RegexOptions.Singleline)]
     private static partial Regex SectionLabel();
     [GeneratedRegex(@"<strong\b[^>]*>\s*<em\b[^>]*>(.*?)</em>\s*</strong>", RegexOptions.IgnoreCase | RegexOptions.Singleline)]
     private static partial Regex StrongEmphasis();

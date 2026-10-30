@@ -617,22 +617,33 @@ else
                                 <a class="btn btn-sm btn-outline-secondary" href="@pageUrl" target="_blank" rel="noopener">Open in Confluence</a>
                             }
                         </div>
-                        <div class="table-responsive">
-                            <table class="table table-hover align-top mb-0 support-summary-confluence">
-                                <thead class="table-light"><tr><th>Studio</th><th>Studio Work</th><th>HPGDS Support</th><th>WMD Support</th><th>Action Items</th><th>Notes</th></tr></thead>
-                                <tbody>
-                                @foreach (var update in week)
-                                {
-                                    var canEditUpdate = Model.CanEditConfluence && update.PageFound && update.StudioFound;
-                                    var editFormId = $"confluence-edit-{confluenceEditIndex++}";
-                                    <tr data-confluence-update-row>
-                                        <th scope="row">
-                                            @Model.GetStudioName(update.StudioId)
-                                            <div class="small fw-normal text-secondary">@Model.GetStudioGroup(update.StudioId)</div>
+                        <div class="support-summary-confluence-list">
+                            @foreach (var update in week)
+                            {
+                                var canEditUpdate = Model.CanEditConfluence && update.PageFound && update.StudioFound;
+                                var editFormId = $"confluence-edit-{confluenceEditIndex++}";
+                                var studioName = Model.GetStudioName(update.StudioId);
+                                <details class="support-summary-confluence-item" open data-confluence-update-row>
+                                    <summary class="support-summary-confluence-summary">
+                                        <span class="support-summary-confluence-studio">
+                                            <strong>@studioName</strong>
+                                            <span class="small text-secondary">@Model.GetStudioGroup(update.StudioId)</span>
+                                        </span>
+                                        <span class="small text-secondary">
+                                            @(update.PageFound && update.StudioFound ? "Update available" : "Update unavailable")
+                                        </span>
+                                    </summary>
+                                    <div class="support-summary-confluence-body">
+                                        @if (!update.PageFound || !update.StudioFound)
+                                        {
+                                            <div class="text-secondary">@update.Message</div>
+                                        }
+                                        else
+                                        {
                                             @if (canEditUpdate)
                                             {
                                                 <form id="@editFormId" method="post" asp-page-handler="SaveConfluenceUpdate"
-                                                      class="mt-3" data-confluence-edit-form>
+                                                      class="support-summary-confluence-toolbar" data-confluence-edit-form>
                                                     <input type="hidden" name="studioId" value="@update.StudioId" />
                                                     <input type="hidden" name="pageId" value="@update.PageId" />
                                                     <input type="hidden" name="weekStart" value="@update.WeekStart.ToString("yyyy-MM-dd")" />
@@ -653,68 +664,67 @@ else
                                                     </div>
                                                 </form>
                                             }
-                                        </th>
-                                        @if (!update.PageFound || !update.StudioFound)
-                                        {
-                                            <td colspan="5" class="text-secondary">@update.Message</td>
+                                            <div class="support-summary-confluence-grid">
+                                                <section>
+                                                    <h4>Studio Work</h4>
+                                                    <safe-markdown class="markdown-content" text="@(string.IsNullOrWhiteSpace(update.StudioWork) ? "No information provided." : update.StudioWork)" data-confluence-display></safe-markdown>
+                                                    @if (canEditUpdate)
+                                                    {
+                                                        <textarea name="studioWork" form="@editFormId"
+                                                                  class="form-control support-summary-confluence-editor d-none" rows="7" maxlength="20000"
+                                                                  aria-label="Studio Work for @studioName"
+                                                                  data-confluence-editor>@update.StudioWork</textarea>
+                                                    }
+                                                </section>
+                                                <section>
+                                                    <h4>HPGDS Support</h4>
+                                                    <safe-markdown class="markdown-content" text="@(string.IsNullOrWhiteSpace(update.HpgdsSupport) ? "No information provided." : update.HpgdsSupport)" data-confluence-display></safe-markdown>
+                                                    @if (canEditUpdate)
+                                                    {
+                                                        <textarea name="hpgdsSupport" form="@editFormId"
+                                                                  class="form-control support-summary-confluence-editor d-none" rows="7" maxlength="20000"
+                                                                  aria-label="HPGDS Support for @studioName"
+                                                                  data-confluence-editor>@update.HpgdsSupport</textarea>
+                                                    }
+                                                </section>
+                                                <section>
+                                                    <h4>WMD Support</h4>
+                                                    <safe-markdown class="markdown-content" text="@(string.IsNullOrWhiteSpace(update.WmdSupport) ? "No information provided." : update.WmdSupport)" data-confluence-display></safe-markdown>
+                                                    @if (canEditUpdate)
+                                                    {
+                                                        <textarea name="wmdSupport" form="@editFormId"
+                                                                  class="form-control support-summary-confluence-editor d-none" rows="7" maxlength="20000"
+                                                                  aria-label="WMD Support for @studioName"
+                                                                  data-confluence-editor>@update.WmdSupport</textarea>
+                                                    }
+                                                </section>
+                                                <section>
+                                                    <h4>Action Items</h4>
+                                                    <safe-markdown class="markdown-content" text="@(string.IsNullOrWhiteSpace(update.ActionItems) ? "No information provided." : update.ActionItems)" data-confluence-display></safe-markdown>
+                                                    @if (canEditUpdate)
+                                                    {
+                                                        <textarea name="actionItems" form="@editFormId"
+                                                                  class="form-control support-summary-confluence-editor d-none" rows="7" maxlength="20000"
+                                                                  aria-label="Action Items for @studioName"
+                                                                  data-confluence-editor>@update.ActionItems</textarea>
+                                                    }
+                                                </section>
+                                                <section class="support-summary-confluence-notes">
+                                                    <h4>Notes</h4>
+                                                    <safe-markdown class="markdown-content" text="@(string.IsNullOrWhiteSpace(update.Notes) ? "No notes provided." : update.Notes)" data-confluence-display></safe-markdown>
+                                                    @if (canEditUpdate)
+                                                    {
+                                                        <textarea name="notes" form="@editFormId"
+                                                                  class="form-control support-summary-confluence-editor d-none" rows="7" maxlength="20000"
+                                                                  aria-label="Notes for @studioName"
+                                                                  data-confluence-editor>@update.Notes</textarea>
+                                                    }
+                                                </section>
+                                            </div>
                                         }
-                                        else
-                                        {
-                                            <td>
-                                                <safe-markdown class="markdown-content" text="@(string.IsNullOrWhiteSpace(update.StudioWork) ? "No information provided." : update.StudioWork)" data-confluence-display></safe-markdown>
-                                                @if (canEditUpdate)
-                                                {
-                                                    <textarea name="studioWork" form="@editFormId"
-                                                              class="form-control support-summary-confluence-editor d-none" rows="7" maxlength="20000"
-                                                              aria-label="Studio Work for @Model.GetStudioName(update.StudioId)"
-                                                              data-confluence-editor>@update.StudioWork</textarea>
-                                                }
-                                            </td>
-                                            <td>
-                                                <safe-markdown class="markdown-content" text="@(string.IsNullOrWhiteSpace(update.HpgdsSupport) ? "No information provided." : update.HpgdsSupport)" data-confluence-display></safe-markdown>
-                                                @if (canEditUpdate)
-                                                {
-                                                    <textarea name="hpgdsSupport" form="@editFormId"
-                                                              class="form-control support-summary-confluence-editor d-none" rows="7" maxlength="20000"
-                                                              aria-label="HPGDS Support for @Model.GetStudioName(update.StudioId)"
-                                                              data-confluence-editor>@update.HpgdsSupport</textarea>
-                                                }
-                                            </td>
-                                            <td>
-                                                <safe-markdown class="markdown-content" text="@(string.IsNullOrWhiteSpace(update.WmdSupport) ? "No information provided." : update.WmdSupport)" data-confluence-display></safe-markdown>
-                                                @if (canEditUpdate)
-                                                {
-                                                    <textarea name="wmdSupport" form="@editFormId"
-                                                              class="form-control support-summary-confluence-editor d-none" rows="7" maxlength="20000"
-                                                              aria-label="WMD Support for @Model.GetStudioName(update.StudioId)"
-                                                              data-confluence-editor>@update.WmdSupport</textarea>
-                                                }
-                                            </td>
-                                            <td>
-                                                <safe-markdown class="markdown-content" text="@(string.IsNullOrWhiteSpace(update.ActionItems) ? "No information provided." : update.ActionItems)" data-confluence-display></safe-markdown>
-                                                @if (canEditUpdate)
-                                                {
-                                                    <textarea name="actionItems" form="@editFormId"
-                                                              class="form-control support-summary-confluence-editor d-none" rows="7" maxlength="20000"
-                                                              aria-label="Action Items for @Model.GetStudioName(update.StudioId)"
-                                                              data-confluence-editor>@update.ActionItems</textarea>
-                                                }
-                                            </td>
-                                            <td>
-                                                <safe-markdown class="markdown-content" text="@(string.IsNullOrWhiteSpace(update.Notes) ? "No notes provided." : update.Notes)" data-confluence-display></safe-markdown>
-                                                @if (canEditUpdate)
-                                                {
-                                                    <textarea name="notes" form="@editFormId"
-                                                              class="form-control support-summary-confluence-editor d-none" rows="7" maxlength="20000"
-                                                              aria-label="Notes for @Model.GetStudioName(update.StudioId)"
-                                                              data-confluence-editor>@update.Notes</textarea>
-                                                }
-                                            </td>
-                                        }
-                                    </tr>
-                                }
-                                </tbody>
-                            </table>
+                                    </div>
+                                </details>
+                            }
                         </div>
                     </div>
                 }

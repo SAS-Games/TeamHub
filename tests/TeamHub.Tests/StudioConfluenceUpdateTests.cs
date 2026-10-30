@@ -143,6 +143,30 @@ public sealed class StudioConfluenceUpdateTests
     }
 
     [Fact]
+    public void TableParser_DoesNotLeakBoldDelimiterWhenSectionLabelAndNilAreBoldTogether()
+    {
+        const string body = """
+            <table><tbody><tr>
+              <td>UD</td>
+              <td>
+                <p><strong>Studio Work:</strong></p>
+                <ul><li>Preparing the demo release.</li></ul>
+                <p><strong>HPGDS Support: NIL</strong></p>
+                <p><strong>WMD Support: NIL</strong></p>
+                <p><strong>Action Item: NIL</strong></p>
+              </td>
+              <td></td>
+            </tr></tbody></table>
+            """;
+
+        StudioConfluenceTableParser.TryParse(body, "UD", out var update).Should().BeTrue();
+
+        update.HpgdsSupport.Should().Be("NIL");
+        update.WmdSupport.Should().Be("NIL");
+        update.ActionItems.Should().Be("NIL");
+    }
+
+    [Fact]
     public void TableParser_PreservesCombinedBoldAndItalicContent()
     {
         const string body = """
