@@ -852,12 +852,56 @@ internal static partial class StudioConfluenceTableParser
 
     // A heading that was converted from Confluence formatting can leave its opening or closing
     // Markdown delimiter on a line by itself. It is not content and should not be rendered.
-    private static string RemoveOrphanMarkdownDelimiters(string value) =>
-        string.Join(Environment.NewLine, value.Replace("\r", string.Empty, StringComparison.Ordinal)
+    private static string RemoveOrphanMarkdownDelimiters(string value)
+    {
+        var lines = value.Replace("\r", string.Empty, StringComparison.Ordinal)
             .Split('\n')
             .Select(NormalizeContentLine)
-            .Where(line => !OrphanMarkdownDelimiterRegex().IsMatch(line)))
-            .Trim();
+            .Where(line => !OrphanMarkdownDelimiterRegex().IsMatch(line))
+            .ToList();
+        return string.Join(Environment.NewLine, NormalizeJiraSmartLinkCards(lines)).Trim();
+    }
+
+    // Confluence's rendered Jira smart-link card exposes its decorative separators as
+    // standalone "-" text nodes. Once the surrounding HTML is removed, those nodes look
+    // like several empty list entries around every issue. Collapse that representation to
+    // one Markdown list item per Jira issue while leaving ordinary links and lists alone.
+    private static IReadOnlyList<string> NormalizeJiraSmartLinkCards(IReadOnlyList<string> lines)
+    {
+        if (!lines.Any(line => OrphanListMarkerRegex().IsMatch(line))
+            || !lines.Any(line => JiraLinkOnlyRegex().IsMatch(line))) return lines;
+
+        var normalized = new List<string>(lines.Count);
+        for (var index = 0; index < lines.Count;)
+        {
+            if (OrphanListMarkerRegex().IsMatch(lines[index]))
+            {
+                index++;
+                continue;
+            }
+
+            if (!JiraLinkOnlyRegex().IsMatch(lines[index]))
+            {
+                normalized.Add(lines[index]);
+                index++;
+                continue;
+            }
+
+            var issue = lines[index++].Trim();
+            var details = new List<string>();
+            while (index < lines.Count && !JiraLinkOnlyRegex().IsMatch(lines[index]))
+            {
+                if (!OrphanListMarkerRegex().IsMatch(lines[index])
+                    && !string.IsNullOrWhiteSpace(lines[index])) details.Add(lines[index].Trim());
+                index++;
+            }
+
+            normalized.Add(details.Count == 0
+                ? $"- {issue}"
+                : $"- {issue} — {string.Join(' ', details)}");
+        }
+        return normalized;
+    }
 
     private static string NormalizeContentLine(string line)
     {
@@ -942,6 +986,12 @@ internal static partial class StudioConfluenceTableParser
 
     [GeneratedRegex(@"^\s*\*{2,3}\s*$", RegexOptions.CultureInvariant, 2000)]
     private static partial Regex OrphanMarkdownDelimiterRegex();
+
+    [GeneratedRegex(@"^\s*-\s*$", RegexOptions.CultureInvariant, 2000)]
+    private static partial Regex OrphanListMarkerRegex();
+
+    [GeneratedRegex(@"^\s*\[[A-Z][A-Z0-9]+-\d+\]\(https?://[^)]+\)\s*$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant, 2000)]
+    private static partial Regex JiraLinkOnlyRegex();
 
     [GeneratedRegex(@"^\s*(?:[-+*]|\d+\.)\s+", RegexOptions.CultureInvariant, 2000)]
     private static partial Regex MarkdownListItemRegex();
