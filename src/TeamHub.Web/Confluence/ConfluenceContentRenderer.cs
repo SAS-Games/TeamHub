@@ -10,7 +10,11 @@ namespace TeamHub.Web.Confluence;
 
 public interface IConfluenceContentRenderer
 {
-    string Render(string html, string confluenceBaseUrl, Guid confluenceTabId);
+    string Render(
+        string html,
+        string confluenceBaseUrl,
+        Guid confluenceTabId,
+        IReadOnlyDictionary<string, string>? pageIdsByUrl = null);
     bool TryReadImageToken(string token, out string sourceUrl);
 }
 
@@ -38,14 +42,19 @@ public sealed partial class ConfluenceContentRenderer : IConfluenceContentRender
             .ToTimeLimitedDataProtector();
     }
 
-    public string Render(string html, string confluenceBaseUrl, Guid confluenceTabId)
+    public string Render(
+        string html,
+        string confluenceBaseUrl,
+        Guid confluenceTabId,
+        IReadOnlyDictionary<string, string>? pageIdsByUrl = null)
     {
         if (string.IsNullOrWhiteSpace(html)) return string.Empty;
         var sanitized = InteractiveBlockRegex().Replace(html,
             "<div class=\"confluence-unsupported-content\">Interactive Confluence content is available from Open in Confluence.</div>");
         sanitized = DangerousBlockRegex().Replace(sanitized, string.Empty);
         sanitized = HtmlCommentRegex().Replace(sanitized, string.Empty);
-        return HtmlTagRegex().Replace(sanitized, match => SanitizeTag(match, confluenceBaseUrl, confluenceTabId));
+        return HtmlTagRegex().Replace(sanitized, match =>
+            SanitizeTag(match, confluenceBaseUrl, confluenceTabId, pageIdsByUrl));
     }
 
     public bool TryReadImageToken(string token, out string sourceUrl)
@@ -63,7 +72,11 @@ public sealed partial class ConfluenceContentRenderer : IConfluenceContentRender
         }
     }
 
-    private string SanitizeTag(Match match, string confluenceBaseUrl, Guid confluenceTabId)
+    private string SanitizeTag(
+        Match match,
+        string confluenceBaseUrl,
+        Guid confluenceTabId,
+        IReadOnlyDictionary<string, string>? pageIdsByUrl)
     {
         var tag = match.Groups["tag"].Value.ToLowerInvariant();
         if (!AllowedTags.Contains(tag)) return string.Empty;
@@ -90,7 +103,7 @@ public sealed partial class ConfluenceContentRenderer : IConfluenceContentRender
         }
 
         if (tag == "a" && attributes.TryGetValue("href", out var href)
-            && TryRewriteLink(href, confluenceBaseUrl, confluenceTabId, out var safeHref, out var opensNewWindow))
+            && TryRewriteLink(href, confluenceBaseUrl, confluenceTabId, pageIdsByUrl, out var safeHref, out var opensNewWindow))
         {
             output.Append(" href=\"").Append(HtmlEncoder.Default.Encode(safeHref)).Append('"');
             if (opensNewWindow) output.Append(" target=\"_blank\" rel=\"noopener noreferrer\"");
@@ -125,6 +138,7 @@ public sealed partial class ConfluenceContentRenderer : IConfluenceContentRender
         string href,
         string confluenceBaseUrl,
         Guid confluenceTabId,
+        IReadOnlyDictionary<string, string>? pageIdsByUrl,
         out string safeHref,
         out bool opensNewWindow)
     {
@@ -156,6 +170,19 @@ public sealed partial class ConfluenceContentRenderer : IConfluenceContentRender
                     + "&pageId=" + Uri.EscapeDataString(values[0]!);
                 return true;
             }
+            if (pageIdsByUrl is not null)
+            {
+                var location = NormalizePageLocation(uri);
+                var matchingPage = pageIdsByUrl.FirstOrDefault(item =>
+                    Uri.TryCreate(item.Key, UriKind.Absolute, out var configuredUri)
+                    && string.Equals(location, NormalizePageLocation(configuredUri), StringComparison.OrdinalIgnoreCase));
+                if (!string.IsNullOrWhiteSpace(matchingPage.Value))
+                {
+                    safeHref = "/Confluence?tabId=" + Uri.EscapeDataString(confluenceTabId.ToString("D"))
+                        + "&pageId=" + Uri.EscapeDataString(matchingPage.Value);
+                    return true;
+                }
+            }
         }
         safeHref = uri.AbsoluteUri;
         opensNewWindow = true;
@@ -177,6 +204,12 @@ public sealed partial class ConfluenceContentRenderer : IConfluenceContentRender
         string.Equals(left.Scheme, right.Scheme, StringComparison.OrdinalIgnoreCase)
         && string.Equals(left.Host, right.Host, StringComparison.OrdinalIgnoreCase)
         && left.Port == right.Port;
+
+    private static string NormalizePageLocation(Uri uri)
+    {
+        var path = Uri.UnescapeDataString(uri.AbsolutePath).Replace('+', ' ').TrimEnd('/');
+        return $"{uri.Scheme}://{uri.Authority}{path}";
+    }
 
     private static bool IsAllowedTagAttribute(string tag, string name) => (tag, name) switch
     {

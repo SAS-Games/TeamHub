@@ -63,17 +63,26 @@ public sealed class ConfluenceBrowserTests
         const string html = """
             <h2 onclick="alert(1)">Release</h2>
             <table><tr><th colspan="2">Status</th></tr><tr><td>Ready</td><td><a href="/pages/viewpage.action?pageId=101">Details</a></td></tr></table>
+            <a href="/display/SPACE/Build+Guide">Build guide</a>
             <img src="/download/attachments/101/build.png" alt="Build image" onerror="alert(1)" />
             <img src="https://external.example.test/tracker.png" alt="External" />
             <script>alert(1)</script>
             """;
 
         var tabId = Guid.Parse("11111111-1111-1111-1111-111111111111");
-        var rendered = renderer.Render(html, "https://confluence.example.test", tabId);
+        var rendered = renderer.Render(
+            html,
+            "https://confluence.example.test",
+            tabId,
+            new Dictionary<string, string>
+            {
+                ["https://confluence.example.test/display/SPACE/Build+Guide"] = "102"
+            });
 
         rendered.Should().Contain("<table>")
             .And.Contain("colspan=\"2\"")
             .And.Contain("href=\"/Confluence?tabId=11111111-1111-1111-1111-111111111111&amp;pageId=101\"")
+            .And.Contain("href=\"/Confluence?tabId=11111111-1111-1111-1111-111111111111&amp;pageId=102\"")
             .And.Contain("src=\"/Confluence?handler=Image&amp;token=")
             .And.NotContain("onclick")
             .And.NotContain("onerror")
