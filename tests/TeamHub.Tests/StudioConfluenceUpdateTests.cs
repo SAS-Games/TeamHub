@@ -63,6 +63,37 @@ public sealed class StudioConfluenceUpdateTests
     }
 
     [Fact]
+    public void TableParser_CollapsesRenderedJiraCardSeparatorsIntoOneIssuePerBullet()
+    {
+        const string body = """
+            <table><tbody><tr><td>DE</td><td>
+              <p><strong>HPGDS Support:</strong></p>
+              <p>-</p>
+              <p><a href="https://jira.example.test/browse/SIEHP-1167">SIEHP-1167</a></p>
+              <p>-</p>
+              <p>Getting issue details...</p>
+              <p>STATUS</p>
+              <p>Fixed the quad mesh transparency issue.</p>
+              <p>-</p>
+              <p><a href="https://jira.example.test/browse/SIEHP-1223">SIEHP-1223</a></p>
+              <p>-</p>
+              <p>Getting issue details...</p>
+              <p>STATUS</p>
+              <p>Explored paint over pipelines.</p>
+              <p><strong>WMD Support:</strong></p>
+              <p>Investigating the light bake issue.</p>
+            </td></tr></tbody></table>
+            """;
+
+        StudioConfluenceTableParser.TryParse(body, "DE", out var update).Should().BeTrue();
+
+        update.HpgdsSupport.Should().Be(string.Join(Environment.NewLine,
+            "- [SIEHP-1167](https://jira.example.test/browse/SIEHP-1167) — Getting issue details... STATUS Fixed the quad mesh transparency issue.",
+            "- [SIEHP-1223](https://jira.example.test/browse/SIEHP-1223) — Getting issue details... STATUS Explored paint over pipelines."));
+        update.WmdSupport.Should().Be("Investigating the light bake issue.");
+    }
+
+    [Fact]
     public void TableParser_SeparatesEmptyAdjacentSectionsAndPreservesConfluenceLineBreaks()
     {
         const string body = """
