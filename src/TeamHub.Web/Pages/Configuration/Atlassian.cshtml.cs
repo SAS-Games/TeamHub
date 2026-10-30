@@ -25,6 +25,9 @@ public sealed class AtlassianModel(
     [BindProperty]
     public List<PrivilegedAccessInput> PrivilegedUsers { get; set; } = [];
 
+    [BindProperty]
+    public List<ConfluenceTabInput> ConfluenceTabs { get; set; } = [];
+
     public AtlassianDefaultCredentialStatus DefaultCredentialStatus { get; private set; } = new(false, false);
 
     public async Task OnGetAsync(CancellationToken cancellationToken) => await LoadAsync(cancellationToken);
@@ -56,6 +59,18 @@ public sealed class AtlassianModel(
                 ConfluenceMonthTitlePattern = Settings.ConfluenceMonthTitlePattern ?? string.Empty,
                 ConfluenceWeeklyTitlePattern = Settings.ConfluenceWeeklyTitlePattern ?? string.Empty
             }, cancellationToken);
+
+            await configurationService.SaveConfluenceBrowserTabsAsync(ConfluenceTabs
+                .Where(item => !string.IsNullOrWhiteSpace(item.Name) || !string.IsNullOrWhiteSpace(item.RootPageId))
+                .OrderBy(item => item.DisplayOrder)
+                .ThenBy(item => item.Name, StringComparer.OrdinalIgnoreCase)
+                .Select(item => new ConfluenceBrowserTab(
+                    item.Id ?? Guid.NewGuid(),
+                    item.Name ?? string.Empty,
+                    item.RootPageId ?? string.Empty,
+                    item.DisplayOrder,
+                    item.IsEnabled))
+                .ToList(), cancellationToken);
 
             await configurationService.SaveStudioMappingsAsync(Mappings.Select(item => new StudioAtlassianMapping
             {
@@ -116,6 +131,26 @@ public sealed class AtlassianModel(
             ConfluenceMonthTitlePattern = settings.ConfluenceMonthTitlePattern,
             ConfluenceWeeklyTitlePattern = settings.ConfluenceWeeklyTitlePattern
         };
+
+        ConfluenceTabs = (await configurationService.ListConfluenceBrowserTabsAsync(cancellationToken))
+            .Select(tab => new ConfluenceTabInput
+            {
+                Id = tab.Id,
+                Name = tab.Name,
+                RootPageId = tab.RootPageId,
+                DisplayOrder = tab.DisplayOrder,
+                IsEnabled = tab.IsEnabled
+            })
+            .ToList();
+        if (ConfluenceTabs.Count == 0 && !string.IsNullOrWhiteSpace(settings.ConfluenceParentPageId))
+        {
+            ConfluenceTabs.Add(new ConfluenceTabInput
+            {
+                Name = "Pages",
+                RootPageId = settings.ConfluenceParentPageId,
+                IsEnabled = true
+            });
+        }
 
         var studios = await studioDirectoryService.GetStudiosAsync(cancellationToken);
         var mappings = (await configurationService.ListStudioMappingsAsync(cancellationToken))
@@ -207,6 +242,15 @@ public sealed class AtlassianModel(
         [StringLength(256)] public string? JiraStudioComponent { get; set; }
         [StringLength(256)] public string? JiraSupportComponent { get; set; }
         [StringLength(256)] public string? ConfluenceStudioIdentifier { get; set; }
+    }
+
+    public sealed class ConfluenceTabInput
+    {
+        public Guid? Id { get; set; }
+        [StringLength(100)] public string? Name { get; set; }
+        [StringLength(256)] public string? RootPageId { get; set; }
+        [Range(0, 1000)] public int DisplayOrder { get; set; }
+        public bool IsEnabled { get; set; } = true;
     }
 
     public sealed class DefaultCredentialsInput

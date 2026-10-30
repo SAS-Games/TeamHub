@@ -161,6 +161,7 @@ public static class TeamHubAccessRoutes
         // /SupportSummary/Comments. Keep discovery and request authorization on the same module.
         if (path.StartsWithSegments("/SupportSummaryComments")) return TeamHubModules.SupportSummary;
         if (path.StartsWithSegments("/SupportSummary")) return TeamHubModules.SupportSummary;
+        if (path.StartsWithSegments("/Confluence")) return TeamHubModules.Confluence;
         if (path.StartsWithSegments("/AIReports") || path.StartsWithSegments("/api/ai-reports")) return TeamHubModules.AiReports;
         if (path.StartsWithSegments("/AIChat") || path.StartsWithSegments("/api/ai-chat")) return TeamHubModules.AiChat;
         if (path.StartsWithSegments("/Studio/JiraTickets") || path.StartsWithSegments("/Studio/WeeklyUpdates")) return TeamHubModules.SupportSummary;

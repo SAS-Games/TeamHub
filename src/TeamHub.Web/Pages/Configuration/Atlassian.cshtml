@@ -83,9 +83,9 @@
                             <input asp-for="Settings.ConfluenceSpaceKey" class="form-control" placeholder="Example: WR" />
                         </div>
                         <div class="col-md-7">
-                            <label asp-for="Settings.ConfluenceParentPageId" class="form-label">Activities root page ID</label>
+                            <label asp-for="Settings.ConfluenceParentPageId" class="form-label">Weekly updates root page ID</label>
                             <input asp-for="Settings.ConfluenceParentPageId" class="form-control" />
-                            <div class="form-text">The page ID for the global Activities page.</div>
+                            <div class="form-text">Root of the year/month/weekly hierarchy used by Support Summary. Configure roots for the Confluence browser below.</div>
                         </div>
                         <div class="col-md-6">
                             <label asp-for="Settings.ConfluenceYearTitlePattern" class="form-label">Year page title pattern</label>
@@ -107,6 +107,53 @@
             </section>
         </div>
     </div>
+
+    <section class="content-section mt-4">
+        <div class="section-heading">
+            <div><span>Knowledge categories</span><h2>Confluence Browser Tabs</h2></div>
+            <button type="button" class="btn btn-sm btn-outline-primary" data-add-confluence-tab>Add tab</button>
+        </div>
+        <div class="section-body">
+            <p class="text-secondary">Create categories such as Process or Skills. Each category displays its configured root page and descendants. The single Confluence access-control permission applies to every category.</p>
+            <div class="table-responsive">
+                <table class="table styled-table align-middle mb-0">
+                    <thead><tr><th>Name</th><th>Root page ID</th><th>Order</th><th>Enabled</th><th><span class="visually-hidden">Actions</span></th></tr></thead>
+                    <tbody data-confluence-tabs>
+                    @for (var index = 0; index < Model.ConfluenceTabs.Count; index++)
+                    {
+                        <tr data-confluence-tab-row>
+                            <td>
+                                <input asp-for="ConfluenceTabs[index].Id" type="hidden" />
+                                <input asp-for="ConfluenceTabs[index].Name" class="form-control" placeholder="Process" required />
+                            </td>
+                            <td><input asp-for="ConfluenceTabs[index].RootPageId" class="form-control" placeholder="Confluence page ID" required /></td>
+                            <td><input asp-for="ConfluenceTabs[index].DisplayOrder" class="form-control" type="number" min="0" max="1000" /></td>
+                            <td class="text-center"><input asp-for="ConfluenceTabs[index].IsEnabled" class="form-check-input" /></td>
+                            <td class="text-end"><button type="button" class="btn btn-sm btn-outline-danger" data-remove-confluence-tab>Remove</button></td>
+                        </tr>
+                    }
+                    </tbody>
+                </table>
+            </div>
+            <div class="form-text mt-2">Disabled categories remain saved but are hidden from the Confluence page.</div>
+        </div>
+    </section>
+
+    <template data-confluence-tab-template>
+        <tr data-confluence-tab-row>
+            <td>
+                <input name="ConfluenceTabs[__index__].Id" type="hidden" value="" />
+                <input name="ConfluenceTabs[__index__].Name" class="form-control" placeholder="Process" required />
+            </td>
+            <td><input name="ConfluenceTabs[__index__].RootPageId" class="form-control" placeholder="Confluence page ID" required /></td>
+            <td><input name="ConfluenceTabs[__index__].DisplayOrder" class="form-control" type="number" min="0" max="1000" value="0" /></td>
+            <td class="text-center">
+                <input name="ConfluenceTabs[__index__].IsEnabled" type="hidden" value="false" />
+                <input name="ConfluenceTabs[__index__].IsEnabled" class="form-check-input" type="checkbox" value="true" checked />
+            </td>
+            <td class="text-end"><button type="button" class="btn btn-sm btn-outline-danger" data-remove-confluence-tab>Remove</button></td>
+        </tr>
+    </template>
 
     <section class="content-section mt-4">
         <div class="section-heading">
@@ -232,4 +279,34 @@
 
 @section Scripts {
     <partial name="_ValidationScriptsPartial" />
+    <script>
+    (() => {
+        const body = document.querySelector('[data-confluence-tabs]');
+        const template = document.querySelector('[data-confluence-tab-template]');
+        const add = document.querySelector('[data-add-confluence-tab]');
+        const form = body?.closest('form');
+        if (!body || !template || !add || !form) return;
+
+        const bindRemove = row => row.querySelector('[data-remove-confluence-tab]')
+            ?.addEventListener('click', () => row.remove());
+        body.querySelectorAll('[data-confluence-tab-row]').forEach(bindRemove);
+        add.addEventListener('click', () => {
+            const index = body.querySelectorAll('[data-confluence-tab-row]').length;
+            const wrapper = document.createElement('tbody');
+            wrapper.innerHTML = template.innerHTML.replaceAll('__index__', String(index)).trim();
+            const row = wrapper.firstElementChild;
+            if (!row) return;
+            body.append(row);
+            bindRemove(row);
+            row.querySelector('input:not([type="hidden"])')?.focus();
+        });
+        form.addEventListener('submit', () => {
+            body.querySelectorAll('[data-confluence-tab-row]').forEach((row, index) => {
+                row.querySelectorAll('[name^="ConfluenceTabs["]').forEach(input => {
+                    input.name = input.name.replace(/^ConfluenceTabs\[\d+\]/, `ConfluenceTabs[${index}]`);
+                });
+            });
+        });
+    })();
+    </script>
 }

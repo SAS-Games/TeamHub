@@ -54,10 +54,19 @@ public sealed record AtlassianPrivilegedAccess(
     bool JiraReadOnlyAccess,
     bool ConfluenceReadOnlyAccess);
 
+public sealed record ConfluenceBrowserTab(
+    Guid Id,
+    string Name,
+    string RootPageId,
+    int DisplayOrder,
+    bool IsEnabled);
+
 public interface IAtlassianConfigurationService
 {
     Task<AtlassianIntegrationSettings> GetSettingsAsync(CancellationToken cancellationToken = default);
     Task SaveSettingsAsync(AtlassianIntegrationSettings settings, CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<ConfluenceBrowserTab>> ListConfluenceBrowserTabsAsync(CancellationToken cancellationToken = default);
+    Task SaveConfluenceBrowserTabsAsync(IReadOnlyCollection<ConfluenceBrowserTab> tabs, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<StudioAtlassianMapping>> ListStudioMappingsAsync(CancellationToken cancellationToken = default);
     Task<StudioAtlassianMapping?> GetStudioMappingAsync(string studioId, CancellationToken cancellationToken = default);
     Task SaveStudioMappingsAsync(IReadOnlyCollection<StudioAtlassianMapping> mappings, CancellationToken cancellationToken = default);
@@ -157,6 +166,65 @@ internal sealed class SqliteAtlassianConfigurationService : IAtlassianConfigurat
             ? "{WeekStart:dd/MM}-{WeekEnd:dd/MM}"
             : settings.ConfluenceWeeklyTitlePattern.Trim();
         record.UpdatedAtUtc = DateTime.UtcNow;
+        await dbContext.SaveChangesAsync(cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<ConfluenceBrowserTab>> ListConfluenceBrowserTabsAsync(
+        CancellationToken cancellationToken = default) =>
+        (await dbContext.ConfluenceBrowserTabs.AsNoTracking()
+            .OrderBy(item => item.DisplayOrder)
+            .ThenBy(item => item.Name)
+            .ToListAsync(cancellationToken))
+        .Select(item => new ConfluenceBrowserTab(
+            item.Id,
+            item.Name,
+            item.RootPageId,
+            item.DisplayOrder,
+            item.IsEnabled))
+        .ToList();
+
+    public async Task SaveConfluenceBrowserTabsAsync(
+        IReadOnlyCollection<ConfluenceBrowserTab> tabs,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(tabs);
+        var normalized = tabs
+            .OrderBy(tab => tab.DisplayOrder)
+            .ThenBy(tab => tab.Name, StringComparer.OrdinalIgnoreCase)
+            .Select((tab, index) => tab with
+            {
+                Id = tab.Id == Guid.Empty ? Guid.NewGuid() : tab.Id,
+                Name = tab.Name.Trim(),
+                RootPageId = tab.RootPageId.Trim(),
+                DisplayOrder = index
+            })
+            .ToList();
+        if (normalized.Any(tab => string.IsNullOrWhiteSpace(tab.Name) || tab.Name.Length > 100))
+            throw new ArgumentException("Each Confluence tab needs a name of 100 characters or fewer.");
+        if (normalized.Any(tab => string.IsNullOrWhiteSpace(tab.RootPageId) || tab.RootPageId.Length > 256))
+            throw new ArgumentException("Each Confluence tab needs a valid root page ID.");
+        if (normalized.Select(tab => tab.Name).Distinct(StringComparer.OrdinalIgnoreCase).Count() != normalized.Count)
+            throw new ArgumentException("Confluence tab names must be unique.");
+        if (normalized.Select(tab => tab.RootPageId).Distinct(StringComparer.OrdinalIgnoreCase).Count() != normalized.Count)
+            throw new ArgumentException("Each Confluence root page can be assigned to only one tab.");
+
+        var existing = await dbContext.ConfluenceBrowserTabs.ToListAsync(cancellationToken);
+        var desiredIds = normalized.Select(tab => tab.Id).ToHashSet();
+        dbContext.ConfluenceBrowserTabs.RemoveRange(existing.Where(item => !desiredIds.Contains(item.Id)));
+        foreach (var tab in normalized)
+        {
+            var record = existing.FirstOrDefault(item => item.Id == tab.Id);
+            if (record is null)
+            {
+                record = new ConfluenceBrowserTabRecord { Id = tab.Id };
+                dbContext.ConfluenceBrowserTabs.Add(record);
+            }
+            record.Name = tab.Name;
+            record.RootPageId = tab.RootPageId;
+            record.DisplayOrder = tab.DisplayOrder;
+            record.IsEnabled = tab.IsEnabled;
+            record.UpdatedAtUtc = DateTime.UtcNow;
+        }
         await dbContext.SaveChangesAsync(cancellationToken);
     }
 
