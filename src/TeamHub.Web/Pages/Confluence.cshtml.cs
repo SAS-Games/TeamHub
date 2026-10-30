@@ -70,7 +70,15 @@ public sealed class ConfluenceModel(
                 }
             }
             if (!PageContent.Succeeded) return;
-            RenderedHtml = renderer.Render(PageContent.RenderedHtml, settings.ConfluenceBaseUrl, SelectedTab.Id);
+            var pageIdsByUrl = Navigation.Pages
+                .Where(page => !string.IsNullOrWhiteSpace(page.PageUrl))
+                .GroupBy(page => page.PageUrl, StringComparer.OrdinalIgnoreCase)
+                .ToDictionary(group => group.Key, group => group.First().Id, StringComparer.OrdinalIgnoreCase);
+            RenderedHtml = renderer.Render(
+                PageContent.RenderedHtml,
+                settings.ConfluenceBaseUrl,
+                SelectedTab.Id,
+                pageIdsByUrl);
             PageId = PageContent.PageId;
         }
         catch (HttpRequestException exception)
