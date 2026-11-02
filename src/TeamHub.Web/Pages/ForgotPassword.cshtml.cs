@@ -8,6 +8,7 @@ using TeamHub.Domain.Enums;
 namespace TeamHub.Web.Pages;
 
 [AllowAnonymous]
+[ResponseCache(Location = ResponseCacheLocation.None, NoStore = true)]
 public sealed class ForgotPasswordModel(
     IUserAccessService users,
     INotificationService notifications,

@@ -6,6 +6,7 @@ using TeamHub.Authentication;
 namespace TeamHub.Web.Pages;
 
 [AllowAnonymous]
+[ResponseCache(Location = ResponseCacheLocation.None, NoStore = true)]
 public sealed class AcceptInvitationModel(IUserAccessService users) : PageModel
 {
     [BindProperty(SupportsGet = true)]
@@ -31,6 +32,7 @@ public sealed class AcceptInvitationModel(IUserAccessService users) : PageModel
         {
             await LoadValidationAsync(cancellationToken);
             if (IsValid) Message = "Passwords do not match.";
+            ClearPasswords();
             return;
         }
         var result = await users.SetPasswordWithTokenAsync(
@@ -38,6 +40,15 @@ public sealed class AcceptInvitationModel(IUserAccessService users) : PageModel
         Success = result.Success;
         Message = result.Message;
         if (!Success) await LoadValidationAsync(cancellationToken);
+        ClearPasswords();
+    }
+
+    private void ClearPasswords()
+    {
+        Password = string.Empty;
+        ConfirmPassword = string.Empty;
+        ModelState.Remove(nameof(Password));
+        ModelState.Remove(nameof(ConfirmPassword));
     }
 
     private async Task LoadValidationAsync(CancellationToken cancellationToken)

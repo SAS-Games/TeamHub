@@ -251,7 +251,9 @@ internal sealed class UserAccessService(
             item => item.NormalizedUserId == normalized && (!request.Id.HasValue || item.Id != request.Id.Value), cancellationToken);
         if (duplicate) throw new InvalidOperationException("That organization email or user ID is already authorized.");
         if (gid is not null && await context.AuthorizedUsers.AnyAsync(
-                item => item.Gid == gid && (!request.Id.HasValue || item.Id != request.Id.Value), cancellationToken))
+                item => item.Gid != null
+                    && item.Gid.ToUpper() == normalizedGid
+                    && (!request.Id.HasValue || item.Id != request.Id.Value), cancellationToken))
         {
             throw new InvalidOperationException("That GID is already assigned to another authorized user.");
         }
@@ -261,8 +263,11 @@ internal sealed class UserAccessService(
         {
             throw new InvalidOperationException("That GID conflicts with another user's email or user ID.");
         }
-        if (IsNumericIdentifier(userId) && await context.AuthorizedUsers.AnyAsync(
-                item => item.Gid == userId && (!request.Id.HasValue || item.Id != request.Id.Value), cancellationToken))
+        if (IsAlphaNumericIdentifier(userId) && userId.Length <= 32
+            && await context.AuthorizedUsers.AnyAsync(
+                item => item.Gid != null
+                    && item.Gid.ToUpper() == normalized
+                    && (!request.Id.HasValue || item.Id != request.Id.Value), cancellationToken))
         {
             throw new InvalidOperationException("That user ID conflicts with another user's GID.");
         }
@@ -655,15 +660,18 @@ internal sealed class UserAccessService(
     {
         if (string.IsNullOrWhiteSpace(gid)) return null;
         var normalized = gid.Trim();
-        if (normalized.Length > 32 || !IsNumericIdentifier(normalized))
+        if (normalized.Length > 32 || !IsAlphaNumericIdentifier(normalized))
         {
-            throw new ArgumentException("GID must contain numbers only and be no longer than 32 digits.");
+            throw new ArgumentException("GID must contain letters and numbers only and be no longer than 32 characters.");
         }
         return normalized;
     }
 
-    private static bool IsNumericIdentifier(string value) =>
-        value.Length > 0 && value.All(character => character is >= '0' and <= '9');
+    private static bool IsAlphaNumericIdentifier(string value) =>
+        value.Length > 0 && value.All(character =>
+            character is >= '0' and <= '9'
+                or >= 'A' and <= 'Z'
+                or >= 'a' and <= 'z');
 
     private static async Task<AuthorizedUserEntity?> FindByIdentifierAsync(
         AccessControlDbContext context,
@@ -674,12 +682,15 @@ internal sealed class UserAccessService(
     {
         var trimmed = identifier.Trim();
         var normalizedUserId = NormalizeUserId(trimmed);
-        var gid = IsNumericIdentifier(trimmed) && trimmed.Length <= 32 ? trimmed : null;
+        var normalizedGid = IsAlphaNumericIdentifier(trimmed) && trimmed.Length <= 32
+            ? normalizedUserId
+            : null;
         IQueryable<AuthorizedUserEntity> query = context.AuthorizedUsers;
         if (asNoTracking) query = query.AsNoTracking();
         if (activeOnly) query = query.Where(item => item.IsActive);
         return await query.SingleOrDefaultAsync(
-            item => item.NormalizedUserId == normalizedUserId || (gid != null && item.Gid == gid),
+            item => item.NormalizedUserId == normalizedUserId
+                || (normalizedGid != null && item.Gid != null && item.Gid.ToUpper() == normalizedGid),
             cancellationToken);
     }
 
