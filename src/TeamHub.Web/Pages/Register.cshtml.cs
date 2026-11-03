@@ -6,6 +6,7 @@ using TeamHub.Authentication;
 namespace TeamHub.Web.Pages;
 
 [AllowAnonymous]
+[ResponseCache(Location = ResponseCacheLocation.None, NoStore = true)]
 public sealed class RegisterModel(IUserAccessService users) : PageModel
 {
     [BindProperty]
@@ -18,6 +19,7 @@ public sealed class RegisterModel(IUserAccessService users) : PageModel
     {
         if (!string.Equals(Input.Password, Input.ConfirmPassword, StringComparison.Ordinal))
         {
+            ClearPasswords();
             Message = "Passwords do not match.";
             return;
         }
@@ -26,6 +28,15 @@ public sealed class RegisterModel(IUserAccessService users) : PageModel
             new RegisterAuthorizedUserRequest(Input.Identifier, Input.Password), cancellationToken);
         Success = result.Success;
         Message = result.Message;
+        ClearPasswords();
+    }
+
+    private void ClearPasswords()
+    {
+        Input.Password = string.Empty;
+        Input.ConfirmPassword = string.Empty;
+        ModelState.Remove("Input.Password");
+        ModelState.Remove("Input.ConfirmPassword");
     }
 
     public sealed class RegisterInput

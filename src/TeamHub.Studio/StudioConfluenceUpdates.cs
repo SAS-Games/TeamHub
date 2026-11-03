@@ -892,7 +892,8 @@ internal static partial class StudioConfluenceTableParser
             while (index < lines.Count && !JiraLinkOnlyRegex().IsMatch(lines[index]))
             {
                 if (!OrphanListMarkerRegex().IsMatch(lines[index])
-                    && !string.IsNullOrWhiteSpace(lines[index])) details.Add(lines[index].Trim());
+                    && !string.IsNullOrWhiteSpace(lines[index])
+                    && !JiraCardScaffoldingRegex().IsMatch(lines[index])) details.Add(lines[index].Trim());
                 index++;
             }
 
@@ -992,6 +993,11 @@ internal static partial class StudioConfluenceTableParser
 
     [GeneratedRegex(@"^\s*\[[A-Z][A-Z0-9]+-\d+\]\(https?://[^)]+\)\s*$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant, 2000)]
     private static partial Regex JiraLinkOnlyRegex();
+
+    // Jira smart links can expose their client-side loading copy and field heading in
+    // Confluence storage. They are card chrome, not report content.
+    [GeneratedRegex(@"^\s*(?:(?:Getting|Gathering)\s+issue\s+details(?:\.\.\.)?|STATUS)\s*$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant, 2000)]
+    private static partial Regex JiraCardScaffoldingRegex();
 
     [GeneratedRegex(@"^\s*(?:[-+*]|\d+\.)\s+", RegexOptions.CultureInvariant, 2000)]
     private static partial Regex MarkdownListItemRegex();

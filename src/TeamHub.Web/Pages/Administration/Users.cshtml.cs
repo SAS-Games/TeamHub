@@ -68,6 +68,8 @@ public sealed class UsersModel(
         }
         catch (Exception exception) when (exception is ArgumentException or InvalidOperationException or KeyNotFoundException)
         {
+            Input.TemporaryPassword = null;
+            ModelState.Remove("Input.TemporaryPassword");
             ErrorMessage = exception.Message;
             await LoadAsync(cancellationToken);
             return Page();

@@ -6,6 +6,7 @@ using TeamHub.Authentication;
 namespace TeamHub.Web.Pages;
 
 [AllowAnonymous]
+[ResponseCache(Location = ResponseCacheLocation.None, NoStore = true)]
 public sealed class ResetPasswordModel(IUserAccessService users) : PageModel
 {
     [BindProperty(SupportsGet = true)]
@@ -40,6 +41,7 @@ public sealed class ResetPasswordModel(IUserAccessService users) : PageModel
             IsValid = validation.IsValid;
             DisplayName = validation.DisplayName;
             Message = validation.IsValid ? "Passwords do not match." : validation.Message;
+            ClearPasswords();
             return;
         }
         var result = await users.SetPasswordWithTokenAsync(
@@ -48,5 +50,14 @@ public sealed class ResetPasswordModel(IUserAccessService users) : PageModel
         IsValid = !result.Success && (await users.ValidateAccountTokenAsync(
             Token, AccountTokenPurposes.PasswordReset, cancellationToken)).IsValid;
         Message = result.Message;
+        ClearPasswords();
+    }
+
+    private void ClearPasswords()
+    {
+        Password = string.Empty;
+        ConfirmPassword = string.Empty;
+        ModelState.Remove(nameof(Password));
+        ModelState.Remove(nameof(ConfirmPassword));
     }
 }

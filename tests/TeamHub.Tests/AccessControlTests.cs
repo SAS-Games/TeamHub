@@ -117,23 +117,27 @@ public sealed class AccessControlTests
     }
 
     [Fact]
-    public async Task RegistrationAndLogin_AcceptTheAuthorizedUsersGid()
+    public async Task RegistrationAndFreshLogin_AcceptAlphaNumericGidAndEmailCaseInsensitively()
     {
         await using var host = await AccessTestHost.CreateAsync();
-        using var scope = host.Services.CreateScope();
-        var users = scope.ServiceProvider.GetRequiredService<IUserAccessService>();
-        var authorized = await users.SaveUserAsync(new SaveAuthorizedUserRequest(
-            null, "gid.user@example.com", "00123456", "GID User", TeamHubUserTypes.Registered, true, null), "admin@example.com");
+        AuthorizedUserRecord authorized;
+        using (var registrationScope = host.Services.CreateScope())
+        {
+            var users = registrationScope.ServiceProvider.GetRequiredService<IUserAccessService>();
+            authorized = await users.SaveUserAsync(new SaveAuthorizedUserRequest(
+                null, "gid.user@example.com", "AbC00123456", "GID User", TeamHubUserTypes.Registered, true, null), "admin@example.com");
+            (await users.RegisterAsync(new("abc00123456", "password123"))).Success.Should().BeTrue();
+        }
 
-        var registration = await users.RegisterAsync(new("00123456", "password123"));
-        var byGid = await users.ValidateCredentialsAsync("00123456", "password123");
-        var byEmail = await users.ValidateCredentialsAsync("gid.user@example.com", "password123");
+        using var loginScope = host.Services.CreateScope();
+        var freshUsers = loginScope.ServiceProvider.GetRequiredService<IUserAccessService>();
+        var byGid = await freshUsers.ValidateCredentialsAsync("ABC00123456", "password123");
+        var byEmail = await freshUsers.ValidateCredentialsAsync("GID.User@Example.COM", "password123");
 
-        registration.Success.Should().BeTrue();
         byGid.Should().NotBeNull();
         byGid!.Id.Should().Be(authorized.Id);
         byGid.UserId.Should().Be("gid.user@example.com");
-        byGid.Gid.Should().Be("00123456");
+        byGid.Gid.Should().Be("AbC00123456");
         byEmail!.Id.Should().Be(authorized.Id);
     }
 
@@ -185,20 +189,20 @@ public sealed class AccessControlTests
     }
 
     [Fact]
-    public async Task SaveUser_RequiresANumericUniqueGid()
+    public async Task SaveUser_RequiresAnAlphaNumericUniqueGid()
     {
         await using var host = await AccessTestHost.CreateAsync();
         using var scope = host.Services.CreateScope();
         var users = scope.ServiceProvider.GetRequiredService<IUserAccessService>();
         await users.SaveUserAsync(new SaveAuthorizedUserRequest(
-            null, "first@example.com", "123456", "First User", TeamHubUserTypes.Registered, true, null), "admin@example.com");
+            null, "first@example.com", "ABC123456", "First User", TeamHubUserTypes.Registered, true, null), "admin@example.com");
 
         var invalid = async () => await users.SaveUserAsync(new SaveAuthorizedUserRequest(
-            null, "invalid@example.com", "12A456", "Invalid User", TeamHubUserTypes.Registered, true, null), "admin@example.com");
+            null, "invalid@example.com", "ABC-123456", "Invalid User", TeamHubUserTypes.Registered, true, null), "admin@example.com");
         var duplicate = async () => await users.SaveUserAsync(new SaveAuthorizedUserRequest(
-            null, "duplicate@example.com", "123456", "Duplicate User", TeamHubUserTypes.Registered, true, null), "admin@example.com");
+            null, "duplicate@example.com", "abc123456", "Duplicate User", TeamHubUserTypes.Registered, true, null), "admin@example.com");
 
-        await invalid.Should().ThrowAsync<ArgumentException>().WithMessage("GID must contain numbers only*");
+        await invalid.Should().ThrowAsync<ArgumentException>().WithMessage("GID must contain letters and numbers only*");
         await duplicate.Should().ThrowAsync<InvalidOperationException>().WithMessage("That GID is already assigned*");
     }
 

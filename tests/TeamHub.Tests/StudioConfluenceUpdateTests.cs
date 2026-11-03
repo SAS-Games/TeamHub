@@ -71,7 +71,7 @@ public sealed class StudioConfluenceUpdateTests
               <p>-</p>
               <p><a href="https://jira.example.test/browse/SIEHP-1167">SIEHP-1167</a></p>
               <p>-</p>
-              <p>Getting issue details...</p>
+              <p>Gathering issue details...</p>
               <p>STATUS</p>
               <p>Fixed the quad mesh transparency issue.</p>
               <p>-</p>
@@ -88,8 +88,8 @@ public sealed class StudioConfluenceUpdateTests
         StudioConfluenceTableParser.TryParse(body, "DE", out var update).Should().BeTrue();
 
         update.HpgdsSupport.Should().Be(string.Join(Environment.NewLine,
-            "- [SIEHP-1167](https://jira.example.test/browse/SIEHP-1167) — Getting issue details... STATUS Fixed the quad mesh transparency issue.",
-            "- [SIEHP-1223](https://jira.example.test/browse/SIEHP-1223) — Getting issue details... STATUS Explored paint over pipelines."));
+            "- [SIEHP-1167](https://jira.example.test/browse/SIEHP-1167) — Fixed the quad mesh transparency issue.",
+            "- [SIEHP-1223](https://jira.example.test/browse/SIEHP-1223) — Explored paint over pipelines."));
         update.WmdSupport.Should().Be("Investigating the light bake issue.");
     }
 
