@@ -34,11 +34,16 @@
         <div class="section-heading"><div><span>Configured studios</span><h2>Studio Records</h2></div></div>
         <div class="table-responsive">
             <table class="table styled-table">
-                <thead><tr><th>Group</th><th>Group Order</th><th>Studio</th><th>Studio Order</th><th>Project</th><th>Status</th><th>Location</th><th>Time Zone</th><th>Our Contacts</th><th>Team Members</th>@if (showActions) { <th>Actions</th> }</tr></thead>
+                <thead><tr><th>Logo</th><th>Group</th><th>Group Order</th><th>Studio</th><th>Studio Order</th><th>Project</th><th>Status</th><th>Location</th><th>Time Zone</th><th>Our Contacts</th><th>Team Members</th>@if (showActions) { <th>Actions</th> }</tr></thead>
                 <tbody>
                 @foreach (var studio in Model.Studios)
                 {
                     <tr class="@(!studio.IsActive ? "table-light text-secondary" : null)">
+                        <td>
+                            <img class="studio-configuration-logo"
+                                 src="@(string.IsNullOrWhiteSpace(studio.LogoFileName) ? Url.Content("~/images/teamhub-logo.svg") : Url.Content($"~/studio-logos/{studio.LogoFileName}"))"
+                                 alt="" aria-hidden="true" />
+                        </td>
                         <td>@studio.StudioGroup</td>
                         <td>@(studio.GroupDisplayOrder?.ToString() ?? "—")</td>
                         <td>@studio.StudioName</td>
@@ -77,8 +82,9 @@
     <section class="content-section">
         <div class="section-heading"><div><span>@(string.IsNullOrWhiteSpace(Model.Input.Id) ? "Add" : "Update")</span><h2>Studio Details</h2></div></div>
         <div class="section-body">
-            <form method="post" asp-page-handler="@(string.IsNullOrWhiteSpace(Model.Input.Id) ? "Create" : "Edit")">
+            <form method="post" enctype="multipart/form-data" asp-page-handler="@(string.IsNullOrWhiteSpace(Model.Input.Id) ? "Create" : "Edit")">
                 <input type="hidden" asp-for="Input.Id" />
+                <input type="hidden" asp-for="Input.LogoFileName" />
                 <div asp-validation-summary="All" class="text-danger"></div>
                 <div class="row g-3 mb-4">
                     <div class="col-md-6 col-xl-4">
@@ -113,6 +119,22 @@
                         <label asp-for="Input.Location" class="form-label">Location</label>
                         <input asp-for="Input.Location" class="form-control" />
                         <span asp-validation-for="Input.Location" class="text-danger"></span>
+                    </div>
+                    <div class="col-md-6 col-xl-4">
+                        <label asp-for="LogoFile" class="form-label">Studio Logo</label>
+                        <input asp-for="LogoFile" class="form-control" type="file" accept=".png,.jpg,.jpeg,.gif,.webp,image/png,image/jpeg,image/gif,image/webp" />
+                        <span asp-validation-for="LogoFile" class="text-danger"></span>
+                        <div class="form-text">PNG, JPG, GIF, or WebP up to 5 MB. TeamHub logo is used when blank.</div>
+                        @if (!string.IsNullOrWhiteSpace(Model.Input.LogoFileName))
+                        {
+                            <div class="d-flex align-items-center gap-2 mt-2">
+                                <img class="studio-configuration-logo" src="@Url.Content($"~/studio-logos/{Model.Input.LogoFileName}")" alt="Current studio logo" />
+                                <div class="form-check">
+                                    <input asp-for="RemoveLogo" class="form-check-input" />
+                                    <label asp-for="RemoveLogo" class="form-check-label">Use TeamHub logo</label>
+                                </div>
+                            </div>
+                        }
                     </div>
                     <div class="col-md-6 col-xl-4">
                         <label asp-for="Input.TimeZoneId" class="form-label">Time Zone</label>

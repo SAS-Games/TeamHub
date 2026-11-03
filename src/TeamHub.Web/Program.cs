@@ -2,6 +2,7 @@ using System.IO;
 using System.Net.Mail;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Routing;
+using Microsoft.Extensions.FileProviders;
 using TeamHub.Authentication;
 using TeamHub.AI;
 using TeamHub.AI.Chat;
@@ -46,6 +47,10 @@ if (string.IsNullOrWhiteSpace(builder.Configuration["MilestoneConfiguration:Exce
     builder.Configuration["MilestoneConfiguration:ExcelPath"] = "config/MilestoneTracker.xlsx";
 }
 ConfigurationFilePaths.ResolveConfiguredPaths(builder.Configuration, builder.Environment.ContentRootPath);
+var studioLogosDirectory = Path.GetDirectoryName(
+    ConfigurationFilePaths.Resolve("config/Studios/.keep", builder.Environment.ContentRootPath))!;
+Directory.CreateDirectory(studioLogosDirectory);
+builder.Configuration["StudioLogos:Directory"] = studioLogosDirectory;
 
 var dataDir = Path.Combine(builder.Environment.ContentRootPath, "data");
 Directory.CreateDirectory(dataDir);
@@ -188,6 +193,11 @@ if (!app.Environment.IsDevelopment())
 }
 
 app.UseStaticFiles();
+app.UseStaticFiles(new StaticFileOptions
+{
+    FileProvider = new PhysicalFileProvider(studioLogosDirectory),
+    RequestPath = "/studio-logos"
+});
 
 app.UseRouting();
 

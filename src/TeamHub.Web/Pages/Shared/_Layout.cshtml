@@ -92,6 +92,14 @@
     {
         studioTabs = [];
     }
+    var selectedStudioId = Context.Request.Path.StartsWithSegments("/Studio")
+        ? Context.Request.Query["studioId"].FirstOrDefault()
+        : null;
+    var selectedStudioLogo = studioTabs.FirstOrDefault(studio =>
+        string.Equals(studio.Id, selectedStudioId, StringComparison.OrdinalIgnoreCase))?.LogoFileName;
+    var navbarLogoUrl = string.IsNullOrWhiteSpace(selectedStudioLogo)
+        ? Url.Content("~/images/teamhub-logo.svg")
+        : Url.Content($"~/studio-logos/{selectedStudioLogo}");
     var fullBleed = ViewData["FullBleed"] is true;
     var defaultPageWidth = ViewData["PageWidth"] as string;
     var pageKey = (ViewContext.ActionDescriptor as PageActionDescriptor)?.ViewEnginePath;
@@ -152,7 +160,7 @@
         <nav class="navbar navbar-expand-xxl border-bottom box-shadow teamhub-navbar @(fullBleed ? "mb-0" : "mb-3")">
             <div class="container">
                 <a class="navbar-brand teamhub-navbar-brand" asp-page="/Index" aria-label="@applicationName Team Hub home">
-                    <img class="teamhub-navbar-logo" src="~/images/teamhub-logo.svg" alt="" aria-hidden="true" asp-append-version="true" />
+                    <img class="teamhub-navbar-logo" src="@navbarLogoUrl" alt="" aria-hidden="true" />
                     <span class="teamhub-navbar-brand-copy">
                         <strong>@applicationName</strong>
                         <span>Team Hub</span>

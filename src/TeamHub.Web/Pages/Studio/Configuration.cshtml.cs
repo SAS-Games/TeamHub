@@ -12,10 +12,23 @@ namespace TeamHub.Web.Pages.Studio;
 [Authorize]
 public class ConfigurationModel(
     IStudioDirectoryService studioDirectoryService,
-    ICurrentAccessService currentAccess) : PageModel
+    ICurrentAccessService currentAccess,
+    IConfiguration configuration) : PageModel
 {
+    private const long MaxLogoBytes = 5 * 1024 * 1024;
+    private static readonly HashSet<string> AllowedLogoExtensions = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ".gif", ".jpeg", ".jpg", ".png", ".webp"
+    };
+
     [BindProperty]
     public StudioInput Input { get; set; } = new();
+
+    [BindProperty]
+    public IFormFile? LogoFile { get; set; }
+
+    [BindProperty]
+    public bool RemoveLogo { get; set; }
 
     public IReadOnlyList<StudioDetails> Studios { get; private set; } = [];
     public IReadOnlyList<TimeZoneInfo> TimeZones { get; } = TimeZoneInfo.GetSystemTimeZones()
@@ -75,6 +88,7 @@ public class ConfigurationModel(
         {
             ModelState.AddModelError("Input.TimeZoneId", "Select a valid time zone.");
         }
+        ValidateLogoFile();
 
         if (!ModelState.IsValid)
         {
@@ -83,9 +97,25 @@ public class ConfigurationModel(
             return Page();
         }
 
+        var previousLogoFileName = Input.LogoFileName;
+        string? uploadedLogoFileName = null;
         try
         {
+            if (RemoveLogo)
+            {
+                Input.LogoFileName = null;
+            }
+            if (LogoFile is not null)
+            {
+                uploadedLogoFileName = await StoreLogoAsync(LogoFile, cancellationToken);
+                Input.LogoFileName = uploadedLogoFileName;
+            }
+
             var saved = await studioDirectoryService.SaveStudioAsync(Input.ToStudio(), cancellationToken);
+            if (!string.Equals(previousLogoFileName, saved.LogoFileName, StringComparison.OrdinalIgnoreCase))
+            {
+                DeleteLogo(previousLogoFileName);
+            }
             StatusMessage = $"Studio saved: {saved.StudioName}.";
             return RedirectToPage();
         }
@@ -93,10 +123,61 @@ public class ConfigurationModel(
         {
             ModelState.AddModelError(string.Empty, $"Studio could not be saved: {ex.GetBaseException().Message}");
         }
+        catch (IOException ex)
+        {
+            ModelState.AddModelError(nameof(LogoFile), $"Logo could not be saved: {ex.Message}");
+        }
+
+        DeleteLogo(uploadedLogoFileName);
 
         await LoadStudiosAsync(cancellationToken);
         EnsureEditableRows();
         return Page();
+    }
+
+    private void ValidateLogoFile()
+    {
+        if (LogoFile is null)
+        {
+            return;
+        }
+
+        if (LogoFile.Length == 0 || LogoFile.Length > MaxLogoBytes)
+        {
+            ModelState.AddModelError(nameof(LogoFile), "Select a logo smaller than 5 MB.");
+        }
+
+        var extension = Path.GetExtension(LogoFile.FileName);
+        if (!AllowedLogoExtensions.Contains(extension))
+        {
+            ModelState.AddModelError(nameof(LogoFile), "Logo must be a PNG, JPG, GIF, or WebP image.");
+        }
+    }
+
+    private async Task<string> StoreLogoAsync(IFormFile logo, CancellationToken cancellationToken)
+    {
+        var directory = configuration["StudioLogos:Directory"]
+            ?? throw new IOException("The studio logo directory is not configured.");
+        Directory.CreateDirectory(directory);
+        var fileName = $"{Guid.NewGuid():N}{Path.GetExtension(logo.FileName).ToLowerInvariant()}";
+        await using var stream = new FileStream(
+            Path.Combine(directory, fileName), FileMode.CreateNew, FileAccess.Write, FileShare.None);
+        await logo.CopyToAsync(stream, cancellationToken);
+        return fileName;
+    }
+
+    private void DeleteLogo(string? fileName)
+    {
+        if (string.IsNullOrWhiteSpace(fileName))
+        {
+            return;
+        }
+
+        var directory = configuration["StudioLogos:Directory"];
+        if (!string.IsNullOrWhiteSpace(directory))
+        {
+            System.IO.File.Delete(Path.Combine(directory, Path.GetFileName(fileName)));
+        }
     }
 
     public async Task<IActionResult> OnPostDeleteAsync(string studioId, CancellationToken cancellationToken)
@@ -179,6 +260,8 @@ public class ConfigurationModel(
         [Required]
         public string ProjectName { get; set; } = string.Empty;
 
+        public string? LogoFileName { get; set; }
+
         [Required]
         [StringLength(128)]
         public string StudioGroup { get; set; } = "Ungrouped";
@@ -209,6 +292,7 @@ public class ConfigurationModel(
                 Id = studio.Id,
                 StudioName = studio.StudioName,
                 ProjectName = studio.ProjectName,
+                LogoFileName = studio.LogoFileName,
                 StudioGroup = studio.StudioGroup,
                 GroupDisplayOrder = studio.GroupDisplayOrder,
                 StudioDisplayOrder = studio.StudioDisplayOrder,
@@ -247,6 +331,7 @@ public class ConfigurationModel(
                 Id = Id ?? string.Empty,
                 StudioName = StudioName,
                 ProjectName = ProjectName,
+                LogoFileName = LogoFileName,
                 StudioGroup = StudioGroup,
                 GroupDisplayOrder = GroupDisplayOrder,
                 StudioDisplayOrder = StudioDisplayOrder,

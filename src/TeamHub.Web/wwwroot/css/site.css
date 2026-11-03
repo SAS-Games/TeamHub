@@ -201,6 +201,12 @@ body {
   object-fit: contain;
 }
 
+.studio-configuration-logo {
+  width: 44px;
+  height: 44px;
+  object-fit: contain;
+}
+
 .teamhub-navbar-brand-copy {
   display: flex;
   flex-direction: column;
@@ -257,6 +263,8 @@ body {
 .eyebrow, .roadmap-kicker, .section-heading span { color: var(--accent-color); text-transform: uppercase; font-size: .72rem; font-weight: 700; letter-spacing: .08em; }
 .page-hero-meta { border-left: 3px solid #e4a23a; padding-left: 14px; color: var(--text-muted-color); text-align: right; }
 .page-hero-meta strong { color: var(--text-color); font-size: 1.05rem; }
+.studio-dashboard-heading { display: flex; align-items: center; gap: 1.25rem; min-width: 0; }
+.studio-dashboard-logo { width: 176px; height: 176px; flex: 0 0 176px; object-fit: contain; }
 .page-switcher { display: flex; gap: 8px; padding: 20px 0 8px; flex-wrap: wrap; }
 .page-switcher a { color: var(--text-muted-color); border-bottom: 2px solid transparent; padding: 8px 12px; text-decoration: none; }
 .page-switcher a.active { color: var(--text-color); border-color: var(--accent-color); font-weight: 700; }

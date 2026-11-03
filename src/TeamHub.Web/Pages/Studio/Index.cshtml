@@ -7,13 +7,19 @@
     var item = Model.SelectedStudio;
     var studioName = item?.Studio.StudioName;
     var dashboardTitle = string.IsNullOrWhiteSpace(studioName) ? "Studio Dashboard" : $"{studioName} Dashboard";
+    var dashboardLogoUrl = string.IsNullOrWhiteSpace(item?.Studio.LogoFileName)
+        ? Url.Content("~/images/teamhub-logo.svg")
+        : Url.Content($"~/studio-logos/{item.Studio.LogoFileName}");
     ViewData["Title"] = dashboardTitle;
 }
 
 <div class="page-hero">
-    <div>
-        <div class="eyebrow">Studio</div>
-        <h1>@dashboardTitle</h1>
+    <div class="studio-dashboard-heading">
+        <img class="studio-dashboard-logo" src="@dashboardLogoUrl" alt="@(string.IsNullOrWhiteSpace(studioName) ? "TeamHub" : studioName) logo" />
+        <div>
+            <div class="eyebrow">Studio</div>
+            <h1>@dashboardTitle</h1>
+        </div>
     </div>
     @if (item is not null && await CurrentAccess.CanAsync(TeamHubModules.SupportSummary))
     {
