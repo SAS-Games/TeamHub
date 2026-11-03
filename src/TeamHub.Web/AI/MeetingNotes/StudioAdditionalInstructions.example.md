@@ -1,4 +1,4 @@
-# Studio meeting-note overlay
+# Studio-specific additional meeting-note instructions
 
 This file is appended to the shared `AI/MeetingNotes.md` instructions. Include only rules that differ for this studio.
 

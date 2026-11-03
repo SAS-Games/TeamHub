@@ -54,9 +54,9 @@
     <div id="aiChatMeetingStudioContext" class="ai-chat-meeting-studio-context d-none">
         <label for="aiChatMeetingStudio" class="form-label mb-0">Meeting studio</label>
         <select id="aiChatMeetingStudio" class="form-select form-select-sm">
-            <option value="">Default meeting-note format</option>
+            <option value="">No studio-specific additions</option>
         </select>
-        <span class="form-text mt-0">Optional. Selecting a studio applies its configured Markdown instruction overlay.</span>
+        <span class="form-text mt-0">Optional. The default instructions always apply; selecting a studio appends its configured Markdown instructions.</span>
     </div>
 
     <div id="aiChatMessages" class="ai-chat-messages" aria-live="polite">
@@ -73,12 +73,12 @@
             <input id="aiChatFiles" type="file" class="form-control" multiple
                    accept=".txt,.md,.markdown,.csv,.json,.docx,.pdf,.chm,.png,.jpg,.jpeg,.webp,.gif,text/plain,text/markdown,text/csv,application/json,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/pdf,application/vnd.ms-htmlhelp,image/png,image/jpeg,image/webp,image/gif" />
         </div>
-        <details id="aiChatMeetingOverrideContext" class="ai-chat-meeting-override d-none">
-            <summary>Additional format override (.md)</summary>
-            <label for="aiChatMeetingOverride" class="visually-hidden">Additional Meeting Notes format override</label>
-            <input id="aiChatMeetingOverride" type="file" class="form-control form-control-sm mt-2"
+        <details id="aiChatMeetingAdditionalInstructionsContext" class="ai-chat-meeting-additional-instructions d-none">
+            <summary>Additional formatting instructions (.md)</summary>
+            <label for="aiChatMeetingAdditionalInstructions" class="visually-hidden">Additional Meeting Notes formatting instructions</label>
+            <input id="aiChatMeetingAdditionalInstructions" type="file" class="form-control form-control-sm mt-2" multiple
                    accept=".md,.markdown,text/markdown,text/plain" />
-            <span class="form-text">Optional. The configured studio format is used automatically.</span>
+            <span class="form-text">Optional. These files are appended after the default and selected studio instructions for this request.</span>
         </details>
         <div class="d-flex gap-2 align-items-end">
             <div class="flex-grow-1">

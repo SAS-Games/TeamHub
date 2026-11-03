@@ -17,7 +17,7 @@ namespace TeamHub.Tests;
 public sealed class MeetingNotesTests
 {
     [Fact]
-    public async Task Instruction_provider_prefers_managed_overlay_and_keeps_legacy_path_fallback()
+    public async Task Instruction_provider_appends_managed_studio_instructions_and_keeps_legacy_path_fallback()
     {
         var root = Path.Combine(Path.GetTempPath(), $"teamhub-meeting-notes-{Guid.NewGuid():N}");
         Directory.CreateDirectory(Path.Combine(root, "AI", "MeetingNotes"));
@@ -47,9 +47,11 @@ public sealed class MeetingNotesTests
 
             var studioInstructions = await provider.GetInstructionsAsync("STUDIO-A");
             var legacyInstructions = await provider.GetInstructionsAsync("studio-b");
-            var defaultInstructions = await provider.GetInstructionsAsync("studio-without-overlay");
+            var defaultInstructions = await provider.GetInstructionsAsync("studio-without-additional-instructions");
 
             studioInstructions.Should().Contain("Shared format").And.Contain("Studio A managed terminology");
+            studioInstructions.Should().StartWith("Shared format")
+                .And.Contain("# Studio-specific additional instructions");
             legacyInstructions.Should().Contain("Shared format").And.Contain("Studio B legacy terminology");
             defaultInstructions.Should().Be("Shared format");
         }

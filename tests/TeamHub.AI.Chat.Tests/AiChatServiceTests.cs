@@ -95,7 +95,7 @@ public sealed class AiChatServiceTests
                 [new AiChatMessage("user", "Transcript: Mina agreed to send the build on Friday.")],
                 Documents: [new AiChatDocument("transcript.md", "text/markdown", "The review starts at 10:00.")],
                 StudioId: "studio-a",
-                MeetingNotesOverride: "Add a compact Follow-up section."));
+                MeetingNotesAdditionalInstructions: "Add a compact Follow-up section."));
 
         source.CallCount.Should().Be(0);
         provider.LastRequest!.UserPrompt.Should().Contain("Mina agreed to send the build on Friday");
@@ -104,7 +104,7 @@ public sealed class AiChatServiceTests
         provider.LastRequest.UserPrompt.Should().NotContain("Do not expose this");
         provider.LastRequest.SystemPrompt.Should().Contain("only the conversation transcript");
         provider.LastRequest.SystemPrompt.Should().Contain("Use an Action, Owner, and Due date table.");
-        provider.LastRequest.SystemPrompt.Should().Contain("dedicated Meeting Notes override field");
+        provider.LastRequest.SystemPrompt.Should().Contain("dedicated Meeting Notes additional-instructions field");
         provider.LastRequest.SystemPrompt.Should().Contain("assign an owner or due date unless the transcript explicitly supports it");
     }
 

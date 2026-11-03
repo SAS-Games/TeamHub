@@ -16,8 +16,8 @@
     const documentsElement = root.querySelector("#aiChatDocuments");
     const files = root.querySelector("#aiChatFiles");
     const filesLabel = root.querySelector("#aiChatFilesLabel");
-    const meetingOverrideContext = root.querySelector("#aiChatMeetingOverrideContext");
-    const meetingOverride = root.querySelector("#aiChatMeetingOverride");
+    const meetingAdditionalInstructionsContext = root.querySelector("#aiChatMeetingAdditionalInstructionsContext");
+    const meetingAdditionalInstructions = root.querySelector("#aiChatMeetingAdditionalInstructions");
     const form = root.querySelector("#aiChatForm");
     const prompt = root.querySelector("#aiChatPrompt");
     const send = root.querySelector("#aiChatSend");
@@ -178,7 +178,7 @@
         conversationRevision += 1;
         history = [];
         if (files) files.value = "";
-        if (meetingOverride) meetingOverride.value = "";
+        if (meetingAdditionalInstructions) meetingAdditionalInstructions.value = "";
         prompt.value = "";
         showEmptyConversation();
         error.textContent = "";
@@ -196,7 +196,7 @@
         const meetingNotesMode = mode.value === "MeetingNotes";
         documentsElement.classList.toggle("d-none", teamHubMode);
         meetingStudioContext?.classList.toggle("d-none", !meetingNotesMode);
-        meetingOverrideContext?.classList.toggle("d-none", !meetingNotesMode);
+        meetingAdditionalInstructionsContext?.classList.toggle("d-none", !meetingNotesMode);
         if (meetingNotesMode) loadMeetingStudios();
         note.textContent = teamHubMode
             ? "Uses only TeamHub information authorized for your account. Workflow results are limited to workflows assigned to you."
@@ -216,7 +216,7 @@
         if (meetingStudio) meetingStudio.disabled = generating || !meetingStudiosLoaded;
         prompt.disabled = generating;
         if (files) files.disabled = generating;
-        if (meetingOverride) meetingOverride.disabled = generating;
+        if (meetingAdditionalInstructions) meetingAdditionalInstructions.disabled = generating;
         if (publishNotes) publishNotes.disabled = generating || !meetingDestination?.value;
         send.disabled = false;
         send.textContent = generating ? "Cancel" : "Send";
@@ -916,17 +916,24 @@
         }));
     }
 
-    async function readMeetingNotesOverride() {
-        if (mode.value !== "MeetingNotes" || !meetingOverride?.files?.length) return null;
-        const file = meetingOverride.files[0];
-        const extension = file.name.split(".").pop().toLowerCase();
-        if (!["md", "markdown"].includes(extension))
-            throw new Error("The additional Meeting Notes override must be a Markdown (.md) file.");
-        if (file.size > 256 * 1024)
-            throw new Error("The additional Meeting Notes override cannot exceed 256 KB.");
-        const content = (await file.text()).trim();
-        if (!content) throw new Error("The additional Meeting Notes override is empty.");
-        return content;
+    async function readMeetingNotesAdditionalInstructions() {
+        if (mode.value !== "MeetingNotes" || !meetingAdditionalInstructions?.files?.length) return null;
+        const files = [...meetingAdditionalInstructions.files];
+        const maximumTotalBytes = 256 * 1024;
+        const totalBytes = files.reduce((total, file) => total + file.size, 0);
+        if (totalBytes > maximumTotalBytes)
+            throw new Error("The additional Meeting Notes instruction files cannot exceed 256 KB in total.");
+
+        const sections = [];
+        for (const file of files) {
+            const extension = file.name.split(".").pop().toLowerCase();
+            if (!["md", "markdown"].includes(extension))
+                throw new Error(`${file.name} must be a Markdown (.md) file.`);
+            const content = (await file.text()).trim();
+            if (!content) throw new Error(`${file.name} is empty.`);
+            sections.push(`# Additional instruction file: ${file.name}\n\n${content}`);
+        }
+        return sections.join("\n\n---\n\n");
     }
 
     function readFileAsBase64(file) {
@@ -1176,7 +1183,7 @@
 
         try {
             const documents = await readDocuments();
-            const meetingNotesOverride = await readMeetingNotesOverride();
+            const meetingNotesAdditionalInstructions = await readMeetingNotesAdditionalInstructions();
             let externalAccessDecision = null;
             let approvedExternalSources = [];
             let payload;
@@ -1196,7 +1203,7 @@
                         meetingNotesStudioId: mode.value === "MeetingNotes"
                             ? meetingStudio?.value || null
                             : null,
-                        meetingNotesOverride,
+                        meetingNotesAdditionalInstructions,
                         externalAccessDecision,
                         approvedExternalSources
                     })

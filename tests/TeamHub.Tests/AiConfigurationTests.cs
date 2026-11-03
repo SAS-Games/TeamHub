@@ -326,7 +326,7 @@ public sealed class AiConfigurationTests
     }
 
     [Fact]
-    public async Task Meeting_notes_configuration_uploads_downloads_and_removes_studio_overlay()
+    public async Task Meeting_notes_configuration_uploads_downloads_and_removes_studio_additional_instructions()
     {
         await using var context = CreateDbContext();
         using var defaults = CreateOptions();
@@ -343,7 +343,7 @@ public sealed class AiConfigurationTests
             PageContext = new PageContext { HttpContext = new DefaultHttpContext() },
             Settings = AiSettingsInput.FromSnapshot(await configuration.GetAsync())
         };
-        var content = "# Studio A overlay\n\n- Use the studio milestone terminology.";
+        var content = "# Studio A additional instructions\n\n- Use the studio milestone terminology.";
         var bytes = Encoding.UTF8.GetBytes(content);
         await using var stream = new MemoryStream(bytes);
         page.MeetingNotesTeamsChannels =

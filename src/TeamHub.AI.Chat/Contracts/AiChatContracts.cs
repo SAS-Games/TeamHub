@@ -42,7 +42,7 @@ public sealed record AiChatRequest(
     IReadOnlyList<AiChatDocument>? Documents = null,
     IReadOnlyList<AiImageInput>? Images = null,
     string? StudioId = null,
-    string? MeetingNotesOverride = null);
+    string? MeetingNotesAdditionalInstructions = null);
 
 public sealed record AiChatSource(
     string Id,

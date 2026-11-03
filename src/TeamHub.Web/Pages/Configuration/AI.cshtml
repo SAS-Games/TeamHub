@@ -228,10 +228,10 @@
                 <div class="form-text">Relative to the TeamHub application directory. Changes are loaded for every request.</div>
             </div>
             <div class="col-12">
-                <h3 class="h6 mb-2">Studio instruction overlays and Teams publishing</h3>
+                <h3 class="h6 mb-2">Studio additional instructions and Teams publishing</h3>
                 <p class="form-text mb-3">
-                    These rows come from active studios in Studio Configuration. Uploading a studio instruction file is optional; TeamHub stores it in the database-backed AI configuration and appends it to the default file whenever that studio is selected.
-                    Uploading a replacement overwrites the previous studio file. Keep common formatting rules in the default file and put only studio-specific differences in the overlay. In Teams, open the required destination,
+                    These rows come from active studios in Studio Configuration. The default instruction file is always used. Uploading a studio additional-instructions file is optional; TeamHub stores it in the database-backed AI configuration and appends it after the default whenever that studio is selected.
+                    Uploading a new file replaces only the studio's previously saved additional file. Keep common formatting rules in the default file and put only studio-specific differences in the additional file. In Teams, open the required destination,
                     select <strong>… → Workflows → Send webhook alerts to a channel</strong>, create the workflow, and paste its URL below.
                     The URL is encrypted and is never displayed again. The Power Automate workflow determines the exact Team and channel.
                 </p>
@@ -243,7 +243,7 @@
                 {
                     <div class="table-responsive teams-destination-table-wrap">
                         <table class="table align-middle mb-0 teams-destination-table">
-                            <thead><tr><th>Studio</th><th>Instruction overlay (.md)</th><th>Workflow webhook URL</th><th>Status</th></tr></thead>
+                            <thead><tr><th>Studio</th><th>Additional instructions (.md)</th><th>Workflow webhook URL</th><th>Status</th></tr></thead>
                             <tbody>
                             @for (var index = 0; index < Model.MeetingNotesTeamsChannels.Count; index++)
                             {
@@ -271,7 +271,7 @@
                                             </div>
                                             <div class="form-check mt-1">
                                                 <input asp-for="MeetingNotesTeamsChannels[index].RemoveInstruction" class="form-check-input" />
-                                                <label asp-for="MeetingNotesTeamsChannels[index].RemoveInstruction" class="form-check-label">Remove saved overlay</label>
+                                                <label asp-for="MeetingNotesTeamsChannels[index].RemoveInstruction" class="form-check-label">Remove saved additional file</label>
                                             </div>
                                         }
                                     </td>

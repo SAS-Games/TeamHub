@@ -197,7 +197,7 @@ public sealed class AIChatModel(
                     documents,
                     images,
                     meetingNotesStudioId,
-                    input.MeetingNotesOverride),
+                    input.MeetingNotesAdditionalInstructions),
                 cancellationToken);
             return new JsonResult(response);
         }
@@ -233,7 +233,7 @@ public sealed class AIChatModel(
         [StringLength(100)]
         public string? MeetingNotesStudioId { get; set; }
         [StringLength(200_000)]
-        public string? MeetingNotesOverride { get; set; }
+        public string? MeetingNotesAdditionalInstructions { get; set; }
         public string? ExternalAccessDecision { get; set; }
         public List<string> ApprovedExternalSources { get; set; } = [];
     }

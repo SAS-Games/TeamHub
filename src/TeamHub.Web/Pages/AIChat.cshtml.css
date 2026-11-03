@@ -29,12 +29,12 @@
     max-width: 320px;
 }
 
-.ai-chat-meeting-override {
+.ai-chat-meeting-additional-instructions {
     margin: .75rem 1.25rem;
     color: var(--bs-secondary-color);
 }
 
-.ai-chat-meeting-override summary {
+.ai-chat-meeting-additional-instructions summary {
     cursor: pointer;
     font-weight: 600;
 }

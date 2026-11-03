@@ -83,7 +83,7 @@ public sealed class AIModel(
             .Value;
         if (instruction is null || string.IsNullOrWhiteSpace(instruction.Content)) return NotFound();
         var fileName = Path.GetFileName(instruction.FileName?.Trim() ?? string.Empty);
-        if (fileName.Length == 0) fileName = "meeting-notes-overlay.md";
+        if (fileName.Length == 0) fileName = "meeting-notes-additional-instructions.md";
         return File(
             Encoding.UTF8.GetBytes(instruction.Content),
             "text/markdown; charset=utf-8",

@@ -34,11 +34,11 @@ used only in the server-side provider client and are never included in prompts o
 The TeamHub host loads the editable `AI/MeetingNotes.md` file for every Meeting Notes request. Its
 path, optional studio instruction uploads, and optional Teams destinations are managed under
 **Configuration > AI Services > Meeting Notes**. The user may select an active studio before
-generation. When that studio has an uploaded overlay, the host appends it to the shared file;
-otherwise it uses only the shared instructions. Overlays should contain only studio-specific
+generation. When that studio has an uploaded additional-instructions file, the host appends it to the shared file;
+otherwise it uses only the shared instructions. Additional files should contain only studio-specific
 differences so shared rules are not duplicated and token usage stays low. The uploaded filename and
 Markdown content are stored in the database-backed AI configuration. Administrators can replace,
-download, or remove a saved overlay. Legacy server-file paths remain readable during migration.
+download, or remove a saved additional-instructions file. Legacy server-file paths remain readable during migration.
 The page creates one
 configuration row for every active studio from Studio Configuration. An
 administrator enters the HTTPS URL created by the Teams **Workflows** webhook
@@ -49,9 +49,9 @@ as an optional response action in both Meeting Notes and General modes; it is no
 generation and never posts automatically.
 
 Normal users do not upload the configured instructions. They select a studio and TeamHub resolves
-the saved overlay automatically. A collapsed, optional `.md` override is available for one-off
-formatting changes. It is applied only as user-provided presentation guidance for that request and
-cannot override transcript accuracy, source isolation, or security rules.
+the saved additional instructions automatically. A collapsed, optional multi-file `.md` upload is
+available for one-off additional formatting guidance. These files are appended after the default and
+studio instructions for that request and cannot change transcript accuracy, source isolation, or security rules.
 
 ## Token limits and usage
 

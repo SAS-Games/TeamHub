@@ -207,18 +207,18 @@ html.teamhub-ai-chat-resizing * {
   font-size: .7rem;
 }
 
-.teamhub-ai-chat-override {
+.teamhub-ai-chat-additional-instructions {
   padding: .35rem 1rem;
   color: var(--text-secondary-color);
   font-size: .72rem;
 }
 
-.teamhub-ai-chat-override summary {
+.teamhub-ai-chat-additional-instructions summary {
   cursor: pointer;
   font-weight: 700;
 }
 
-.teamhub-ai-chat-override span {
+.teamhub-ai-chat-additional-instructions span {
   display: block;
   margin-top: .2rem;
   color: var(--text-muted-color);
@@ -344,7 +344,7 @@ html.teamhub-ai-chat-resizing * {
 .teamhub-ai-chat-panel.is-reviewing-notes .teamhub-ai-chat-note,
 .teamhub-ai-chat-panel.is-reviewing-notes .teamhub-ai-chat-messages,
 .teamhub-ai-chat-panel.is-reviewing-notes .teamhub-ai-chat-documents,
-.teamhub-ai-chat-panel.is-reviewing-notes .teamhub-ai-chat-override,
+.teamhub-ai-chat-panel.is-reviewing-notes .teamhub-ai-chat-additional-instructions,
 .teamhub-ai-chat-panel.is-reviewing-notes .teamhub-ai-chat-compose-row,
 .teamhub-ai-chat-panel.is-reviewing-notes .ai-chat-session-usage,
 .teamhub-ai-chat-panel.is-reviewing-notes .teamhub-ai-chat-output-actions,

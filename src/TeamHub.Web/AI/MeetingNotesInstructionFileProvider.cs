@@ -36,7 +36,7 @@ public sealed class MeetingNotesInstructionFileProvider(
             studio = await ReadInstructionFileAsync(studioPath, $"studio '{normalizedStudioId}'", cancellationToken);
         if (studio.Length == 0) return common;
         if (common.Length == 0) return studio;
-        return $"{common}\n\n# Studio-specific instruction overlay\n\n{studio}";
+        return $"{common}\n\n# Studio-specific additional instructions\n\n{studio}";
     }
 
     private async Task<string> ReadInstructionFileAsync(
