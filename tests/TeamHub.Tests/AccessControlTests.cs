@@ -16,6 +16,19 @@ namespace TeamHub.Tests;
 public sealed class AccessControlTests
 {
     [Fact]
+    public void HeroProjectStudiosUsesDedicatedReadOnlyAccessModule()
+    {
+        var request = new DefaultHttpContext().Request;
+        request.Path = "/HeroProjectStudios";
+        request.Method = "GET";
+
+        TeamHubAccessRoutes.ResolveModule(request.Path).Should().Be(TeamHubModules.HeroProjectStudios);
+        TeamHubAccessRoutes.ResolveRequiredAccess(request).Should().Be(AccessLevel.ReadOnly);
+        TeamHubModuleAccess.SupportedLevels(TeamHubModules.HeroProjectStudios)
+            .Should().Equal(AccessLevel.NoAccess, AccessLevel.ReadOnly);
+    }
+
+    [Fact]
     public void ConfluenceBrowserUsesDedicatedReadOnlyAccessModule()
     {
         var request = new DefaultHttpContext().Request;
@@ -534,6 +547,7 @@ public sealed class AccessControlTests
 
     [Theory]
     [InlineData("GET", "/Milestones", "", AccessLevel.ReadOnly)]
+    [InlineData("GET", "/HeroProjectStudios", "", AccessLevel.ReadOnly)]
     [InlineData("GET", "/Studio/Configuration", "", AccessLevel.ReadOnly)]
     [InlineData("GET", "/Studio/Configuration", "?create=true", AccessLevel.Create)]
     [InlineData("POST", "/Studio/Configuration", "?handler=Create", AccessLevel.Create)]

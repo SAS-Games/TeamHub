@@ -949,11 +949,13 @@ public sealed class StudioDirectoryTests
                 StudioName = "Solo Studio",
                 ProjectName = "Project Zero",
                 LogoFileName = "solo-studio.png",
+                AboutGame = "A cooperative exploration game.",
                 Location = "Remote"
             });
 
             saved.StudioName.Should().Be("Solo Studio");
             saved.LogoFileName.Should().Be("solo-studio.png");
+            saved.AboutGame.Should().Be("A cooperative exploration game.");
             saved.StudioGroup.Should().Be("Ungrouped");
             saved.GroupDisplayOrder.Should().BeNull();
             saved.StudioDisplayOrder.Should().BeNull();

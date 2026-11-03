@@ -207,6 +207,10 @@ body {
   object-fit: contain;
 }
 
+.hero-project-studios-table { min-width: 900px; }
+.hero-project-studio-logo { width: 72px; height: 72px; object-fit: contain; }
+.hero-project-studio-details { min-width: 280px; max-width: 620px; white-space: pre-line; }
+
 .teamhub-navbar-brand-copy {
   display: flex;
   flex-direction: column;

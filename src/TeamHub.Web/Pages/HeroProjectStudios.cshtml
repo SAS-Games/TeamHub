@@ -1,0 +1,67 @@
+@page "/HeroProjectStudios"
+@model TeamHub.Web.Pages.HeroProjectStudiosModel
+@{
+    ViewData["Title"] = "Hero Project Studios";
+}
+
+<div class="page-hero">
+    <div>
+        <div class="eyebrow">Studio portfolio</div>
+        <h1>Hero Project Studios</h1>
+        <p>Games and release information across active and released studios.</p>
+    </div>
+</div>
+
+@if (!string.IsNullOrWhiteSpace(Model.ErrorMessage))
+{
+    <div class="alert alert-warning mt-3">@Model.ErrorMessage</div>
+}
+else
+{
+    @if (!string.IsNullOrWhiteSpace(Model.MilestoneWarning))
+    {
+        <div class="alert alert-warning mt-3">@Model.MilestoneWarning</div>
+    }
+
+    @if (Model.Studios.Count == 0)
+    {
+        <div class="alert alert-info mt-3">No studios have been configured yet.</div>
+    }
+    else
+    {
+        <section class="content-section">
+            <div class="table-responsive">
+                <table class="table styled-table align-middle hero-project-studios-table mb-0">
+                    <thead>
+                        <tr>
+                            <th>Studio Name</th>
+                            <th>Game Name</th>
+                            <th>Icon</th>
+                            <th>About the Game</th>
+                            <th>Release Date</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                    @foreach (var item in Model.Studios)
+                    {
+                        var studio = item.Studio;
+                        var logoUrl = string.IsNullOrWhiteSpace(studio.LogoFileName)
+                            ? Url.Content("~/images/teamhub-logo.svg")
+                            : Url.Content($"~/studio-logos/{studio.LogoFileName}");
+                        <tr>
+                            <td>
+                                <strong>@studio.StudioName</strong>
+                                <span class="badge ms-2 @(studio.IsActive ? "text-bg-success" : "text-bg-secondary")">@(studio.IsActive ? "Active" : "Released")</span>
+                            </td>
+                            <td>@studio.ProjectName</td>
+                            <td><img class="hero-project-studio-logo" src="@logoUrl" alt="@studio.StudioName logo" /></td>
+                            <td class="hero-project-studio-details">@(string.IsNullOrWhiteSpace(studio.AboutGame) ? "-" : studio.AboutGame)</td>
+                            <td class="text-nowrap">@(item.ReleaseDate?.ToString("dd MMM yyyy") ?? "-")</td>
+                        </tr>
+                    }
+                    </tbody>
+                </table>
+            </div>
+        </section>
+    }
+}

@@ -115,6 +115,11 @@
                         <input asp-for="Input.ProjectName" class="form-control" />
                         <span asp-validation-for="Input.ProjectName" class="text-danger"></span>
                     </div>
+                    <div class="col-12">
+                        <label asp-for="Input.AboutGame" class="form-label">About the Game</label>
+                        <textarea asp-for="Input.AboutGame" class="form-control" rows="4" placeholder="Describe the game, its genre, and player experience."></textarea>
+                        <span asp-validation-for="Input.AboutGame" class="text-danger"></span>
+                    </div>
                     <div class="col-md-6 col-xl-4">
                         <label asp-for="Input.Location" class="form-label">Location</label>
                         <input asp-for="Input.Location" class="form-control" />

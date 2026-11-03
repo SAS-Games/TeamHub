@@ -21,6 +21,7 @@ public static class TeamHubModules
     public const string Team = "Team";
     public const string WorkCenter = "Work Center";
     public const string Milestones = "Milestones";
+    public const string HeroProjectStudios = "Hero Project Studios";
     public const string MilestoneReview = "Milestone Review";
     public const string FlowDesigner = "Flow Designer";
     public const string StudioConfiguration = "Studio Configuration";
@@ -41,6 +42,7 @@ public static class TeamHubModules
         Team,
         WorkCenter,
         Milestones,
+        HeroProjectStudios,
         MilestoneReview,
         FlowDesigner,
         StudioConfiguration,
@@ -74,6 +76,7 @@ public static class TeamHubModuleAccess
     public static IReadOnlyList<AccessLevel> SupportedLevels(string module) => module switch
     {
         TeamHubModules.Home or TeamHubModules.UsefulLinks or TeamHubModules.Milestones
+            or TeamHubModules.HeroProjectStudios
             or TeamHubModules.Confluence
             or TeamHubModules.AiChat
             or TeamHubModules.Notifications => ReadOnly,

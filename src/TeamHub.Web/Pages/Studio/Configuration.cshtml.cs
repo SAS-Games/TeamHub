@@ -262,6 +262,9 @@ public class ConfigurationModel(
 
         public string? LogoFileName { get; set; }
 
+        [StringLength(4000)]
+        public string AboutGame { get; set; } = string.Empty;
+
         [Required]
         [StringLength(128)]
         public string StudioGroup { get; set; } = "Ungrouped";
@@ -293,6 +296,7 @@ public class ConfigurationModel(
                 StudioName = studio.StudioName,
                 ProjectName = studio.ProjectName,
                 LogoFileName = studio.LogoFileName,
+                AboutGame = studio.AboutGame,
                 StudioGroup = studio.StudioGroup,
                 GroupDisplayOrder = studio.GroupDisplayOrder,
                 StudioDisplayOrder = studio.StudioDisplayOrder,
@@ -332,6 +336,7 @@ public class ConfigurationModel(
                 StudioName = StudioName,
                 ProjectName = ProjectName,
                 LogoFileName = LogoFileName,
+                AboutGame = AboutGame,
                 StudioGroup = StudioGroup,
                 GroupDisplayOrder = GroupDisplayOrder,
                 StudioDisplayOrder = StudioDisplayOrder,

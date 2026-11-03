@@ -155,6 +155,7 @@ public static class TeamHubAccessRoutes
         if (path.StartsWithSegments("/Notifications")) return TeamHubModules.Notifications;
         if (path.StartsWithSegments("/WorkCenter") || path.StartsWithSegments("/Workflows")) return TeamHubModules.WorkCenter;
         if (path.StartsWithSegments("/Milestones")) return TeamHubModules.Milestones;
+        if (path.StartsWithSegments("/HeroProjectStudios")) return TeamHubModules.HeroProjectStudios;
         if (path.StartsWithSegments("/MilestoneReview")) return TeamHubModules.MilestoneReview;
         if (path.StartsWithSegments("/Flows") || path.StartsWithSegments("/api/flows")) return TeamHubModules.FlowDesigner;
         // The physical Razor Page is /SupportSummaryComments, while its public route is

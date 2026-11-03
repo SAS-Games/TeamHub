@@ -11,6 +11,7 @@ public sealed class StudioDetails
     public string StudioName { get; set; } = string.Empty;
     public string ProjectName { get; set; } = string.Empty;
     public string? LogoFileName { get; set; }
+    public string AboutGame { get; set; } = string.Empty;
     public string StudioGroup { get; set; } = "Ungrouped";
     public int? GroupDisplayOrder { get; set; }
     public int? StudioDisplayOrder { get; set; }
@@ -62,6 +63,7 @@ internal sealed class StudioRecord
     public string StudioName { get; set; } = string.Empty;
     public string ProjectName { get; set; } = string.Empty;
     public string? LogoFileName { get; set; }
+    public string AboutGame { get; set; } = string.Empty;
     public string StudioGroup { get; set; } = "Ungrouped";
     public int? StudioDisplayOrder { get; set; }
     public bool IsActive { get; set; } = true;
@@ -207,6 +209,7 @@ internal sealed class StudioDbContext(DbContextOptions<StudioDbContext> options)
             entity.Property(x => x.StudioName).HasMaxLength(256);
             entity.Property(x => x.ProjectName).HasMaxLength(256);
             entity.Property(x => x.LogoFileName).HasMaxLength(256);
+            entity.Property(x => x.AboutGame).HasMaxLength(4000);
             entity.Property(x => x.StudioGroup).HasMaxLength(128);
             entity.Property(x => x.Location).HasMaxLength(256);
             entity.Property(x => x.TimeZoneId).HasMaxLength(256);
@@ -342,6 +345,7 @@ internal sealed class SqliteStudioDatabaseInitializer(
                     StudioName TEXT NOT NULL,
                     ProjectName TEXT NOT NULL,
                     LogoFileName TEXT NULL,
+                    AboutGame TEXT NOT NULL DEFAULT '',
                     StudioGroup TEXT NOT NULL DEFAULT 'Ungrouped',
                     StudioDisplayOrder INTEGER NULL,
                     IsActive INTEGER NOT NULL DEFAULT 1,
@@ -386,6 +390,13 @@ internal sealed class SqliteStudioDatabaseInitializer(
                 await dbContext.Database.ExecuteSqlRawAsync("""
                     ALTER TABLE Studios
                     ADD COLUMN LogoFileName TEXT NULL;
+                    """, cancellationToken);
+            }
+            if (!await MainColumnExistsAsync(connection, "Studios", "AboutGame", cancellationToken))
+            {
+                await dbContext.Database.ExecuteSqlRawAsync("""
+                    ALTER TABLE Studios
+                    ADD COLUMN AboutGame TEXT NOT NULL DEFAULT '';
                     """, cancellationToken);
             }
 
@@ -1000,6 +1011,7 @@ internal sealed class SqliteStudioDirectoryService(StudioDbContext dbContext) : 
         record.LogoFileName = string.IsNullOrWhiteSpace(studio.LogoFileName)
             ? null
             : Path.GetFileName(studio.LogoFileName.Trim());
+        record.AboutGame = studio.AboutGame.Trim();
         record.StudioGroup = NormalizeStudioGroup(studio.StudioGroup);
         record.StudioDisplayOrder = NormalizeDisplayOrder(studio.StudioDisplayOrder);
         record.IsActive = studio.IsActive;
@@ -1074,6 +1086,7 @@ internal sealed class SqliteStudioDirectoryService(StudioDbContext dbContext) : 
             StudioName = studio.StudioName,
             ProjectName = studio.ProjectName,
             LogoFileName = studio.LogoFileName,
+            AboutGame = studio.AboutGame,
             StudioGroup = NormalizeStudioGroup(studio.StudioGroup),
             GroupDisplayOrder = groupDisplayOrder,
             StudioDisplayOrder = studio.StudioDisplayOrder,
