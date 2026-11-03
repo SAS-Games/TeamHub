@@ -1,10 +1,13 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
 using TeamHub.Milestones;
+using TeamHub.Studio;
 
 namespace TeamHub.Web.Pages;
 
-public class MilestonesModel(IMilestoneTrackerService milestoneTrackerService) : PageModel
+public class MilestonesModel(
+    IMilestoneTrackerService milestoneTrackerService,
+    IStudioDirectoryService studioDirectoryService) : PageModel
 {
     [BindProperty(SupportsGet = true)]
     public string View { get; set; } = "table";
@@ -19,7 +22,14 @@ public class MilestonesModel(IMilestoneTrackerService milestoneTrackerService) :
         View = string.Equals(View, "roadmap", StringComparison.OrdinalIgnoreCase) ? "roadmap" : "table";
         try
         {
-            Milestones = await milestoneTrackerService.GetMilestonesAsync(cancellationToken);
+            var activeProjectNames = (await studioDirectoryService.GetStudiosAsync(cancellationToken))
+                .Where(studio => studio.IsActive && !string.IsNullOrWhiteSpace(studio.ProjectName))
+                .Select(studio => studio.ProjectName)
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+            Milestones = (await milestoneTrackerService.GetMilestonesAsync(cancellationToken))
+                .Where(milestone => activeProjectNames.Contains(milestone.Title)
+                    || activeProjectNames.Contains(milestone.Program))
+                .ToList();
         }
         catch (FileNotFoundException)
         {
