@@ -202,7 +202,9 @@ public sealed class AIUsageModel(
             await limits.SaveSettingsAsync(new AiUsageLimitSettings(
                 LimitInput.DefaultDailyTokenLimit,
                 LimitInput.ResetTimeZoneId,
-                overrides), cancellationToken);
+                overrides,
+                LimitInput.NotificationsEnabled,
+                ParseNotificationThresholds(LimitInput.NotificationThresholds)), cancellationToken);
             StatusMessage = "Daily AI consumption limits saved.";
         }
         catch (Exception exception) when (exception is ArgumentException or InvalidOperationException)
@@ -242,6 +244,18 @@ public sealed class AIUsageModel(
     private static string? Clean(string? value) =>
         string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 
+    private static IReadOnlyList<int> ParseNotificationThresholds(string value)
+    {
+        var values = (value ?? string.Empty)
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (values.Length == 0 || values.Length > 10
+            || values.Any(item => !int.TryParse(item, out var percentage)
+                || percentage is < 1 or > 100))
+            throw new ArgumentException(
+                "Notification thresholds must be 1 to 10 comma-separated percentages from 1 through 100.");
+        return values.Select(int.Parse).Distinct().Order().ToList();
+    }
+
     private void ValidateSelection(
         string? selection,
         IReadOnlyList<string> available,
@@ -265,6 +279,9 @@ public sealed class AIUsageModel(
         {
             DefaultDailyTokenLimit = settings.DefaultDailyTokenLimit,
             ResetTimeZoneId = settings.ResetTimeZoneId,
+            NotificationsEnabled = settings.NotificationsEnabled,
+            NotificationThresholds = string.Join(", ",
+                settings.NotificationThresholdPercentages ?? [75, 90, 100]),
             UserLimits = (await users.ListUsersAsync(cancellationToken))
                 .Where(user => user.IsActive)
                 .OrderBy(user => user.DisplayName, StringComparer.OrdinalIgnoreCase)
@@ -290,6 +307,11 @@ public sealed class AiUsageLimitInput
 
     [Required, StringLength(100)]
     public string ResetTimeZoneId { get; set; } = "Asia/Kolkata";
+
+    public bool NotificationsEnabled { get; set; } = true;
+
+    [Required, StringLength(100)]
+    public string NotificationThresholds { get; set; } = "75, 90, 100";
 
     public List<AiUsageUserLimitInput> UserLimits { get; set; } = [];
 }

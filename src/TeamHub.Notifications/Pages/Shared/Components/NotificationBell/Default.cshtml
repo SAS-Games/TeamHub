@@ -30,7 +30,7 @@
                 <a class="teamhub-notification-item"
                    asp-page="/Notifications/Open"
                    asp-route-id="@notification.Id">
-                    <span class="teamhub-notification-type">@notification.Type.ToString()</span>
+                    <span class="teamhub-notification-type">@notification.TypeLabel</span>
                     <strong>@notification.Subject</strong>
                     @if (!string.IsNullOrWhiteSpace(notification.BodyPreview))
                     {

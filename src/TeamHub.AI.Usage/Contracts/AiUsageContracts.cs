@@ -172,15 +172,27 @@ public sealed record AiUsageUserDailyLimit(string UserId, long DailyTokenLimit);
 public sealed record AiUsageLimitSettings(
     long? DefaultDailyTokenLimit,
     string ResetTimeZoneId,
-    IReadOnlyList<AiUsageUserDailyLimit> UserLimits);
+    IReadOnlyList<AiUsageUserDailyLimit> UserLimits,
+    bool NotificationsEnabled = true,
+    IReadOnlyList<int>? NotificationThresholdPercentages = null);
 
 public sealed record AiUsageLimitStatus(
     string UserId,
     long? DailyTokenLimit,
     long UsedTokens,
     long? RemainingTokens,
+    DateTimeOffset WindowStartUtc,
     DateTimeOffset ResetsAtUtc,
     bool IsExceeded);
+
+public sealed record AiUsageThresholdNotification(
+    Guid NotificationId,
+    string UserId,
+    int ThresholdPercent,
+    long UsedTokens,
+    long DailyTokenLimit,
+    long RemainingTokens,
+    DateTimeOffset ResetsAtUtc);
 
 public interface IAiUsageLimitService
 {
@@ -192,6 +204,13 @@ public interface IAiUsageLimitService
 
     Task<AiUsageLimitStatus> GetStatusAsync(
         string userId,
+        CancellationToken cancellationToken = default);
+}
+
+public interface IAiUsageThresholdNotifier
+{
+    Task NotifyAsync(
+        AiUsageThresholdNotification notification,
         CancellationToken cancellationToken = default);
 }
 

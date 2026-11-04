@@ -13,6 +13,7 @@ public static class NotificationServiceCollectionExtensions
     {
         services.AddDbContext<NotificationsDbContext>(options => options.UseSqlite(connectionString));
         services.AddScoped<IWorkflowNotificationInbox, WorkflowNotificationInboxService>();
+        services.AddScoped<IInAppNotificationPublisher, InAppNotificationPublisher>();
         services.AddScoped<INotificationDatabaseInitializer, NotificationDatabaseInitializer>();
         return services;
     }

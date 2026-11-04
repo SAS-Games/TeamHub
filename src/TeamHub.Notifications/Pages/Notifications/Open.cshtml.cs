@@ -19,6 +19,9 @@ public sealed class OpenModel(IWorkflowNotificationInbox inbox) : PageModel
             return NotFound();
         }
 
+        if (notification.Type == TeamHub.Domain.Enums.NotificationType.AiUsageThreshold)
+            return LocalRedirect("/AIChat");
+
         var target = $"/Workflows/Details/{notification.WorkflowInstanceId}";
         if (notification.WorkflowStepInstanceId.HasValue)
         {

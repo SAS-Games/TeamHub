@@ -38,6 +38,19 @@
             <span asp-validation-for="LimitInput.ResetTimeZoneId" class="text-danger"></span>
             <div class="form-text">Each user's daily window resets automatically at 12:00 AM in this timezone.</div>
         </div>
+        <div class="col-12 col-lg-5">
+            <div class="form-check mt-lg-4 pt-lg-2">
+                <input asp-for="LimitInput.NotificationsEnabled" class="form-check-input" />
+                <label asp-for="LimitInput.NotificationsEnabled" class="form-check-label">Enable in-app consumption warnings</label>
+            </div>
+            <div class="form-text">Warnings appear in the Team Hub notification inbox. They are not sent by email.</div>
+        </div>
+        <div class="col-12 col-lg-7">
+            <label asp-for="LimitInput.NotificationThresholds" class="form-label">Warning thresholds (%)</label>
+            <input asp-for="LimitInput.NotificationThresholds" class="form-control" placeholder="75, 90, 100" />
+            <span asp-validation-for="LimitInput.NotificationThresholds" class="text-danger"></span>
+            <div class="form-text">Enter 1-10 comma-separated percentages from 1 to 100. Each threshold is notified once per user per daily reset window; if one call crosses several thresholds, only the highest newly crossed threshold is shown.</div>
+        </div>
         <div class="col-12">
             <div class="alert alert-warning mb-3">
                 Once recorded usage reaches a user's effective limit, new provider calls are blocked until the next reset. The final allowed request can exceed the limit because its token count is known only after completion. Calls without provider token telemetry cannot count toward enforcement.

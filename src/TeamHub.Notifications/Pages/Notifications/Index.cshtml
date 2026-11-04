@@ -8,7 +8,7 @@
     <div>
         <span class="eyebrow">Work Center</span>
         <h1>Notifications</h1>
-        <p>Workflow task notifications sent to you by email.</p>
+        <p>Workflow and TeamHub service notifications sent to you.</p>
     </div>
     @if (Model.Inbox.UnreadCount > 0)
     {
@@ -36,7 +36,7 @@
             {
                 <a class="notification-page-item" asp-page="/Notifications/Open" asp-route-id="@notification.Id">
                     <div>
-                        <span class="teamhub-notification-type">@notification.Type.ToString()</span>
+                        <span class="teamhub-notification-type">@notification.TypeLabel</span>
                         <strong>@notification.Subject</strong>
                         @if (!string.IsNullOrWhiteSpace(notification.BodyPreview))
                         {

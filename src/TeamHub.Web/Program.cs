@@ -148,6 +148,7 @@ builder.Services.AddScoped<IMilestoneReviewWorkflowStarter, TeamHubMilestoneRevi
 builder.Services.AddStudioDirectory(builder.Configuration);
 builder.Services.AddTeamHubAi(builder.Configuration);
 builder.Services.AddAiUsageLedger(builder.Configuration);
+builder.Services.AddScoped<IAiUsageThresholdNotifier, TeamHub.Web.AI.TeamHubAiUsageThresholdNotifier>();
 builder.Services.AddScoped<TeamHub.AI.Contracts.IAiProviderCredentialAccessor, TeamHub.Web.AI.TeamHubAiProviderCredentialAccessor>();
 builder.Services.AddSingleton<IAiChatInstructionProvider, TeamHub.Web.AI.TeamHubAiInstructionFileProvider>();
 builder.Services.AddScoped<IAiMeetingNotesInstructionProvider, TeamHub.Web.AI.MeetingNotesInstructionFileProvider>();

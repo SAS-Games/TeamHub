@@ -25,7 +25,7 @@ public sealed class IndexModel(IWorkflowNotificationInbox inbox) : PageModel
             notifications = current.Notifications.Select(notification => new
             {
                 id = notification.Id,
-                type = notification.Type.ToString(),
+                type = notification.TypeLabel,
                 notification.Subject,
                 notification.BodyPreview,
                 notification.CreatedAtUtc,

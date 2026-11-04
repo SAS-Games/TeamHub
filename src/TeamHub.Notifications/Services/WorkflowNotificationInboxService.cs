@@ -9,14 +9,15 @@ namespace TeamHub.Notifications.Services;
 internal sealed partial class WorkflowNotificationInboxService(NotificationsDbContext dbContext)
     : IWorkflowNotificationInbox
 {
-    private static readonly NotificationType[] WorkflowTypes =
+    private static readonly NotificationType[] InboxTypes =
     [
         NotificationType.Assignment,
         NotificationType.Reminder,
         NotificationType.Overdue,
         NotificationType.Escalation,
         NotificationType.Completion,
-        NotificationType.WorkflowCompleted
+        NotificationType.WorkflowCompleted,
+        NotificationType.AiUsageThreshold
     ];
 
     public async Task<WorkflowNotificationInbox> GetUnreadAsync(
@@ -57,7 +58,7 @@ internal sealed partial class WorkflowNotificationInboxService(NotificationsDbCo
             .AsNoTracking()
             .FirstOrDefaultAsync(item => item.Id == notificationId
                 && item.Recipient.ToLower() == normalizedRecipient
-                && WorkflowTypes.Contains(item.Type), cancellationToken);
+                && InboxTypes.Contains(item.Type), cancellationToken);
         if (source is null)
         {
             return null;
@@ -111,9 +112,9 @@ internal sealed partial class WorkflowNotificationInboxService(NotificationsDbCo
     private IQueryable<NotificationInboxSource> UnreadQuery(string normalizedRecipient) =>
         dbContext.NotificationOutbox
             .AsNoTracking()
-            .Where(item => item.WorkflowInstanceId != Guid.Empty
+            .Where(item => (item.WorkflowInstanceId != Guid.Empty || item.Type == NotificationType.AiUsageThreshold)
                 && item.Recipient.ToLower() == normalizedRecipient
-                && WorkflowTypes.Contains(item.Type)
+                && InboxTypes.Contains(item.Type)
                 && !dbContext.ReadReceipts.Any(receipt => receipt.NotificationId == item.Id));
 
     private static WorkflowNotification ToNotification(NotificationInboxSource item) => new(
@@ -121,6 +122,7 @@ internal sealed partial class WorkflowNotificationInboxService(NotificationsDbCo
         item.WorkflowInstanceId,
         item.WorkflowStepInstanceId,
         item.Type,
+        TypeLabel(item.Type),
         string.IsNullOrWhiteSpace(item.Subject) ? TypeLabel(item.Type) : item.Subject.Trim(),
         Preview(item.Body),
         item.CreatedAtUtc);
@@ -141,6 +143,7 @@ internal sealed partial class WorkflowNotificationInboxService(NotificationsDbCo
         NotificationType.Escalation => "Task escalation",
         NotificationType.Completion => "Task completed",
         NotificationType.WorkflowCompleted => "Workflow completed",
+        NotificationType.AiUsageThreshold => "AI usage",
         _ => "Workflow notification"
     };
 

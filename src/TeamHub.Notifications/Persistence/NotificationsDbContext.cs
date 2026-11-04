@@ -15,6 +15,8 @@ internal sealed class NotificationsDbContext(DbContextOptions<NotificationsDbCon
             entity.HasKey(item => item.Id);
             entity.Property(item => item.Recipient).HasMaxLength(320).UseCollation("NOCASE");
             entity.Property(item => item.Subject).HasMaxLength(1000);
+            entity.Property(item => item.Status).HasMaxLength(32);
+            entity.Property(item => item.LastError).HasMaxLength(2048);
         });
 
         modelBuilder.Entity<NotificationReadReceipt>(entity =>

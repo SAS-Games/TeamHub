@@ -236,7 +236,82 @@ public sealed class AiUsageLedgerTests
     }
 
     [Fact]
-    public async Task Startup_initializer_adds_tool_activity_table_to_an_existing_usage_database()
+    public async Task Notifies_only_highest_new_threshold_once_per_daily_window()
+    {
+        var databasePath = Path.Combine(Path.GetTempPath(), $"teamhub-ai-usage-{Guid.NewGuid():N}.db");
+        var time = new MutableTimeProvider(new DateTimeOffset(2026, 11, 3, 10, 0, 0, TimeSpan.Zero));
+        var notifier = new RecordingThresholdNotifier();
+        try
+        {
+            await using var services = CreateServices(databasePath, time, notifier);
+            await using var scope = services.CreateAsyncScope();
+            await scope.ServiceProvider.GetRequiredService<IAiUsageDatabaseInitializer>().InitializeAsync();
+            var limits = scope.ServiceProvider.GetRequiredService<IAiUsageLimitService>();
+            await limits.SaveSettingsAsync(new AiUsageLimitSettings(
+                100,
+                "UTC",
+                [],
+                true,
+                [100, 75, 90, 90]));
+            var tracker = scope.ServiceProvider.GetRequiredService<IAiUsageTracker>();
+
+            await RecordUsageAsync(tracker, "user@example.com", 95);
+            await RecordUsageAsync(tracker, "user@example.com", 1);
+            await RecordUsageAsync(tracker, "user@example.com", 5);
+
+            notifier.Notifications.Select(item => item.ThresholdPercent)
+                .Should().Equal(90, 100);
+            notifier.Notifications.Should().OnlyContain(item =>
+                item.UserId == "user@example.com"
+                && item.DailyTokenLimit == 100);
+            notifier.Notifications.Select(item => item.NotificationId)
+                .Should().OnlyHaveUniqueItems();
+            var blocked = () => RecordUsageAsync(tracker, "user@example.com", 1);
+            await blocked.Should().ThrowAsync<AiUsageLimitExceededException>();
+            notifier.Notifications.Should().HaveCount(2);
+
+            time.UtcNow = new DateTimeOffset(2026, 11, 4, 0, 0, 1, TimeSpan.Zero);
+            await RecordUsageAsync(tracker, "user@example.com", 80);
+
+            notifier.Notifications.Select(item => item.ThresholdPercent)
+                .Should().Equal(90, 100, 75);
+            notifier.Notifications[2].ResetsAtUtc.Should()
+                .Be(new DateTimeOffset(2026, 11, 5, 0, 0, 0, TimeSpan.Zero));
+        }
+        finally
+        {
+            if (File.Exists(databasePath)) File.Delete(databasePath);
+        }
+    }
+
+    [Fact]
+    public async Task Does_not_notify_when_warnings_are_disabled_or_user_is_unlimited()
+    {
+        var databasePath = Path.Combine(Path.GetTempPath(), $"teamhub-ai-usage-{Guid.NewGuid():N}.db");
+        var notifier = new RecordingThresholdNotifier();
+        try
+        {
+            await using var services = CreateServices(databasePath, thresholdNotifier: notifier);
+            await using var scope = services.CreateAsyncScope();
+            await scope.ServiceProvider.GetRequiredService<IAiUsageDatabaseInitializer>().InitializeAsync();
+            var limits = scope.ServiceProvider.GetRequiredService<IAiUsageLimitService>();
+            var tracker = scope.ServiceProvider.GetRequiredService<IAiUsageTracker>();
+
+            await limits.SaveSettingsAsync(new AiUsageLimitSettings(100, "UTC", [], false, [75]));
+            await RecordUsageAsync(tracker, "limited@example.com", 80);
+            await limits.SaveSettingsAsync(new AiUsageLimitSettings(null, "UTC", [], true, [75]));
+            await RecordUsageAsync(tracker, "unlimited@example.com", 80);
+
+            notifier.Notifications.Should().BeEmpty();
+        }
+        finally
+        {
+            if (File.Exists(databasePath)) File.Delete(databasePath);
+        }
+    }
+
+    [Fact]
+    public async Task Startup_initializer_adds_new_ledger_tables_to_an_existing_usage_database()
     {
         var databasePath = Path.Combine(Path.GetTempPath(), $"teamhub-ai-usage-{Guid.NewGuid():N}.db");
         try
@@ -250,7 +325,17 @@ public sealed class AiUsageLedgerTests
             {
                 await connection.OpenAsync();
                 await using var command = connection.CreateCommand();
-                command.CommandText = "DROP TABLE AiToolActivities;";
+                command.CommandText = """
+                    DROP TABLE AiToolActivities;
+                    DROP TABLE AiUsageThresholdNotifications;
+                    DROP TABLE AiUsageLimitSettings;
+                    CREATE TABLE AiUsageLimitSettings (
+                        Id INTEGER NOT NULL PRIMARY KEY,
+                        DefaultDailyTokenLimit INTEGER NULL,
+                        ResetTimeZoneId TEXT NOT NULL);
+                    INSERT INTO AiUsageLimitSettings (Id, DefaultDailyTokenLimit, ResetTimeZoneId)
+                    VALUES (1, 200, 'UTC');
+                    """;
                 await command.ExecuteNonQueryAsync();
             }
 
@@ -259,6 +344,11 @@ public sealed class AiUsageLedgerTests
             {
                 await scope.ServiceProvider.GetRequiredService<IAiUsageDatabaseInitializer>()
                     .InitializeAsync();
+                var settings = await scope.ServiceProvider.GetRequiredService<IAiUsageLimitService>()
+                    .GetSettingsAsync();
+                settings.DefaultDailyTokenLimit.Should().Be(200);
+                settings.NotificationsEnabled.Should().BeTrue();
+                settings.NotificationThresholdPercentages.Should().Equal(75, 90, 100);
                 var tracker = scope.ServiceProvider.GetRequiredService<IAiToolActivityTracker>();
                 await tracker.TrackAsync(
                     new AiUsageOperationContext(
@@ -273,6 +363,14 @@ public sealed class AiUsageLedgerTests
                             DateTimeOffset.UtcNow.AddMinutes(5)),
                         AiToolActivityDimension.Tool);
                 report.Totals.CallCount.Should().Be(1);
+            }
+
+            await using (var connection = new SqliteConnection($"Data Source={databasePath};Pooling=False"))
+            {
+                await connection.OpenAsync();
+                await using var command = connection.CreateCommand();
+                command.CommandText = "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'AiUsageThresholdNotifications';";
+                Convert.ToInt32(await command.ExecuteScalarAsync()).Should().Be(1);
             }
         }
         finally
@@ -296,7 +394,10 @@ public sealed class AiUsageLedgerTests
             "{}",
             Usage: new AiTokenUsage(totalTokens, 0, totalTokens))));
 
-    private static ServiceProvider CreateServices(string databasePath, TimeProvider? timeProvider = null)
+    private static ServiceProvider CreateServices(
+        string databasePath,
+        TimeProvider? timeProvider = null,
+        IAiUsageThresholdNotifier? thresholdNotifier = null)
     {
         var configuration = new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?>
@@ -308,7 +409,22 @@ public sealed class AiUsageLedgerTests
         collection.AddLogging();
         if (timeProvider is not null) collection.AddSingleton(timeProvider);
         collection.AddAiUsageLedger(configuration);
+        if (thresholdNotifier is not null)
+            collection.AddSingleton(thresholdNotifier);
         return collection.BuildServiceProvider();
+    }
+
+    private sealed class RecordingThresholdNotifier : IAiUsageThresholdNotifier
+    {
+        public List<AiUsageThresholdNotification> Notifications { get; } = [];
+
+        public Task NotifyAsync(
+            AiUsageThresholdNotification notification,
+            CancellationToken cancellationToken = default)
+        {
+            Notifications.Add(notification);
+            return Task.CompletedTask;
+        }
     }
 
     private sealed class MutableTimeProvider(DateTimeOffset utcNow) : TimeProvider

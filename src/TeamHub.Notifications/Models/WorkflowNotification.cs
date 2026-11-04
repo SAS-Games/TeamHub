@@ -7,6 +7,7 @@ public sealed record WorkflowNotification(
     Guid WorkflowInstanceId,
     Guid? WorkflowStepInstanceId,
     NotificationType Type,
+    string TypeLabel,
     string Subject,
     string BodyPreview,
     DateTime CreatedAtUtc);

@@ -33,6 +33,8 @@ public static class AiUsageServiceCollectionExtensions
         services.AddScoped<IAiUsageWriter>(provider => provider.GetRequiredService<AiUsageLedger>());
         services.AddScoped<IAiToolActivityWriter>(provider => provider.GetRequiredService<AiUsageLedger>());
         services.AddSingleton<AiUsageUserGate>();
+        services.TryAddScoped<IAiUsageThresholdNotifier, NullAiUsageThresholdNotifier>();
+        services.AddScoped<IAiUsageThresholdEvaluator, AiUsageThresholdEvaluator>();
         services.AddScoped<IAiUsageTracker, AiUsageTracker>();
         services.AddScoped<IAiToolActivityTracker, AiToolActivityTracker>();
         services.AddScoped<IAiUsageDatabaseInitializer, AiUsageDatabaseInitializer>();

@@ -55,6 +55,32 @@ public sealed class WorkflowNotificationInboxTests
         (await fixture.Context.ReadReceipts.CountAsync()).Should().Be(0);
     }
 
+    [Fact]
+    public async Task InAppPublisher_AddsAiUsageNotificationOnceWithoutCreatingEmailWork()
+    {
+        await using var fixture = await NotificationFixture.CreateAsync();
+        var publisher = new InAppNotificationPublisher(fixture.Context);
+        var id = Guid.NewGuid();
+        var request = new InAppNotificationRequest(
+            id,
+            " person@example.com ",
+            NotificationType.AiUsageThreshold,
+            "AI usage reached 90%",
+            "You have used 90 of 100 tokens.");
+
+        await publisher.PublishAsync(request);
+        await publisher.PublishAsync(request);
+
+        var stored = await fixture.Context.NotificationOutbox.SingleAsync();
+        stored.Id.Should().Be(id);
+        stored.Recipient.Should().Be("person@example.com");
+        stored.Status.Should().Be("InAppOnly");
+        stored.WorkflowInstanceId.Should().Be(Guid.Empty);
+        var inbox = await fixture.Service.GetUnreadAsync("PERSON@example.com");
+        inbox.Notifications.Should().ContainSingle(item =>
+            item.Id == id && item.TypeLabel == "AI usage");
+    }
+
     private sealed class NotificationFixture : IAsyncDisposable
     {
         private readonly SqliteConnection connection;

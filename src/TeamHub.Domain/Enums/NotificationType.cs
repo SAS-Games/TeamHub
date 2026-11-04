@@ -9,5 +9,6 @@ public enum NotificationType
     Completion = 4,
     WorkflowCompleted = 5,
     AccountInvitation = 6,
-    PasswordReset = 7
+    PasswordReset = 7,
+    AiUsageThreshold = 8
 }

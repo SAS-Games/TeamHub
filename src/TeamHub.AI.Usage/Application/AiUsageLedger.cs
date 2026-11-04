@@ -38,12 +38,20 @@ internal interface IAiToolActivityWriter
         CancellationToken cancellationToken);
 }
 
+internal interface IAiUsageThresholdEvaluator
+{
+    Task EvaluateAsync(
+        AiUsageOperationContext operation,
+        CancellationToken cancellationToken = default);
+}
+
 internal sealed class AiUsageLedger(
     AiUsageDbContext dbContext,
     TimeProvider timeProvider) : IAiUsageLedger, IAiToolActivityLedger, IAiUsageLimitService,
     IAiUsageWriter, IAiToolActivityWriter
 {
     private const string DefaultResetTimeZoneId = "Asia/Kolkata";
+    private static readonly int[] DefaultNotificationThresholds = [75, 90, 100];
 
     public async Task<AiUsageLimitSettings> GetSettingsAsync(
         CancellationToken cancellationToken = default)
@@ -57,7 +65,9 @@ internal sealed class AiUsageLedger(
         return new AiUsageLimitSettings(
             settings?.DefaultDailyTokenLimit,
             settings?.ResetTimeZoneId ?? DefaultResetTimeZoneId,
-            userLimits);
+            userLimits,
+            settings?.NotificationsEnabled ?? true,
+            ParseThresholds(settings?.NotificationThresholds));
     }
 
     public async Task SaveSettingsAsync(
@@ -68,6 +78,7 @@ internal sealed class AiUsageLedger(
         ValidateLimit(settings.DefaultDailyTokenLimit, "The default daily token limit");
         var timeZoneId = settings.ResetTimeZoneId?.Trim() ?? string.Empty;
         _ = ResolveTimeZone(timeZoneId);
+        var thresholds = NormalizeThresholds(settings.NotificationThresholdPercentages);
 
         var normalizedLimits = new Dictionary<string, AiUsageUserLimitRecord>(StringComparer.Ordinal);
         foreach (var userLimit in settings.UserLimits ?? [])
@@ -97,6 +108,8 @@ internal sealed class AiUsageLedger(
             ? null
             : settings.DefaultDailyTokenLimit;
         record.ResetTimeZoneId = timeZoneId;
+        record.NotificationsEnabled = settings.NotificationsEnabled;
+        record.NotificationThresholds = string.Join(',', thresholds);
         await dbContext.UserLimits.ExecuteDeleteAsync(cancellationToken);
         dbContext.UserLimits.AddRange(normalizedLimits.Values);
         await dbContext.SaveChangesAsync(cancellationToken);
@@ -131,6 +144,7 @@ internal sealed class AiUsageLedger(
             limit,
             used,
             limit.HasValue ? Math.Max(0, limit.Value - used) : null,
+            window.StartUtc,
             window.EndUtc,
             limit.HasValue && used >= limit.Value);
     }
@@ -616,6 +630,33 @@ internal sealed class AiUsageLedger(
             throw new ArgumentException($"{label} cannot be negative. Use zero for unlimited usage.");
     }
 
+    private static IReadOnlyList<int> NormalizeThresholds(IReadOnlyList<int>? values)
+    {
+        var thresholds = (values ?? DefaultNotificationThresholds)
+            .Distinct()
+            .Order()
+            .ToList();
+        if (thresholds.Count is 0 or > 10 || thresholds.Any(value => value is < 1 or > 100))
+            throw new ArgumentException("AI usage notification thresholds must contain 1 to 10 unique percentages from 1 through 100.");
+        return thresholds;
+    }
+
+    private static IReadOnlyList<int> ParseThresholds(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return DefaultNotificationThresholds;
+        var parsed = value.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(item => int.TryParse(item, out var percentage) ? percentage : -1)
+            .ToList();
+        try
+        {
+            return NormalizeThresholds(parsed);
+        }
+        catch (ArgumentException)
+        {
+            return DefaultNotificationThresholds;
+        }
+    }
+
     private static TimeZoneInfo ResolveTimeZone(string timeZoneId)
     {
         if (string.IsNullOrWhiteSpace(timeZoneId))
@@ -700,6 +741,7 @@ internal sealed class AiUsageLedger(
 internal sealed class AiUsageTracker(
     IAiUsageWriter writer,
     IAiUsageLimitService limits,
+    IAiUsageThresholdEvaluator thresholdEvaluator,
     AiUsageUserGate userGate,
     TimeProvider timeProvider,
     ILogger<AiUsageTracker> logger) : IAiUsageTracker
@@ -733,6 +775,8 @@ internal sealed class AiUsageTracker(
                 result.Usage is null ? AiUsageMeasurementSource.Unavailable : AiUsageMeasurementSource.ProviderReported,
                 result.Provider, result.Model, result.RequestId, result.Usage, startedAt,
                 timeProvider.GetElapsedTime(timestamp), null);
+            if (result.Usage?.TotalTokens > 0)
+                await thresholdEvaluator.EvaluateAsync(operation, CancellationToken.None);
             return result;
         }
         catch (OperationCanceledException)
@@ -776,6 +820,105 @@ internal sealed class AiUsageTracker(
                 "AI usage could not be recorded for operation {OperationId}, feature {Feature} and user {UserId}.",
                 operation.OperationId, operation.Feature, operation.UserId);
         }
+    }
+}
+
+internal sealed class AiUsageThresholdEvaluator(
+    AiUsageDbContext dbContext,
+    IAiUsageLimitService limits,
+    IAiUsageThresholdNotifier notifier,
+    TimeProvider timeProvider,
+    ILogger<AiUsageThresholdEvaluator> logger) : IAiUsageThresholdEvaluator
+{
+    public async Task EvaluateAsync(
+        AiUsageOperationContext operation,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var settings = await limits.GetSettingsAsync(cancellationToken);
+            if (!settings.NotificationsEnabled) return;
+            var status = await limits.GetStatusAsync(operation.UserId, cancellationToken);
+            if (!status.DailyTokenLimit.HasValue || status.DailyTokenLimit.Value <= 0) return;
+
+            var normalizedUserId = operation.UserId.Trim().ToUpperInvariant();
+            var windowStart = status.WindowStartUtc.UtcDateTime;
+            var pending = await dbContext.ThresholdNotifications
+                .Where(item => item.NormalizedUserId == normalizedUserId
+                    && item.WindowStartUtc == windowStart
+                    && item.DeliveredAtUtc == null)
+                .OrderByDescending(item => item.ThresholdPercent)
+                .FirstOrDefaultAsync(cancellationToken);
+            if (pending is not null)
+            {
+                await DeliverAsync(pending, status, cancellationToken);
+                return;
+            }
+
+            var thresholds = (settings.NotificationThresholdPercentages ?? [75, 90, 100])
+                .Distinct()
+                .Order()
+                .Where(threshold => (decimal)status.UsedTokens * 100m
+                    >= (decimal)status.DailyTokenLimit.Value * threshold)
+                .ToList();
+            if (thresholds.Count == 0) return;
+
+            var existing = await dbContext.ThresholdNotifications.AsNoTracking()
+                .Where(item => item.NormalizedUserId == normalizedUserId
+                    && item.WindowStartUtc == windowStart)
+                .Select(item => item.ThresholdPercent)
+                .ToListAsync(cancellationToken);
+            var missing = thresholds.Except(existing).Order().ToList();
+            if (missing.Count == 0) return;
+
+            var now = timeProvider.GetUtcNow().UtcDateTime;
+            var highest = missing[^1];
+            AiUsageThresholdNotificationRecord? notification = null;
+            foreach (var threshold in missing)
+            {
+                var record = new AiUsageThresholdNotificationRecord
+                {
+                    Id = Guid.NewGuid(),
+                    NormalizedUserId = normalizedUserId,
+                    UserId = operation.UserId.Trim(),
+                    WindowStartUtc = windowStart,
+                    WindowEndUtc = status.ResetsAtUtc.UtcDateTime,
+                    ThresholdPercent = threshold,
+                    UsedTokens = status.UsedTokens,
+                    DailyTokenLimit = status.DailyTokenLimit.Value,
+                    CreatedAtUtc = now,
+                    DeliveredAtUtc = threshold == highest ? null : now
+                };
+                dbContext.ThresholdNotifications.Add(record);
+                if (threshold == highest) notification = record;
+            }
+            await dbContext.SaveChangesAsync(cancellationToken);
+            await DeliverAsync(notification!, status, cancellationToken);
+        }
+        catch (Exception exception)
+        {
+            logger.LogError(exception,
+                "AI usage threshold evaluation failed for operation {OperationId} and user {UserId}.",
+                operation.OperationId, operation.UserId);
+        }
+    }
+
+    private async Task DeliverAsync(
+        AiUsageThresholdNotificationRecord record,
+        AiUsageLimitStatus status,
+        CancellationToken cancellationToken)
+    {
+        await notifier.NotifyAsync(new AiUsageThresholdNotification(
+            record.Id,
+            record.UserId,
+            record.ThresholdPercent,
+            status.UsedTokens,
+            record.DailyTokenLimit,
+            Math.Max(0, record.DailyTokenLimit - status.UsedTokens),
+            status.ResetsAtUtc), cancellationToken);
+        record.UsedTokens = status.UsedTokens;
+        record.DeliveredAtUtc = timeProvider.GetUtcNow().UtcDateTime;
+        await dbContext.SaveChangesAsync(cancellationToken);
     }
 }
 
@@ -888,4 +1031,11 @@ public sealed class NullAiToolActivityTracker : IAiToolActivityTracker
         AiToolActivityContext activity,
         Func<CancellationToken, Task<T>> execute,
         CancellationToken cancellationToken = default) => execute(cancellationToken);
+}
+
+public sealed class NullAiUsageThresholdNotifier : IAiUsageThresholdNotifier
+{
+    public Task NotifyAsync(
+        AiUsageThresholdNotification notification,
+        CancellationToken cancellationToken = default) => Task.CompletedTask;
 }

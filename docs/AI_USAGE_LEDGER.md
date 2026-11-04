@@ -40,8 +40,8 @@ feature and model.
 
 Raw operations default to 12 months of retention. `AI:Usage:RetentionMonths` accepts 6 through 120;
 startup initialization prunes older operations, their provider invocations and their tool activity. The module also exposes
-`DeleteBeforeAsync` for explicit maintenance. Long-lived monthly rollups and notification policies
-are intentionally deferred until the organization confirms reporting and alert requirements.
+`DeleteBeforeAsync` for explicit maintenance. Long-lived monthly rollups are intentionally deferred
+until the organization confirms reporting requirements.
 
 ## Daily consumption limits
 
@@ -56,6 +56,18 @@ provider-reported tokens in the current window, and blocks the new call when usa
 the effective limit. The final allowed call can exceed the limit because its token usage is known only
 after completion. Calls for which the provider supplies no token telemetry cannot count toward limit
 enforcement.
+
+Administrators can enable in-app consumption warnings and configure 1-10 global percentage
+thresholds (75, 90 and 100 by default). A user with an effective finite limit receives each threshold
+at most once in the applicable daily reset window. If one provider call crosses multiple thresholds,
+TeamHub records all of them as satisfied and displays only the highest newly crossed warning to avoid
+notification flooding. Unlimited users receive no warning. Warnings are written to the TeamHub
+notification inbox only and are never queued for email; the 100% warning also explains that later
+provider calls are blocked until the next local-midnight reset.
+
+Threshold markers use the same timezone-derived window boundaries as enforcement and are persisted
+in the AI usage database. Each marker keeps a stable notification identifier, so a retry after a
+partial failure cannot create a duplicate inbox item.
 
 ## PFB credentials
 

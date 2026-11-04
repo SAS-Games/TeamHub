@@ -60,6 +60,8 @@ internal sealed class AiUsageLimitSettingsRecord
     public int Id { get; set; }
     public long? DefaultDailyTokenLimit { get; set; }
     public string ResetTimeZoneId { get; set; } = "Asia/Kolkata";
+    public bool NotificationsEnabled { get; set; } = true;
+    public string NotificationThresholds { get; set; } = "75,90,100";
 }
 
 internal sealed class AiUsageUserLimitRecord
@@ -69,6 +71,20 @@ internal sealed class AiUsageUserLimitRecord
     public long DailyTokenLimit { get; set; }
 }
 
+internal sealed class AiUsageThresholdNotificationRecord
+{
+    public Guid Id { get; set; }
+    public string NormalizedUserId { get; set; } = string.Empty;
+    public string UserId { get; set; } = string.Empty;
+    public DateTime WindowStartUtc { get; set; }
+    public DateTime WindowEndUtc { get; set; }
+    public int ThresholdPercent { get; set; }
+    public long UsedTokens { get; set; }
+    public long DailyTokenLimit { get; set; }
+    public DateTime CreatedAtUtc { get; set; }
+    public DateTime? DeliveredAtUtc { get; set; }
+}
+
 internal sealed class AiUsageDbContext(DbContextOptions<AiUsageDbContext> options) : DbContext(options)
 {
     public DbSet<AiUsageOperationRecord> Operations => Set<AiUsageOperationRecord>();
@@ -76,6 +92,8 @@ internal sealed class AiUsageDbContext(DbContextOptions<AiUsageDbContext> option
     public DbSet<AiToolActivityRecord> ToolActivities => Set<AiToolActivityRecord>();
     public DbSet<AiUsageLimitSettingsRecord> LimitSettings => Set<AiUsageLimitSettingsRecord>();
     public DbSet<AiUsageUserLimitRecord> UserLimits => Set<AiUsageUserLimitRecord>();
+    public DbSet<AiUsageThresholdNotificationRecord> ThresholdNotifications =>
+        Set<AiUsageThresholdNotificationRecord>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -135,6 +153,22 @@ internal sealed class AiUsageDbContext(DbContextOptions<AiUsageDbContext> option
             entity.ToTable("AiUsageLimitSettings");
             entity.HasKey(item => item.Id);
             entity.Property(item => item.ResetTimeZoneId).HasMaxLength(100).IsRequired();
+            entity.Property(item => item.NotificationThresholds).HasMaxLength(100).IsRequired();
+        });
+
+        modelBuilder.Entity<AiUsageThresholdNotificationRecord>(entity =>
+        {
+            entity.ToTable("AiUsageThresholdNotifications");
+            entity.HasKey(item => item.Id);
+            entity.Property(item => item.NormalizedUserId).HasMaxLength(320).IsRequired();
+            entity.Property(item => item.UserId).HasMaxLength(320).IsRequired();
+            entity.HasIndex(item => new
+            {
+                item.NormalizedUserId,
+                item.WindowStartUtc,
+                item.ThresholdPercent
+            }).IsUnique();
+            entity.HasIndex(item => item.WindowEndUtc);
         });
 
         modelBuilder.Entity<AiUsageUserLimitRecord>(entity =>
@@ -160,7 +194,9 @@ internal sealed class AiUsageDatabaseInitializer(
             CREATE TABLE IF NOT EXISTS AiUsageLimitSettings (
                 Id INTEGER NOT NULL CONSTRAINT PK_AiUsageLimitSettings PRIMARY KEY,
                 DefaultDailyTokenLimit INTEGER NULL,
-                ResetTimeZoneId TEXT NOT NULL
+                ResetTimeZoneId TEXT NOT NULL,
+                NotificationsEnabled INTEGER NOT NULL DEFAULT 1,
+                NotificationThresholds TEXT NOT NULL DEFAULT '75,90,100'
             );
 
             CREATE TABLE IF NOT EXISTS AiUsageUserLimits (
@@ -192,13 +228,61 @@ internal sealed class AiUsageDatabaseInitializer(
             CREATE INDEX IF NOT EXISTS IX_AiToolActivities_ToolName_StartedAtUtc
                 ON AiToolActivities (ToolName, StartedAtUtc);
 
+            CREATE TABLE IF NOT EXISTS AiUsageThresholdNotifications (
+                Id TEXT NOT NULL CONSTRAINT PK_AiUsageThresholdNotifications PRIMARY KEY,
+                NormalizedUserId TEXT NOT NULL,
+                UserId TEXT NOT NULL,
+                WindowStartUtc TEXT NOT NULL,
+                WindowEndUtc TEXT NOT NULL,
+                ThresholdPercent INTEGER NOT NULL,
+                UsedTokens INTEGER NOT NULL,
+                DailyTokenLimit INTEGER NOT NULL,
+                CreatedAtUtc TEXT NOT NULL,
+                DeliveredAtUtc TEXT NULL
+            );
+
+            CREATE UNIQUE INDEX IF NOT EXISTS IX_AiUsageThresholdNotifications_UserWindowThreshold
+                ON AiUsageThresholdNotifications (NormalizedUserId, WindowStartUtc, ThresholdPercent);
+            CREATE INDEX IF NOT EXISTS IX_AiUsageThresholdNotifications_WindowEndUtc
+                ON AiUsageThresholdNotifications (WindowEndUtc);
+            """, cancellationToken);
+        await EnsureLimitSettingsColumnAsync(
+            "NotificationsEnabled",
+            "ALTER TABLE AiUsageLimitSettings ADD COLUMN NotificationsEnabled INTEGER NOT NULL DEFAULT 1;",
+            cancellationToken);
+        await EnsureLimitSettingsColumnAsync(
+            "NotificationThresholds",
+            "ALTER TABLE AiUsageLimitSettings ADD COLUMN NotificationThresholds TEXT NOT NULL DEFAULT '75,90,100';",
+            cancellationToken);
+        await dbContext.Database.ExecuteSqlRawAsync("""
             INSERT OR IGNORE INTO AiUsageLimitSettings (
-                Id, DefaultDailyTokenLimit, ResetTimeZoneId)
-            VALUES (1, NULL, 'Asia/Kolkata');
+                Id, DefaultDailyTokenLimit, ResetTimeZoneId, NotificationsEnabled, NotificationThresholds)
+            VALUES (1, NULL, 'Asia/Kolkata', 1, '75,90,100');
             """, cancellationToken);
         var cutoff = timeProvider.GetUtcNow().UtcDateTime.AddMonths(-options.Value.RetentionMonths);
         await dbContext.Operations
             .Where(item => item.StartedAtUtc < cutoff)
             .ExecuteDeleteAsync(cancellationToken);
+        await dbContext.ThresholdNotifications
+            .Where(item => item.WindowEndUtc < cutoff)
+            .ExecuteDeleteAsync(cancellationToken);
+    }
+
+    private async Task EnsureLimitSettingsColumnAsync(
+        string columnName,
+        string alterSql,
+        CancellationToken cancellationToken)
+    {
+        await using var command = dbContext.Database.GetDbConnection().CreateCommand();
+        if (command.Connection!.State != System.Data.ConnectionState.Open)
+            await command.Connection.OpenAsync(cancellationToken);
+        command.CommandText = "SELECT COUNT(*) FROM pragma_table_info('AiUsageLimitSettings') WHERE name = $name;";
+        var parameter = command.CreateParameter();
+        parameter.ParameterName = "$name";
+        parameter.Value = columnName;
+        command.Parameters.Add(parameter);
+        var exists = Convert.ToInt32(await command.ExecuteScalarAsync(cancellationToken)) > 0;
+        if (exists) return;
+        await dbContext.Database.ExecuteSqlRawAsync(alterSql, cancellationToken);
     }
 }
