@@ -55,7 +55,8 @@ public sealed record AiChatCitation(string Id, string Title);
 public sealed record AiChatToolDefinition(
     string Name,
     string Description,
-    string ArgumentsJsonExample);
+    string ArgumentsJsonExample,
+    string? ExternalSource = null);
 
 /// <summary>
 /// Exposes server-controlled, read-only tools to TeamHub chat. Implementations

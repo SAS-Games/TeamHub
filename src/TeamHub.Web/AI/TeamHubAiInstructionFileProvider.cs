@@ -61,7 +61,8 @@ public sealed class TeamHubAiInstructionFileProvider(
     private static readonly Regex ToolTerms = Terms(
         "member", "members", "employee", "employees", "directory", "specialization", "specializations",
         "studio", "studios", "project", "projects", "milestone review", "milestone reviews",
-        "support", "jira", "ticket", "tickets", "confluence", "weekly update", "weekly updates");
+        "support", "jira", "ticket", "tickets", "confluence", "weekly update", "weekly updates",
+        "effort", "worklog", "worklogs", "logged hours", "hours spent");
 
     private readonly string path = Path.Combine(environment.ContentRootPath, "AI", "TeamHubAI.md");
 
@@ -130,6 +131,9 @@ public sealed class TeamHubAiInstructionFileProvider(
     private static string? ResolveSourceSection(string sourceId)
     {
         if (SourceSections.TryGetValue(sourceId, out var section)) return section;
+        if (sourceId.StartsWith("teamhub-tool-", StringComparison.OrdinalIgnoreCase)
+            && sourceId.Contains("support_effort", StringComparison.OrdinalIgnoreCase))
+            return "Jira enrichment";
         if (sourceId.StartsWith("teamhub-tool-list_team_", StringComparison.OrdinalIgnoreCase)
             || sourceId.StartsWith("teamhub-tool-get_team_", StringComparison.OrdinalIgnoreCase))
             return "Team directory";

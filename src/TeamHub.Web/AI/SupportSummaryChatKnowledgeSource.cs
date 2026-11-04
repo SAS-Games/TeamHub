@@ -5,7 +5,6 @@ using TeamHub.Authentication;
 using TeamHub.Milestones;
 using TeamHub.Studio;
 using TeamHub.Web.AccessControl;
-using TeamHub.Web.ExternalProcesses.WorklogAnalytics;
 
 namespace TeamHub.Web.AI;
 
@@ -19,8 +18,7 @@ public sealed class SupportSummaryChatKnowledgeSource(
     IMilestoneTrackerService milestones,
     ISupportSummaryPlanningService planning,
     IStudioJiraTicketService jira,
-    IStudioConfluenceUpdateService confluence,
-    IWorklogEffortService effort) : IAiChatKnowledgeSource
+    IStudioConfluenceUpdateService confluence) : IAiChatKnowledgeSource
 {
     private static readonly Regex RelativePeriodPattern = new(
         @"\b(?:last|past|previous)\s+(?<count>\d{1,2})\s*(?<unit>days?|weeks?|months?)\b",
@@ -137,20 +135,12 @@ public sealed class SupportSummaryChatKnowledgeSource(
             }
         }
 
-        if (wantsEffort)
+        if (wantsEffort && !user.HasApprovedExternalSource(AiChatExternalSources.Jira))
         {
-            if (user.HasApprovedExternalSource(AiChatExternalSources.Jira))
+            AddJsonSource(sources, "teamhub-support-effort-consent", "Support Summary effort access", new
             {
-                await AddEffortAsync(
-                    sources, user.UserId, allowSharedCredential, startDate, endDate, cancellationToken);
-            }
-            else
-            {
-                AddJsonSource(sources, "teamhub-support-effort-consent", "Support Summary effort access", new
-                {
-                    Message = "Jira worklogs were not accessed because the user did not approve Jira access for this question."
-                });
-            }
+                Message = "Jira worklogs were not accessed because the user did not approve Jira access for this question."
+            });
         }
 
         return sources;
@@ -308,28 +298,6 @@ public sealed class SupportSummaryChatKnowledgeSource(
             or InvalidDataException or FormatException)
         {
             AddJsonSource(sources, "teamhub-support-confluence-status", "Support Summary Confluence availability",
-                new { Message = exception.Message });
-        }
-    }
-
-    private async Task AddEffortAsync(
-        ICollection<AiChatSource> sources,
-        string userId,
-        bool allowSharedCredential,
-        DateOnly startDate,
-        DateOnly endDate,
-        CancellationToken cancellationToken)
-    {
-        try
-        {
-            var report = await effort.GetActualEffortAsync(
-                startDate, endDate, userId, allowSharedCredential, cancellationToken);
-            AddJsonSource(sources, "teamhub-support-effort", "Support Summary logged effort", report);
-        }
-        catch (Exception exception) when (exception is InvalidOperationException or InvalidDataException
-            or ArgumentException)
-        {
-            AddJsonSource(sources, "teamhub-support-effort-status", "Support Summary effort availability",
                 new { Message = exception.Message });
         }
     }

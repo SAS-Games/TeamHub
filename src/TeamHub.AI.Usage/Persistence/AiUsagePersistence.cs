@@ -15,6 +15,7 @@ internal sealed class AiUsageOperationRecord
     public AiUsageExecutionType ExecutionType { get; set; }
     public DateTime StartedAtUtc { get; set; }
     public List<AiUsageInvocationRecord> Invocations { get; set; } = [];
+    public List<AiToolActivityRecord> ToolActivities { get; set; } = [];
 }
 
 internal sealed class AiUsageInvocationRecord
@@ -32,6 +33,22 @@ internal sealed class AiUsageInvocationRecord
     public AiUsageInvocationStatus Status { get; set; }
     public string? ResourceType { get; set; }
     public string? ResourceId { get; set; }
+    public DateTime StartedAtUtc { get; set; }
+    public DateTime CompletedAtUtc { get; set; }
+    public long DurationMilliseconds { get; set; }
+    public string? ErrorType { get; set; }
+}
+
+internal sealed class AiToolActivityRecord
+{
+    public Guid Id { get; set; }
+    public Guid OperationId { get; set; }
+    public AiUsageOperationRecord Operation { get; set; } = null!;
+    public string ToolName { get; set; } = string.Empty;
+    public string? ResourceType { get; set; }
+    public string? ResourceId { get; set; }
+    public string? ExternalSource { get; set; }
+    public AiToolActivityStatus Status { get; set; }
     public DateTime StartedAtUtc { get; set; }
     public DateTime CompletedAtUtc { get; set; }
     public long DurationMilliseconds { get; set; }
@@ -56,6 +73,7 @@ internal sealed class AiUsageDbContext(DbContextOptions<AiUsageDbContext> option
 {
     public DbSet<AiUsageOperationRecord> Operations => Set<AiUsageOperationRecord>();
     public DbSet<AiUsageInvocationRecord> Invocations => Set<AiUsageInvocationRecord>();
+    public DbSet<AiToolActivityRecord> ToolActivities => Set<AiToolActivityRecord>();
     public DbSet<AiUsageLimitSettingsRecord> LimitSettings => Set<AiUsageLimitSettingsRecord>();
     public DbSet<AiUsageUserLimitRecord> UserLimits => Set<AiUsageUserLimitRecord>();
 
@@ -77,6 +95,24 @@ internal sealed class AiUsageDbContext(DbContextOptions<AiUsageDbContext> option
                 .WithOne(item => item.Operation)
                 .HasForeignKey(item => item.OperationId)
                 .OnDelete(DeleteBehavior.Cascade);
+            entity.HasMany(item => item.ToolActivities)
+                .WithOne(item => item.Operation)
+                .HasForeignKey(item => item.OperationId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<AiToolActivityRecord>(entity =>
+        {
+            entity.ToTable("AiToolActivities");
+            entity.HasKey(item => item.Id);
+            entity.Property(item => item.ToolName).HasMaxLength(64).IsRequired();
+            entity.Property(item => item.ResourceType).HasMaxLength(100);
+            entity.Property(item => item.ResourceId).HasMaxLength(256);
+            entity.Property(item => item.ExternalSource).HasMaxLength(100);
+            entity.Property(item => item.ErrorType).HasMaxLength(256);
+            entity.HasIndex(item => item.OperationId);
+            entity.HasIndex(item => item.StartedAtUtc);
+            entity.HasIndex(item => new { item.ToolName, item.StartedAtUtc });
         });
 
         modelBuilder.Entity<AiUsageInvocationRecord>(entity =>
@@ -132,6 +168,29 @@ internal sealed class AiUsageDatabaseInitializer(
                 UserId TEXT NOT NULL,
                 DailyTokenLimit INTEGER NOT NULL
             );
+
+            CREATE TABLE IF NOT EXISTS AiToolActivities (
+                Id TEXT NOT NULL CONSTRAINT PK_AiToolActivities PRIMARY KEY,
+                OperationId TEXT NOT NULL,
+                ToolName TEXT NOT NULL,
+                ResourceType TEXT NULL,
+                ResourceId TEXT NULL,
+                ExternalSource TEXT NULL,
+                Status INTEGER NOT NULL,
+                StartedAtUtc TEXT NOT NULL,
+                CompletedAtUtc TEXT NOT NULL,
+                DurationMilliseconds INTEGER NOT NULL,
+                ErrorType TEXT NULL,
+                CONSTRAINT FK_AiToolActivities_AiUsageOperations_OperationId
+                    FOREIGN KEY (OperationId) REFERENCES AiUsageOperations (Id) ON DELETE CASCADE
+            );
+
+            CREATE INDEX IF NOT EXISTS IX_AiToolActivities_OperationId
+                ON AiToolActivities (OperationId);
+            CREATE INDEX IF NOT EXISTS IX_AiToolActivities_StartedAtUtc
+                ON AiToolActivities (StartedAtUtc);
+            CREATE INDEX IF NOT EXISTS IX_AiToolActivities_ToolName_StartedAtUtc
+                ON AiToolActivities (ToolName, StartedAtUtc);
 
             INSERT OR IGNORE INTO AiUsageLimitSettings (
                 Id, DefaultDailyTokenLimit, ResetTimeZoneId)

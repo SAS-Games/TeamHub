@@ -203,11 +203,13 @@ public sealed class AiChatServiceTests
         ]);
         var tool = new RecordingToolProvider();
         var usage = new RecordingUsageTracker();
+        var toolActivity = new RecordingToolActivityTracker();
         await using var services = CreateServices(
             provider,
             new RecordingKnowledgeSource(),
             toolProvider: tool,
-            usageTracker: usage);
+            usageTracker: usage,
+            toolActivityTracker: toolActivity);
         var chat = services.GetRequiredService<IAiChatService>();
 
         var response = await chat.SendAsync(
@@ -231,6 +233,11 @@ public sealed class AiChatServiceTests
         usage.Invocations[1].Invocation.ResourceType.Should().Be("AiTools");
         usage.Invocations[1].Invocation.ResourceId.Should().Be(
             "list_team_members,get_studio_support_overview");
+        toolActivity.Activities.Should().HaveCount(2);
+        toolActivity.Activities[1].Activity.Should().Be(new AiToolActivityContext(
+            "get_studio_support_overview", "Studio", "Example Studio"));
+        toolActivity.Activities.Select(item => item.Operation.OperationId).Distinct()
+            .Should().ContainSingle().Which.Should().Be(usage.Invocations[0].Operation.OperationId);
     }
 
     [Fact]
@@ -451,7 +458,8 @@ public sealed class AiChatServiceTests
         string? meetingNotesInstructions = null,
         bool meetingNotesEnabled = true,
         IAiChatToolProvider? toolProvider = null,
-        IAiUsageTracker? usageTracker = null)
+        IAiUsageTracker? usageTracker = null,
+        IAiToolActivityTracker? toolActivityTracker = null)
     {
         var services = new ServiceCollection();
         services.AddAiChat(new ConfigurationBuilder().Build());
@@ -461,6 +469,7 @@ public sealed class AiChatServiceTests
         services.AddSingleton<IAiChatKnowledgeSource>(source);
         if (toolProvider is not null) services.AddSingleton(toolProvider);
         if (usageTracker is not null) services.AddSingleton(usageTracker);
+        if (toolActivityTracker is not null) services.AddSingleton(toolActivityTracker);
         if (teamHubInstructions is not null)
             services.AddSingleton<IAiChatInstructionProvider>(
                 new TestInstructionProvider(teamHubInstructions));
@@ -604,6 +613,21 @@ public sealed class AiChatServiceTests
         {
             Invocations.Add((operation, invocation));
             return await generate(cancellationToken);
+        }
+    }
+
+    private sealed class RecordingToolActivityTracker : IAiToolActivityTracker
+    {
+        public List<(AiUsageOperationContext Operation, AiToolActivityContext Activity)> Activities { get; } = [];
+
+        public Task<T> TrackAsync<T>(
+            AiUsageOperationContext operation,
+            AiToolActivityContext activity,
+            Func<CancellationToken, Task<T>> execute,
+            CancellationToken cancellationToken = default)
+        {
+            Activities.Add((operation, activity));
+            return execute(cancellationToken);
         }
     }
 

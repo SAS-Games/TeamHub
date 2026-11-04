@@ -25,9 +25,23 @@ internal interface IAiUsageWriter
         CancellationToken cancellationToken);
 }
 
+internal interface IAiToolActivityWriter
+{
+    Task RecordToolActivityAsync(
+        AiUsageOperationContext operation,
+        AiToolActivityContext activity,
+        AiToolActivityStatus status,
+        DateTime startedAtUtc,
+        DateTime completedAtUtc,
+        long durationMilliseconds,
+        string? errorType,
+        CancellationToken cancellationToken);
+}
+
 internal sealed class AiUsageLedger(
     AiUsageDbContext dbContext,
-    TimeProvider timeProvider) : IAiUsageLedger, IAiUsageLimitService, IAiUsageWriter
+    TimeProvider timeProvider) : IAiUsageLedger, IAiToolActivityLedger, IAiUsageLimitService,
+    IAiUsageWriter, IAiToolActivityWriter
 {
     private const string DefaultResetTimeZoneId = "Asia/Kolkata";
 
@@ -207,6 +221,63 @@ internal sealed class AiUsageLedger(
         await dbContext.SaveChangesAsync(cancellationToken);
     }
 
+    public async Task RecordToolActivityAsync(
+        AiUsageOperationContext operation,
+        AiToolActivityContext activity,
+        AiToolActivityStatus status,
+        DateTime startedAtUtc,
+        DateTime completedAtUtc,
+        long durationMilliseconds,
+        string? errorType,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(operation);
+        ArgumentNullException.ThrowIfNull(activity);
+        var existing = await dbContext.Operations
+            .SingleOrDefaultAsync(item => item.Id == operation.OperationId, cancellationToken);
+        if (existing is null)
+        {
+            existing = new AiUsageOperationRecord
+            {
+                Id = operation.OperationId,
+                UserId = Required(operation.UserId, 320, nameof(operation.UserId)),
+                NormalizedUserId = NormalizeUserId(operation.UserId),
+                Feature = Required(operation.Feature, 100, nameof(operation.Feature)),
+                Subfeature = Required(operation.Subfeature, 100, nameof(operation.Subfeature)),
+                Application = Required(operation.Application, 160, nameof(operation.Application)),
+                ExecutionType = operation.ExecutionType,
+                StartedAtUtc = startedAtUtc
+            };
+            dbContext.Operations.Add(existing);
+        }
+        else
+        {
+            EnsureMatchingOperation(existing, operation);
+        }
+
+        dbContext.ToolActivities.Add(new AiToolActivityRecord
+        {
+            Id = Guid.NewGuid(),
+            OperationId = operation.OperationId,
+            ToolName = Required(activity.ToolName, 64, nameof(activity.ToolName)),
+            // A failed tool may contain an invalid model-supplied resource argument.
+            // Retain resource identity only after the provider validated and completed the lookup.
+            ResourceType = status == AiToolActivityStatus.Completed
+                ? Optional(activity.ResourceType, 100)
+                : null,
+            ResourceId = status == AiToolActivityStatus.Completed
+                ? Optional(activity.ResourceId, 256)
+                : null,
+            ExternalSource = Optional(activity.ExternalSource, 100),
+            Status = status,
+            StartedAtUtc = startedAtUtc,
+            CompletedAtUtc = completedAtUtc,
+            DurationMilliseconds = Math.Max(0, durationMilliseconds),
+            ErrorType = Optional(errorType, 256)
+        });
+        await dbContext.SaveChangesAsync(cancellationToken);
+    }
+
     public async Task<AiUsageReport> GetReportAsync(
         AiUsageQuery query,
         AiUsageDimension dimension,
@@ -304,6 +375,102 @@ internal sealed class AiUsageLedger(
         return new AiUsageReport(totals, aggregates);
     }
 
+    public async Task<AiToolActivityFilterOptions> GetToolFilterOptionsAsync(
+        DateTimeOffset fromUtc,
+        DateTimeOffset toUtc,
+        CancellationToken cancellationToken = default)
+    {
+        if (toUtc <= fromUtc)
+            throw new ArgumentException("The AI tool activity filter end must be after its start.", nameof(toUtc));
+        var from = fromUtc.UtcDateTime;
+        var to = toUtc.UtcDateTime;
+        var rows = dbContext.ToolActivities.AsNoTracking()
+            .Where(item => item.StartedAtUtc >= from && item.StartedAtUtc < to);
+        var toolNames = await rows.Select(item => item.ToolName).Distinct().ToListAsync(cancellationToken);
+        var externalSources = await rows.Where(item => item.ExternalSource != null)
+            .Select(item => item.ExternalSource!)
+            .Distinct()
+            .ToListAsync(cancellationToken);
+        return new AiToolActivityFilterOptions(
+            SortDistinct(toolNames),
+            SortDistinct(externalSources));
+    }
+
+    public async Task<AiToolActivityReport> GetToolReportAsync(
+        AiToolActivityQuery query,
+        AiToolActivityDimension dimension,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(query);
+        if (query.ToUtc <= query.FromUtc)
+            throw new ArgumentException("The AI tool activity report end must be after its start.", nameof(query));
+
+        var rows = ApplyToolFilters(dbContext.ToolActivities.AsNoTracking(), query);
+        var totals = await rows.GroupBy(_ => 1).Select(group => new AiToolActivityTotals(
+                group.LongCount(),
+                group.LongCount(item => item.Status == AiToolActivityStatus.Completed),
+                group.LongCount(item => item.Status == AiToolActivityStatus.Failed),
+                group.LongCount(item => item.Status == AiToolActivityStatus.Cancelled),
+                group.LongCount(item => item.ExternalSource != null),
+                group.Sum(item => item.DurationMilliseconds)))
+            .SingleOrDefaultAsync(cancellationToken)
+            ?? new AiToolActivityTotals(0, 0, 0, 0, 0, 0);
+
+        if (dimension == AiToolActivityDimension.Day)
+            return new AiToolActivityReport(totals, await AggregateToolsByDayAsync(rows, cancellationToken));
+
+        List<ToolAggregateResult> results;
+        switch (dimension)
+        {
+            case AiToolActivityDimension.Tool:
+                results = await rows.GroupBy(item => item.ToolName)
+                    .Select(group => new ToolAggregateResult { Primary = group.Key, CallCount = group.LongCount(), CompletedCount = group.LongCount(item => item.Status == AiToolActivityStatus.Completed), FailedCount = group.LongCount(item => item.Status == AiToolActivityStatus.Failed), CancelledCount = group.LongCount(item => item.Status == AiToolActivityStatus.Cancelled), TotalDurationMilliseconds = group.Sum(item => item.DurationMilliseconds) })
+                    .ToListAsync(cancellationToken);
+                break;
+            case AiToolActivityDimension.User:
+                results = await rows.GroupBy(item => item.Operation.UserId)
+                    .Select(group => new ToolAggregateResult { Primary = group.Key, CallCount = group.LongCount(), CompletedCount = group.LongCount(item => item.Status == AiToolActivityStatus.Completed), FailedCount = group.LongCount(item => item.Status == AiToolActivityStatus.Failed), CancelledCount = group.LongCount(item => item.Status == AiToolActivityStatus.Cancelled), TotalDurationMilliseconds = group.Sum(item => item.DurationMilliseconds) })
+                    .ToListAsync(cancellationToken);
+                break;
+            case AiToolActivityDimension.UserTool:
+                results = await rows.GroupBy(item => new { item.Operation.UserId, item.ToolName })
+                    .Select(group => new ToolAggregateResult { Primary = group.Key.UserId, Secondary = group.Key.ToolName, CallCount = group.LongCount(), CompletedCount = group.LongCount(item => item.Status == AiToolActivityStatus.Completed), FailedCount = group.LongCount(item => item.Status == AiToolActivityStatus.Failed), CancelledCount = group.LongCount(item => item.Status == AiToolActivityStatus.Cancelled), TotalDurationMilliseconds = group.Sum(item => item.DurationMilliseconds) })
+                    .ToListAsync(cancellationToken);
+                break;
+            case AiToolActivityDimension.ToolResource:
+                results = await rows.GroupBy(item => new { item.ToolName, item.ResourceId })
+                    .Select(group => new ToolAggregateResult { Primary = group.Key.ToolName, Secondary = group.Key.ResourceId ?? "Not specified", CallCount = group.LongCount(), CompletedCount = group.LongCount(item => item.Status == AiToolActivityStatus.Completed), FailedCount = group.LongCount(item => item.Status == AiToolActivityStatus.Failed), CancelledCount = group.LongCount(item => item.Status == AiToolActivityStatus.Cancelled), TotalDurationMilliseconds = group.Sum(item => item.DurationMilliseconds) })
+                    .ToListAsync(cancellationToken);
+                break;
+            case AiToolActivityDimension.ExternalSource:
+                results = await rows.GroupBy(item => item.ExternalSource ?? "Internal")
+                    .Select(group => new ToolAggregateResult { Primary = group.Key, CallCount = group.LongCount(), CompletedCount = group.LongCount(item => item.Status == AiToolActivityStatus.Completed), FailedCount = group.LongCount(item => item.Status == AiToolActivityStatus.Failed), CancelledCount = group.LongCount(item => item.Status == AiToolActivityStatus.Cancelled), TotalDurationMilliseconds = group.Sum(item => item.DurationMilliseconds) })
+                    .ToListAsync(cancellationToken);
+                break;
+            case AiToolActivityDimension.Status:
+                results = await rows.GroupBy(item => item.Status)
+                    .Select(group => new ToolAggregateResult { Primary = group.Key == AiToolActivityStatus.Completed ? "Completed" : group.Key == AiToolActivityStatus.Failed ? "Failed" : "Cancelled", CallCount = group.LongCount(), CompletedCount = group.LongCount(item => item.Status == AiToolActivityStatus.Completed), FailedCount = group.LongCount(item => item.Status == AiToolActivityStatus.Failed), CancelledCount = group.LongCount(item => item.Status == AiToolActivityStatus.Cancelled), TotalDurationMilliseconds = group.Sum(item => item.DurationMilliseconds) })
+                    .ToListAsync(cancellationToken);
+                break;
+            default:
+                throw new ArgumentOutOfRangeException(nameof(dimension));
+        }
+
+        var aggregates = results
+            .Select(item => new AiToolActivityAggregateRow(
+                item.Primary,
+                item.Secondary,
+                item.CallCount,
+                item.CompletedCount,
+                item.FailedCount,
+                item.CancelledCount,
+                item.CallCount == 0 ? 0 : item.TotalDurationMilliseconds / item.CallCount))
+            .OrderByDescending(item => item.CallCount)
+            .ThenBy(item => item.Key, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        return new AiToolActivityReport(totals, aggregates);
+    }
+
     public async Task<int> DeleteBeforeAsync(
         DateTimeOffset cutoffUtc,
         CancellationToken cancellationToken = default)
@@ -339,6 +506,33 @@ internal sealed class AiUsageLedger(
         return rows;
     }
 
+    private static IQueryable<AiToolActivityRecord> ApplyToolFilters(
+        IQueryable<AiToolActivityRecord> rows,
+        AiToolActivityQuery query)
+    {
+        var from = query.FromUtc.UtcDateTime;
+        var to = query.ToUtc.UtcDateTime;
+        rows = rows.Where(item => item.StartedAtUtc >= from && item.StartedAtUtc < to);
+        if (!string.IsNullOrWhiteSpace(query.UserId))
+        {
+            var normalized = NormalizeUserId(query.UserId);
+            rows = rows.Where(item => item.Operation.NormalizedUserId == normalized);
+        }
+        if (!string.IsNullOrWhiteSpace(query.Feature))
+            rows = rows.Where(item => item.Operation.Feature == query.Feature.Trim());
+        if (!string.IsNullOrWhiteSpace(query.Subfeature))
+            rows = rows.Where(item => item.Operation.Subfeature == query.Subfeature.Trim());
+        if (!string.IsNullOrWhiteSpace(query.Application))
+            rows = rows.Where(item => item.Operation.Application == query.Application.Trim());
+        if (!string.IsNullOrWhiteSpace(query.ToolName))
+            rows = rows.Where(item => item.ToolName == query.ToolName.Trim());
+        if (query.Status.HasValue)
+            rows = rows.Where(item => item.Status == query.Status.Value);
+        if (!string.IsNullOrWhiteSpace(query.ExternalSource))
+            rows = rows.Where(item => item.ExternalSource == query.ExternalSource.Trim());
+        return rows;
+    }
+
     private static async Task<IReadOnlyList<AiUsageAggregateRow>> AggregateByDayAsync(
         IQueryable<AiUsageInvocationRecord> rows,
         CancellationToken cancellationToken)
@@ -358,6 +552,32 @@ internal sealed class AiUsageLedger(
         return results.OrderBy(item => item.Day).Select(item => new AiUsageAggregateRow(
                 item.Day.ToString("yyyy-MM-dd"), null, item.RequestCount, item.MeasuredRequestCount,
                 item.InputTokens, item.OutputTokens, item.TotalTokens))
+            .ToList();
+    }
+
+    private static async Task<IReadOnlyList<AiToolActivityAggregateRow>> AggregateToolsByDayAsync(
+        IQueryable<AiToolActivityRecord> rows,
+        CancellationToken cancellationToken)
+    {
+        var results = await rows.GroupBy(item => item.StartedAtUtc.Date)
+            .Select(group => new ToolDayAggregate
+            {
+                Day = group.Key,
+                CallCount = group.LongCount(),
+                CompletedCount = group.LongCount(item => item.Status == AiToolActivityStatus.Completed),
+                FailedCount = group.LongCount(item => item.Status == AiToolActivityStatus.Failed),
+                CancelledCount = group.LongCount(item => item.Status == AiToolActivityStatus.Cancelled),
+                TotalDurationMilliseconds = group.Sum(item => item.DurationMilliseconds)
+            })
+            .ToListAsync(cancellationToken);
+        return results.OrderBy(item => item.Day).Select(item => new AiToolActivityAggregateRow(
+                item.Day.ToString("yyyy-MM-dd"),
+                null,
+                item.CallCount,
+                item.CompletedCount,
+                item.FailedCount,
+                item.CancelledCount,
+                item.CallCount == 0 ? 0 : item.TotalDurationMilliseconds / item.CallCount))
             .ToList();
     }
 
@@ -453,6 +673,27 @@ internal sealed class AiUsageLedger(
         public long TotalTokens { get; init; }
     }
 
+    private sealed class ToolAggregateResult
+    {
+        public string Primary { get; init; } = string.Empty;
+        public string? Secondary { get; init; }
+        public long CallCount { get; init; }
+        public long CompletedCount { get; init; }
+        public long FailedCount { get; init; }
+        public long CancelledCount { get; init; }
+        public long TotalDurationMilliseconds { get; init; }
+    }
+
+    private sealed class ToolDayAggregate
+    {
+        public DateTime Day { get; init; }
+        public long CallCount { get; init; }
+        public long CompletedCount { get; init; }
+        public long FailedCount { get; init; }
+        public long CancelledCount { get; init; }
+        public long TotalDurationMilliseconds { get; init; }
+    }
+
     private sealed record DailyWindow(DateTimeOffset StartUtc, DateTimeOffset EndUtc);
 }
 
@@ -538,6 +779,72 @@ internal sealed class AiUsageTracker(
     }
 }
 
+internal sealed class AiToolActivityTracker(
+    IAiToolActivityWriter writer,
+    TimeProvider timeProvider,
+    ILogger<AiToolActivityTracker> logger) : IAiToolActivityTracker
+{
+    public async Task<T> TrackAsync<T>(
+        AiUsageOperationContext operation,
+        AiToolActivityContext activity,
+        Func<CancellationToken, Task<T>> execute,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(operation);
+        ArgumentNullException.ThrowIfNull(activity);
+        ArgumentNullException.ThrowIfNull(execute);
+        var startedAt = timeProvider.GetUtcNow().UtcDateTime;
+        var timestamp = timeProvider.GetTimestamp();
+        try
+        {
+            var result = await execute(cancellationToken);
+            await TryRecordAsync(operation, activity, AiToolActivityStatus.Completed, startedAt,
+                timeProvider.GetElapsedTime(timestamp), null);
+            return result;
+        }
+        catch (OperationCanceledException)
+        {
+            await TryRecordAsync(operation, activity, AiToolActivityStatus.Cancelled, startedAt,
+                timeProvider.GetElapsedTime(timestamp), nameof(OperationCanceledException));
+            throw;
+        }
+        catch (Exception exception)
+        {
+            await TryRecordAsync(operation, activity, AiToolActivityStatus.Failed, startedAt,
+                timeProvider.GetElapsedTime(timestamp), exception.GetType().FullName);
+            throw;
+        }
+    }
+
+    private async Task TryRecordAsync(
+        AiUsageOperationContext operation,
+        AiToolActivityContext activity,
+        AiToolActivityStatus status,
+        DateTime startedAt,
+        TimeSpan duration,
+        string? errorType)
+    {
+        try
+        {
+            await writer.RecordToolActivityAsync(
+                operation,
+                activity,
+                status,
+                startedAt,
+                timeProvider.GetUtcNow().UtcDateTime,
+                (long)Math.Max(0, duration.TotalMilliseconds),
+                errorType,
+                CancellationToken.None);
+        }
+        catch (Exception exception)
+        {
+            logger.LogError(exception,
+                "AI tool activity could not be recorded for operation {OperationId}, tool {ToolName} and user {UserId}.",
+                operation.OperationId, activity.ToolName, operation.UserId);
+        }
+    }
+}
+
 internal sealed class AiUsageUserGate
 {
     private readonly ConcurrentDictionary<string, SemaphoreSlim> gates =
@@ -572,4 +879,13 @@ public sealed class NullAiUsageTracker : IAiUsageTracker
         string expectedModel,
         Func<CancellationToken, Task<AiStructuredGenerationResult>> generate,
         CancellationToken cancellationToken = default) => generate(cancellationToken);
+}
+
+public sealed class NullAiToolActivityTracker : IAiToolActivityTracker
+{
+    public Task<T> TrackAsync<T>(
+        AiUsageOperationContext operation,
+        AiToolActivityContext activity,
+        Func<CancellationToken, Task<T>> execute,
+        CancellationToken cancellationToken = default) => execute(cancellationToken);
 }

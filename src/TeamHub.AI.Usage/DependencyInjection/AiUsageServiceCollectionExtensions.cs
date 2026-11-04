@@ -28,10 +28,13 @@ public static class AiUsageServiceCollectionExtensions
         services.TryAddSingleton(TimeProvider.System);
         services.AddScoped<AiUsageLedger>();
         services.AddScoped<IAiUsageLedger>(provider => provider.GetRequiredService<AiUsageLedger>());
+        services.AddScoped<IAiToolActivityLedger>(provider => provider.GetRequiredService<AiUsageLedger>());
         services.AddScoped<IAiUsageLimitService>(provider => provider.GetRequiredService<AiUsageLedger>());
         services.AddScoped<IAiUsageWriter>(provider => provider.GetRequiredService<AiUsageLedger>());
+        services.AddScoped<IAiToolActivityWriter>(provider => provider.GetRequiredService<AiUsageLedger>());
         services.AddSingleton<AiUsageUserGate>();
         services.AddScoped<IAiUsageTracker, AiUsageTracker>();
+        services.AddScoped<IAiToolActivityTracker, AiToolActivityTracker>();
         services.AddScoped<IAiUsageDatabaseInitializer, AiUsageDatabaseInitializer>();
         return services;
     }
@@ -39,6 +42,7 @@ public static class AiUsageServiceCollectionExtensions
     public static IServiceCollection AddAiUsageTrackingFallback(this IServiceCollection services)
     {
         services.TryAddScoped<IAiUsageTracker, NullAiUsageTracker>();
+        services.TryAddScoped<IAiToolActivityTracker, NullAiToolActivityTracker>();
         return services;
     }
 }

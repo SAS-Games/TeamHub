@@ -14,7 +14,8 @@ internal sealed class AiChatService(
     IEnumerable<IAiChatToolProvider> toolProviders,
     IAiChatInstructionProvider instructions,
     IAiMeetingNotesInstructionProvider meetingNotesInstructions,
-    IAiUsageTracker usageTracker) : IAiChatService
+    IAiUsageTracker usageTracker,
+    IAiToolActivityTracker toolActivityTracker) : IAiChatService
 {
     private const int MaximumToolCalls = 4;
     private static readonly JsonElement ResponseSchema = CreateResponseSchema();
@@ -192,8 +193,13 @@ internal sealed class AiChatService(
                 {
                     if (!availableTools.TryGetValue(toolCall.Name, out var registration))
                         throw new AiChatException($"The model requested unavailable TeamHub tool '{toolCall.Name}'.");
-                    toolSources.Add(NormalizeSource(await registration.Provider.ExecuteAsync(
-                        user, toolCall.Name, toolCall.Arguments, cancellationToken)));
+                    var activity = BuildToolActivityContext(registration.Definition, toolCall);
+                    toolSources.Add(NormalizeSource(await toolActivityTracker.TrackAsync(
+                        operation,
+                        activity,
+                        token => registration.Provider.ExecuteAsync(
+                            user, toolCall.Name, toolCall.Arguments, token),
+                        cancellationToken)));
                 }
                 var augmentedSources = AppendToolSources(sources, toolSources, chatSettings);
                 var finalInstructions = await LoadTeamHubInstructionsAsync(
@@ -385,10 +391,15 @@ internal sealed class AiChatService(
                 {
                     Name = name,
                     Description = NormalizeText(definition.Description),
-                    ArgumentsJsonExample = NormalizeText(definition.ArgumentsJsonExample)
+                    ArgumentsJsonExample = NormalizeText(definition.ArgumentsJsonExample),
+                    ExternalSource = string.IsNullOrWhiteSpace(definition.ExternalSource)
+                        ? null
+                        : NormalizeText(definition.ExternalSource)
                 };
                 if (normalized.Description.Length == 0 || normalized.ArgumentsJsonExample.Length == 0)
                     throw new AiChatException($"AI tool '{name}' has incomplete metadata.");
+                if (normalized.ExternalSource?.Length > 100)
+                    throw new AiChatException($"AI tool '{name}' has invalid external-source metadata.");
                 if (!result.TryAdd(name, new ToolRegistration(provider, normalized)))
                     throw new AiChatException($"More than one AI tool is registered as '{name}'.");
             }
@@ -509,6 +520,29 @@ internal sealed class AiChatService(
     {
         var value = string.Join(',', toolCalls.Select(call => call.Name));
         return value.Length <= 256 ? value : value[..256];
+    }
+
+    private static AiToolActivityContext BuildToolActivityContext(
+        AiChatToolDefinition definition,
+        PendingToolCall toolCall)
+    {
+        string? resourceType = null;
+        string? resourceId = null;
+        if (toolCall.Arguments.TryGetProperty("studio", out var studio)
+            && studio.ValueKind == JsonValueKind.String)
+        {
+            var value = studio.GetString()?.Trim();
+            if (!string.IsNullOrWhiteSpace(value))
+            {
+                resourceType = "Studio";
+                resourceId = value.Length <= 256 ? value : value[..256];
+            }
+        }
+        return new AiToolActivityContext(
+            toolCall.Name,
+            resourceType,
+            resourceId,
+            definition.ExternalSource);
     }
 
     private static AiTokenUsage? CombineUsage(AiTokenUsage? first, AiTokenUsage? second) =>

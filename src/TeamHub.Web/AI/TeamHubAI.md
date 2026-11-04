@@ -27,6 +27,10 @@ model prompt. Keep each section independent and concise.
 - Use `get_studio_jira_tickets` only when Jira is approved for the current question, and
   `get_studio_weekly_updates` only when Confluence is approved for the current question. These
   tools use the signed-in user's personal external-system credential.
+- Use `get_support_effort_summary` for aggregate category and cross-studio Jira worklog comparisons,
+  `get_studio_support_effort` for one studio, and `get_employee_support_effort` for one or more
+  employees matching a name. These tools return hours and categories, never raw worklog comments,
+  and require Jira approval for the current question.
 - Supply only the name, GID, email, studio, project, role, section, or focus-area text present in the
   user's question. Never add the signed-in identity, authorization claims, or guessed identifiers.
 - If a lookup is ambiguous, preserve all returned matches and ask the user to clarify instead of

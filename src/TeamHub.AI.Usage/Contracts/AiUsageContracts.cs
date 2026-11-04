@@ -35,6 +35,24 @@ public enum AiUsageInvocationStatus
     Cancelled
 }
 
+public enum AiToolActivityStatus
+{
+    Completed,
+    Failed,
+    Cancelled
+}
+
+public enum AiToolActivityDimension
+{
+    Tool,
+    User,
+    UserTool,
+    ToolResource,
+    ExternalSource,
+    Status,
+    Day
+}
+
 public enum AiUsageMeasurementSource
 {
     ProviderReported,
@@ -67,6 +85,48 @@ public sealed record AiUsageOperationContext(
 public sealed record AiUsageInvocationContext(
     string? ResourceType = null,
     string? ResourceId = null);
+
+public sealed record AiToolActivityContext(
+    string ToolName,
+    string? ResourceType = null,
+    string? ResourceId = null,
+    string? ExternalSource = null);
+
+public sealed record AiToolActivityQuery(
+    DateTimeOffset FromUtc,
+    DateTimeOffset ToUtc,
+    string? UserId = null,
+    string? Feature = null,
+    string? Subfeature = null,
+    string? Application = null,
+    string? ToolName = null,
+    AiToolActivityStatus? Status = null,
+    string? ExternalSource = null);
+
+public sealed record AiToolActivityTotals(
+    long CallCount,
+    long CompletedCount,
+    long FailedCount,
+    long CancelledCount,
+    long ExternalCallCount,
+    long TotalDurationMilliseconds);
+
+public sealed record AiToolActivityAggregateRow(
+    string Key,
+    string? SecondaryKey,
+    long CallCount,
+    long CompletedCount,
+    long FailedCount,
+    long CancelledCount,
+    long AverageDurationMilliseconds);
+
+public sealed record AiToolActivityReport(
+    AiToolActivityTotals Totals,
+    IReadOnlyList<AiToolActivityAggregateRow> Rows);
+
+public sealed record AiToolActivityFilterOptions(
+    IReadOnlyList<string> ToolNames,
+    IReadOnlyList<string> ExternalSources);
 
 public sealed record AiUsageQuery(
     DateTimeOffset FromUtc,
@@ -167,6 +227,19 @@ public interface IAiUsageLedger
         CancellationToken cancellationToken = default);
 }
 
+public interface IAiToolActivityLedger
+{
+    Task<AiToolActivityFilterOptions> GetToolFilterOptionsAsync(
+        DateTimeOffset fromUtc,
+        DateTimeOffset toUtc,
+        CancellationToken cancellationToken = default);
+
+    Task<AiToolActivityReport> GetToolReportAsync(
+        AiToolActivityQuery query,
+        AiToolActivityDimension dimension,
+        CancellationToken cancellationToken = default);
+}
+
 public interface IAiUsageTracker
 {
     Task<AiStructuredGenerationResult> TrackGenerationAsync(
@@ -175,6 +248,15 @@ public interface IAiUsageTracker
         string expectedProvider,
         string expectedModel,
         Func<CancellationToken, Task<AiStructuredGenerationResult>> generate,
+        CancellationToken cancellationToken = default);
+}
+
+public interface IAiToolActivityTracker
+{
+    Task<T> TrackAsync<T>(
+        AiUsageOperationContext operation,
+        AiToolActivityContext activity,
+        Func<CancellationToken, Task<T>> execute,
         CancellationToken cancellationToken = default);
 }
 

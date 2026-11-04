@@ -11,7 +11,8 @@ namespace TeamHub.Web.Pages.Configuration;
 public sealed class AIUsageModel(
     IAiUsageLedger ledger,
     IAiUsageLimitService? limits = null,
-    IUserAccessService? users = null) : PageModel
+    IUserAccessService? users = null,
+    IAiToolActivityLedger? toolActivities = null) : PageModel
 {
     [BindProperty(SupportsGet = true)]
     public DateOnly? FromDate { get; set; }
@@ -40,12 +41,27 @@ public sealed class AIUsageModel(
     [BindProperty(SupportsGet = true)]
     public AiUsageDimension Dimension { get; set; } = AiUsageDimension.UserFeatureModel;
 
+    [BindProperty(SupportsGet = true), StringLength(64)]
+    public string? ToolName { get; set; }
+
+    [BindProperty(SupportsGet = true)]
+    public AiToolActivityStatus? ToolStatus { get; set; }
+
+    [BindProperty(SupportsGet = true), StringLength(100)]
+    public string? ToolExternalSource { get; set; }
+
+    [BindProperty(SupportsGet = true)]
+    public AiToolActivityDimension ToolDimension { get; set; } = AiToolActivityDimension.UserTool;
+
     [BindProperty]
     public AiUsageLimitInput LimitInput { get; set; } = new();
 
     public AiUsageReport Report { get; private set; } =
         new(new AiUsageTotals(0, 0, 0, 0, 0), []);
     public AiUsageFilterOptions FilterOptions { get; private set; } = new([], [], [], []);
+    public AiToolActivityReport ToolReport { get; private set; } =
+        new(new AiToolActivityTotals(0, 0, 0, 0, 0, 0), []);
+    public AiToolActivityFilterOptions ToolFilterOptions { get; private set; } = new([], []);
     public IReadOnlyList<TimeZoneOption> TimeZones { get; private set; } = [];
 
     [TempData]
@@ -80,6 +96,23 @@ public sealed class AIUsageModel(
             Report.Totals.MeasuredRequestCount * 100m / Report.Totals.RequestCount,
             1);
 
+    public string ToolPrimaryHeading => ToolDimension switch
+    {
+        AiToolActivityDimension.User or AiToolActivityDimension.UserTool => "User",
+        AiToolActivityDimension.Tool or AiToolActivityDimension.ToolResource => "Tool",
+        AiToolActivityDimension.ExternalSource => "External source",
+        AiToolActivityDimension.Status => "Status",
+        AiToolActivityDimension.Day => "UTC day",
+        _ => "Group"
+    };
+
+    public string? ToolSecondaryHeading => ToolDimension switch
+    {
+        AiToolActivityDimension.UserTool => "Tool",
+        AiToolActivityDimension.ToolResource => "Resource",
+        _ => null
+    };
+
     public async Task OnGetAsync(CancellationToken cancellationToken)
     {
         await LoadLimitInputAsync(cancellationToken);
@@ -89,6 +122,10 @@ public sealed class AIUsageModel(
 
         if (!Enum.IsDefined(Dimension))
             ModelState.AddModelError(nameof(Dimension), "Select a supported grouping.");
+        if (!Enum.IsDefined(ToolDimension))
+            ModelState.AddModelError(nameof(ToolDimension), "Select a supported tool-activity grouping.");
+        if (ToolStatus.HasValue && !Enum.IsDefined(ToolStatus.Value))
+            ModelState.AddModelError(nameof(ToolStatus), "Select a supported tool status.");
         if (FromDate > ToDate)
             ModelState.AddModelError(nameof(ToDate), "The end date must be on or after the start date.");
         if (FromDate > ToDate) return;
@@ -96,10 +133,18 @@ public sealed class AIUsageModel(
         var fromUtc = new DateTimeOffset(FromDate.Value.ToDateTime(TimeOnly.MinValue), TimeSpan.Zero);
         var toUtc = new DateTimeOffset(ToDate.Value.AddDays(1).ToDateTime(TimeOnly.MinValue), TimeSpan.Zero);
         FilterOptions = await ledger.GetFilterOptionsAsync(fromUtc, toUtc, cancellationToken);
+        if (toolActivities is not null)
+            ToolFilterOptions = await toolActivities.GetToolFilterOptionsAsync(fromUtc, toUtc, cancellationToken);
         ValidateSelection(Subfeature, FilterOptions.Subfeatures, nameof(Subfeature), "subfeature");
         ValidateSelection(Application, FilterOptions.Applications, nameof(Application), "application");
         ValidateSelection(Provider, FilterOptions.Providers, nameof(Provider), "provider");
         ValidateSelection(ModelName, FilterOptions.Models, nameof(ModelName), "model");
+        ValidateSelection(ToolName, ToolFilterOptions.ToolNames, nameof(ToolName), "tool");
+        ValidateSelection(
+            ToolExternalSource,
+            ToolFilterOptions.ExternalSources,
+            nameof(ToolExternalSource),
+            "external source");
         if (!ModelState.IsValid) return;
 
         Report = await ledger.GetReportAsync(
@@ -114,6 +159,22 @@ public sealed class AIUsageModel(
                 Clean(ModelName)),
             Dimension,
             cancellationToken);
+        if (toolActivities is not null)
+        {
+            ToolReport = await toolActivities.GetToolReportAsync(
+                new AiToolActivityQuery(
+                    fromUtc,
+                    toUtc,
+                    Clean(UserId),
+                    Clean(Feature),
+                    Clean(Subfeature),
+                    Clean(Application),
+                    Clean(ToolName),
+                    ToolStatus,
+                    Clean(ToolExternalSource)),
+                ToolDimension,
+                cancellationToken);
+        }
     }
 
     public async Task<IActionResult> OnPostSaveLimitsAsync(CancellationToken cancellationToken)
@@ -163,6 +224,18 @@ public sealed class AIUsageModel(
         AiUsageDimension.FeatureModel => "Feature and model",
         AiUsageDimension.UserFeatureModel => "User, feature and model",
         AiUsageDimension.Day => "UTC day",
+        _ => dimension.ToString()
+    };
+
+    public static string ToolDimensionLabel(AiToolActivityDimension dimension) => dimension switch
+    {
+        AiToolActivityDimension.Tool => "Tool",
+        AiToolActivityDimension.User => "User",
+        AiToolActivityDimension.UserTool => "User and tool",
+        AiToolActivityDimension.ToolResource => "Tool and resource",
+        AiToolActivityDimension.ExternalSource => "External source",
+        AiToolActivityDimension.Status => "Status",
+        AiToolActivityDimension.Day => "UTC day",
         _ => dimension.ToString()
     };
 

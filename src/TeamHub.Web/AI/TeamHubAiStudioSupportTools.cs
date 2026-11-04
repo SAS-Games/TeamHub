@@ -6,6 +6,7 @@ using TeamHub.Milestones;
 using TeamHub.MilestoneReview;
 using TeamHub.Studio;
 using TeamHub.Web.AccessControl;
+using TeamHub.Web.ExternalProcesses.WorklogAnalytics;
 using Review = TeamHub.MilestoneReview.MilestoneReview;
 
 namespace TeamHub.Web.AI;
@@ -22,12 +23,15 @@ public sealed class TeamHubAiStudioSupportTools(
     ISupportSummaryPlanningService planning,
     IStudioJiraTicketService jira,
     IStudioConfluenceUpdateService confluence,
+    IWorklogEffortService effort,
     ILogger<TeamHubAiStudioSupportTools> logger) : IAiChatToolProvider
 {
     private const int MaximumReviews = 50;
     private const int MaximumTickets = 50;
     private const int MaximumUpdates = 12;
     private const int MaximumRangeDays = 370;
+    private const int MaximumEffortRangeDays = 366;
+    private const int MaximumEffortRows = 60;
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
     public IReadOnlyList<AiChatToolDefinition> Definitions { get; } =
@@ -43,10 +47,24 @@ public sealed class TeamHubAiStudioSupportTools(
             "{\"studio\":\"required studio ID, studio name, or project name\"}"),
         new("get_studio_jira_tickets",
             "Get Jira support tickets for one studio. Requires the user's Jira approval for this question and uses that user's personal Jira credential.",
-            "{\"studio\":\"required studio ID, studio name, or project name\",\"startDate\":\"optional yyyy-MM-dd\",\"endDate\":\"optional yyyy-MM-dd\"}"),
+            "{\"studio\":\"required studio ID, studio name, or project name\",\"startDate\":\"optional yyyy-MM-dd\",\"endDate\":\"optional yyyy-MM-dd\"}",
+            AiChatExternalSources.Jira),
         new("get_studio_weekly_updates",
             "Get Confluence weekly updates for one studio. Requires the user's Confluence approval for this question and uses that user's personal Confluence credential.",
-            "{\"studio\":\"required studio ID, studio name, or project name\",\"startDate\":\"optional yyyy-MM-dd\",\"endDate\":\"optional yyyy-MM-dd\"}")
+            "{\"studio\":\"required studio ID, studio name, or project name\",\"startDate\":\"optional yyyy-MM-dd\",\"endDate\":\"optional yyyy-MM-dd\"}",
+            AiChatExternalSources.Confluence),
+        new("get_support_effort_summary",
+            "Get aggregated Jira worklog effort by support category and studio for a date range. Use for overall effort reports and cross-studio comparisons; raw worklog comments are never returned.",
+            "{\"startDate\":\"optional yyyy-MM-dd; defaults to 30 days ago\",\"endDate\":\"optional yyyy-MM-dd; defaults to today\"}",
+            AiChatExternalSources.Jira),
+        new("get_studio_support_effort",
+            "Get aggregated Jira worklog hours for one studio or project over a date range. Raw worklog comments are never returned.",
+            "{\"studio\":\"required studio ID, studio name, or project name\",\"startDate\":\"optional yyyy-MM-dd\",\"endDate\":\"optional yyyy-MM-dd\"}",
+            AiChatExternalSources.Jira),
+        new("get_employee_support_effort",
+            "Get aggregated Jira worklog effort categories for employees matching a name over a date range. Raw worklog comments are never returned.",
+            "{\"employee\":\"required employee name\",\"startDate\":\"optional yyyy-MM-dd\",\"endDate\":\"optional yyyy-MM-dd\"}",
+            AiChatExternalSources.Jira)
     ];
 
     public async Task<AiChatSource> ExecuteAsync(
@@ -64,7 +82,8 @@ public sealed class TeamHubAiStudioSupportTools(
         toolName = toolName?.Trim() ?? string.Empty;
         var isReviewTool = toolName is "list_studio_milestone_reviews" or "get_studio_milestone_review";
         var isSupportTool = toolName is "get_studio_support_overview" or "get_studio_jira_tickets"
-            or "get_studio_weekly_updates";
+            or "get_studio_weekly_updates" or "get_support_effort_summary"
+            or "get_studio_support_effort" or "get_employee_support_effort";
         if (!isReviewTool && !isSupportTool)
             throw new AiChatException($"The TeamHub tool '{toolName}' is not available.");
         if (isReviewTool
@@ -82,6 +101,9 @@ public sealed class TeamHubAiStudioSupportTools(
             "get_studio_support_overview" => await GetSupportOverviewAsync(arguments, cancellationToken),
             "get_studio_jira_tickets" => await GetJiraTicketsAsync(user, arguments, cancellationToken),
             "get_studio_weekly_updates" => await GetWeeklyUpdatesAsync(user, arguments, cancellationToken),
+            "get_support_effort_summary" => await GetSupportEffortSummaryAsync(user, arguments, cancellationToken),
+            "get_studio_support_effort" => await GetStudioSupportEffortAsync(user, arguments, cancellationToken),
+            "get_employee_support_effort" => await GetEmployeeSupportEffortAsync(user, arguments, cancellationToken),
             _ => throw new AiChatException($"The TeamHub tool '{toolName}' is not available.")
         };
     }
@@ -289,6 +311,119 @@ public sealed class TeamHubAiStudioSupportTools(
             updates
         });
     }
+
+    private async Task<AiChatSource> GetSupportEffortSummaryAsync(
+        AiChatUserContext user,
+        JsonElement arguments,
+        CancellationToken cancellationToken)
+    {
+        var (startDate, endDate) = ReadEffortDateRange(arguments);
+        var report = await LoadEffortAsync(user, startDate, endDate, cancellationToken);
+        var summary = report.EffortSummary.Take(MaximumEffortRows).ToList();
+        var studios = report.StudioBreakdown.Take(MaximumEffortRows).ToList();
+        return Source("get_support_effort_summary", "Support effort summary", new
+        {
+            startDate,
+            endDate,
+            totalHours = Math.Round(summary.Sum(item => item.Hours), 2),
+            effortCategories = summary,
+            studioBreakdown = studios,
+            truncated = report.EffortSummary.Count > MaximumEffortRows
+                || report.StudioBreakdown.Count > MaximumEffortRows
+        });
+    }
+
+    private async Task<AiChatSource> GetStudioSupportEffortAsync(
+        AiChatUserContext user,
+        JsonElement arguments,
+        CancellationToken cancellationToken)
+    {
+        var studio = await ResolveStudioAsync(RequiredArgument(arguments, "studio"), cancellationToken);
+        var (startDate, endDate) = ReadEffortDateRange(arguments);
+        var report = await LoadEffortAsync(user, startDate, endDate, cancellationToken);
+        var matching = report.StudioBreakdown
+            .Where(item => IsStudioEffortLabel(item.Label, studio))
+            .OrderByDescending(item => item.Hours)
+            .Take(MaximumEffortRows)
+            .ToList();
+        return Source("get_studio_support_effort", $"Studio support effort: {studio.StudioName}", new
+        {
+            studio = StudioIdentity(studio),
+            startDate,
+            endDate,
+            totalHours = Math.Round(matching.Sum(item => item.Hours), 2),
+            effort = matching,
+            availableStudioLabels = matching.Count == 0
+                ? report.StudioBreakdown.Select(item => item.Label).Take(MaximumEffortRows)
+                : null
+        });
+    }
+
+    private async Task<AiChatSource> GetEmployeeSupportEffortAsync(
+        AiChatUserContext user,
+        JsonElement arguments,
+        CancellationToken cancellationToken)
+    {
+        var employee = RequiredArgument(arguments, "employee");
+        var (startDate, endDate) = ReadEffortDateRange(arguments);
+        var report = await LoadEffortAsync(user, startDate, endDate, cancellationToken);
+        var matching = report.EmployeeEffortBreakdowns
+            .Where(item => item.Employee.Contains(employee, StringComparison.OrdinalIgnoreCase))
+            .OrderByDescending(item => string.Equals(item.Employee, employee, StringComparison.OrdinalIgnoreCase))
+            .ThenBy(item => item.Employee, StringComparer.OrdinalIgnoreCase)
+            .Take(20)
+            .Select(item => new
+            {
+                item.Employee,
+                totalHours = Math.Round(item.Slices.Sum(slice => slice.Hours), 2),
+                effortCategories = item.Slices.Take(30)
+            })
+            .ToList();
+        return Source("get_employee_support_effort", "Employee support effort", new
+        {
+            employee,
+            startDate,
+            endDate,
+            matchCount = matching.Count,
+            employees = matching
+        });
+    }
+
+    private async Task<WorklogEffortReport> LoadEffortAsync(
+        AiChatUserContext user,
+        DateOnly startDate,
+        DateOnly endDate,
+        CancellationToken cancellationToken)
+    {
+        if (!user.HasApprovedExternalSource(AiChatExternalSources.Jira))
+            throw new AiChatException("Jira approval is required for this question before support effort can be accessed.");
+        return await effort.GetActualEffortAsync(
+            startDate,
+            endDate,
+            user.UserId,
+            false,
+            cancellationToken);
+    }
+
+    private static (DateOnly StartDate, DateOnly EndDate) ReadEffortDateRange(JsonElement arguments)
+    {
+        var today = DateOnly.FromDateTime(DateTime.Today);
+        var startDate = OptionalDateArgument(arguments, "startDate");
+        var endDate = OptionalDateArgument(arguments, "endDate") ?? today;
+        startDate ??= endDate.AddDays(-29);
+        if (endDate < startDate.Value)
+            throw new AiChatException("Tool argument 'endDate' must be on or after 'startDate'.");
+        if (endDate.DayNumber - startDate.Value.DayNumber >= MaximumEffortRangeDays)
+            throw new AiChatException($"Support effort date ranges cannot exceed {MaximumEffortRangeDays} days.");
+        return (startDate.Value, endDate);
+    }
+
+    private static bool IsStudioEffortLabel(string label, StudioDetails studio) =>
+        string.Equals(label, studio.Id, StringComparison.OrdinalIgnoreCase)
+        || string.Equals(label, studio.StudioName, StringComparison.OrdinalIgnoreCase)
+        || string.Equals(label, studio.ProjectName, StringComparison.OrdinalIgnoreCase)
+        || label.Contains(studio.StudioName, StringComparison.OrdinalIgnoreCase)
+        || label.Contains(studio.ProjectName, StringComparison.OrdinalIgnoreCase);
 
     private async Task<StudioDetails> ResolveStudioAsync(string query, CancellationToken cancellationToken)
     {

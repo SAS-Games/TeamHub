@@ -27,10 +27,13 @@ The model can request up to four registered tools with structured JSON arguments
 the signed-in user, applies module authorization, executes the read-only tools, and supplies only the
 compact result for a final model response. Host tool providers expose team and studio directories,
 studio milestone reviews, internal support planning, Jira support tickets, and Confluence weekly
-updates. External-system tools require approval for the current question and use the signed-in user's
+updates. Aggregated Jira worklog tools provide overall, studio, and employee support-effort views
+without returning raw worklog comments. External-system tools require approval for the current question and use the signed-in user's
 personal external credential. One planning call and one final-answer call share the same usage
 operation regardless of the number of tools. The final ledger invocation records the selected tool
-names without creating artificial token-bearing requests for internal tool execution.
+names without creating artificial token-bearing requests for internal tool execution. Each actual
+tool execution is also recorded in the separate tool-activity stream with its status and duration;
+arguments, returned content and credentials are never recorded.
 
 ## Reusing in another application
 

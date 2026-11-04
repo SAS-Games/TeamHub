@@ -116,6 +116,23 @@ public sealed class TeamHubAiInstructionFileProviderTests
     }
 
     [Fact]
+    public void Support_effort_tool_result_supplies_tool_and_jira_rules()
+    {
+        AiChatSource[] sources =
+        [
+            new("teamhub-tool-get_employee_support_effort", "Effort", "42 hours")
+        ];
+
+        var result = TeamHubAiInstructionFileProvider.SelectSections(
+            Playbook,
+            "Show Rohith's support effort",
+            sources);
+
+        result.Should().Contain("tool-rules")
+            .And.Contain("jira-rules");
+    }
+
+    [Fact]
     public void Support_chart_question_adds_only_relevant_cross_source_modules()
     {
         AiChatSource[] sources =

@@ -153,7 +153,42 @@
             <span asp-validation-for="Dimension" class="text-danger"></span>
             <div class="form-text">Controls how matching calls are combined into report rows; it does not change which calls are included.</div>
         </div>
-        <div class="col-12 col-lg-8 d-flex align-items-end justify-content-end gap-2">
+        <div class="col-12"><hr class="my-2" /><h3 class="h6 mb-0">Tool activity filters</h3></div>
+        <div class="col-12 col-md-6 col-lg-3">
+            <label asp-for="ToolName" class="form-label">Tool</label>
+            <select asp-for="ToolName" class="form-select">
+                <option value="">All tools</option>
+                @foreach (var value in Model.ToolFilterOptions.ToolNames) { <option value="@value">@value</option> }
+            </select>
+            <span asp-validation-for="ToolName" class="text-danger"></span>
+        </div>
+        <div class="col-12 col-md-6 col-lg-3">
+            <label asp-for="ToolStatus" class="form-label">Tool status</label>
+            <select asp-for="ToolStatus" class="form-select">
+                <option value="">All statuses</option>
+                @foreach (var status in Enum.GetValues<AiToolActivityStatus>()) { <option value="@status">@status</option> }
+            </select>
+            <span asp-validation-for="ToolStatus" class="text-danger"></span>
+        </div>
+        <div class="col-12 col-md-6 col-lg-3">
+            <label asp-for="ToolExternalSource" class="form-label">External source</label>
+            <select asp-for="ToolExternalSource" class="form-select">
+                <option value="">All sources</option>
+                @foreach (var value in Model.ToolFilterOptions.ExternalSources) { <option value="@value">@value</option> }
+            </select>
+            <span asp-validation-for="ToolExternalSource" class="text-danger"></span>
+        </div>
+        <div class="col-12 col-md-6 col-lg-3">
+            <label asp-for="ToolDimension" class="form-label">Group tool activity by</label>
+            <select asp-for="ToolDimension" class="form-select">
+                @foreach (var dimension in Enum.GetValues<AiToolActivityDimension>())
+                {
+                    <option value="@dimension">@AIUsageModel.ToolDimensionLabel(dimension)</option>
+                }
+            </select>
+            <span asp-validation-for="ToolDimension" class="text-danger"></span>
+        </div>
+        <div class="col-12 d-flex align-items-end justify-content-end gap-2">
             <a asp-page="/Configuration/AIUsage" class="btn btn-outline-secondary">Reset</a>
             <button type="submit" class="btn btn-primary">Run report</button>
         </div>
@@ -214,6 +249,54 @@
                             <td class="text-end">@row.InputTokens.ToString("N0")</td>
                             <td class="text-end">@row.OutputTokens.ToString("N0")</td>
                             <td class="text-end fw-semibold">@row.TotalTokens.ToString("N0")</td>
+                        </tr>
+                    }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </div>
+</section>
+
+<section class="content-section mb-4">
+    <div class="section-heading"><div><span>Tools</span><h2>@AIUsageModel.ToolDimensionLabel(Model.ToolDimension)</h2></div></div>
+    <div class="p-4">
+        <p class="text-secondary small">Tool activity is recorded separately from provider calls and never adds zero-token rows to token-consumption totals. Arguments, prompts, returned content, and credentials are not stored.</p>
+        <div class="row g-3 mb-4">
+            <div class="col-6 col-xl"><div class="border rounded p-3 h-100"><div class="text-secondary small">Tool calls</div><div class="h4 mb-0">@Model.ToolReport.Totals.CallCount.ToString("N0")</div></div></div>
+            <div class="col-6 col-xl"><div class="border rounded p-3 h-100"><div class="text-secondary small">Completed</div><div class="h4 mb-0">@Model.ToolReport.Totals.CompletedCount.ToString("N0")</div></div></div>
+            <div class="col-6 col-xl"><div class="border rounded p-3 h-100"><div class="text-secondary small">Failed</div><div class="h4 mb-0">@Model.ToolReport.Totals.FailedCount.ToString("N0")</div></div></div>
+            <div class="col-6 col-xl"><div class="border rounded p-3 h-100"><div class="text-secondary small">Cancelled</div><div class="h4 mb-0">@Model.ToolReport.Totals.CancelledCount.ToString("N0")</div></div></div>
+            <div class="col-12 col-xl"><div class="border rounded p-3 h-100"><div class="text-secondary small">External calls</div><div class="h4 mb-0">@Model.ToolReport.Totals.ExternalCallCount.ToString("N0")</div></div></div>
+        </div>
+        @if (Model.ToolReport.Rows.Count == 0)
+        {
+            <div class="alert alert-secondary mb-0">No AI tool activity matched the selected filters.</div>
+        }
+        else
+        {
+            <div class="table-responsive">
+                <table class="table align-middle mb-0">
+                    <thead><tr>
+                        <th>@Model.ToolPrimaryHeading</th>
+                        @if (Model.ToolSecondaryHeading is not null) { <th>@Model.ToolSecondaryHeading</th> }
+                        <th class="text-end">Calls</th>
+                        <th class="text-end">Completed</th>
+                        <th class="text-end">Failed</th>
+                        <th class="text-end">Cancelled</th>
+                        <th class="text-end">Avg. duration</th>
+                    </tr></thead>
+                    <tbody>
+                    @foreach (var row in Model.ToolReport.Rows)
+                    {
+                        <tr>
+                            <td>@row.Key</td>
+                            @if (Model.ToolSecondaryHeading is not null) { <td>@row.SecondaryKey</td> }
+                            <td class="text-end">@row.CallCount.ToString("N0")</td>
+                            <td class="text-end">@row.CompletedCount.ToString("N0")</td>
+                            <td class="text-end">@row.FailedCount.ToString("N0")</td>
+                            <td class="text-end">@row.CancelledCount.ToString("N0")</td>
+                            <td class="text-end">@row.AverageDurationMilliseconds.ToString("N0") ms</td>
                         </tr>
                     }
                     </tbody>

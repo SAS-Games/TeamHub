@@ -140,6 +140,7 @@ public sealed class TeamHubChatKnowledgeSourceTests
             new StubPlanningService(),
             new ThrowingJiraService(),
             new ThrowingConfluenceService(),
+            new UnusedEffortService(),
             NullLogger<TeamHubAiStudioSupportTools>.Instance);
         using var arguments = JsonDocument.Parse("""{"studio":"Example Studio"}""");
 
@@ -175,7 +176,15 @@ public sealed class TeamHubChatKnowledgeSourceTests
             new StubPlanningService(),
             jira,
             new ThrowingConfluenceService(),
+            new UnusedEffortService(),
             NullLogger<TeamHubAiStudioSupportTools>.Instance);
+        tools.Definitions.Single(item => item.Name == "get_studio_jira_tickets")
+            .ExternalSource.Should().Be(AiChatExternalSources.Jira);
+        tools.Definitions.Single(item => item.Name == "get_studio_weekly_updates")
+            .ExternalSource.Should().Be(AiChatExternalSources.Confluence);
+        tools.Definitions.Where(item => item.Name.Contains("support_effort", StringComparison.Ordinal))
+            .Should().HaveCount(3)
+            .And.OnlyContain(item => item.ExternalSource == AiChatExternalSources.Jira);
         using var arguments = JsonDocument.Parse("""{"studio":"studio-1"}""");
 
         var denied = () => tools.ExecuteAsync(
@@ -220,8 +229,7 @@ public sealed class TeamHubChatKnowledgeSourceTests
             new StubMilestoneService(),
             new StubPlanningService(),
             new StubJiraService(),
-            new StubConfluenceService(),
-            new UnusedEffortService());
+            new StubConfluenceService());
 
         var result = await source.SearchAsync(
             new AiChatUserContext(
@@ -240,13 +248,13 @@ public sealed class TeamHubChatKnowledgeSourceTests
     }
 
     [Fact]
-    public async Task Team_mode_uses_the_requested_three_month_period_for_effort_charts()
+    public async Task Employee_effort_tool_uses_the_requested_period_and_personal_jira_credential()
     {
         var user = new AuthorizedUserRecord(
             Guid.NewGuid(), "user@example.com", null, "Test User", TeamHubUserTypes.Registered,
             true, true, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow);
         var effort = new RecordingEffortService();
-        var source = new SupportSummaryChatKnowledgeSource(
+        var tools = new TeamHubAiStudioSupportTools(
             new ModuleAccessService(user, TeamHubModules.SupportSummary),
             new StubStudioService(new StudioDetails
             {
@@ -256,28 +264,83 @@ public sealed class TeamHubChatKnowledgeSourceTests
                 IsActive = true
             }),
             new StubMilestoneService(),
+            new EmptyReviewService(),
             new StubPlanningService(),
             new StubJiraService(),
             new ThrowingConfluenceService(),
-            effort);
+            effort,
+            NullLogger<TeamHubAiStudioSupportTools>.Instance);
+        using var arguments = JsonDocument.Parse("""
+            {"employee":"Rohith","startDate":"2026-08-04","endDate":"2026-11-04"}
+            """);
 
-        var result = await source.SearchAsync(
+        var denied = () => tools.ExecuteAsync(
+            new AiChatUserContext(user.UserId, user.DisplayName, user.UserType),
+            "get_employee_support_effort",
+            arguments.RootElement);
+        await denied.Should().ThrowAsync<AiChatException>().WithMessage("*Jira approval is required*");
+        effort.RequestingUserId.Should().BeNull();
+
+        var result = await tools.ExecuteAsync(
             new AiChatUserContext(
                 user.UserId,
                 user.DisplayName,
                 user.UserType,
                 new HashSet<string>([AiChatExternalSources.Jira], StringComparer.OrdinalIgnoreCase)),
-            "Create an effort chart for Rohith for the last 3 months.");
+            "get_employee_support_effort",
+            arguments.RootElement);
 
-        var today = DateOnly.FromDateTime(DateTime.Today);
-        effort.StartDate.Should().Be(today.AddMonths(-3));
-        effort.EndDate.Should().Be(today);
+        effort.StartDate.Should().Be(new DateOnly(2026, 8, 4));
+        effort.EndDate.Should().Be(new DateOnly(2026, 11, 4));
         effort.RequestingUserId.Should().Be(user.UserId);
-        result.Single(item => item.Id == "teamhub-support-effort").Content.Should().Contain("Rohith");
-        result.Select(item => item.Id).Should().BeEquivalentTo(
-            ["teamhub-support-summary-period", "teamhub-support-effort"]);
-        result.Single(item => item.Id == "teamhub-support-summary-period").Content
-            .Should().NotContain("activeStudios");
+        effort.AllowPrivilegedDefaultCredential.Should().BeFalse();
+        result.Id.Should().Be("teamhub-tool-get_employee_support_effort");
+        result.Content.Should().Contain("Rohith");
+        result.Content.Should().Contain("42");
+    }
+
+    [Fact]
+    public async Task Effort_summary_and_studio_tools_return_only_aggregated_effort()
+    {
+        var user = new AuthorizedUserRecord(
+            Guid.NewGuid(), "user@example.com", null, "Test User", TeamHubUserTypes.Registered,
+            true, true, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow);
+        var effort = new RecordingEffortService();
+        var tools = new TeamHubAiStudioSupportTools(
+            new ModuleAccessService(user, TeamHubModules.SupportSummary),
+            new StubStudioService(new StudioDetails
+            {
+                Id = "studio-1",
+                StudioName = "Example Studio",
+                ProjectName = "Example Project",
+                IsActive = true
+            }),
+            new EmptyMilestoneService(),
+            new EmptyReviewService(),
+            new StubPlanningService(),
+            new StubJiraService(),
+            new ThrowingConfluenceService(),
+            effort,
+            NullLogger<TeamHubAiStudioSupportTools>.Instance);
+        var context = new AiChatUserContext(
+            user.UserId,
+            user.DisplayName,
+            user.UserType,
+            new HashSet<string>([AiChatExternalSources.Jira], StringComparer.OrdinalIgnoreCase));
+        using var summaryArguments = JsonDocument.Parse("{}");
+        using var studioArguments = JsonDocument.Parse("""{"studio":"Example Studio"}""");
+
+        var summary = await tools.ExecuteAsync(
+            context, "get_support_effort_summary", summaryArguments.RootElement);
+        var studio = await tools.ExecuteAsync(
+            context, "get_studio_support_effort", studioArguments.RootElement);
+
+        summary.Content.Should().Contain("Studio Support");
+        summary.Content.Should().Contain("Example Project");
+        summary.Content.Should().Contain("Other Project");
+        studio.Content.Should().Contain("Example Project");
+        studio.Content.Should().Contain("30");
+        studio.Content.Should().NotContain("Other Project");
     }
 
     [Fact]
@@ -298,8 +361,7 @@ public sealed class TeamHubChatKnowledgeSourceTests
             new StubMilestoneService(),
             new StubPlanningService(),
             new ThrowingJiraService(),
-            new ThrowingConfluenceService(),
-            new UnusedEffortService());
+            new ThrowingConfluenceService());
 
         var result = await source.SearchAsync(
             new AiChatUserContext(user.UserId, user.DisplayName, user.UserType),
@@ -591,6 +653,7 @@ public sealed class TeamHubChatKnowledgeSourceTests
         public DateOnly StartDate { get; private set; }
         public DateOnly EndDate { get; private set; }
         public string? RequestingUserId { get; private set; }
+        public bool AllowPrivilegedDefaultCredential { get; private set; }
 
         public Task<WorklogEffortReport> GetActualEffortAsync(
             DateOnly startDate,
@@ -602,8 +665,19 @@ public sealed class TeamHubChatKnowledgeSourceTests
             StartDate = startDate;
             EndDate = endDate;
             RequestingUserId = requestingUserId;
+            AllowPrivilegedDefaultCredential = allowPrivilegedDefaultCredential;
             return Task.FromResult(new WorklogEffortReport
             {
+                EffortSummary =
+                [
+                    new WorklogEffortSlice("Studio Support", 42),
+                    new WorklogEffortSlice("Internal Activities", 8)
+                ],
+                StudioBreakdown =
+                [
+                    new WorklogEffortSlice("Example Project", 30),
+                    new WorklogEffortSlice("Other Project", 20)
+                ],
                 EmployeeEffortBreakdowns =
                 [
                     new WorklogEmployeeEffort(

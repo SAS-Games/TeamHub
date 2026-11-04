@@ -16,6 +16,19 @@ type are stored as subfeatures. Studio-scoped calls store the studio ID as invoc
 metadata. Provider request IDs, status, duration and provider-reported input/output/total tokens are
 stored. Prompts, source documents, generated content and credentials are never stored.
 
+## Tool activity
+
+Server-controlled AI tool execution is recorded in a separate `AiToolActivities` stream linked to
+the parent operation. Each row contains the user attribution inherited from that operation, tool
+name, completion status, duration, optional external-source category, and an optional sanitized
+resource identifier such as the requested studio. Tool arguments, prompts, returned tool content,
+error messages and credentials are never stored; failures retain only the exception type.
+
+Tool activity does not create provider-invocation rows and therefore does not inflate request counts
+or token totals. Administrators can filter and group the Tool Activity report by user, tool,
+tool/resource, external source, status or UTC day from the existing AI Usage Ledger page. Jira and
+Confluence tools are categorized as external while TeamHub-owned lookups remain internal.
+
 ## Reporting and retention
 
 `IAiUsageLedger.GetReportAsync` filters by UTC range, user, feature, subfeature, application,
@@ -26,7 +39,7 @@ Services > AI Usage Ledger**; the default view covers the last 30 UTC days and g
 feature and model.
 
 Raw operations default to 12 months of retention. `AI:Usage:RetentionMonths` accepts 6 through 120;
-startup initialization prunes older operations and their invocations. The module also exposes
+startup initialization prunes older operations, their provider invocations and their tool activity. The module also exposes
 `DeleteBeforeAsync` for explicit maintenance. Long-lived monthly rollups and notification policies
 are intentionally deferred until the organization confirms reporting and alert requirements.
 
