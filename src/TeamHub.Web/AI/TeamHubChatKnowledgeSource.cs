@@ -4,9 +4,6 @@ using TeamHub.Application.Interfaces;
 using TeamHub.Authentication;
 using TeamHub.Domain.Enums;
 using TeamHub.Milestones;
-using TeamHub.MilestoneReview;
-using TeamHub.Studio;
-using TeamHub.Team;
 using TeamHub.Web.AccessControl;
 
 namespace TeamHub.Web.AI;
@@ -18,10 +15,7 @@ namespace TeamHub.Web.AI;
 public sealed class TeamHubChatKnowledgeSource(
     ICurrentAccessService access,
     IMilestoneTrackerService milestones,
-    IStudioDirectoryService studios,
-    IMilestoneReviewService reviews,
-    IWorkflowReadService workflows,
-    ITeamDirectoryService teamDirectory) : IAiChatKnowledgeSource
+    IWorkflowReadService workflows) : IAiChatKnowledgeSource
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
     {
@@ -39,43 +33,11 @@ public sealed class TeamHubChatKnowledgeSource(
             throw new AiChatException("The signed-in user could not be verified.");
 
         var result = new List<AiChatSource>();
-        if (await access.CanAsync(TeamHubModules.Team, AccessLevel.ReadOnly, cancellationToken))
-            await AddTeamDirectoryAsync(result, question, cancellationToken);
         if (await access.CanAsync(TeamHubModules.Milestones, AccessLevel.ReadOnly, cancellationToken))
             await AddMilestonesAsync(result, question, cancellationToken);
-        if (await access.CanAsync(TeamHubModules.StudioConfiguration, AccessLevel.ReadOnly, cancellationToken))
-            await AddProjectsAsync(result, question, cancellationToken);
-        if (await access.CanAsync(TeamHubModules.MilestoneReview, AccessLevel.ReadOnly, cancellationToken))
-            await AddReviewsAsync(result, question, cancellationToken);
         if (await access.CanAsync(TeamHubModules.WorkCenter, AccessLevel.ReadOnly, cancellationToken))
             await AddWorkflowsAsync(result, user.UserId, question, cancellationToken);
         return result;
-    }
-
-    private async Task AddTeamDirectoryAsync(
-        ICollection<AiChatSource> sources,
-        string question,
-        CancellationToken cancellationToken)
-    {
-        var directory = await teamDirectory.GetTeamDirectoryAsync(cancellationToken);
-        var members = SelectRelevant(directory.Members, question,
-                item => $"team directory employee management {item.EmployeeName} {item.Role} {item.Gid} {item.Email} {item.ContactNumber} {item.Section}",
-                100)
-            .Select(item => new
-            {
-                item.EmployeeName,
-                item.Role,
-                item.Gid,
-                item.Email,
-                item.ContactNumber,
-                Section = TeamMemberSections.Normalize(item.Section)
-            });
-        AddJsonSource(sources, "teamhub-team-directory", "TeamHub team directory", members);
-
-        var specializations = SelectRelevant(directory.Specializations, question,
-                item => $"team specialization responsibility matrix pod {item.Pod} {item.FocusAreas} {item.Members}", 50)
-            .Select(item => new { item.Pod, item.FocusAreas, item.Members });
-        AddJsonSource(sources, "teamhub-team-specializations", "TeamHub team specializations", specializations);
     }
 
     private async Task AddMilestonesAsync(
@@ -98,83 +60,6 @@ public sealed class TeamHubChatKnowledgeSource(
                 item.ReleaseDate
             });
         AddJsonSource(sources, "teamhub-milestones", "TeamHub milestone tracker", items);
-    }
-
-    private async Task AddProjectsAsync(
-        ICollection<AiChatSource> sources,
-        string question,
-        CancellationToken cancellationToken)
-    {
-        var items = SelectRelevant(
-                (await studios.GetStudiosAsync(cancellationToken)).Where(item => item.IsActive),
-                question,
-                item => $"studio studios project projects {item.StudioName} {item.ProjectName} {item.StudioGroup} {item.Location}",
-                60)
-            .Select(item => new
-            {
-                item.StudioName,
-                item.ProjectName,
-                item.StudioGroup,
-                item.Location,
-                item.TimeZoneId,
-                OurContacts = item.OurContacts.Select(contact => new
-                {
-                    contact.Name,
-                    contact.Role
-                }),
-                TeamMembers = item.TeamMembers.Select(member => new
-                {
-                    member.Name,
-                    member.RolesAndResponsibilities,
-                    member.EmailId
-                }),
-                DevelopmentTools = item.DevelopmentTools.Select(tool => new { tool.Name, tool.Description }),
-                ImportantLinks = item.ImportantLinks.Select(link => new { link.Label, link.Url, link.Description })
-            });
-        AddJsonSource(sources, "teamhub-projects", "TeamHub projects and studios", items);
-    }
-
-    private async Task AddReviewsAsync(
-        ICollection<AiChatSource> sources,
-        string question,
-        CancellationToken cancellationToken)
-    {
-        var items = SelectRelevant(await reviews.GetActiveAsync(cancellationToken), question,
-            item => $"milestone review reviews {item.ProjectName} {item.MilestoneName} {item.Description}", 50)
-            .Select(item => new
-            {
-                item.Id,
-                item.ProjectName,
-                item.MilestoneName,
-                item.Description,
-                Status = item.Status.ToString(),
-                item.PublishedAt,
-                item.JiraTicketId,
-                Pic = item.Pic is null ? null : new
-                {
-                    item.Pic.DisplayName,
-                    item.Pic.UserId
-                },
-                AssignedReviewers = item.AssignedReviewers.Select(reviewer => new
-                {
-                    reviewer.DisplayName,
-                    reviewer.UserId
-                }),
-                ReportGenerators = item.ReportGenerators.Select(generator => new
-                {
-                    generator.DisplayName,
-                    generator.UserId
-                }),
-                Feedback = item.Feedback.Select(feedback => new
-                {
-                    feedback.Reviewer,
-                    SessionDetails = Clip(feedback.SessionDetails),
-                    WhatGood = Clip(feedback.WhatGood),
-                    NeedImprovements = Clip(feedback.NeedImprovements),
-                    AdditionalFeedback = Clip(feedback.AdditionalFeedback)
-                })
-            });
-        AddJsonSource(sources, "teamhub-milestone-reviews", "Published milestone reviews", items);
     }
 
     private async Task AddWorkflowsAsync(
@@ -272,11 +157,4 @@ public sealed class TeamHubChatKnowledgeSource(
             .Select(item => item.Value);
     }
 
-    private static string Clip(string? value, int maximumCharacters = 2_000)
-    {
-        var normalized = value?.Trim() ?? string.Empty;
-        return normalized.Length <= maximumCharacters
-            ? normalized
-            : normalized[..maximumCharacters] + "…";
-    }
 }

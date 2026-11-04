@@ -22,6 +22,16 @@ and otherwise uses the configured encrypted static M2M bearer/application key. R
 signed-in user use the M2M key. Credentials are
 used only in the server-side provider client and are never included in prompts or web responses.
 
+TeamHub mode supports provider-independent, server-controlled tools through `IAiChatToolProvider`.
+The model can request up to four registered tools with structured JSON arguments; TeamHub validates
+the signed-in user, applies module authorization, executes the read-only tools, and supplies only the
+compact result for a final model response. Host tool providers expose team and studio directories,
+studio milestone reviews, internal support planning, Jira support tickets, and Confluence weekly
+updates. External-system tools require approval for the current question and use the signed-in user's
+personal external credential. One planning call and one final-answer call share the same usage
+operation regardless of the number of tools. The final ledger invocation records the selected tool
+names without creating artificial token-bearing requests for internal tool execution.
+
 ## Reusing in another application
 
 1. Reference `TeamHub.AI` and `TeamHub.AI.Chat`.

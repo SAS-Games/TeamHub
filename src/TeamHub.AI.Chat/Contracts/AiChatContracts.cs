@@ -1,3 +1,4 @@
+using System.Text.Json;
 using TeamHub.AI.Contracts;
 
 namespace TeamHub.AI.Chat.Contracts;
@@ -50,6 +51,26 @@ public sealed record AiChatSource(
     string Content);
 
 public sealed record AiChatCitation(string Id, string Title);
+
+public sealed record AiChatToolDefinition(
+    string Name,
+    string Description,
+    string ArgumentsJsonExample);
+
+/// <summary>
+/// Exposes server-controlled, read-only tools to TeamHub chat. Implementations
+/// must validate the signed-in user and apply authorization before reading data.
+/// </summary>
+public interface IAiChatToolProvider
+{
+    IReadOnlyList<AiChatToolDefinition> Definitions { get; }
+
+    Task<AiChatSource> ExecuteAsync(
+        AiChatUserContext user,
+        string toolName,
+        JsonElement arguments,
+        CancellationToken cancellationToken = default);
+}
 
 public sealed record AiChatResponse(
     string Answer,

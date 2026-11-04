@@ -70,6 +70,8 @@ Administrators configure AI under **Configuration > AI Services**. The page sele
 
 AI Chat, Report Generator and AI Flow Designer record provider invocations in the separate `TeamHub.AI.Usage` module and `data/ai-usage.db`. The ledger attributes each call to its authenticated user, feature, provider and model, retains provider-reported input/output/total tokens, and defaults to 12 months of raw history. It does not store prompts, documents, generated content or credentials. See [AI Usage Ledger](docs/AI_USAGE_LEDGER.md).
 
+TeamHub Chat can retrieve team and studio directory data, studio milestone reviews, internal support planning, Jira tickets, and Confluence weekly updates through server-controlled AI tools. For a composite question, the planner can select up to four read-only tools before producing one combined answer. TeamHub—not the model—validates the signed-in user, enforces module access, executes each lookup, and returns bounded JSON sources for the final answer. Jira and Confluence tools additionally require per-question approval and use the signed-in user's personal external-system credential.
+
 ### Jira comment preview
 
 In **Support Summary > Support Activity Tickets**, use **Latest Comments** to

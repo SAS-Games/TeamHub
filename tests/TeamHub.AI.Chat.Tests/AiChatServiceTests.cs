@@ -4,6 +4,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using TeamHub.AI.Chat.Contracts;
 using TeamHub.AI.Contracts;
+using TeamHub.AI.Usage.Contracts;
 using Xunit;
 
 namespace TeamHub.AI.Chat.Tests;
@@ -151,6 +152,111 @@ public sealed class AiChatServiceTests
         response.Citations.Should().ContainSingle()
             .Which.Should().Be(new AiChatCitation("workflow-a", "Workflow A"));
         response.Usage.Should().Be(new AiTokenUsage(80, 20, 100));
+    }
+
+    [Fact]
+    public async Task TeamHub_mode_executes_one_authorized_tool_and_then_answers_from_its_source()
+    {
+        var provider = new RecordingProvider(responses:
+        [
+            """{"action":"tools","answer":"","sourceIds":[],"toolCalls":[{"name":"list_team_members","argumentsJson":"{\"query\":\"engineer\"}"}]}""",
+            """{"answer":"Alice is an engineer.","sourceIds":["teamhub-tool-list_team_members"]}"""
+        ]);
+        var tool = new RecordingToolProvider();
+        var usage = new RecordingUsageTracker();
+        await using var services = CreateServices(
+            provider,
+            new RecordingKnowledgeSource(),
+            toolProvider: tool,
+            usageTracker: usage);
+        var chat = services.GetRequiredService<IAiChatService>();
+
+        var response = await chat.SendAsync(
+            User(),
+            new AiChatRequest(
+                AiChatMode.TeamHub,
+                "model-a",
+                [new AiChatMessage("user", "List engineers in the team")])) ;
+
+        tool.CallCount.Should().Be(1);
+        tool.LastToolName.Should().Be("list_team_members");
+        tool.LastArguments.GetProperty("query").GetString().Should().Be("engineer");
+        provider.Requests.Should().HaveCount(2);
+        provider.Requests[0].SystemPrompt.Should().Contain("<teamhub_tools>");
+        provider.Requests[1].UserPrompt.Should().Contain("Alice");
+        response.Answer.Should().Be("Alice is an engineer.");
+        response.Citations.Should().ContainSingle().Which.Id.Should().Be("teamhub-tool-list_team_members");
+        response.Usage.Should().Be(new AiTokenUsage(160, 40, 200));
+        usage.Invocations.Should().HaveCount(2);
+        usage.Invocations.Select(item => item.Operation.OperationId).Distinct().Should().ContainSingle();
+        usage.Invocations.Select(item => item.Invocation.ResourceId)
+            .Should().Equal("ToolPlanning", "list_team_members");
+    }
+
+    [Fact]
+    public async Task TeamHub_mode_executes_multiple_authorized_tools_before_one_final_answer()
+    {
+        var provider = new RecordingProvider(responses:
+        [
+            """{"action":"tools","answer":"","sourceIds":[],"toolCalls":[{"name":"list_team_members","argumentsJson":"{\"query\":\"Alice\"}"},{"name":"get_studio_support_overview","argumentsJson":"{\"studio\":\"Example Studio\"}"}]}""",
+            """{"answer":"Alice supports the Example Studio Alpha milestone.","sourceIds":["teamhub-tool-list_team_members","teamhub-tool-get_studio_support_overview"]}"""
+        ]);
+        var tool = new RecordingToolProvider();
+        var usage = new RecordingUsageTracker();
+        await using var services = CreateServices(
+            provider,
+            new RecordingKnowledgeSource(),
+            toolProvider: tool,
+            usageTracker: usage);
+        var chat = services.GetRequiredService<IAiChatService>();
+
+        var response = await chat.SendAsync(
+            User(),
+            new AiChatRequest(
+                AiChatMode.TeamHub,
+                "model-a",
+                [new AiChatMessage("user", "Who supports Example Studio and what is its milestone status?")]));
+
+        tool.Calls.Select(item => item.Name)
+            .Should().Equal("list_team_members", "get_studio_support_overview");
+        provider.Requests.Should().HaveCount(2);
+        provider.Requests[1].UserPrompt.Should().Contain("Alice");
+        provider.Requests[1].UserPrompt.Should().Contain("Alpha milestone");
+        response.Answer.Should().Contain("Example Studio Alpha milestone");
+        response.Citations.Select(item => item.Id).Should().Equal(
+            "teamhub-tool-list_team_members",
+            "teamhub-tool-get_studio_support_overview");
+        response.Usage.Should().Be(new AiTokenUsage(160, 40, 200));
+        usage.Invocations.Should().HaveCount(2);
+        usage.Invocations[1].Invocation.ResourceType.Should().Be("AiTools");
+        usage.Invocations[1].Invocation.ResourceId.Should().Be(
+            "list_team_members,get_studio_support_overview");
+    }
+
+    [Fact]
+    public async Task TeamHub_mode_rejects_more_than_four_tool_calls_before_execution()
+    {
+        var provider = new RecordingProvider(responses:
+        [
+            """{"action":"tools","answer":"","sourceIds":[],"toolCalls":[{"name":"list_team_members","argumentsJson":"{\"query\":\"one\"}"},{"name":"list_team_members","argumentsJson":"{\"query\":\"two\"}"},{"name":"list_team_members","argumentsJson":"{\"query\":\"three\"}"},{"name":"list_team_members","argumentsJson":"{\"query\":\"four\"}"},{"name":"list_team_members","argumentsJson":"{\"query\":\"five\"}"}]}"""
+        ]);
+        var tool = new RecordingToolProvider();
+        await using var services = CreateServices(
+            provider,
+            new RecordingKnowledgeSource(),
+            toolProvider: tool);
+        var chat = services.GetRequiredService<IAiChatService>();
+
+        var action = () => chat.SendAsync(
+            User(),
+            new AiChatRequest(
+                AiChatMode.TeamHub,
+                "model-a",
+                [new AiChatMessage("user", "Run too many lookups")])) ;
+
+        await action.Should().ThrowAsync<AiChatException>().WithMessage("*between 1 and 4*");
+        tool.CallCount.Should().Be(0);
+        provider.Requests.Should().ContainSingle();
     }
 
     [Theory]
@@ -343,7 +449,9 @@ public sealed class AiChatServiceTests
         bool chatEnabled = true,
         string? teamHubInstructions = null,
         string? meetingNotesInstructions = null,
-        bool meetingNotesEnabled = true)
+        bool meetingNotesEnabled = true,
+        IAiChatToolProvider? toolProvider = null,
+        IAiUsageTracker? usageTracker = null)
     {
         var services = new ServiceCollection();
         services.AddAiChat(new ConfigurationBuilder().Build());
@@ -351,6 +459,8 @@ public sealed class AiChatServiceTests
             new TestConfigurationService(provider.Key, chatEnabled, meetingNotesEnabled));
         services.AddSingleton<IAiModelProviderRegistry>(new TestProviderRegistry(provider));
         services.AddSingleton<IAiChatKnowledgeSource>(source);
+        if (toolProvider is not null) services.AddSingleton(toolProvider);
+        if (usageTracker is not null) services.AddSingleton(usageTracker);
         if (teamHubInstructions is not null)
             services.AddSingleton<IAiChatInstructionProvider>(
                 new TestInstructionProvider(teamHubInstructions));
@@ -398,12 +508,14 @@ public sealed class AiChatServiceTests
     private sealed class RecordingProvider(
         string? citation = null,
         string providerKey = AiModelProviderKeys.PfbAiGateway,
-        bool failCatalog = false)
+        bool failCatalog = false,
+        IReadOnlyList<string>? responses = null)
         : IAiModelProvider, IAiModelCatalogProvider
     {
         public string Key => providerKey;
         public AiProviderSettings? LastSettings { get; private set; }
         public AiStructuredGenerationRequest? LastRequest { get; private set; }
+        public List<AiStructuredGenerationRequest> Requests { get; } = [];
 
         public Task<IReadOnlyList<AiModelCatalogItem>> GetModelsAsync(
             AiProviderSettings settings,
@@ -428,13 +540,70 @@ public sealed class AiChatServiceTests
         {
             LastSettings = settings;
             LastRequest = request;
+            Requests.Add(request);
             var sourceIds = citation is null ? "[]" : JsonSerializer.Serialize(new[] { citation });
             return Task.FromResult(new AiStructuredGenerationResult(
                 Key,
                 settings.Model,
-                $$"""{"answer":"Safe answer","sourceIds":{{sourceIds}}}""",
+                responses is not null && Requests.Count <= responses.Count
+                    ? responses[Requests.Count - 1]
+                    : $$"""{"answer":"Safe answer","sourceIds":{{sourceIds}}}""",
                 "request-1",
                 new AiTokenUsage(80, 20, 100)));
+        }
+    }
+
+    private sealed class RecordingToolProvider : IAiChatToolProvider
+    {
+        public IReadOnlyList<AiChatToolDefinition> Definitions { get; } =
+        [
+            new("list_team_members", "List team members", "{\"query\":\"optional\"}"),
+            new("get_studio_support_overview", "Get studio support", "{\"studio\":\"required\"}")
+        ];
+        public int CallCount { get; private set; }
+        public string? LastToolName { get; private set; }
+        public JsonElement LastArguments { get; private set; }
+        public List<(string Name, JsonElement Arguments)> Calls { get; } = [];
+
+        public Task<AiChatSource> ExecuteAsync(
+            AiChatUserContext user,
+            string toolName,
+            JsonElement arguments,
+            CancellationToken cancellationToken = default)
+        {
+            CallCount++;
+            LastToolName = toolName;
+            LastArguments = arguments.Clone();
+            Calls.Add((toolName, arguments.Clone()));
+            return Task.FromResult(toolName switch
+            {
+                "list_team_members" => new AiChatSource(
+                    "teamhub-tool-list_team_members",
+                    "TeamHub team members",
+                    "[{\"employeeName\":\"Alice\",\"role\":\"Engineer\"}]"),
+                "get_studio_support_overview" => new AiChatSource(
+                    "teamhub-tool-get_studio_support_overview",
+                    "Studio support overview",
+                    "{\"studio\":\"Example Studio\",\"milestone\":\"Alpha milestone\"}"),
+                _ => throw new InvalidOperationException("Unexpected test tool.")
+            });
+        }
+    }
+
+    private sealed class RecordingUsageTracker : IAiUsageTracker
+    {
+        public List<(AiUsageOperationContext Operation, AiUsageInvocationContext Invocation)> Invocations { get; } = [];
+
+        public async Task<AiStructuredGenerationResult> TrackGenerationAsync(
+            AiUsageOperationContext operation,
+            AiUsageInvocationContext invocation,
+            string expectedProvider,
+            string expectedModel,
+            Func<CancellationToken, Task<AiStructuredGenerationResult>> generate,
+            CancellationToken cancellationToken = default)
+        {
+            Invocations.Add((operation, invocation));
+            return await generate(cancellationToken);
         }
     }
 

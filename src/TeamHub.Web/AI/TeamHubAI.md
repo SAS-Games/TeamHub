@@ -13,6 +13,25 @@ model prompt. Keep each section independent and concise.
   from completed work.
 - When sources conflict, state which source reports each value.
 
+## AI directory tools
+
+- Use `list_team_members` for all team members or filtered member lists, and `get_team_member`
+  for one person's recorded details.
+- Use `list_team_specializations` for pods, focus areas, responsibilities, and recorded members.
+- Use `list_studios` to identify studios or projects, `list_studio_members` for the members of one
+  studio, and `get_studio_details` for broader studio information.
+- Use `list_studio_milestone_reviews` for a studio's active reviews and
+  `get_studio_milestone_review` for one review's details and attributed feedback.
+- Use `get_studio_support_overview` for TeamHub-owned milestone, expected-delivery, and build-review
+  data for one studio.
+- Use `get_studio_jira_tickets` only when Jira is approved for the current question, and
+  `get_studio_weekly_updates` only when Confluence is approved for the current question. These
+  tools use the signed-in user's personal external-system credential.
+- Supply only the name, GID, email, studio, project, role, section, or focus-area text present in the
+  user's question. Never add the signed-in identity, authorization claims, or guessed identifiers.
+- If a lookup is ambiguous, preserve all returned matches and ask the user to clarify instead of
+  merging records.
+
 ## Team directory
 
 Use directory and specialization records for employees, roles, GIDs, contact details, management

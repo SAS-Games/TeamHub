@@ -157,6 +157,8 @@ builder.Services.AddHttpClient<TeamHub.Web.AI.IMeetingNotesTeamsPublisher, TeamH
     client.Timeout = TimeSpan.FromSeconds(20);
 }).ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false });
 builder.Services.AddAiChat(builder.Configuration);
+builder.Services.AddScoped<IAiChatToolProvider, TeamHub.Web.AI.TeamHubAiDirectoryTools>();
+builder.Services.AddScoped<IAiChatToolProvider, TeamHub.Web.AI.TeamHubAiStudioSupportTools>();
 builder.Services.AddScoped<IAiChatKnowledgeSource, TeamHub.Web.AI.TeamHubChatKnowledgeSource>();
 builder.Services.AddScoped<IAiChatKnowledgeSource, TeamHub.Web.AI.SupportSummaryChatKnowledgeSource>();
 builder.Services.AddScoped<IAiChatKnowledgeSource, TeamHub.Web.AI.TeamHubPageChatKnowledgeSource>();

@@ -12,6 +12,9 @@ public sealed class TeamHubAiInstructionFileProviderTests
         ## Core
         core-rules
 
+        ## AI directory tools
+        tool-rules
+
         ## Team directory
         directory-rules
 
@@ -23,6 +26,9 @@ public sealed class TeamHubAiInstructionFileProviderTests
 
         ## Jira enrichment
         jira-rules
+
+        ## Milestone reviews
+        review-rules
 
         ## Combining sources
         combination-rules
@@ -76,6 +82,37 @@ public sealed class TeamHubAiInstructionFileProviderTests
             sources);
 
         result.Should().NotContain("report-rules");
+    }
+
+    [Fact]
+    public void Source_free_studio_review_question_supplies_tool_routing_rules()
+    {
+        var result = TeamHubAiInstructionFileProvider.SelectSections(
+            Playbook,
+            "Show the milestone reviews for Example Studio",
+            []);
+
+        result.Should().Contain("core-rules")
+            .And.Contain("tool-rules")
+            .And.NotContain("directory-rules")
+            .And.NotContain("review-rules");
+    }
+
+    [Fact]
+    public void Studio_review_tool_result_supplies_review_interpretation_rules()
+    {
+        AiChatSource[] sources =
+        [
+            new("teamhub-tool-list_studio_milestone_reviews", "Reviews", "Alpha")
+        ];
+
+        var result = TeamHubAiInstructionFileProvider.SelectSections(
+            Playbook,
+            "Show the milestone reviews for Example Studio",
+            sources);
+
+        result.Should().Contain("tool-rules")
+            .And.Contain("review-rules");
     }
 
     [Fact]

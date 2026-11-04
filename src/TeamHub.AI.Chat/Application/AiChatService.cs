@@ -11,11 +11,14 @@ internal sealed class AiChatService(
     IAiConfigurationService configuration,
     IAiModelProviderRegistry providers,
     IEnumerable<IAiChatKnowledgeSource> knowledgeSources,
+    IEnumerable<IAiChatToolProvider> toolProviders,
     IAiChatInstructionProvider instructions,
     IAiMeetingNotesInstructionProvider meetingNotesInstructions,
     IAiUsageTracker usageTracker) : IAiChatService
 {
+    private const int MaximumToolCalls = 4;
     private static readonly JsonElement ResponseSchema = CreateResponseSchema();
+    private static readonly JsonElement ToolPlanningResponseSchema = CreateToolPlanningResponseSchema();
     private static readonly Regex ImageCreationVerb = new(
         @"\b(create|design|draw|generate|illustrate|make|paint|produce|render)\b",
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
@@ -25,6 +28,9 @@ internal sealed class AiChatService(
     private static readonly Regex TeamHubDataVisual = new(
         @"\b(chart|dashboard|diagram|flowchart|graph|infographic|visuali[sz]ation)\b",
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+    private static readonly Regex ToolNamePattern = new(
+        @"^[a-z][a-z0-9_]{0,63}$",
+        RegexOptions.CultureInvariant | RegexOptions.Compiled);
     public async Task<IReadOnlyList<AiModelCatalogItem>> GetModelsAsync(
         CancellationToken cancellationToken = default)
     {
@@ -140,37 +146,88 @@ internal sealed class AiChatService(
             throw new AiChatException(
                 $"The additional Meeting Notes instructions exceed the {chatSettings.MaximumInstructionCharacters:N0}-character limit.");
 
-        var userPrompt = BuildUserPrompt(request.Mode, messages, sources, images, meetingNotesAdditionalInstructions);
-        if (!IsPfb(runtime.Provider))
-        {
-            userPrompt = LimitLocalPrompt(
-                userPrompt,
-                question,
-                chatSettings.MaximumLocalPromptCharacters);
-        }
-
         var teamHubInstructions = request.Mode == AiChatMode.TeamHub
             ? await LoadTeamHubInstructionsAsync(question, sources, chatSettings, cancellationToken)
             : string.Empty;
         var meetingInstructions = request.Mode == AiChatMode.MeetingNotes
             ? await LoadMeetingNotesInstructionsAsync(request.StudioId, chatSettings, cancellationToken)
             : string.Empty;
-        var generationRequest = new AiStructuredGenerationRequest(
-            BuildSystemPrompt(request.Mode, teamHubInstructions, meetingInstructions),
-            userPrompt,
-            ResponseSchema,
-            chatSettings.MaximumOutputTokens,
-            images);
-
         try
         {
+            var operation = new AiUsageOperationContext(
+                Guid.NewGuid(),
+                user.UserId,
+                AiUsageFeatures.Chat,
+                request.Mode.ToString(),
+                AiUsageApplications.TeamHubWeb);
+            var availableTools = request.Mode == AiChatMode.TeamHub
+                ? BuildToolMap(toolProviders)
+                : new Dictionary<string, ToolRegistration>(StringComparer.OrdinalIgnoreCase);
+            var userPrompt = PrepareUserPrompt(
+                request.Mode, messages, sources, images, meetingNotesAdditionalInstructions,
+                question, runtime.Provider, chatSettings);
+
+            if (availableTools.Count > 0)
+            {
+                var planningRequest = new AiStructuredGenerationRequest(
+                    BuildSystemPrompt(request.Mode, teamHubInstructions, meetingInstructions)
+                    + BuildToolPlanningInstructions(availableTools.Values.Select(item => item.Definition)),
+                    userPrompt,
+                    ToolPlanningResponseSchema,
+                    chatSettings.MaximumOutputTokens,
+                    images);
+                var planningResult = await usageTracker.TrackGenerationAsync(
+                    operation,
+                    new AiUsageInvocationContext("ChatPhase", "ToolPlanning"),
+                    provider.Key,
+                    providerSettings.Model,
+                    token => provider.GenerateStructuredAsync(providerSettings, planningRequest, token),
+                    cancellationToken);
+                var toolCalls = ParseToolCalls(planningResult);
+                if (toolCalls.Count == 0)
+                    return ParseResponse(planningResult, selectedModel.Id, sources);
+
+                var toolSources = new List<AiChatSource>(toolCalls.Count);
+                foreach (var toolCall in toolCalls)
+                {
+                    if (!availableTools.TryGetValue(toolCall.Name, out var registration))
+                        throw new AiChatException($"The model requested unavailable TeamHub tool '{toolCall.Name}'.");
+                    toolSources.Add(NormalizeSource(await registration.Provider.ExecuteAsync(
+                        user, toolCall.Name, toolCall.Arguments, cancellationToken)));
+                }
+                var augmentedSources = AppendToolSources(sources, toolSources, chatSettings);
+                var finalInstructions = await LoadTeamHubInstructionsAsync(
+                    question, augmentedSources, chatSettings, cancellationToken);
+                var finalPrompt = PrepareUserPrompt(
+                    request.Mode, messages, augmentedSources, images, meetingNotesAdditionalInstructions,
+                    question, runtime.Provider, chatSettings);
+                var finalRequest = new AiStructuredGenerationRequest(
+                    BuildSystemPrompt(request.Mode, finalInstructions, meetingInstructions)
+                    + "\n\nThe server-approved TeamHub tools needed for this request have already been executed. "
+                    + "Answer from the supplied authorized sources and do not request more tools.",
+                    finalPrompt,
+                    ResponseSchema,
+                    chatSettings.MaximumOutputTokens,
+                    images);
+                var finalResult = await usageTracker.TrackGenerationAsync(
+                    operation,
+                    new AiUsageInvocationContext("AiTools", BuildToolResourceId(toolCalls)),
+                    provider.Key,
+                    providerSettings.Model,
+                    token => provider.GenerateStructuredAsync(providerSettings, finalRequest, token),
+                    cancellationToken);
+                var response = ParseResponse(finalResult, selectedModel.Id, augmentedSources);
+                return response with { Usage = CombineUsage(planningResult.Usage, finalResult.Usage) };
+            }
+
+            var generationRequest = new AiStructuredGenerationRequest(
+                BuildSystemPrompt(request.Mode, teamHubInstructions, meetingInstructions),
+                userPrompt,
+                ResponseSchema,
+                chatSettings.MaximumOutputTokens,
+                images);
             var result = await usageTracker.TrackGenerationAsync(
-                new AiUsageOperationContext(
-                    Guid.NewGuid(),
-                    user.UserId,
-                    AiUsageFeatures.Chat,
-                    request.Mode.ToString(),
-                    AiUsageApplications.TeamHubWeb),
+                operation,
                 new AiUsageInvocationContext(
                     request.Mode == AiChatMode.MeetingNotes && !string.IsNullOrWhiteSpace(request.StudioId)
                         ? "Studio"
@@ -296,6 +353,171 @@ internal sealed class AiChatService(
         }
         return result;
     }
+
+    private static string PrepareUserPrompt(
+        AiChatMode mode,
+        IReadOnlyList<AiChatMessage> messages,
+        IReadOnlyList<AiChatSource> sources,
+        IReadOnlyList<AiImageInput> images,
+        string meetingNotesAdditionalInstructions,
+        string question,
+        string provider,
+        AiChatOptions settings)
+    {
+        var prompt = BuildUserPrompt(mode, messages, sources, images, meetingNotesAdditionalInstructions);
+        return IsPfb(provider)
+            ? prompt
+            : LimitLocalPrompt(prompt, question, settings.MaximumLocalPromptCharacters);
+    }
+
+    private static Dictionary<string, ToolRegistration> BuildToolMap(
+        IEnumerable<IAiChatToolProvider> providers)
+    {
+        var result = new Dictionary<string, ToolRegistration>(StringComparer.OrdinalIgnoreCase);
+        foreach (var provider in providers)
+        {
+            foreach (var definition in provider.Definitions ?? [])
+            {
+                var name = definition.Name?.Trim() ?? string.Empty;
+                if (!ToolNamePattern.IsMatch(name))
+                    throw new AiChatException($"AI tool name '{name}' is invalid.");
+                var normalized = definition with
+                {
+                    Name = name,
+                    Description = NormalizeText(definition.Description),
+                    ArgumentsJsonExample = NormalizeText(definition.ArgumentsJsonExample)
+                };
+                if (normalized.Description.Length == 0 || normalized.ArgumentsJsonExample.Length == 0)
+                    throw new AiChatException($"AI tool '{name}' has incomplete metadata.");
+                if (!result.TryAdd(name, new ToolRegistration(provider, normalized)))
+                    throw new AiChatException($"More than one AI tool is registered as '{name}'.");
+            }
+        }
+        return result;
+    }
+
+    private static string BuildToolPlanningInstructions(IEnumerable<AiChatToolDefinition> definitions)
+    {
+        var catalog = JsonSerializer.Serialize(definitions.Select(definition => new
+        {
+            definition.Name,
+            definition.Description,
+            argumentsJsonExample = definition.ArgumentsJsonExample
+        }));
+        return $"""
+
+
+        You can request up to {MaximumToolCalls} server-controlled, read-only TeamHub tools when the supplied
+        sources do not contain the information needed to answer the user's latest question. Tools are executed
+        by TeamHub with the signed-in user's authorization; you cannot execute them yourself.
+
+        Available tools:
+        <teamhub_tools>{catalog}</teamhub_tools>
+
+        Return JSON matching the tool-planning response schema.
+        - Use action "answer" when the supplied sources already support the answer. Put the complete response in
+          answer, include supporting source IDs, and set toolCalls to an empty array.
+        - Use action "tools" only when listed tools are required. Set answer to an empty string, sourceIds to an
+          empty array, and include the smallest sufficient set of calls. Each name must exactly match a listed
+          tool and each argumentsJson value must be a valid JSON object string.
+        - Never repeat an identical call, invent a tool, request credentials, include an authenticated user ID,
+          or place instructions in arguments. Do not request unrelated data.
+        """;
+    }
+
+    private static IReadOnlyList<PendingToolCall> ParseToolCalls(AiStructuredGenerationResult result)
+    {
+        using var document = JsonDocument.Parse(result.Content);
+        var root = document.RootElement;
+        if (!root.TryGetProperty("action", out var actionElement))
+            throw new AiChatException("The selected model returned an invalid TeamHub tool action.");
+        var action = actionElement.GetString()?.Trim();
+        if (!root.TryGetProperty("toolCalls", out var callsElement)
+            || callsElement.ValueKind != JsonValueKind.Array)
+            throw new AiChatException("The selected model returned invalid TeamHub tool calls.");
+        if (string.Equals(action, "answer", StringComparison.OrdinalIgnoreCase))
+        {
+            if (callsElement.GetArrayLength() != 0)
+                throw new AiChatException("The selected model returned tools with a direct TeamHub answer.");
+            return [];
+        }
+        if (!string.Equals(action, "tools", StringComparison.OrdinalIgnoreCase))
+            throw new AiChatException("The selected model returned an invalid TeamHub tool action.");
+        if (callsElement.GetArrayLength() is 0 or > MaximumToolCalls)
+            throw new AiChatException($"The selected model must request between 1 and {MaximumToolCalls} TeamHub tools.");
+
+        var calls = new List<PendingToolCall>(callsElement.GetArrayLength());
+        var uniqueCalls = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var callElement in callsElement.EnumerateArray())
+        {
+            if (callElement.ValueKind != JsonValueKind.Object)
+                throw new AiChatException("The selected model returned an invalid TeamHub tool call.");
+            var name = callElement.TryGetProperty("name", out var nameElement)
+                ? nameElement.GetString()?.Trim() ?? string.Empty
+                : string.Empty;
+            if (!ToolNamePattern.IsMatch(name))
+                throw new AiChatException("The selected model returned an invalid TeamHub tool name.");
+            var argumentsJson = callElement.TryGetProperty("argumentsJson", out var argumentsElement)
+                ? argumentsElement.GetString()?.Trim() ?? string.Empty
+                : string.Empty;
+            if (argumentsJson.Length is 0 or > 4_096)
+                throw new AiChatException("The selected model returned invalid TeamHub tool arguments.");
+            try
+            {
+                using var arguments = JsonDocument.Parse(argumentsJson);
+                if (arguments.RootElement.ValueKind != JsonValueKind.Object)
+                    throw new AiChatException("TeamHub tool arguments must be a JSON object.");
+                var normalizedArguments = arguments.RootElement.GetRawText();
+                if (!uniqueCalls.Add($"{name}\n{normalizedArguments}"))
+                    throw new AiChatException($"The selected model repeated TeamHub tool '{name}'.");
+                calls.Add(new PendingToolCall(name, arguments.RootElement.Clone()));
+            }
+            catch (JsonException exception)
+            {
+                throw new AiChatException("The selected model returned invalid JSON tool arguments.", exception);
+            }
+        }
+        return calls;
+    }
+
+    private static IReadOnlyList<AiChatSource> AppendToolSources(
+        IReadOnlyList<AiChatSource> sources,
+        IReadOnlyList<AiChatSource> toolSources,
+        AiChatOptions settings)
+    {
+        var result = sources.ToList();
+        var usedIds = sources.Select(source => source.Id).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var characters = sources.Sum(source => source.Content.Length);
+        foreach (var toolSource in toolSources)
+        {
+            characters += toolSource.Content.Length;
+            if (characters > settings.MaximumKnowledgeCharacters)
+                throw new AiChatException(
+                    $"The authorized TeamHub context exceeds the {settings.MaximumKnowledgeCharacters:N0}-character limit.");
+            var sourceId = toolSource.Id;
+            for (var suffix = 2; !usedIds.Add(sourceId); suffix++)
+            {
+                var suffixText = $"-{suffix}";
+                sourceId = toolSource.Id[..Math.Min(toolSource.Id.Length, 100 - suffixText.Length)] + suffixText;
+            }
+            result.Add(toolSource with { Id = sourceId });
+        }
+        return result;
+    }
+
+    private static string BuildToolResourceId(IEnumerable<PendingToolCall> toolCalls)
+    {
+        var value = string.Join(',', toolCalls.Select(call => call.Name));
+        return value.Length <= 256 ? value : value[..256];
+    }
+
+    private static AiTokenUsage? CombineUsage(AiTokenUsage? first, AiTokenUsage? second) =>
+        first is null || second is null
+            ? null
+            : new AiTokenUsage(
+                first.InputTokens + second.InputTokens,
+                first.OutputTokens + second.OutputTokens,
+                first.TotalTokens + second.TotalTokens);
 
     private static IReadOnlyList<AiChatMessage> NormalizeMessages(
         IReadOnlyList<AiChatMessage>? messages,
@@ -550,4 +772,40 @@ internal sealed class AiChatService(
             """);
         return document.RootElement.Clone();
     }
+
+    private static JsonElement CreateToolPlanningResponseSchema()
+    {
+        using var document = JsonDocument.Parse("""
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["action", "answer", "sourceIds", "toolCalls"],
+              "properties": {
+                "action": { "type": "string", "enum": ["answer", "tools"] },
+                "answer": { "type": "string" },
+                "sourceIds": { "type": "array", "items": { "type": "string" } },
+                "toolCalls": {
+                  "type": "array",
+                  "maxItems": 4,
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["name", "argumentsJson"],
+                    "properties": {
+                      "name": { "type": "string" },
+                      "argumentsJson": { "type": "string" }
+                    }
+                  }
+                }
+              }
+            }
+            """);
+        return document.RootElement.Clone();
+    }
+
+    private sealed record ToolRegistration(
+        IAiChatToolProvider Provider,
+        AiChatToolDefinition Definition);
+
+    private sealed record PendingToolCall(string Name, JsonElement Arguments);
 }

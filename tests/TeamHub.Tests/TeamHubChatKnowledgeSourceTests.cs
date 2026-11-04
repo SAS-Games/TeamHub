@@ -1,5 +1,6 @@
 using System.Text.Json;
 using FluentAssertions;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.AspNetCore.Mvc;
 using TeamHub.AI.Chat.Contracts;
 using TeamHub.AI.Contracts;
@@ -78,7 +79,7 @@ public sealed class TeamHubChatKnowledgeSourceTests
     }
 
     [Fact]
-    public async Task Team_mode_includes_matching_visible_team_directory_members()
+    public async Task Team_directory_tool_returns_matching_visible_member_details()
     {
         var user = new AuthorizedUserRecord(
             Guid.NewGuid(), "user@example.com", null, "Test User", TeamHubUserTypes.Registered,
@@ -97,23 +98,107 @@ public sealed class TeamHubChatKnowledgeSourceTests
                 }
             ]
         };
-        var source = new TeamHubChatKnowledgeSource(
+        var tools = new TeamHubAiDirectoryTools(
             new TeamOnlyAccessService(user),
-            new EmptyMilestoneService(),
+            new StubTeamDirectoryService(directory),
             new EmptyStudioService(),
-            new EmptyReviewService(),
-            new EmptyWorkflowService(),
-            new StubTeamDirectoryService(directory));
+            NullLogger<TeamHubAiDirectoryTools>.Instance);
+        using var arguments = JsonDocument.Parse("""{"query":"Ramu"}""");
 
-        var result = await source.SearchAsync(
+        var result = await tools.ExecuteAsync(
             new AiChatUserContext(user.UserId, user.DisplayName, user.UserType),
-            "Who is Ramu?");
+            "get_team_member",
+            arguments.RootElement);
 
-        var team = result.Should().ContainSingle(item => item.Id == "teamhub-team-directory").Subject;
-        team.Title.Should().Be("TeamHub team directory");
-        team.Content.Should().Contain("Ramachandran, Ramu");
-        team.Content.Should().Contain("Director");
-        team.Content.Should().Contain("ramu.ramachandran@sony.com");
+        result.Id.Should().Be("teamhub-tool-get_team_member");
+        result.Title.Should().Be("TeamHub team member details");
+        result.Content.Should().Contain("Ramachandran, Ramu");
+        result.Content.Should().Contain("Director");
+        result.Content.Should().Contain("ramu.ramachandran@sony.com");
+    }
+
+    [Fact]
+    public async Task Studio_milestone_review_tool_returns_only_the_requested_studios_reviews()
+    {
+        var user = new AuthorizedUserRecord(
+            Guid.NewGuid(), "user@example.com", null, "Test User", TeamHubUserTypes.Registered,
+            true, true, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow);
+        var studio = new StudioDetails
+        {
+            Id = "studio-1",
+            StudioName = "Example Studio",
+            ProjectName = "Example Project",
+            IsActive = true
+        };
+        var expected = CreateReview("Example Project", "Alpha", "TEAM-42");
+        var other = CreateReview("Other Project", "Beta", "OTHER-9");
+        var tools = new TeamHubAiStudioSupportTools(
+            new ModuleAccessService(user, TeamHubModules.MilestoneReview),
+            new StubStudioService(studio),
+            new EmptyMilestoneService(),
+            new StubReviewService(expected, other),
+            new StubPlanningService(),
+            new ThrowingJiraService(),
+            new ThrowingConfluenceService(),
+            NullLogger<TeamHubAiStudioSupportTools>.Instance);
+        using var arguments = JsonDocument.Parse("""{"studio":"Example Studio"}""");
+
+        var result = await tools.ExecuteAsync(
+            new AiChatUserContext(user.UserId, user.DisplayName, user.UserType),
+            "list_studio_milestone_reviews",
+            arguments.RootElement);
+
+        result.Id.Should().Be("teamhub-tool-list_studio_milestone_reviews");
+        result.Content.Should().Contain("Example Project");
+        result.Content.Should().Contain("TEAM-42");
+        result.Content.Should().NotContain("OTHER-9");
+    }
+
+    [Fact]
+    public async Task Studio_jira_tool_requires_current_question_approval_and_uses_the_signed_in_user()
+    {
+        var user = new AuthorizedUserRecord(
+            Guid.NewGuid(), "user@example.com", null, "Test User", TeamHubUserTypes.Registered,
+            true, true, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow);
+        var jira = new RecordingJiraService();
+        var tools = new TeamHubAiStudioSupportTools(
+            new ModuleAccessService(user, TeamHubModules.SupportSummary),
+            new StubStudioService(new StudioDetails
+            {
+                Id = "studio-1",
+                StudioName = "Example Studio",
+                ProjectName = "Example Project",
+                IsActive = true
+            }),
+            new EmptyMilestoneService(),
+            new EmptyReviewService(),
+            new StubPlanningService(),
+            jira,
+            new ThrowingConfluenceService(),
+            NullLogger<TeamHubAiStudioSupportTools>.Instance);
+        using var arguments = JsonDocument.Parse("""{"studio":"studio-1"}""");
+
+        var denied = () => tools.ExecuteAsync(
+            new AiChatUserContext(user.UserId, user.DisplayName, user.UserType),
+            "get_studio_jira_tickets",
+            arguments.RootElement);
+        await denied.Should().ThrowAsync<AiChatException>().WithMessage("*approval is required*");
+        jira.Query.Should().BeNull();
+
+        var result = await tools.ExecuteAsync(
+            new AiChatUserContext(
+                user.UserId,
+                user.DisplayName,
+                user.UserType,
+                new HashSet<string>([AiChatExternalSources.Jira], StringComparer.OrdinalIgnoreCase)),
+            "get_studio_jira_tickets",
+            arguments.RootElement);
+
+        result.Content.Should().Contain("TEAM-88");
+        jira.Query.Should().NotBeNull();
+        jira.Query!.RequestingUserId.Should().Be(user.UserId);
+        jira.Query.AllowPrivilegedDefaultCredential.Should().BeFalse();
+        jira.Query.ActiveSprintOnly.Should().BeTrue();
     }
 
     [Fact]
@@ -251,10 +336,7 @@ public sealed class TeamHubChatKnowledgeSourceTests
         var source = new TeamHubChatKnowledgeSource(
             new ModuleAccessService(user, TeamHubModules.Milestones),
             new StubMilestoneService(),
-            new EmptyStudioService(),
-            new EmptyReviewService(),
-            new EmptyWorkflowService(),
-            new StubTeamDirectoryService(new TeamDirectoryDto()));
+            new EmptyWorkflowService());
 
         var result = await source.SearchAsync(
             new AiChatUserContext(user.UserId, user.DisplayName, user.UserType),
@@ -532,18 +614,34 @@ public sealed class TeamHubChatKnowledgeSourceTests
         }
     }
 
-    private sealed class EmptyReviewService : IMilestoneReviewService
+    private static Review CreateReview(string project, string milestone, string jiraTicket) => new(
+        Guid.NewGuid(),
+        project,
+        milestone,
+        $"{milestone} review",
+        MilestoneReviewStatus.Published,
+        DateTimeOffset.UtcNow.AddDays(-2),
+        DateTimeOffset.UtcNow.AddDays(-1),
+        jiraTicket,
+        [],
+        [],
+        [],
+        null,
+        null,
+        null);
+
+    private class EmptyReviewService : IMilestoneReviewService
     {
         public Task<Review?> GetCurrentAsync(CancellationToken cancellationToken = default) =>
             Task.FromResult<Review?>(null);
 
-        public Task<IReadOnlyList<Review>> GetActiveAsync(CancellationToken cancellationToken = default) =>
+        public virtual Task<IReadOnlyList<Review>> GetActiveAsync(CancellationToken cancellationToken = default) =>
             Task.FromResult<IReadOnlyList<Review>>([]);
 
         public Task<Review?> GetDraftAsync(CancellationToken cancellationToken = default) =>
             Task.FromResult<Review?>(null);
 
-        public Task<IReadOnlyList<Review>> GetHistoryAsync(CancellationToken cancellationToken = default) =>
+        public virtual Task<IReadOnlyList<Review>> GetHistoryAsync(CancellationToken cancellationToken = default) =>
             Task.FromResult<IReadOnlyList<Review>>([]);
 
         public Task<Review?> CreateDraftAsync(
@@ -584,6 +682,38 @@ public sealed class TeamHubChatKnowledgeSourceTests
             Guid actorId,
             bool isAdmin,
             CancellationToken cancellationToken = default) => throw new NotSupportedException();
+    }
+
+    private sealed class StubReviewService(params Review[] reviews) : EmptyReviewService
+    {
+        public override Task<IReadOnlyList<Review>> GetActiveAsync(
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult<IReadOnlyList<Review>>(reviews);
+    }
+
+    private sealed class RecordingJiraService : IStudioJiraTicketService
+    {
+        public StudioJiraTicketQuery? Query { get; private set; }
+
+        public Task<StudioJiraTicketResult> GetTicketsAsync(
+            StudioJiraTicketQuery query,
+            CancellationToken cancellationToken = default)
+        {
+            Query = query;
+            return Task.FromResult(new StudioJiraTicketResult
+            {
+                IsConfigured = true,
+                IsReadOnly = true,
+                Groups =
+                [
+                    new StudioJiraTicketGroup
+                    {
+                        Name = "Direct Support",
+                        Tickets = [new StudioJiraTicket { TicketId = "TEAM-88", Summary = "Support request" }]
+                    }
+                ]
+            });
+        }
     }
 
     private sealed class EmptyWorkflowService : IWorkflowReadService

@@ -18,6 +18,7 @@ public sealed class TeamHubAiInstructionFileProvider(
     private const string DatesSection = "Dates and current state";
     private const string ReportsSection = "Reports and tables";
     private const string VisualsSection = "Charts and diagrams";
+    private const string ToolsSection = "AI directory tools";
 
     private static readonly IReadOnlyDictionary<string, string> SourceSections =
         new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
@@ -57,6 +58,10 @@ public sealed class TeamHubAiInstructionFileProvider(
         "report", "table", "format", "compare", "comparison", "spreadsheet");
     private static readonly Regex VisualTerms = Terms(
         "chart", "graph", "diagram", "flowchart", "infographic", "visualization", "visualisation");
+    private static readonly Regex ToolTerms = Terms(
+        "member", "members", "employee", "employees", "directory", "specialization", "specializations",
+        "studio", "studios", "project", "projects", "milestone review", "milestone reviews",
+        "support", "jira", "ticket", "tickets", "confluence", "weekly update", "weekly updates");
 
     private readonly string path = Path.Combine(environment.ContentRootPath, "AI", "TeamHubAI.md");
 
@@ -104,6 +109,7 @@ public sealed class TeamHubAiInstructionFileProvider(
         if (DateTerms.IsMatch(question)) selected.Add(DatesSection);
         if (ReportTerms.IsMatch(question)) selected.Add(ReportsSection);
         if (VisualTerms.IsMatch(question)) selected.Add(VisualsSection);
+        if (ToolTerms.IsMatch(question)) selected.Add(ToolsSection);
 
         // The reusable chat module already supplies the security and response-format
         // rules. A source-free, ordinary question needs no TeamHub playbook text.
@@ -124,6 +130,22 @@ public sealed class TeamHubAiInstructionFileProvider(
     private static string? ResolveSourceSection(string sourceId)
     {
         if (SourceSections.TryGetValue(sourceId, out var section)) return section;
+        if (sourceId.StartsWith("teamhub-tool-list_team_", StringComparison.OrdinalIgnoreCase)
+            || sourceId.StartsWith("teamhub-tool-get_team_", StringComparison.OrdinalIgnoreCase))
+            return "Team directory";
+        if (sourceId.StartsWith("teamhub-tool-list_studio", StringComparison.OrdinalIgnoreCase)
+            || sourceId.StartsWith("teamhub-tool-get_studio", StringComparison.OrdinalIgnoreCase))
+        {
+            if (sourceId.Contains("milestone_review", StringComparison.OrdinalIgnoreCase))
+                return "Milestone reviews";
+            if (sourceId.Contains("support_overview", StringComparison.OrdinalIgnoreCase))
+                return "Support Summary";
+            if (sourceId.Contains("jira", StringComparison.OrdinalIgnoreCase))
+                return "Jira enrichment";
+            if (sourceId.Contains("weekly_updates", StringComparison.OrdinalIgnoreCase))
+                return "Confluence enrichment";
+            return "Studios and projects";
+        }
         return sourceId.StartsWith("teamhub-flow-", StringComparison.OrdinalIgnoreCase)
             ? "Flow Designer"
             : null;
