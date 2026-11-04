@@ -208,23 +208,25 @@ body {
 }
 
 .hero-project-studios-table { min-width: 760px; }
-.hero-project-studios-table th:first-child { width: 300px; }
+.hero-project-studios-table th:first-child { width: 340px; }
 .hero-project-studios-table th:last-child { width: 160px; }
-.hero-project-studio-identity-cell { min-width: 280px; }
+.hero-project-studio-identity-cell { min-width: 320px; }
 .hero-project-studio-identity {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: .35rem;
-  padding: .5rem;
+  gap: .25rem;
+  padding: .4rem;
   text-align: center;
 }
 .hero-project-studio-logo {
-  width: 160px;
-  height: 160px;
+  width: 260px;
+  height: auto;
   max-width: 100%;
-  margin-bottom: .55rem;
+  max-height: 210px;
+  margin-bottom: .1rem;
   object-fit: contain;
+  display: block;
 }
 .hero-project-game-name { font-size: 1.05rem; line-height: 1.25; }
 .hero-project-studio-name { color: var(--text-muted-color); font-size: .875rem; }
