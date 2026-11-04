@@ -20,8 +20,11 @@ public class IndexModel(IStudioDirectoryService studioDirectoryService, IMilesto
     {
         var nowUtc = DateTime.UtcNow;
         TodayUtc = nowUtc.Date;
+        var requestedStudioId = StudioId?.Trim();
         var studios = (await studioDirectoryService.GetStudiosAsync(cancellationToken))
-            .Where(studio => studio.IsActive)
+            .Where(studio => studio.IsActive
+                || (!string.IsNullOrWhiteSpace(requestedStudioId)
+                    && string.Equals(studio.Id, requestedStudioId, StringComparison.OrdinalIgnoreCase)))
             .OrderBy(studio => studio.StudioGroup)
             .ThenBy(studio => studio.StudioName)
             .ToList();

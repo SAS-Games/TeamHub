@@ -117,8 +117,10 @@
                     </div>
                     <div class="col-12">
                         <label asp-for="Input.AboutGame" class="form-label">About the Game</label>
-                        <textarea asp-for="Input.AboutGame" class="form-control" rows="4" placeholder="Describe the game, its genre, and player experience."></textarea>
+                        <textarea asp-for="Input.AboutGame" class="form-control font-monospace" rows="7" placeholder="Describe the game, its genre, and player experience using Markdown."></textarea>
                         <span asp-validation-for="Input.AboutGame" class="text-danger"></span>
+                        <div class="form-text">Markdown formatting is supported and rendered safely on the Hero Project Studios page.</div>
+                        <partial name="_MarkdownHelp" />
                     </div>
                     <div class="col-md-6 col-xl-4">
                         <label asp-for="Input.Location" class="form-label">Location</label>

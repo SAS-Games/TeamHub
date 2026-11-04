@@ -34,6 +34,31 @@ public sealed class HeroProjectStudiosModelTests
         model.Studios[1].ReleaseDate.Should().Be(new DateTime(2025, 6, 15));
     }
 
+    [Fact]
+    public async Task StudioDashboard_AllowsAnExplicitlySelectedReleasedStudio()
+    {
+        var active = new StudioDetails
+        {
+            Id = "active", StudioName = "Active Studio", ProjectName = "Current Game", IsActive = true
+        };
+        var released = new StudioDetails
+        {
+            Id = "released", StudioName = "Released Studio", ProjectName = "Shipped Game", IsActive = false
+        };
+        var model = new TeamHub.Web.Pages.Studio.IndexModel(
+            new StubStudioDirectoryService([active, released]),
+            new StubMilestoneTrackerService([]))
+        {
+            StudioId = released.Id
+        };
+
+        await model.OnGetAsync(CancellationToken.None);
+
+        model.SelectedStudio.Should().NotBeNull();
+        model.SelectedStudio!.Studio.Id.Should().Be(released.Id);
+        model.Studios.Select(item => item.Studio.Id).Should().BeEquivalentTo([active.Id, released.Id]);
+    }
+
     private sealed class StubStudioDirectoryService(IReadOnlyList<StudioDetails> studios) : IStudioDirectoryService
     {
         public Task<IReadOnlyList<StudioDetails>> GetStudiosAsync(CancellationToken cancellationToken = default) => Task.FromResult(studios);

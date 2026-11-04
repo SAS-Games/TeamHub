@@ -1,7 +1,12 @@
 @page "/HeroProjectStudios"
 @model TeamHub.Web.Pages.HeroProjectStudiosModel
+@using TeamHub.Authentication
+@using TeamHub.Web.AccessControl
+@inject ICurrentAccessService CurrentAccess
 @{
     ViewData["Title"] = "Hero Project Studios";
+    var canOpenStudio = User.Identity?.IsAuthenticated == true
+        && await CurrentAccess.CanAsync(TeamHubModules.StudioConfiguration);
 }
 
 <div class="page-hero">
@@ -34,11 +39,9 @@ else
                 <table class="table styled-table align-middle hero-project-studios-table mb-0">
                     <thead>
                         <tr>
-                            <th>Studio Name</th>
-                            <th>Game Name</th>
-                            <th>Icon</th>
-                            <th>About the Game</th>
-                            <th>Release Date</th>
+                            <th scope="col">Game &amp; Studio</th>
+                            <th scope="col">About the Game</th>
+                            <th scope="col">Release Date</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -49,13 +52,27 @@ else
                             ? Url.Content("~/images/teamhub-logo.svg")
                             : Url.Content($"~/studio-logos/{studio.LogoFileName}");
                         <tr>
-                            <td>
-                                <strong>@studio.StudioName</strong>
-                                <span class="badge ms-2 @(studio.IsActive ? "text-bg-success" : "text-bg-secondary")">@(studio.IsActive ? "Active" : "Released")</span>
+                            <td class="hero-project-studio-identity-cell">
+                                <div class="hero-project-studio-identity">
+                                    <img class="hero-project-studio-logo" src="@logoUrl" alt="@studio.StudioName logo" />
+                                    <strong class="hero-project-game-name">@(string.IsNullOrWhiteSpace(studio.ProjectName) ? "-" : studio.ProjectName)</strong>
+                                    <span class="hero-project-studio-name">@studio.StudioName</span>
+                                    @if (canOpenStudio)
+                                    {
+                                        <a class="btn btn-sm hero-project-studio-status @(studio.IsActive ? "btn-success" : "btn-secondary")"
+                                           asp-page="/Studio/Index"
+                                           asp-route-studioId="@studio.Id"
+                                           aria-label="Open @studio.StudioName studio page">@(studio.IsActive ? "Active" : "Released")</a>
+                                    }
+                                    else
+                                    {
+                                        <span class="badge @(studio.IsActive ? "text-bg-success" : "text-bg-secondary")">@(studio.IsActive ? "Active" : "Released")</span>
+                                    }
+                                </div>
                             </td>
-                            <td>@studio.ProjectName</td>
-                            <td><img class="hero-project-studio-logo" src="@logoUrl" alt="@studio.StudioName logo" /></td>
-                            <td class="hero-project-studio-details">@(string.IsNullOrWhiteSpace(studio.AboutGame) ? "-" : studio.AboutGame)</td>
+                            <td class="hero-project-studio-details">
+                                <safe-markdown class="markdown-content hero-project-about-markdown" text="@(string.IsNullOrWhiteSpace(studio.AboutGame) ? "-" : studio.AboutGame)"></safe-markdown>
+                            </td>
                             <td class="text-nowrap">@(item.ReleaseDate?.ToString("dd MMM yyyy") ?? "-")</td>
                         </tr>
                     }
