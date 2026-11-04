@@ -36,12 +36,19 @@ provider or model. It can group by user, feature, subfeature, application, provi
 user/feature, feature/model, user/feature/model or UTC day. Missing provider telemetry is counted as
 unavailable rather than as zero. Administrators can run these reports from **Configuration > AI
 Services > AI Usage Ledger**; the default view covers the last 30 UTC days and groups by user,
-feature and model.
+feature and model. The active filters and grouping can be downloaded as a usage CSV, a tool-activity
+CSV, or one formatted Excel workbook with separate **Usage** and **Tool activity** worksheets.
 
 Raw operations default to 12 months of retention. `AI:Usage:RetentionMonths` accepts 6 through 120;
-startup initialization prunes older operations, their provider invocations and their tool activity. The module also exposes
-`DeleteBeforeAsync` for explicit maintenance. Long-lived monthly rollups are intentionally deferred
+startup initialization prunes older operations, their provider invocations, tool activity and old
+threshold markers. A background maintenance service repeats this cleanup every 24 hours without
+requiring an application restart. `AI:Usage:MaintenanceIntervalHours` can set the interval from 1 to
+168 hours. The module also exposes `DeleteBeforeAsync` for explicit maintenance. Every cycle logs its
+cutoff, deleted operation count and any failure. Long-lived monthly rollups are intentionally deferred
 until the organization confirms reporting requirements.
+
+Back up `data/ai-usage.db` with the rest of TeamHub's application data. Use a SQLite-consistent backup
+procedure while TeamHub is running, or stop TeamHub before copying or restoring the database file.
 
 ## Daily consumption limits
 

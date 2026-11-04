@@ -6,6 +6,7 @@ public sealed class AiUsageOptions
 {
     public const string SectionName = "AI:Usage";
     public int RetentionMonths { get; set; } = 12;
+    public int MaintenanceIntervalHours { get; set; } = 24;
 }
 
 public static class AiUsageFeatures

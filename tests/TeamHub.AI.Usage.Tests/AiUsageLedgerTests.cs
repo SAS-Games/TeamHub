@@ -311,6 +311,47 @@ public sealed class AiUsageLedgerTests
     }
 
     [Fact]
+    public async Task Retention_cleanup_deletes_old_operations_and_threshold_markers()
+    {
+        var databasePath = Path.Combine(Path.GetTempPath(), $"teamhub-ai-usage-{Guid.NewGuid():N}.db");
+        var time = new MutableTimeProvider(new DateTimeOffset(2026, 1, 1, 10, 0, 0, TimeSpan.Zero));
+        var notifier = new RecordingThresholdNotifier();
+        try
+        {
+            await using var services = CreateServices(databasePath, time, notifier);
+            await using var scope = services.CreateAsyncScope();
+            await scope.ServiceProvider.GetRequiredService<IAiUsageDatabaseInitializer>().InitializeAsync();
+            var limits = scope.ServiceProvider.GetRequiredService<IAiUsageLimitService>();
+            await limits.SaveSettingsAsync(new AiUsageLimitSettings(100, "UTC", [], true, [75]));
+            await RecordUsageAsync(
+                scope.ServiceProvider.GetRequiredService<IAiUsageTracker>(),
+                "user@example.com",
+                80);
+
+            var deleted = await scope.ServiceProvider.GetRequiredService<IAiUsageLedger>()
+                .DeleteBeforeAsync(new DateTimeOffset(2026, 1, 3, 0, 0, 0, TimeSpan.Zero));
+
+            deleted.Should().Be(1);
+            await using var connection = new SqliteConnection($"Data Source={databasePath};Pooling=False");
+            await connection.OpenAsync();
+            await using var command = connection.CreateCommand();
+            command.CommandText = """
+                SELECT
+                    (SELECT COUNT(*) FROM AiUsageOperations),
+                    (SELECT COUNT(*) FROM AiUsageThresholdNotifications);
+                """;
+            await using var reader = await command.ExecuteReaderAsync();
+            (await reader.ReadAsync()).Should().BeTrue();
+            reader.GetInt32(0).Should().Be(0);
+            reader.GetInt32(1).Should().Be(0);
+        }
+        finally
+        {
+            if (File.Exists(databasePath)) File.Delete(databasePath);
+        }
+    }
+
+    [Fact]
     public async Task Startup_initializer_adds_new_ledger_tables_to_an_existing_usage_database()
     {
         var databasePath = Path.Combine(Path.GetTempPath(), $"teamhub-ai-usage-{Guid.NewGuid():N}.db");

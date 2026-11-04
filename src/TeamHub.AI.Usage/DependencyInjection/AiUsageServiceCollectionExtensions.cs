@@ -18,6 +18,8 @@ public static class AiUsageServiceCollectionExtensions
             .Bind(configuration.GetSection(AiUsageOptions.SectionName))
             .Validate(options => options.RetentionMonths is >= 6 and <= 120,
                 "AI usage retention must be between 6 and 120 months.")
+            .Validate(options => options.MaintenanceIntervalHours is >= 1 and <= 168,
+                "AI usage maintenance interval must be between 1 and 168 hours.")
             .ValidateOnStart();
         services.AddDbContext<AiUsageDbContext>(options =>
         {
@@ -38,6 +40,7 @@ public static class AiUsageServiceCollectionExtensions
         services.AddScoped<IAiUsageTracker, AiUsageTracker>();
         services.AddScoped<IAiToolActivityTracker, AiToolActivityTracker>();
         services.AddScoped<IAiUsageDatabaseInitializer, AiUsageDatabaseInitializer>();
+        services.AddHostedService<AiUsageMaintenanceBackgroundService>();
         return services;
     }
 

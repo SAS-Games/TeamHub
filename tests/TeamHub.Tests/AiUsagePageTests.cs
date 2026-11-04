@@ -1,5 +1,9 @@
+using System.Text;
+using ClosedXML.Excel;
 using FluentAssertions;
+using Microsoft.AspNetCore.Mvc;
 using TeamHub.AI.Usage.Contracts;
+using TeamHub.Web.AI;
 using TeamHub.Web.Pages.Configuration;
 
 namespace TeamHub.Tests;
@@ -109,6 +113,68 @@ public sealed class AiUsagePageTests
         page.ToolReport.Totals.CallCount.Should().Be(2);
         page.ToolPrimaryHeading.Should().Be("User");
         page.ToolSecondaryHeading.Should().Be("Tool");
+    }
+
+    [Fact]
+    public void Exporter_creates_safe_csv_and_a_two_sheet_excel_workbook()
+    {
+        var context = new AiUsageReportExportContext(
+            new DateOnly(2026, 1, 1),
+            new DateOnly(2026, 1, 31),
+            "User, feature and model",
+            "User",
+            "Feature",
+            "Model",
+            new AiUsageReport(
+                new AiUsageTotals(2, 2, 100, 20, 120),
+                [new AiUsageAggregateRow("=unsafe@example.com", "Chat", 2, 2, 100, 20, 120)
+                    { TertiaryKey = "model-a" }]),
+            "User and tool",
+            "User",
+            "Tool",
+            new AiToolActivityReport(
+                new AiToolActivityTotals(3, 2, 1, 0, 1, 90),
+                [new AiToolActivityAggregateRow("user@example.com", "list_studios", 3, 2, 1, 0, 30)]));
+        var exporter = new AiUsageReportExporter();
+
+        var csv = Encoding.UTF8.GetString(exporter.ExportUsageCsv(context));
+        csv.Should().StartWith("\uFEFFUser,Feature,Model,Calls,Measured calls");
+        csv.Should().Contain("'=unsafe@example.com,Chat,model-a,2,2,100,20,120");
+
+        using var stream = new MemoryStream(exporter.ExportExcel(context));
+        using var workbook = new XLWorkbook(stream);
+        workbook.Worksheets.Select(sheet => sheet.Name).Should().Equal("Usage", "Tool activity");
+        workbook.Worksheet("Usage").Cell("A1").GetString().Should().Be("AI usage");
+        workbook.Worksheet("Usage").Cell("A9").GetString().Should().Be("=unsafe@example.com");
+        workbook.Worksheet("Usage").Cell("H9").GetValue<long>().Should().Be(120);
+        workbook.Worksheet("Tool activity").Cell("A9").GetString().Should().Be("user@example.com");
+        workbook.Worksheet("Tool activity").Cell("G9").GetValue<long>().Should().Be(30);
+    }
+
+    [Fact]
+    public async Task Excel_export_handler_uses_the_active_report_filters()
+    {
+        var ledger = new RecordingLedger
+        {
+            Result = new AiUsageReport(
+                new AiUsageTotals(1, 1, 10, 2, 12),
+                [new AiUsageAggregateRow("user@example.com", null, 1, 1, 10, 2, 12)])
+        };
+        var page = new AIUsageModel(ledger, exporter: new AiUsageReportExporter())
+        {
+            FromDate = new DateOnly(2026, 3, 1),
+            ToDate = new DateOnly(2026, 3, 31),
+            UserId = " user@example.com ",
+            Dimension = AiUsageDimension.User
+        };
+
+        var result = await page.OnGetExportExcelAsync(CancellationToken.None);
+
+        var file = result.Should().BeOfType<FileContentResult>().Subject;
+        file.FileDownloadName.Should().Be("ai-usage-ledger-20260301-to-20260331.xlsx");
+        file.ContentType.Should().Be("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+        file.FileContents.Should().NotBeEmpty();
+        ledger.Query!.UserId.Should().Be("user@example.com");
     }
 
     private sealed class RecordingLedger : IAiUsageLedger

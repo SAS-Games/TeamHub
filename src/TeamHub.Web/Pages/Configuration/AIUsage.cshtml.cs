@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
 using TeamHub.AI.Usage.Contracts;
 using TeamHub.Authentication;
+using TeamHub.Web.AI;
 
 namespace TeamHub.Web.Pages.Configuration;
 
@@ -12,7 +13,8 @@ public sealed class AIUsageModel(
     IAiUsageLedger ledger,
     IAiUsageLimitService? limits = null,
     IUserAccessService? users = null,
-    IAiToolActivityLedger? toolActivities = null) : PageModel
+    IAiToolActivityLedger? toolActivities = null,
+    IAiUsageReportExporter? exporter = null) : PageModel
 {
     [BindProperty(SupportsGet = true)]
     public DateOnly? FromDate { get; set; }
@@ -214,6 +216,36 @@ public sealed class AIUsageModel(
         return RedirectToPage();
     }
 
+    public async Task<IActionResult> OnGetExportUsageCsvAsync(CancellationToken cancellationToken)
+    {
+        var context = await LoadExportContextAsync(cancellationToken);
+        if (context is null || exporter is null) return BadRequest("Correct the report filters before exporting.");
+        return File(
+            exporter.ExportUsageCsv(context),
+            "text/csv; charset=utf-8",
+            $"ai-usage-{context.FromDate:yyyyMMdd}-to-{context.ToDate:yyyyMMdd}.csv");
+    }
+
+    public async Task<IActionResult> OnGetExportToolCsvAsync(CancellationToken cancellationToken)
+    {
+        var context = await LoadExportContextAsync(cancellationToken);
+        if (context is null || exporter is null) return BadRequest("Correct the report filters before exporting.");
+        return File(
+            exporter.ExportToolActivityCsv(context),
+            "text/csv; charset=utf-8",
+            $"ai-tool-activity-{context.FromDate:yyyyMMdd}-to-{context.ToDate:yyyyMMdd}.csv");
+    }
+
+    public async Task<IActionResult> OnGetExportExcelAsync(CancellationToken cancellationToken)
+    {
+        var context = await LoadExportContextAsync(cancellationToken);
+        if (context is null || exporter is null) return BadRequest("Correct the report filters before exporting.");
+        return File(
+            exporter.ExportExcel(context),
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            $"ai-usage-ledger-{context.FromDate:yyyyMMdd}-to-{context.ToDate:yyyyMMdd}.xlsx");
+    }
+
     public static string DimensionLabel(AiUsageDimension dimension) => dimension switch
     {
         AiUsageDimension.User => "User",
@@ -243,6 +275,25 @@ public sealed class AIUsageModel(
 
     private static string? Clean(string? value) =>
         string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+
+    private async Task<AiUsageReportExportContext?> LoadExportContextAsync(
+        CancellationToken cancellationToken)
+    {
+        await OnGetAsync(cancellationToken);
+        if (!ModelState.IsValid || !FromDate.HasValue || !ToDate.HasValue) return null;
+        return new AiUsageReportExportContext(
+            FromDate.Value,
+            ToDate.Value,
+            DimensionLabel(Dimension),
+            PrimaryHeading,
+            SecondaryHeading,
+            TertiaryHeading,
+            Report,
+            ToolDimensionLabel(ToolDimension),
+            ToolPrimaryHeading,
+            ToolSecondaryHeading,
+            ToolReport);
+    }
 
     private static IReadOnlyList<int> ParseNotificationThresholds(string value)
     {

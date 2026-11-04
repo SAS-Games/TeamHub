@@ -490,6 +490,9 @@ internal sealed class AiUsageLedger(
         CancellationToken cancellationToken = default)
     {
         var cutoff = cutoffUtc.UtcDateTime;
+        await dbContext.ThresholdNotifications
+            .Where(item => item.WindowEndUtc < cutoff)
+            .ExecuteDeleteAsync(cancellationToken);
         return await dbContext.Operations
             .Where(item => item.StartedAtUtc < cutoff)
             .ExecuteDeleteAsync(cancellationToken);
