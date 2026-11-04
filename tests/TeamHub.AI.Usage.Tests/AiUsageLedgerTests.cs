@@ -352,6 +352,44 @@ public sealed class AiUsageLedgerTests
     }
 
     [Fact]
+    public async Task Summarizes_each_users_today_week_month_and_retained_consumption()
+    {
+        var databasePath = Path.Combine(Path.GetTempPath(), $"teamhub-ai-usage-{Guid.NewGuid():N}.db");
+        var time = new MutableTimeProvider(new DateTimeOffset(2026, 1, 1, 10, 0, 0, TimeSpan.Zero));
+        try
+        {
+            await using var services = CreateServices(databasePath, time);
+            await using var scope = services.CreateAsyncScope();
+            await scope.ServiceProvider.GetRequiredService<IAiUsageDatabaseInitializer>().InitializeAsync();
+            await scope.ServiceProvider.GetRequiredService<IAiUsageLimitService>()
+                .SaveSettingsAsync(new AiUsageLimitSettings(null, "UTC", []));
+            var tracker = scope.ServiceProvider.GetRequiredService<IAiUsageTracker>();
+
+            await RecordUsageAsync(tracker, "user-a@example.com", 100);
+            time.UtcNow = new DateTimeOffset(2026, 11, 1, 10, 0, 0, TimeSpan.Zero);
+            await RecordUsageAsync(tracker, "user-a@example.com", 20);
+            time.UtcNow = new DateTimeOffset(2026, 11, 3, 10, 0, 0, TimeSpan.Zero);
+            await RecordUsageAsync(tracker, "user-a@example.com", 30);
+            time.UtcNow = new DateTimeOffset(2026, 11, 4, 9, 0, 0, TimeSpan.Zero);
+            await RecordUsageAsync(tracker, "user-a@example.com", 40);
+            await RecordUsageAsync(tracker, "user-b@example.com", 5);
+            time.UtcNow = new DateTimeOffset(2026, 11, 4, 10, 0, 0, TimeSpan.Zero);
+
+            var summary = await scope.ServiceProvider.GetRequiredService<IAiUsageLedger>()
+                .GetUserConsumptionSummaryAsync();
+
+            summary.TimeZoneId.Should().Be("UTC");
+            summary.Users.Should().Equal(
+                new AiUsageUserConsumption("user-a@example.com", 40, 70, 90, 190),
+                new AiUsageUserConsumption("user-b@example.com", 5, 5, 5, 5));
+        }
+        finally
+        {
+            if (File.Exists(databasePath)) File.Delete(databasePath);
+        }
+    }
+
+    [Fact]
     public async Task Startup_initializer_adds_new_ledger_tables_to_an_existing_usage_database()
     {
         var databasePath = Path.Combine(Path.GetTempPath(), $"teamhub-ai-usage-{Guid.NewGuid():N}.db");

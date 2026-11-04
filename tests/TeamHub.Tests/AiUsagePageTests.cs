@@ -116,6 +116,25 @@ public sealed class AiUsagePageTests
     }
 
     [Fact]
+    public async Task Admin_report_loads_the_current_user_consumption_summary()
+    {
+        var ledger = new RecordingLedger
+        {
+            SummaryResult = new AiUsageUserConsumptionSummary(
+                "UTC",
+                new DateTimeOffset(2026, 11, 4, 10, 0, 0, TimeSpan.Zero),
+                [new AiUsageUserConsumption("user@example.com", 40, 70, 90, 190)])
+        };
+        var page = new AIUsageModel(ledger);
+
+        await page.OnGetAsync(CancellationToken.None);
+
+        page.ConsumptionTimeZoneId.Should().Be("UTC");
+        page.UserConsumption.Should().ContainSingle().Which.Should().Be(
+            new AiUsageUserConsumptionView("user@example.com", "user@example.com", 40, 70, 90, 190));
+    }
+
+    [Fact]
     public void Exporter_creates_safe_csv_and_a_two_sheet_excel_workbook()
     {
         var context = new AiUsageReportExportContext(
@@ -184,6 +203,11 @@ public sealed class AiUsagePageTests
         public AiUsageFilterOptions FilterResult { get; init; } = new([], [], [], []);
         public AiUsageReport Result { get; init; } =
             new(new AiUsageTotals(0, 0, 0, 0, 0), []);
+        public AiUsageUserConsumptionSummary SummaryResult { get; init; } =
+            new("UTC", DateTimeOffset.UtcNow, []);
+
+        public Task<AiUsageUserConsumptionSummary> GetUserConsumptionSummaryAsync(
+            CancellationToken cancellationToken = default) => Task.FromResult(SummaryResult);
 
         public Task<AiUsageFilterOptions> GetFilterOptionsAsync(
             DateTimeOffset fromUtc,

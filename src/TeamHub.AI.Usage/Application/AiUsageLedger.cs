@@ -53,6 +53,56 @@ internal sealed class AiUsageLedger(
     private const string DefaultResetTimeZoneId = "Asia/Kolkata";
     private static readonly int[] DefaultNotificationThresholds = [75, 90, 100];
 
+    public async Task<AiUsageUserConsumptionSummary> GetUserConsumptionSummaryAsync(
+        CancellationToken cancellationToken = default)
+    {
+        var settings = await dbContext.LimitSettings.AsNoTracking()
+            .SingleOrDefaultAsync(item => item.Id == 1, cancellationToken);
+        var timeZone = ResolveTimeZone(settings?.ResetTimeZoneId ?? DefaultResetTimeZoneId);
+        var now = timeProvider.GetUtcNow();
+        var localNow = TimeZoneInfo.ConvertTime(now, timeZone);
+        var localToday = DateTime.SpecifyKind(localNow.Date, DateTimeKind.Unspecified);
+        var daysSinceMonday = ((int)localToday.DayOfWeek + 6) % 7;
+        var localWeekStart = localToday.AddDays(-daysSinceMonday);
+        var localMonthStart = new DateTime(localToday.Year, localToday.Month, 1);
+        var todayStart = TimeZoneInfo.ConvertTimeToUtc(localToday, timeZone);
+        var weekStart = TimeZoneInfo.ConvertTimeToUtc(localWeekStart, timeZone);
+        var monthStart = TimeZoneInfo.ConvertTimeToUtc(localMonthStart, timeZone);
+        var nowUtc = now.UtcDateTime;
+
+        var databaseRows = await dbContext.Invocations.AsNoTracking()
+            .Where(item => item.Status == AiUsageInvocationStatus.Completed
+                && item.TotalTokens != null
+                && item.StartedAtUtc < nowUtc)
+            .GroupBy(item => new { item.Operation.NormalizedUserId, item.Operation.UserId })
+            .Select(group => new UserConsumptionAggregate
+            {
+                NormalizedUserId = group.Key.NormalizedUserId,
+                UserId = group.Key.UserId,
+                TodayTokens = group.Sum(item => item.StartedAtUtc >= todayStart
+                    ? (long)(item.TotalTokens ?? 0) : 0),
+                WeekTokens = group.Sum(item => item.StartedAtUtc >= weekStart
+                    ? (long)(item.TotalTokens ?? 0) : 0),
+                MonthTokens = group.Sum(item => item.StartedAtUtc >= monthStart
+                    ? (long)(item.TotalTokens ?? 0) : 0),
+                RetainedTotalTokens = group.Sum(item => (long)(item.TotalTokens ?? 0))
+            })
+            .ToListAsync(cancellationToken);
+
+        var users = databaseRows
+            .GroupBy(item => item.NormalizedUserId, StringComparer.Ordinal)
+            .Select(group => new AiUsageUserConsumption(
+                group.First().UserId,
+                group.Sum(item => item.TodayTokens),
+                group.Sum(item => item.WeekTokens),
+                group.Sum(item => item.MonthTokens),
+                group.Sum(item => item.RetainedTotalTokens)))
+            .OrderByDescending(item => item.RetainedTotalTokens)
+            .ThenBy(item => item.UserId, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        return new AiUsageUserConsumptionSummary(timeZone.Id, now, users);
+    }
+
     public async Task<AiUsageLimitSettings> GetSettingsAsync(
         CancellationToken cancellationToken = default)
     {
@@ -705,6 +755,16 @@ internal sealed class AiUsageLedger(
         public long InputTokens { get; init; }
         public long OutputTokens { get; init; }
         public long TotalTokens { get; init; }
+    }
+
+    private sealed class UserConsumptionAggregate
+    {
+        public string NormalizedUserId { get; init; } = string.Empty;
+        public string UserId { get; init; } = string.Empty;
+        public long TodayTokens { get; init; }
+        public long WeekTokens { get; init; }
+        public long MonthTokens { get; init; }
+        public long RetainedTotalTokens { get; init; }
     }
 
     private sealed class DayAggregate
