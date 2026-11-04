@@ -11,7 +11,8 @@ public interface IFlowDiagramGenerationWorkflow
 
 public sealed record CreateFlowDiagramDraftRequest(
     string Prompt,
-    IReadOnlyList<FlowDesignerSourceDocument> SourceDocuments);
+    IReadOnlyList<FlowDesignerSourceDocument> SourceDocuments,
+    string? RequestedBy = null);
 
 public sealed record FlowDesignerSourceDocument(
     string Id,

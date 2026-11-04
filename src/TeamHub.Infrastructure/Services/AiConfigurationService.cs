@@ -13,9 +13,11 @@ namespace TeamHub.Infrastructure.Services;
 internal sealed class AiConfigurationService : IAiConfigurationService
 {
     private const string ProtectorPurpose = "TeamHub.AI.ProviderCredential.v1";
+    private const string PfbM2mProtectorPurpose = "TeamHub.AI.PfbM2mCredential.v1";
     private static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web);
     private readonly WorkflowDbContext dbContext;
     private readonly IDataProtector protector;
+    private readonly IDataProtector pfbM2mProtector;
     private readonly IOptionsMonitor<AiRuntimeOptions> runtimeDefaults;
     private readonly IOptionsMonitor<AiChatOptions> chatDefaults;
     private readonly IOptionsMonitor<AiFlowDesignerOptions> flowDefaults;
@@ -31,6 +33,7 @@ internal sealed class AiConfigurationService : IAiConfigurationService
     {
         this.dbContext = dbContext;
         protector = dataProtectionProvider.CreateProtector(ProtectorPurpose);
+        pfbM2mProtector = dataProtectionProvider.CreateProtector(PfbM2mProtectorPurpose);
         this.runtimeDefaults = runtimeDefaults;
         this.chatDefaults = chatDefaults;
         this.flowDefaults = flowDefaults;
@@ -47,6 +50,7 @@ internal sealed class AiConfigurationService : IAiConfigurationService
 
         settings.HasCredential = !string.IsNullOrWhiteSpace(record?.CredentialProtected)
             || HasEnvironmentCredential(settings.Runtime);
+        settings.HasPfbM2mCredential = !string.IsNullOrWhiteSpace(record?.PfbM2mCredentialProtected);
         settings.UpdatedAtUtc = record?.UpdatedAtUtc;
         settings.UpdatedBy = record?.UpdatedBy;
         return settings;
@@ -83,6 +87,14 @@ internal sealed class AiConfigurationService : IAiConfigurationService
         {
             record.CredentialProtected = protector.Protect(request.Credential.Trim());
         }
+        if (request.RemovePfbM2mCredential)
+        {
+            record.PfbM2mCredentialProtected = null;
+        }
+        else if (!string.IsNullOrWhiteSpace(request.PfbM2mCredential))
+        {
+            record.PfbM2mCredentialProtected = pfbM2mProtector.Protect(request.PfbM2mCredential.Trim());
+        }
         record.UpdatedAtUtc = DateTime.UtcNow;
         record.UpdatedBy = request.UpdatedBy.Trim();
         await dbContext.SaveChangesAsync(cancellationToken);
@@ -113,6 +125,27 @@ internal sealed class AiConfigurationService : IAiConfigurationService
         return string.IsNullOrWhiteSpace(settings.CredentialEnvironmentVariable)
             ? null
             : Environment.GetEnvironmentVariable(settings.CredentialEnvironmentVariable);
+    }
+
+    public async ValueTask<string?> GetPfbM2mCredentialAsync(
+        CancellationToken cancellationToken = default)
+    {
+        var protectedCredential = await dbContext.AiConfiguration.AsNoTracking()
+            .Where(item => item.Id == 1)
+            .Select(item => item.PfbM2mCredentialProtected)
+            .SingleOrDefaultAsync(cancellationToken);
+        if (string.IsNullOrWhiteSpace(protectedCredential)) return null;
+
+        try
+        {
+            return pfbM2mProtector.Unprotect(protectedCredential);
+        }
+        catch (CryptographicException exception)
+        {
+            throw new InvalidOperationException(
+                "The stored Sony PFB AI Gateway M2M credential cannot be decrypted. Ask an administrator to re-enter it.",
+                exception);
+        }
     }
 
     private AiConfigurationSnapshot CreateDefaults()

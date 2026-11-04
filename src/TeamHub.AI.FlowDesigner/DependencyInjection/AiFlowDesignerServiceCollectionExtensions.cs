@@ -5,6 +5,7 @@ using TeamHub.AI.FlowDesigner.Application;
 using TeamHub.AI.FlowDesigner.Contracts;
 using TeamHub.AI.FlowDesigner.SourceDocuments;
 using TeamHub.AI.FlowDesigner.Validation;
+using TeamHub.AI.Usage;
 
 namespace TeamHub.AI.FlowDesigner;
 
@@ -14,6 +15,7 @@ public static class AiFlowDesignerServiceCollectionExtensions
         this IServiceCollection services,
         IConfiguration configuration)
     {
+        services.AddAiUsageTrackingFallback();
         services.AddTeamHubAiConfiguration(configuration);
         services.AddOptions<AiFlowDesignerOptions>()
             .Bind(configuration.GetSection(AiFlowDesignerOptions.SectionName))

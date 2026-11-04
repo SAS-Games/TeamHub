@@ -24,7 +24,7 @@ namespace TeamHub.Tests;
 public sealed class AiConfigurationTests
 {
     [Fact]
-    public async Task GatewayUsesOnlyTheAuthenticatedUsersPersonalToken()
+    public async Task GatewayPrefersPersonalCredentialsAndFallsBackToTheConfiguredM2mCredential()
     {
         await using var context = CreateDbContext();
         using var defaults = CreateOptions();
@@ -33,12 +33,13 @@ public sealed class AiConfigurationTests
             defaults.GetRequiredService<IOptionsMonitor<AiChatOptions>>(),
             defaults.GetRequiredService<IOptionsMonitor<AiFlowDesignerOptions>>(),
             defaults.GetRequiredService<IOptionsMonitor<AiReportGeneratorOptions>>());
-        await configuration.SaveAsync(new(new(), new(), new(), new(), "shared-token", false, "admin"));
+        await configuration.SaveAsync(new(
+            new(), new(), new(), new(), null, false, "admin", "m2m-token"));
         var personal = new PersonalGatewayCredentials();
         await personal.SaveTokenAsync("one@example.com", "one-token");
         await personal.SaveTokenAsync("two@example.com", "two-token");
         var http = new HttpContextAccessor { HttpContext = new DefaultHttpContext() };
-        var accessor = new PersonalAiProviderCredentialAccessor(http, personal, configuration);
+        var accessor = new TeamHubAiProviderCredentialAccessor(http, personal, configuration);
         var settings = new AiRuntimeOptions
         {
             Provider = AiModelProviderKeys.PfbAiGateway, OfflineOnly = false,
@@ -49,12 +50,37 @@ public sealed class AiConfigurationTests
         http.HttpContext.User = SignedIn("two@example.com");
         (await accessor.GetCredentialAsync(settings)).Should().Be("two-token");
         http.HttpContext.User = SignedIn("missing@example.com");
-        var missing = async () => await accessor.GetCredentialAsync(settings);
-        await missing.Should().ThrowAsync<InvalidOperationException>().WithMessage("*My Connections*");
+        (await accessor.GetCredentialAsync(settings)).Should().Be("m2m-token");
         http.HttpContext.User = new ClaimsPrincipal(new ClaimsIdentity([new Claim(ClaimTypes.Name, "one@example.com")]));
-        await missing.Should().ThrowAsync<InvalidOperationException>();
+        (await accessor.GetCredentialAsync(settings)).Should().Be("m2m-token");
         http.HttpContext = null;
-        await missing.Should().ThrowAsync<InvalidOperationException>();
+        (await accessor.GetCredentialAsync(settings)).Should().Be("m2m-token");
+    }
+
+    [Fact]
+    public async Task GatewayRejectsARequestWhenNeitherPersonalNorM2mCredentialsAreAvailable()
+    {
+        await using var context = CreateDbContext();
+        using var defaults = CreateOptions();
+        var configuration = new AiConfigurationService(context, new EphemeralDataProtectionProvider(),
+            defaults.GetRequiredService<IOptionsMonitor<AiRuntimeOptions>>(),
+            defaults.GetRequiredService<IOptionsMonitor<AiChatOptions>>(),
+            defaults.GetRequiredService<IOptionsMonitor<AiFlowDesignerOptions>>(),
+            defaults.GetRequiredService<IOptionsMonitor<AiReportGeneratorOptions>>());
+        var personal = new PersonalGatewayCredentials();
+        var http = new HttpContextAccessor { HttpContext = new DefaultHttpContext() };
+        http.HttpContext.User = SignedIn("one@example.com");
+        var accessor = new TeamHubAiProviderCredentialAccessor(http, personal, configuration);
+        var settings = new AiRuntimeOptions
+        {
+            Provider = AiModelProviderKeys.PfbAiGateway, OfflineOnly = false,
+            Endpoint = "https://gateway.example.test", Model = "gateway-model",
+            CredentialEnvironmentVariable = string.Empty
+        }.ToProviderSettings();
+
+        var getCredential = async () => await accessor.GetCredentialAsync(settings);
+        await getCredential.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("*personal gateway token*M2M application key*");
     }
 
     [Theory]
@@ -71,7 +97,7 @@ public sealed class AiConfigurationTests
             defaults.GetRequiredService<IOptionsMonitor<AiFlowDesignerOptions>>(),
             defaults.GetRequiredService<IOptionsMonitor<AiReportGeneratorOptions>>());
         await configuration.SaveAsync(new(new(), new(), new(), new(), "shared-token", false, "admin"));
-        var accessor = new PersonalAiProviderCredentialAccessor(new HttpContextAccessor(), new PersonalGatewayCredentials(), configuration);
+        var accessor = new TeamHubAiProviderCredentialAccessor(new HttpContextAccessor(), new PersonalGatewayCredentials(), configuration);
         var settings = new AiRuntimeOptions { Provider = providerKey }.ToProviderSettings();
         (await accessor.GetCredentialAsync(settings)).Should().Be("shared-token");
     }
@@ -128,13 +154,15 @@ public sealed class AiConfigurationTests
             new AiReportGeneratorOptions { Enabled = false },
             "super-secret",
             false,
-            "admin@example.com"));
+            "admin@example.com",
+            "pfb-m2m-secret"));
 
         context.ChangeTracker.Clear();
         var stored = await context.AiConfiguration.SingleAsync();
         stored.SettingsJson.Should().Contain("configured-model");
         stored.SettingsJson.Should().NotContain("super-secret");
         stored.CredentialProtected.Should().NotBeNullOrWhiteSpace().And.NotContain("super-secret");
+        stored.PfbM2mCredentialProtected.Should().NotBeNullOrWhiteSpace().And.NotContain("pfb-m2m-secret");
 
         var current = await service.GetAsync();
         current.Runtime.Provider.Should().Be(AiModelProviderKeys.LlamaCpp);
@@ -142,9 +170,11 @@ public sealed class AiConfigurationTests
         current.Chat.MaximumOutputTokens.Should().Be(6_000);
         current.FlowDesigner.Enabled.Should().BeTrue();
         current.HasCredential.Should().BeTrue();
+        current.HasPfbM2mCredential.Should().BeTrue();
         current.UpdatedBy.Should().Be("admin@example.com");
         var credential = await service.GetCredentialAsync(current.Runtime.ToProviderSettings());
         credential.Should().Be("super-secret");
+        (await service.GetPfbM2mCredentialAsync()).Should().Be("pfb-m2m-secret");
     }
 
     [Fact]
@@ -162,6 +192,10 @@ public sealed class AiConfigurationTests
             "SELECT name AS Value FROM sqlite_master WHERE type = 'table' AND name = 'AiConfiguration'")
             .ToListAsync();
         tables.Should().ContainSingle().Which.Should().Be("AiConfiguration");
+        var columns = await context.Database.SqlQueryRaw<string>(
+            "SELECT name AS Value FROM pragma_table_info('AiConfiguration')")
+            .ToListAsync();
+        columns.Should().Contain("PfbM2mCredentialProtected");
     }
 
     [Fact]
@@ -293,6 +327,11 @@ public sealed class AiConfigurationTests
         (await page.OnPostSaveAsync(CancellationToken.None)).Should().BeOfType<RedirectToPageResult>();
         (await configuration.GetCredentialAsync(new AiRuntimeOptions().ToProviderSettings()))
             .Should().Be("synthetic-provider-key");
+
+        page.PfbM2mCredential = "configured-m2m-token";
+        (await page.OnPostSavePfbM2mCredentialAsync(CancellationToken.None))
+            .Should().BeOfType<RedirectToPageResult>();
+        (await configuration.GetPfbM2mCredentialAsync()).Should().Be("configured-m2m-token");
     }
 
     [Theory]

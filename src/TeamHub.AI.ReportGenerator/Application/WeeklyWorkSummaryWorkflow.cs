@@ -5,6 +5,7 @@ using System.Text.RegularExpressions;
 using TeamHub.AI.Contracts;
 using TeamHub.AI.ReportGenerator.Contracts;
 using TeamHub.AI.ReportGenerator.Persistence;
+using TeamHub.AI.Usage.Contracts;
 
 namespace TeamHub.AI.ReportGenerator.Application;
 
@@ -33,7 +34,8 @@ internal sealed partial class WeeklyWorkSummaryWorkflow(
     IAiModelService modelService,
     IAiReportRunRepository runs,
     ReportGenerationGate gate,
-    IAiConfigurationService configuration) : IWeeklyWorkSummaryWorkflow
+    IAiConfigurationService configuration,
+    IAiUsageTracker usageTracker) : IWeeklyWorkSummaryWorkflow
 {
     private static readonly JsonElement Schema = JsonSerializer.SerializeToElement(new
     {
@@ -85,14 +87,25 @@ internal sealed partial class WeeklyWorkSummaryWorkflow(
 
             var rows = new List<WeeklyWorkSummaryRow>();
             string provider = health.Provider, model = health.Model;
+            var usageOperation = new AiUsageOperationContext(
+                Guid.NewGuid(),
+                request.RequestedBy,
+                AiUsageFeatures.ReportGenerator,
+                "WeeklyWorkSummary",
+                AiUsageApplications.TeamHubWeb);
             foreach (var source in request.Sources)
             {
-                var generation = await modelService.GenerateStructuredAsync(
-                    new AiStructuredGenerationRequest(
-                        prompt.Instructions,
-                        JsonSerializer.Serialize(new { hpgdsSupport = source.HpgdsSupport, notes = source.Notes }),
-                        Schema,
-                        options.MaximumOutputTokens),
+                var modelRequest = new AiStructuredGenerationRequest(
+                    prompt.Instructions,
+                    JsonSerializer.Serialize(new { hpgdsSupport = source.HpgdsSupport, notes = source.Notes }),
+                    Schema,
+                    options.MaximumOutputTokens);
+                var generation = await usageTracker.TrackGenerationAsync(
+                    usageOperation,
+                    new AiUsageInvocationContext("Studio", source.StudioId),
+                    health.Provider,
+                    health.Model,
+                    token => modelService.GenerateStructuredAsync(modelRequest, token),
                     cancellationToken);
                 var activity = ParseAndValidate(generation.Content, source);
                 rows.Add(new WeeklyWorkSummaryRow(source.StudioName, activity));

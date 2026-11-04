@@ -8,7 +8,7 @@
     <div>
         <div class="eyebrow">Personal credentials</div>
         <h1>My Connections</h1>
-        <p>Personal credentials for Jira, Confluence, and Sony PFB AI Gateway.</p>
+        <p>Personal credentials for Jira and Confluence. A personal Sony PFB AI Gateway token takes priority over the shared M2M application key.</p>
     </div>
 </div>
 
@@ -65,7 +65,7 @@
         <div class="col-12 col-lg-6">
             <section class="content-section h-100 m-0">
                 <div class="section-heading">
-                    <div><span>@(Model.HasGatewayToken ? "Connected" : "Not connected")</span><h2>Sony PFB AI Gateway</h2></div>
+                    <div><span>@(Model.HasGatewayToken ? "Personal token connected" : "No personal token")</span><h2>Sony PFB AI Gateway</h2></div>
                 </div>
                 <div class="section-body">
                     <label asp-for="Input.PfbAiGatewayToken" class="form-label">API or bearer token</label>

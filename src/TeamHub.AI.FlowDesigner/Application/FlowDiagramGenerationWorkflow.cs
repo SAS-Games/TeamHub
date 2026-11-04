@@ -2,6 +2,7 @@ using TeamHub.AI.Contracts;
 using TeamHub.AI.FlowDesigner.Contracts;
 using TeamHub.AI.FlowDesigner.SourceDocuments;
 using TeamHub.AI.FlowDesigner.Validation;
+using TeamHub.AI.Usage.Contracts;
 
 namespace TeamHub.AI.FlowDesigner.Application;
 
@@ -10,7 +11,8 @@ internal sealed class FlowDiagramGenerationWorkflow(
     FlowDesignerInputProcessor inputProcessor,
     FlowDiagramPromptBuilder promptBuilder,
     GeneratedFlowDiagramParser parser,
-    IAiConfigurationService configuration) : IFlowDiagramGenerationWorkflow
+    IAiConfigurationService configuration,
+    IAiUsageTracker usageTracker) : IFlowDiagramGenerationWorkflow
 {
     public async Task<FlowDiagramGenerationDraft> CreateDraftAsync(
         CreateFlowDiagramDraftRequest request,
@@ -41,7 +43,18 @@ internal sealed class FlowDiagramGenerationWorkflow(
             options.MaximumOutputTokens,
             options.MaximumDiagrams,
             options.MaximumHierarchyDepth);
-        var generation = await modelService.GenerateStructuredAsync(modelRequest, cancellationToken);
+        var generation = await usageTracker.TrackGenerationAsync(
+            new AiUsageOperationContext(
+                Guid.NewGuid(),
+                string.IsNullOrWhiteSpace(request.RequestedBy) ? "Unattributed" : request.RequestedBy,
+                AiUsageFeatures.FlowDesigner,
+                "CreateWithAi",
+                AiUsageApplications.TeamHubWeb),
+            new AiUsageInvocationContext(),
+            health.Provider,
+            health.Model,
+            token => modelService.GenerateStructuredAsync(modelRequest, token),
+            cancellationToken);
         var parsed = parser.Parse(
             generation,
             input.SourceDocuments.Select(document => document.Id).ToList(),

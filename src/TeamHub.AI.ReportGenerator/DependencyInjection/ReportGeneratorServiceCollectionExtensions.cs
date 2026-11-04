@@ -5,6 +5,7 @@ using TeamHub.AI.ReportGenerator.Contracts;
 using TeamHub.AI.ReportGenerator.Application;
 using TeamHub.AI.Contracts;
 using TeamHub.AI.ReportGenerator.Persistence;
+using TeamHub.AI.Usage;
 
 namespace TeamHub.AI.ReportGenerator;
 
@@ -14,6 +15,7 @@ public static class ReportGeneratorServiceCollectionExtensions
         this IServiceCollection services,
         IConfiguration configuration)
     {
+        services.AddAiUsageTrackingFallback();
         services.AddTeamHubAiConfiguration(configuration);
         services.AddOptions<AiReportGeneratorOptions>()
             .Bind(configuration.GetSection(AiReportGeneratorOptions.SectionName))

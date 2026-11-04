@@ -1,6 +1,7 @@
 using System.ComponentModel.DataAnnotations;
 using System.Security.Cryptography;
 using System.Text.Json;
+using System.Security.Claims;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
@@ -76,7 +77,11 @@ public sealed class CreateWithAiModel(
                 source.MediaType,
                 source.Content)).ToList();
             Preview = await generationWorkflow.CreateDraftAsync(
-                new CreateFlowDiagramDraftRequest(Prompt, documents), cancellationToken);
+                new CreateFlowDiagramDraftRequest(
+                    Prompt,
+                    documents,
+                    User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.Identity?.Name),
+                cancellationToken);
             ProtectedDraft = draftProtector.Protect(serializer.SerializeBundle(Preview.Hierarchy));
             Sources = selectedSources;
         }

@@ -13,6 +13,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\TeamHub.AI\TeamHub.AI.csproj" />
+    <ProjectReference Include="..\TeamHub.AI.Usage\TeamHub.AI.Usage.csproj" />
     <ProjectReference Include="..\TeamHub.FlowDesigner.Core\TeamHub.FlowDesigner.Core.csproj" />
   </ItemGroup>
 

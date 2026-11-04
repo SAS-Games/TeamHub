@@ -17,7 +17,9 @@ TeamHub web application, databases, or domain projects.
 
 AI Chat follows the provider selected in AI Services. Ollama and llama.cpp normally run without a
 credential; OpenAI-compatible providers use the configured encrypted shared credential or environment
-fallback; PFB AI Gateway uses the signed-in user's encrypted token from My Connections. Credentials are
+fallback. PFB AI Gateway uses the signed-in user's encrypted token from My Connections when available
+and otherwise uses the configured encrypted static M2M bearer/application key. Requests without a
+signed-in user use the M2M key. Credentials are
 used only in the server-side provider client and are never included in prompts or web responses.
 
 ## Reusing in another application

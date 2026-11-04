@@ -3,6 +3,7 @@ using System.Text.Json;
 using System.Text.RegularExpressions;
 using TeamHub.AI.Chat.Contracts;
 using TeamHub.AI.Contracts;
+using TeamHub.AI.Usage.Contracts;
 
 namespace TeamHub.AI.Chat.Application;
 
@@ -11,7 +12,8 @@ internal sealed class AiChatService(
     IAiModelProviderRegistry providers,
     IEnumerable<IAiChatKnowledgeSource> knowledgeSources,
     IAiChatInstructionProvider instructions,
-    IAiMeetingNotesInstructionProvider meetingNotesInstructions) : IAiChatService
+    IAiMeetingNotesInstructionProvider meetingNotesInstructions,
+    IAiUsageTracker usageTracker) : IAiChatService
 {
     private static readonly JsonElement ResponseSchema = CreateResponseSchema();
     private static readonly Regex ImageCreationVerb = new(
@@ -162,7 +164,22 @@ internal sealed class AiChatService(
 
         try
         {
-            var result = await provider.GenerateStructuredAsync(providerSettings, generationRequest, cancellationToken);
+            var result = await usageTracker.TrackGenerationAsync(
+                new AiUsageOperationContext(
+                    Guid.NewGuid(),
+                    user.UserId,
+                    AiUsageFeatures.Chat,
+                    request.Mode.ToString(),
+                    AiUsageApplications.TeamHubWeb),
+                new AiUsageInvocationContext(
+                    request.Mode == AiChatMode.MeetingNotes && !string.IsNullOrWhiteSpace(request.StudioId)
+                        ? "Studio"
+                        : null,
+                    request.Mode == AiChatMode.MeetingNotes ? request.StudioId : null),
+                provider.Key,
+                providerSettings.Model,
+                token => provider.GenerateStructuredAsync(providerSettings, generationRequest, token),
+                cancellationToken);
             return ParseResponse(result, selectedModel.Id, sources);
         }
         catch (AiChatException)

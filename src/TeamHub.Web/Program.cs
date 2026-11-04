@@ -10,6 +10,8 @@ using TeamHub.AI.Chat.Contracts;
 using TeamHub.AI.ReportGenerator;
 using TeamHub.AI.FlowDesigner;
 using TeamHub.AI.ReportGenerator.Persistence;
+using TeamHub.AI.Usage;
+using TeamHub.AI.Usage.Contracts;
 using TeamHub.Application.Interfaces;
 using TeamHub.Web.AccessControl;
 using TeamHub.FlowDesigner.Core.Contracts;
@@ -61,6 +63,7 @@ builder.Configuration["ConnectionStrings:TeamDb"] = $"Data Source={Path.Combine(
 builder.Configuration["ConnectionStrings:StudioDb"] = $"Data Source={Path.Combine(dataDir, "studio.db")}";
 builder.Configuration["TeamExcel:UploadDirectory"] = Path.Combine(dataDir, "team-excel");
 builder.Configuration["ConnectionStrings:AiReportsDb"] = $"Data Source={Path.Combine(dataDir, "ai-reports.db")}";
+builder.Configuration["ConnectionStrings:AiUsageDb"] = $"Data Source={Path.Combine(dataDir, "ai-usage.db")}";
 builder.Configuration["ConnectionStrings:MilestoneReviewDb"] = $"Data Source={Path.Combine(dataDir, "milestone-review.db")}";
 var accessDatabasePath = Path.Combine(dataDir, "access.db");
 var flowDesignerDatabasePath = Path.Combine(dataDir, "flowdesigner.db");
@@ -144,7 +147,8 @@ builder.Services.AddScoped<IMilestoneReviewCommentPublisher, StudioMilestoneRevi
 builder.Services.AddScoped<IMilestoneReviewWorkflowStarter, TeamHubMilestoneReviewWorkflowStarter>();
 builder.Services.AddStudioDirectory(builder.Configuration);
 builder.Services.AddTeamHubAi(builder.Configuration);
-builder.Services.AddScoped<TeamHub.AI.Contracts.IAiProviderCredentialAccessor, TeamHub.Web.AI.PersonalAiProviderCredentialAccessor>();
+builder.Services.AddAiUsageLedger(builder.Configuration);
+builder.Services.AddScoped<TeamHub.AI.Contracts.IAiProviderCredentialAccessor, TeamHub.Web.AI.TeamHubAiProviderCredentialAccessor>();
 builder.Services.AddSingleton<IAiChatInstructionProvider, TeamHub.Web.AI.TeamHubAiInstructionFileProvider>();
 builder.Services.AddScoped<IAiMeetingNotesInstructionProvider, TeamHub.Web.AI.MeetingNotesInstructionFileProvider>();
 builder.Services.AddScoped<TeamHub.Web.AI.IAiChatDocumentExtractor, TeamHub.Web.AI.AiChatDocumentExtractor>();
@@ -175,6 +179,7 @@ using (var scope = app.Services.CreateScope())
     var teamDatabase = scope.ServiceProvider.GetRequiredService<ITeamDatabaseInitializer>();
     teamDatabase.InitializeAsync().GetAwaiter().GetResult();
     await scope.ServiceProvider.GetRequiredService<IReportGeneratorDatabaseInitializer>().InitializeAsync();
+    await scope.ServiceProvider.GetRequiredService<IAiUsageDatabaseInitializer>().InitializeAsync();
     await scope.ServiceProvider.GetRequiredService<IMilestoneReviewDatabaseInitializer>().InitializeAsync();
     var customTeamTabs = scope.ServiceProvider.GetRequiredService<ICustomTeamTabService>();
     var customTeamModules = (await customTeamTabs.ListTabsAsync())

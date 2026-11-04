@@ -136,6 +136,7 @@ public sealed class AiConfigurationSnapshot
     public AiFlowDesignerOptions FlowDesigner { get; set; } = new();
     public AiReportGeneratorOptions ReportGenerator { get; set; } = new();
     public bool HasCredential { get; set; }
+    public bool HasPfbM2mCredential { get; set; }
     public DateTime? UpdatedAtUtc { get; set; }
     public string? UpdatedBy { get; set; }
 }
@@ -147,7 +148,9 @@ public sealed record SaveAiConfigurationRequest(
     AiReportGeneratorOptions ReportGenerator,
     string? Credential,
     bool RemoveCredential,
-    string UpdatedBy);
+    string UpdatedBy,
+    string? PfbM2mCredential = null,
+    bool RemovePfbM2mCredential = false);
 
 public static class AiModelProviderKeys
 {

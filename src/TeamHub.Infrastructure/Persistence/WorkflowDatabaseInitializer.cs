@@ -44,6 +44,7 @@ internal sealed class WorkflowDatabaseInitializer(WorkflowDbContext dbContext) :
                 Id INTEGER NOT NULL CONSTRAINT PK_AiConfiguration PRIMARY KEY,
                 SettingsJson TEXT NOT NULL,
                 CredentialProtected TEXT NULL,
+                PfbM2mCredentialProtected TEXT NULL,
                 UpdatedAtUtc TEXT NOT NULL,
                 UpdatedBy TEXT NOT NULL
             );
@@ -125,6 +126,11 @@ internal sealed class WorkflowDatabaseInitializer(WorkflowDbContext dbContext) :
             await AddNotificationTemplateColumnsAsync("WorkflowStepDefinitions", cancellationToken);
             await AddNotificationTemplateColumnsAsync("WorkflowStepInstances", cancellationToken);
             await AddNotificationTemplateColumnsAsync("WorkflowDraftStepDefinitions", cancellationToken);
+            await AddColumnIfMissingAsync(
+                "AiConfiguration",
+                "PfbM2mCredentialProtected",
+                "TEXT NULL",
+                cancellationToken);
         }
         finally
         {

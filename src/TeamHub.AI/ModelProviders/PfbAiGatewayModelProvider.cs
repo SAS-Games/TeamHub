@@ -189,7 +189,7 @@ public sealed class PfbAiGatewayModelProvider(
     {
         var credential = await credentials.GetCredentialAsync(settings, cancellationToken);
         if (string.IsNullOrWhiteSpace(credential))
-            throw new InvalidOperationException("A JWT bearer token is required for the PFB AI Gateway.");
+            throw new InvalidOperationException("A bearer token or application key is required for the PFB AI Gateway.");
 
         var client = httpClientFactory.CreateClient(AiServiceCollectionExtensions.HttpClientName);
         client.BaseAddress = new Uri(settings.Endpoint.AbsoluteUri.TrimEnd('/') + "/");
@@ -616,7 +616,7 @@ public sealed class PfbAiGatewayModelProvider(
     {
         var hint = statusCode switch
         {
-            HttpStatusCode.Unauthorized => "Missing, expired, or invalid JWT bearer token.",
+            HttpStatusCode.Unauthorized => "Missing, expired, or invalid bearer token or application key.",
             HttpStatusCode.Forbidden => "The JWT is valid but does not permit this model or endpoint.",
             HttpStatusCode.TooManyRequests => "The gateway rate limit was exceeded.",
             HttpStatusCode.BadGateway => "The upstream AI provider returned an error.",

@@ -26,10 +26,17 @@ public sealed class AIModel(
     [BindProperty]
     public bool RemoveCredential { get; set; }
 
+    [BindProperty, DataType(DataType.Password), StringLength(4096)]
+    public string? PfbM2mCredential { get; set; }
+
+    [BindProperty]
+    public bool RemovePfbM2mCredential { get; set; }
+
     [BindProperty]
     public List<MeetingNotesTeamsChannelInput> MeetingNotesTeamsChannels { get; set; } = [];
 
     public bool HasCredential { get; private set; }
+    public bool HasPfbM2mCredential { get; private set; }
     public DateTime? UpdatedAtUtc { get; private set; }
     public string? UpdatedBy { get; private set; }
     public AiProviderHealthResult? TestResult { get; private set; }
@@ -56,6 +63,9 @@ public sealed class AIModel(
 
     public Task<IActionResult> OnPostSaveSecurityAsync(CancellationToken cancellationToken) =>
         SaveSectionAsync(AiConfigurationSection.Security, cancellationToken);
+
+    public Task<IActionResult> OnPostSavePfbM2mCredentialAsync(CancellationToken cancellationToken) =>
+        SaveSectionAsync(AiConfigurationSection.PfbM2mCredential, cancellationToken);
 
     public Task<IActionResult> OnPostSaveChatAsync(CancellationToken cancellationToken) =>
         SaveSectionAsync(AiConfigurationSection.Chat, cancellationToken);
@@ -124,6 +134,8 @@ public sealed class AIModel(
                     snapshot.Runtime.CredentialEnvironmentVariable =
                         Settings.CredentialEnvironmentVariable?.Trim() ?? string.Empty;
                     break;
+                case AiConfigurationSection.PfbM2mCredential:
+                    break;
                 case AiConfigurationSection.Chat:
                     var meetingNotes = snapshot.Chat.MeetingNotes;
                     snapshot.Chat = Settings.ToChatOptions();
@@ -153,8 +165,8 @@ public sealed class AIModel(
                     throw new ArgumentOutOfRangeException(nameof(section));
             }
 
-            var savesCredential = section == AiConfigurationSection.Security
-                && snapshot.Runtime.Provider != AiModelProviderKeys.PfbAiGateway;
+            var savesCredential = section == AiConfigurationSection.Security;
+            var savesPfbM2mCredential = section == AiConfigurationSection.PfbM2mCredential;
             await configuration.SaveAsync(new SaveAiConfigurationRequest(
                 snapshot.Runtime,
                 snapshot.Chat,
@@ -162,7 +174,9 @@ public sealed class AIModel(
                 snapshot.ReportGenerator,
                 savesCredential ? Credential : null,
                 savesCredential && RemoveCredential,
-                User.Identity?.Name ?? "Administrator"), cancellationToken);
+                User.Identity?.Name ?? "Administrator",
+                savesPfbM2mCredential ? PfbM2mCredential : null,
+                savesPfbM2mCredential && RemovePfbM2mCredential), cancellationToken);
 
             if (section == AiConfigurationSection.MeetingNotes && meetingNotesTeams is not null)
             {
@@ -180,6 +194,7 @@ public sealed class AIModel(
                 AiConfigurationSection.Runtime => "Runtime settings saved.",
                 AiConfigurationSection.Models => "Provider profiles saved.",
                 AiConfigurationSection.Security => "Provider security settings saved.",
+                AiConfigurationSection.PfbM2mCredential => "Sony PFB AI Gateway M2M credential saved.",
                 AiConfigurationSection.Chat => "TeamHub Assistant settings saved.",
                 AiConfigurationSection.MeetingNotes => "Meeting Notes and Teams destinations saved.",
                 AiConfigurationSection.FlowDesigner => "Flow Designer AI settings saved.",
@@ -225,7 +240,9 @@ public sealed class AIModel(
                 Settings.ToReportGeneratorOptions(),
                 Settings.Provider == AiModelProviderKeys.PfbAiGateway ? null : Credential,
                 Settings.Provider != AiModelProviderKeys.PfbAiGateway && RemoveCredential,
-                User.Identity?.Name ?? "Administrator"), cancellationToken);
+                User.Identity?.Name ?? "Administrator",
+                Settings.Provider == AiModelProviderKeys.PfbAiGateway ? PfbM2mCredential : null,
+                Settings.Provider == AiModelProviderKeys.PfbAiGateway && RemovePfbM2mCredential), cancellationToken);
 
             if (meetingNotesTeams is not null)
             {
@@ -267,6 +284,7 @@ public sealed class AIModel(
         var snapshot = await configuration.GetAsync(cancellationToken);
         Settings = AiSettingsInput.FromSnapshot(snapshot);
         HasCredential = snapshot.HasCredential;
+        HasPfbM2mCredential = snapshot.HasPfbM2mCredential;
         UpdatedAtUtc = snapshot.UpdatedAtUtc;
         UpdatedBy = snapshot.UpdatedBy;
         await LoadMeetingNotesChannelsAsync(preserveInput: false, cancellationToken);
@@ -410,6 +428,7 @@ public sealed class AIModel(
     {
         var snapshot = await configuration.GetAsync(cancellationToken);
         HasCredential = snapshot.HasCredential;
+        HasPfbM2mCredential = snapshot.HasPfbM2mCredential;
         UpdatedAtUtc = snapshot.UpdatedAtUtc;
         UpdatedBy = snapshot.UpdatedBy;
     }
@@ -478,6 +497,7 @@ internal enum AiConfigurationSection
     Runtime,
     Models,
     Security,
+    PfbM2mCredential,
     Chat,
     MeetingNotes,
     FlowDesigner,
