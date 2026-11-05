@@ -13,6 +13,13 @@
         <h1>@Model.Tab.Name</h1>
         <p>Shared team information maintained in configurable tables.</p>
     </div>
+    @if (Model.CanManage)
+    {
+        <a class="btn @(Model.IsEditing ? "btn-outline-secondary" : "btn-primary")"
+           asp-page="/Team/Custom"
+           asp-route-slug="@Model.Tab.Slug"
+           asp-route-edit="@(!Model.IsEditing)">@(Model.IsEditing ? "View table" : "Edit table")</a>
+    }
 </div>
 @if (Model.Tab.NavigationPlacement == CustomTeamTabPlacements.TeamSection)
 {
@@ -36,7 +43,7 @@
 @foreach (var table in Model.Tab.Tables)
 {
     var localColumns = table.Columns.Where(column => !column.IsSourceColumn).ToList();
-    var showActions = Model.CanEdit
+    var showActions = Model.IsEditing
         && (localColumns.Count > 0 || !table.IsExcelBacked || table.Rows.Any(row => row.IsMissingFromSource));
     <section class="content-section custom-team-table">
         <div class="section-heading">
@@ -55,7 +62,7 @@
             <div class="p-4 text-secondary">@(table.IsExcelBacked ? "Synchronize this table to import its Excel columns and rows." : "This table does not have any active columns.")</div>
             continue;
         }
-        @if (table.Columns.Any(column => column.FieldType == CustomTeamFieldTypes.LongText))
+        @if (Model.IsEditing && table.Columns.Any(column => column.FieldType == CustomTeamFieldTypes.LongText))
         {
             <div class="px-4 pt-3"><partial name="_MarkdownHelp" /></div>
         }
@@ -84,7 +91,7 @@
                         {
                             var value = Model.Value(row, column);
                             <td>
-                                @if (Model.CanEdit && !column.IsSourceColumn)
+                                @if (Model.IsEditing && !column.IsSourceColumn)
                                 {
                                     <partial name="_CustomTeamCellEditor" model="@(new CustomTeamCellEditorModel(column, value, rowFormId))" />
                                 }
@@ -116,7 +123,7 @@
                         }
                     </tr>
                 }
-                @if (Model.CanEdit && !table.IsExcelBacked)
+                @if (Model.IsEditing && !table.IsExcelBacked)
                 {
                     var addFormId = $"add-{table.Id}";
                     <tr class="table-light">

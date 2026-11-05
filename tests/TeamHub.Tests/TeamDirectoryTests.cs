@@ -710,11 +710,12 @@ public sealed class TeamDirectoryTests
                 table.Id, null, "Team Notes", CustomTeamFieldTypes.LongText, false, []));
             loaded = (await tabs.GetTabAsync(tab.Slug))!.Tables.Single();
             var asha = loaded.Rows.Single(row => row.SourceKey == "E-001");
+            const string teamNotes = "**Keep** this local note\n\n- First item\n- Second item";
             await tabs.SaveRowAsync(new(
                 table.Id,
                 asha.Id,
                 asha.Version,
-                new Dictionary<string, string?> { [notes.Key] = "Keep this local note" },
+                new Dictionary<string, string?> { [notes.Key] = teamNotes },
                 "editor@example.com"));
 
             reader.Data = ExcelData(
@@ -723,7 +724,7 @@ public sealed class TeamDirectoryTests
             await tabs.SyncExcelTableAsync(table.Id, "admin@example.com");
             loaded = (await tabs.GetTabAsync(tab.Slug))!.Tables.Single();
             asha = loaded.Rows.Single(row => row.SourceKey == "E-001");
-            asha.Values[notes.Key].Should().Be("Keep this local note");
+            asha.Values[notes.Key].Should().Be(teamNotes);
             asha.Values[loaded.Columns.Single(column => column.SourceHeader == "Name").Key].Should().Be("Asha updated");
 
             reader.Data = ExcelData(("E-002", "Dev updated"));
@@ -732,7 +733,7 @@ public sealed class TeamDirectoryTests
             loaded = (await tabs.GetTabAsync(tab.Slug))!.Tables.Single();
             asha = loaded.Rows.Single(row => row.SourceKey == "E-001");
             asha.IsMissingFromSource.Should().BeTrue();
-            asha.Values[notes.Key].Should().Be("Keep this local note");
+            asha.Values[notes.Key].Should().Be(teamNotes);
 
             await tabs.RemoveRowAsync(table.Id, asha.Id, asha.Version, "editor@example.com");
             (await tabs.GetTabAsync(tab.Slug))!.Tables.Single().Rows.Should().NotContain(row => row.SourceKey == "E-001");
@@ -742,7 +743,7 @@ public sealed class TeamDirectoryTests
             restoreSync.Restored.Should().Be(1);
             asha = (await tabs.GetTabAsync(tab.Slug))!.Tables.Single().Rows.Single(row => row.SourceKey == "E-001");
             asha.IsMissingFromSource.Should().BeFalse();
-            asha.Values[notes.Key].Should().Be("Keep this local note");
+            asha.Values[notes.Key].Should().Be(teamNotes);
         }
         finally
         {

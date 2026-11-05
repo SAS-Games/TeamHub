@@ -1,5 +1,6 @@
 using FluentAssertions;
 using System.Security.Claims;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc.RazorPages;
 using Microsoft.AspNetCore.Routing;
@@ -15,6 +16,14 @@ namespace TeamHub.Tests;
 
 public sealed class AccessControlTests
 {
+    [Fact]
+    public void CustomTeamTab_AllowsGuestAccessToBeDecidedByModulePermissions()
+    {
+        typeof(TeamHub.Web.Pages.Team.CustomModel)
+            .GetCustomAttributes(typeof(AuthorizeAttribute), inherit: true)
+            .Should().BeEmpty();
+    }
+
     [Fact]
     public void HeroProjectStudiosUsesDedicatedReadOnlyAccessModule()
     {

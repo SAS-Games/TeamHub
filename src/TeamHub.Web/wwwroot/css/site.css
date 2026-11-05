@@ -431,6 +431,12 @@ body {
 .styled-table td, .styled-table th { padding: 14px 18px; vertical-align: middle; }
 .team-matrix-multiline { white-space: pre-line; overflow-wrap: anywhere; }
 .custom-team-cell-value { white-space: pre-line; overflow-wrap: anywhere; }
+.custom-team-long-text-editor { min-width: 260px; }
+.custom-team-long-text-editor textarea { min-height: 112px; resize: vertical; }
+.custom-team-markdown-preview { margin-top: 6px; font-size: .82rem; }
+.custom-team-markdown-preview summary { color: var(--text-muted-color); cursor: pointer; }
+.custom-team-markdown-preview .markdown-content { margin-top: 8px; padding: 8px 10px; border-left: 3px solid var(--accent-color); background: var(--surface-subtle-color); }
+.custom-team-markdown-preview .markdown-content > :last-child { margin-bottom: 0; }
 .custom-team-table .table {
   --bs-table-color: var(--text-color);
   --bs-table-bg: var(--surface-bg-color);

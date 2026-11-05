@@ -1,5 +1,4 @@
 using System.Security.Claims;
-using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
 using TeamHub.Authentication;
@@ -8,11 +7,11 @@ using TeamHub.Web.AccessControl;
 
 namespace TeamHub.Web.Pages.Team;
 
-[Authorize]
 public sealed class CustomModel(ICustomTeamTabService tabs, ICurrentAccessService access) : PageModel
 {
     public CustomTeamTabDto Tab { get; private set; } = new();
-    public bool CanEdit { get; private set; }
+    public bool CanManage { get; private set; }
+    public bool IsEditing { get; private set; }
 
     [TempData]
     public string? StatusMessage { get; set; }
@@ -20,12 +19,13 @@ public sealed class CustomModel(ICustomTeamTabService tabs, ICurrentAccessServic
     [TempData]
     public string? ErrorMessage { get; set; }
 
-    public async Task<IActionResult> OnGetAsync(string slug, CancellationToken cancellationToken)
+    public async Task<IActionResult> OnGetAsync(string slug, bool edit, CancellationToken cancellationToken)
     {
         var loaded = await tabs.GetTabAsync(slug, cancellationToken);
         if (loaded is null) return NotFound();
         Tab = loaded;
-        CanEdit = await access.CanAsync(CustomTeamTabAccess.ModuleForSlug(Tab.Slug), AccessLevel.Edit, cancellationToken);
+        CanManage = await access.CanAsync(CustomTeamTabAccess.ModuleForSlug(Tab.Slug), AccessLevel.Edit, cancellationToken);
+        IsEditing = CanManage && edit;
         return Page();
     }
 
@@ -48,7 +48,7 @@ public sealed class CustomModel(ICustomTeamTabService tabs, ICurrentAccessServic
         {
             ErrorMessage = exception.Message;
         }
-        return RedirectToPage(new { slug });
+        return RedirectToPage(new { slug, edit = true });
     }
 
     public async Task<IActionResult> OnPostRemoveRowAsync(
@@ -68,7 +68,7 @@ public sealed class CustomModel(ICustomTeamTabService tabs, ICurrentAccessServic
         {
             ErrorMessage = exception.Message;
         }
-        return RedirectToPage(new { slug });
+        return RedirectToPage(new { slug, edit = true });
     }
 
     public string Value(CustomTeamRowDto row, CustomTeamColumnDto column) =>

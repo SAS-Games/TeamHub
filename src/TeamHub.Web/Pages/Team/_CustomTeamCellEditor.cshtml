@@ -6,7 +6,16 @@
 @switch (Model.Column.FieldType)
 {
     case CustomTeamFieldTypes.LongText:
-        <textarea class="form-control form-control-sm" name="@name" form="@Model.FormId" rows="2" required="@Model.Column.IsRequired">@Model.Value</textarea>
+        <div class="custom-team-long-text-editor">
+            <textarea class="form-control form-control-sm" name="@name" form="@Model.FormId" rows="5" maxlength="4000" placeholder="Enter multiline Markdown" required="@Model.Column.IsRequired">@Model.Value</textarea>
+            @if (!string.IsNullOrWhiteSpace(Model.Value))
+            {
+                <details class="custom-team-markdown-preview">
+                    <summary>Preview Markdown</summary>
+                    <safe-markdown class="markdown-content custom-team-cell-value" text="@Model.Value"></safe-markdown>
+                </details>
+            }
+        </div>
         break;
     case CustomTeamFieldTypes.Number:
         <input class="form-control form-control-sm" name="@name" form="@Model.FormId" type="number" step="any" value="@Model.Value" required="@Model.Column.IsRequired" />
