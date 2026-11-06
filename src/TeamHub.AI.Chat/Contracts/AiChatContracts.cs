@@ -78,7 +78,8 @@ public sealed record AiChatResponse(
     string Model,
     IReadOnlyList<AiChatCitation> Citations,
     string? RequestId = null,
-    AiTokenUsage? Usage = null);
+    AiTokenUsage? Usage = null,
+    AiUsageDiagnostics? UsageDiagnostics = null);
 
 public interface IAiChatService
 {

@@ -49,6 +49,31 @@ public interface IAiProviderCredentialAccessor
     ValueTask<string?> GetCredentialAsync(
         AiProviderSettings settings,
         CancellationToken cancellationToken = default);
+
+    async ValueTask<AiProviderCredential?> ResolveCredentialAsync(
+        AiProviderSettings settings,
+        CancellationToken cancellationToken = default)
+    {
+        var value = await GetCredentialAsync(settings, cancellationToken);
+        return string.IsNullOrWhiteSpace(value)
+            ? null
+            : new AiProviderCredential(value, AiProviderCredentialSource.Unknown);
+    }
+}
+
+public enum AiProviderCredentialSource
+{
+    Unknown,
+    Personal,
+    MachineToMachine
+}
+
+public sealed class AiProviderCredential(string value, AiProviderCredentialSource source)
+{
+    public string Value { get; } = value;
+    public AiProviderCredentialSource Source { get; } = source;
+
+    public override string ToString() => Source.ToString();
 }
 
 public sealed record AiProviderHealthResult(
@@ -81,12 +106,21 @@ public sealed record AiStructuredGenerationResult(
     string Model,
     string Content,
     string? RequestId = null,
-    AiTokenUsage? Usage = null);
+    AiTokenUsage? Usage = null,
+    AiUsageDiagnostics? UsageDiagnostics = null);
 
 public sealed record AiTokenUsage(
     int InputTokens,
     int OutputTokens,
     int TotalTokens);
+
+public sealed record AiUsageDiagnostics(
+    string Summary,
+    int HttpStatusCode,
+    string ApiMode,
+    string CredentialSource,
+    string ResponseShape,
+    string? ProviderRequestId);
 
 public sealed class AiModelProviderException : Exception
 {

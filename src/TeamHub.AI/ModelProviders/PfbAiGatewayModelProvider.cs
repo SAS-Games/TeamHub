@@ -2,13 +2,15 @@ using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
+using Microsoft.Extensions.Logging;
 using TeamHub.AI.Contracts;
 
 namespace TeamHub.AI.ModelProviders;
 
 public sealed class PfbAiGatewayModelProvider(
     IHttpClientFactory httpClientFactory,
-    IAiProviderCredentialAccessor credentials) : IAiModelProvider, IAiModelCatalogProvider
+    IAiProviderCredentialAccessor credentials,
+    ILogger<PfbAiGatewayModelProvider>? logger = null) : IAiModelProvider, IAiModelCatalogProvider
 {
     public const string CommonChatMode = "CommonChat";
     public const string OpenAiChatMode = "OpenAiChat";
@@ -60,12 +62,15 @@ public sealed class PfbAiGatewayModelProvider(
         try
         {
             using var timeout = CreateTimeout(settings, cancellationToken);
-            using var client = await CreateClientAsync(settings, timeout.Token);
-            using var response = await client.GetAsync("portal/pfb/models", timeout.Token);
+            using var gateway = await CreateClientAsync(settings, timeout.Token);
+            using var response = await gateway.Client.GetAsync("portal/pfb/models", timeout.Token);
             if (!response.IsSuccessStatusCode)
             {
                 throw new AiModelProviderException(
-                    GatewayErrorMessage(response.StatusCode, await response.Content.ReadAsStringAsync(timeout.Token)));
+                    GatewayErrorMessage(
+                        response.StatusCode,
+                        await response.Content.ReadAsStringAsync(timeout.Token),
+                        gateway.CredentialSource));
             }
 
             await using var body = await response.Content.ReadAsStreamAsync(timeout.Token);
@@ -101,7 +106,7 @@ public sealed class PfbAiGatewayModelProvider(
         try
         {
             using var timeout = CreateTimeout(settings, cancellationToken);
-            using var client = await CreateClientAsync(settings, timeout.Token);
+            using var gateway = await CreateClientAsync(settings, timeout.Token);
             var mode = NormalizeMode(settings.ApiMode);
             var payload = mode == OpenAiResponsesMode
                 ? BuildResponsesPayload(settings, request)
@@ -113,9 +118,10 @@ public sealed class PfbAiGatewayModelProvider(
                 _ => "pfb/common/v1/chat/completions"
             };
 
-            var result = await PostWithRetryAsync(client, path, payload, timeout.Token);
+            var result = await PostWithRetryAsync(gateway.Client, path, payload, timeout.Token);
             if (!result.IsSuccessStatusCode)
-                throw new AiModelProviderException(GatewayErrorMessage(result.StatusCode, result.Body));
+                throw new AiModelProviderException(
+                    GatewayErrorMessage(result.StatusCode, result.Body, gateway.CredentialSource));
 
             var generated = ReadGeneratedContent(mode, result.Body);
             var usage = ReadTokenUsage(result.Body);
@@ -125,9 +131,10 @@ public sealed class PfbAiGatewayModelProvider(
                 && IncreaseOutputTokenLimit(payload, mode))
             {
                 if (string.IsNullOrWhiteSpace(generated.Content)) retriedEmptyContent = true;
-                result = await PostWithRetryAsync(client, path, payload, timeout.Token);
+                result = await PostWithRetryAsync(gateway.Client, path, payload, timeout.Token);
                 if (!result.IsSuccessStatusCode)
-                    throw new AiModelProviderException(GatewayErrorMessage(result.StatusCode, result.Body));
+                    throw new AiModelProviderException(
+                        GatewayErrorMessage(result.StatusCode, result.Body, gateway.CredentialSource));
                 generated = ReadGeneratedContent(mode, result.Body);
                 usage = AddTokenUsage(usage, ReadTokenUsage(result.Body));
             }
@@ -139,7 +146,32 @@ public sealed class PfbAiGatewayModelProvider(
             if (string.IsNullOrWhiteSpace(content))
                 throw new AiModelProviderException("PFB AI Gateway response did not contain generated content.");
 
-            return new(Key, settings.Model, StripCodeFence(content), result.RequestId, usage);
+            AiUsageDiagnostics? diagnostics = null;
+            if (settings.UsageDiagnosticsEnabled && usage is null)
+            {
+                diagnostics = new AiUsageDiagnostics(
+                    "The provider request succeeded, but no token-usage telemetry was found. This is not a TeamHub assigned-token-limit rejection.",
+                    (int)result.StatusCode,
+                    mode,
+                    CredentialSourceLabel(gateway.CredentialSource),
+                    DescribeResponseShape(result.Body),
+                    result.RequestId);
+                logger?.LogWarning(
+                    "PFB AI Gateway returned a successful response without token usage. RequestId {RequestId}, Model {Model}, ApiMode {ApiMode}, CredentialSource {CredentialSource}, ResponseShape {ResponseShape}",
+                    result.RequestId,
+                    settings.Model,
+                    mode,
+                    diagnostics.CredentialSource,
+                    diagnostics.ResponseShape);
+            }
+
+            return new(
+                Key,
+                settings.Model,
+                StripCodeFence(content),
+                result.RequestId,
+                usage,
+                diagnostics);
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
@@ -183,18 +215,18 @@ public sealed class PfbAiGatewayModelProvider(
         }
     }
 
-    private async Task<HttpClient> CreateClientAsync(
+    private async Task<GatewayClient> CreateClientAsync(
         AiProviderSettings settings,
         CancellationToken cancellationToken)
     {
-        var credential = await credentials.GetCredentialAsync(settings, cancellationToken);
-        if (string.IsNullOrWhiteSpace(credential))
+        var credential = await credentials.ResolveCredentialAsync(settings, cancellationToken);
+        if (credential is null || string.IsNullOrWhiteSpace(credential.Value))
             throw new InvalidOperationException("A bearer token or application key is required for the PFB AI Gateway.");
 
         var client = httpClientFactory.CreateClient(AiServiceCollectionExtensions.HttpClientName);
         client.BaseAddress = new Uri(settings.Endpoint.AbsoluteUri.TrimEnd('/') + "/");
-        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", credential.Trim());
-        return client;
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", credential.Value.Trim());
+        return new GatewayClient(client, credential.Source);
     }
 
     private static Dictionary<string, object?> BuildChatPayload(
@@ -493,10 +525,49 @@ public sealed class PfbAiGatewayModelProvider(
     private static AiTokenUsage? ReadTokenUsage(string body)
     {
         using var document = JsonDocument.Parse(body);
-        var root = document.RootElement;
-        if (!root.TryGetProperty("usage", out var usage) || usage.ValueKind != JsonValueKind.Object)
-            return null;
+        return ReadTokenUsage(document.RootElement);
+    }
 
+    private static AiTokenUsage? ReadTokenUsage(JsonElement root)
+    {
+        if (root.ValueKind != JsonValueKind.Object) return null;
+
+        if (root.TryGetProperty("usage", out var usage) && usage.ValueKind == JsonValueKind.Object)
+        {
+            var parsed = ParseTokenUsage(usage);
+            if (parsed is not null) return parsed;
+        }
+
+        foreach (var propertyName in new[] { "data", "result", "response", "body" })
+        {
+            if (!root.TryGetProperty(propertyName, out var wrapper)) continue;
+            if (wrapper.ValueKind == JsonValueKind.Object)
+            {
+                var parsed = ReadTokenUsage(wrapper);
+                if (parsed is not null) return parsed;
+            }
+            else if (wrapper.ValueKind == JsonValueKind.String)
+            {
+                var value = wrapper.GetString();
+                if (string.IsNullOrWhiteSpace(value) || !value.TrimStart().StartsWith('{')) continue;
+                try
+                {
+                    using var nested = JsonDocument.Parse(value);
+                    var parsed = ReadTokenUsage(nested.RootElement);
+                    if (parsed is not null) return parsed;
+                }
+                catch (JsonException)
+                {
+                    // A non-JSON wrapper string cannot contain provider usage telemetry.
+                }
+            }
+        }
+
+        return null;
+    }
+
+    private static AiTokenUsage? ParseTokenUsage(JsonElement usage)
+    {
         var input = ReadUsageValue(usage, "input_tokens", "prompt_tokens", "inputTokens", "promptTokens");
         var output = ReadUsageValue(usage, "output_tokens", "completion_tokens", "outputTokens", "completionTokens");
         var total = ReadUsageValue(usage, "total_tokens", "totalTokens");
@@ -526,6 +597,81 @@ public sealed class PfbAiGatewayModelProvider(
             checked(current.InputTokens + next.InputTokens),
             checked(current.OutputTokens + next.OutputTokens),
             checked(current.TotalTokens + next.TotalTokens));
+    }
+
+    private static string CredentialSourceLabel(AiProviderCredentialSource source) => source switch
+    {
+        AiProviderCredentialSource.Personal => "Personal",
+        AiProviderCredentialSource.MachineToMachine => "M2M",
+        _ => "Unknown"
+    };
+
+    private static string DescribeResponseShape(string body)
+    {
+        using var document = JsonDocument.Parse(body);
+        var descriptions = new List<string>();
+        CollectResponseShape(document.RootElement, "$", 0, descriptions);
+        return descriptions.Count == 0 ? "$: no object fields" : string.Join(" | ", descriptions);
+    }
+
+    private static void CollectResponseShape(
+        JsonElement element,
+        string path,
+        int depth,
+        ICollection<string> descriptions)
+    {
+        if (descriptions.Count >= 12 || depth > 2) return;
+        if (element.ValueKind == JsonValueKind.Array)
+        {
+            var first = element.EnumerateArray().FirstOrDefault();
+            if (first.ValueKind != JsonValueKind.Undefined)
+                CollectResponseShape(first, path + "[0]", depth, descriptions);
+            return;
+        }
+        if (element.ValueKind != JsonValueKind.Object) return;
+
+        var properties = element.EnumerateObject().Take(20).ToList();
+        descriptions.Add($"{path}: [{string.Join(", ", properties.Select(property => SafePropertyName(property.Name)))}]");
+        foreach (var property in properties)
+        {
+            if (descriptions.Count >= 12) break;
+            if (property.Value.ValueKind is JsonValueKind.Object or JsonValueKind.Array)
+            {
+                CollectResponseShape(
+                    property.Value,
+                    path + "." + SafePropertyName(property.Name),
+                    depth + 1,
+                    descriptions);
+                continue;
+            }
+            if (property.Value.ValueKind != JsonValueKind.String
+                || property.Name is not ("data" or "result" or "response" or "body"))
+                continue;
+            var value = property.Value.GetString();
+            if (string.IsNullOrWhiteSpace(value) || !value.TrimStart().StartsWith('{')) continue;
+            try
+            {
+                using var nested = JsonDocument.Parse(value);
+                CollectResponseShape(
+                    nested.RootElement,
+                    path + "." + SafePropertyName(property.Name),
+                    depth + 1,
+                    descriptions);
+            }
+            catch (JsonException)
+            {
+                // Only the response structure is reported; invalid wrapper content is ignored.
+            }
+        }
+    }
+
+    private static string SafePropertyName(string value)
+    {
+        var safe = new string(value
+            .Where(character => char.IsLetterOrDigit(character) || character is '_' or '-')
+            .Take(64)
+            .ToArray());
+        return safe.Length == 0 ? "?" : safe;
     }
 
     private static bool UsesReasoningEffort(string model) =>
@@ -612,12 +758,23 @@ public sealed class PfbAiGatewayModelProvider(
         _ => CommonChatMode
     };
 
-    private static string GatewayErrorMessage(HttpStatusCode statusCode, string body)
+    private static string GatewayErrorMessage(
+        HttpStatusCode statusCode,
+        string body,
+        AiProviderCredentialSource credentialSource)
     {
         var hint = statusCode switch
         {
+            HttpStatusCode.Unauthorized when credentialSource == AiProviderCredentialSource.Personal =>
+                "Your personal Sony PFB AI Gateway credential was rejected. Update it in My Connections and try again.",
+            HttpStatusCode.Unauthorized when credentialSource == AiProviderCredentialSource.MachineToMachine =>
+                "The configured PFB M2M application key was rejected. Ask an administrator to update it in AI Services.",
             HttpStatusCode.Unauthorized => "Missing, expired, or invalid bearer token or application key.",
-            HttpStatusCode.Forbidden => "The JWT is valid but does not permit this model or endpoint.",
+            HttpStatusCode.Forbidden when credentialSource == AiProviderCredentialSource.Personal =>
+                "Your personal Sony PFB AI Gateway credential does not permit this model or endpoint. Update its access or choose an allowed model.",
+            HttpStatusCode.Forbidden when credentialSource == AiProviderCredentialSource.MachineToMachine =>
+                "The configured PFB M2M application key does not permit this model or endpoint. Ask an administrator to update its access or AI Services configuration.",
+            HttpStatusCode.Forbidden => "The credential is valid but does not permit this model or endpoint.",
             HttpStatusCode.TooManyRequests => "The gateway rate limit was exceeded.",
             HttpStatusCode.BadGateway => "The upstream AI provider returned an error.",
             HttpStatusCode.GatewayTimeout => "The upstream AI provider timed out.",
@@ -669,6 +826,16 @@ public sealed class PfbAiGatewayModelProvider(
         bool IsSuccessStatusCode,
         string Body,
         string? RequestId);
+
+    private sealed class GatewayClient(
+        HttpClient client,
+        AiProviderCredentialSource credentialSource) : IDisposable
+    {
+        public HttpClient Client { get; } = client;
+        public AiProviderCredentialSource CredentialSource { get; } = credentialSource;
+
+        public void Dispose() => Client.Dispose();
+    }
 
     private sealed record GeneratedContent(string Content, bool OutputLimitReached);
 }

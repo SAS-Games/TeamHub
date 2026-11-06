@@ -124,6 +124,7 @@ public sealed class AIModel(
                 case AiConfigurationSection.Runtime:
                     snapshot.Runtime.Provider = Settings.Provider?.Trim() ?? string.Empty;
                     snapshot.Runtime.OfflineOnly = Settings.OfflineOnly;
+                    snapshot.Runtime.UsageDiagnosticsEnabled = Settings.UsageDiagnosticsEnabled;
                     snapshot.Runtime.Temperature = Settings.Temperature;
                     snapshot.Runtime.TimeoutSeconds = Settings.TimeoutSeconds;
                     break;
@@ -532,6 +533,7 @@ public sealed class AiSettingsInput
     public string PfbAiGatewayApiMode { get; set; } = "CommonChat";
 
     public bool OfflineOnly { get; set; } = true;
+    public bool UsageDiagnosticsEnabled { get; set; }
     [Display(Name = "Enable TeamHub Assistant")]
     public bool ChatEnabled { get; set; }
     [Display(Name = "Maximum messages per conversation")]
@@ -628,6 +630,7 @@ public sealed class AiSettingsInput
             Model = selected.Model,
             Providers = profiles,
             OfflineOnly = OfflineOnly,
+            UsageDiagnosticsEnabled = UsageDiagnosticsEnabled,
             Temperature = Temperature,
             TimeoutSeconds = TimeoutSeconds,
             CredentialEnvironmentVariable = CredentialEnvironmentVariable?.Trim() ?? string.Empty
@@ -681,6 +684,7 @@ public sealed class AiSettingsInput
             MeetingNotesEnabled = snapshot.Chat.MeetingNotes.Enabled,
             MeetingNotesInstructionPath = snapshot.Chat.MeetingNotes.InstructionPath,
             OfflineOnly = runtime.OfflineOnly,
+            UsageDiagnosticsEnabled = runtime.UsageDiagnosticsEnabled,
             Temperature = runtime.Temperature,
             TimeoutSeconds = runtime.TimeoutSeconds,
             CredentialEnvironmentVariable = runtime.CredentialEnvironmentVariable,

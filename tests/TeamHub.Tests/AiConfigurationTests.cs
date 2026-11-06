@@ -47,10 +47,12 @@ public sealed class AiConfigurationTests
         }.ToProviderSettings();
         http.HttpContext.User = SignedIn("one@example.com");
         (await accessor.GetCredentialAsync(settings)).Should().Be("one-token");
+        (await accessor.ResolveCredentialAsync(settings))!.Source.Should().Be(AiProviderCredentialSource.Personal);
         http.HttpContext.User = SignedIn("two@example.com");
         (await accessor.GetCredentialAsync(settings)).Should().Be("two-token");
         http.HttpContext.User = SignedIn("missing@example.com");
         (await accessor.GetCredentialAsync(settings)).Should().Be("m2m-token");
+        (await accessor.ResolveCredentialAsync(settings))!.Source.Should().Be(AiProviderCredentialSource.MachineToMachine);
         http.HttpContext.User = new ClaimsPrincipal(new ClaimsIdentity([new Claim(ClaimTypes.Name, "one@example.com")]));
         (await accessor.GetCredentialAsync(settings)).Should().Be("m2m-token");
         http.HttpContext = null;
@@ -266,6 +268,7 @@ public sealed class AiConfigurationTests
                 ReportMaximumConcurrentRequests = 3,
                 ReportMaximumSourceCharactersPerStudio = 5000,
                 ReportMaximumOutputTokens = 2500,
+                UsageDiagnosticsEnabled = true,
                 WeeklyWorkSummaryPromptPath = "Prompts/custom.md"
             },
             Credential = "synthetic-provider-key"
@@ -288,6 +291,7 @@ public sealed class AiConfigurationTests
         page.Settings.ChatMaximumLocalPromptCharacters.Should().Be(20000);
         page.Settings.ChatMaximumInstructionCharacters.Should().Be(50000);
         page.Settings.ChatMaximumOutputTokens.Should().Be(6000);
+        page.Settings.UsageDiagnosticsEnabled.Should().BeTrue();
         page.Credential = null;
         (await page.OnPostTestAsync(CancellationToken.None)).Should().BeOfType<PageResult>();
         page.TestResult!.IsAvailable.Should().BeTrue();
@@ -296,6 +300,7 @@ public sealed class AiConfigurationTests
         (await configuration.GetAsync()).ReportGenerator.Enabled.Should().BeTrue();
         (await configuration.GetAsync()).Chat.Enabled.Should().BeTrue();
         (await configuration.GetAsync()).Chat.MaximumOutputTokens.Should().Be(6000);
+        (await configuration.GetAsync()).Runtime.UsageDiagnosticsEnabled.Should().BeTrue();
 
         var originalMeetingNotesPath = (await configuration.GetAsync()).Chat.MeetingNotes.InstructionPath;
         page.Settings.ChatMaximumMessages = 31;

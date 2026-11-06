@@ -45,6 +45,13 @@ the configured daily-reset timezone. Active authorized users remain visible with
 first measured AI call, while historical users remain visible as long as retained usage exists. An
 **All users** row totals each period.
 
+When investigating a successful PFB response with missing token counts, an administrator can
+temporarily enable **Show safe token-usage diagnostics in AI responses** under **AI Services >
+Runtime**. Affected chat responses then show the HTTP status, API route, credential source, provider
+request ID and sanitized JSON field names. The same event is written as a warning to the application
+log. Credentials, prompts, attachments, response values and generated content are never included.
+Disable the option after diagnosis to keep the normal chat display concise.
+
 Raw operations default to 12 months of retention. `AI:Usage:RetentionMonths` accepts 6 through 120;
 startup initialization prunes older operations, their provider invocations, tool activity and old
 threshold markers. A background maintenance service repeats this cleanup every 24 hours without

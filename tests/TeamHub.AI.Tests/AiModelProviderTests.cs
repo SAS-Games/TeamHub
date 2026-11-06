@@ -241,6 +241,43 @@ public sealed class AiModelProviderTests
         result.Provider.Should().Be(AiModelProviderKeys.PfbAiGateway);
     }
 
+    [Theory]
+    [InlineData(
+        HttpStatusCode.Unauthorized,
+        AiProviderCredentialSource.Personal,
+        "*personal Sony PFB AI Gateway credential was rejected*My Connections*")]
+    [InlineData(
+        HttpStatusCode.Unauthorized,
+        AiProviderCredentialSource.MachineToMachine,
+        "*PFB M2M application key was rejected*administrator*AI Services*")]
+    [InlineData(
+        HttpStatusCode.Forbidden,
+        AiProviderCredentialSource.Personal,
+        "*personal Sony PFB AI Gateway credential does not permit this model or endpoint*")]
+    [InlineData(
+        HttpStatusCode.Forbidden,
+        AiProviderCredentialSource.MachineToMachine,
+        "*PFB M2M application key does not permit this model or endpoint*administrator*")]
+    public async Task Pfb_gateway_authentication_error_identifies_the_rejected_credential_source(
+        HttpStatusCode statusCode,
+        AiProviderCredentialSource source,
+        string expectedMessage)
+    {
+        var handler = new StubHttpMessageHandler(_ =>
+            new HttpResponseMessage(statusCode));
+        var provider = new PfbAiGatewayModelProvider(
+            new StubHttpClientFactory(handler),
+            new SourceAwareCredentialAccessor("rejected-token", source));
+        using var schema = JsonDocument.Parse("""{"type":"object"}""");
+
+        var action = () => provider.GenerateStructuredAsync(
+            PfbSettings(),
+            new AiStructuredGenerationRequest("Return JSON.", "Create it.", schema.RootElement.Clone()));
+
+        await action.Should().ThrowAsync<AiModelProviderException>()
+            .WithMessage(expectedMessage);
+    }
+
     [Fact]
     public async Task Pfb_gateway_model_catalog_includes_metadata_for_the_configuration_picker()
     {
@@ -331,7 +368,7 @@ public sealed class AiModelProviderTests
     public async Task Pfb_gateway_common_chat_reads_wrapped_content_blocks()
     {
         var handler = new StubHttpMessageHandler(_ => JsonResponse(
-            """{"data":{"choices":[{"message":{"content":[{"type":"output_text","text":{"value":"{\"answer\":true}"}}]}}]}}"""));
+            """{"data":{"choices":[{"message":{"content":[{"type":"output_text","text":{"value":"{\"answer\":true}"}}]}}],"usage":{"prompt_tokens":80,"completion_tokens":20,"total_tokens":100}}}"""));
         var provider = new PfbAiGatewayModelProvider(
             new StubHttpClientFactory(handler),
             new TokenCredentialAccessor("test-jwt"));
@@ -342,6 +379,76 @@ public sealed class AiModelProviderTests
             new AiStructuredGenerationRequest("Return JSON.", "Create it.", schema.RootElement.Clone(), 1_000));
 
         result.Content.Should().Be("{\"answer\":true}");
+        result.Usage.Should().Be(new AiTokenUsage(80, 20, 100));
+    }
+
+    [Fact]
+    public async Task Pfb_gateway_common_chat_reads_usage_from_a_json_string_wrapper()
+    {
+        var handler = new StubHttpMessageHandler(_ => JsonResponse(
+            """{"body":"{\"choices\":[{\"message\":{\"content\":\"{\\\"answer\\\":true}\"}}],\"usage\":{\"inputTokens\":60,\"outputTokens\":15,\"totalTokens\":75}}"}"""));
+        var provider = new PfbAiGatewayModelProvider(
+            new StubHttpClientFactory(handler),
+            new TokenCredentialAccessor("test-jwt"));
+        using var schema = JsonDocument.Parse("""{"type":"object"}""");
+
+        var result = await provider.GenerateStructuredAsync(
+            PfbSettings(),
+            new AiStructuredGenerationRequest("Return JSON.", "Create it.", schema.RootElement.Clone(), 1_000));
+
+        result.Content.Should().Be("{\"answer\":true}");
+        result.Usage.Should().Be(new AiTokenUsage(60, 15, 75));
+    }
+
+    [Fact]
+    public async Task Pfb_gateway_emits_safe_diagnostics_when_enabled_and_usage_is_missing()
+    {
+        var handler = new StubHttpMessageHandler(_ =>
+        {
+            var response = JsonResponse(
+                """{"id":"provider-secret-id","choices":[{"message":{"content":"{\"answer\":\"Sensitive generated content\"}"}}],"metadata":{"upstream":"private-value"}}""");
+            response.Headers.Add("x-request-id", "request-safe-1");
+            return response;
+        });
+        var provider = new PfbAiGatewayModelProvider(
+            new StubHttpClientFactory(handler),
+            new SourceAwareCredentialAccessor("secret-credential", AiProviderCredentialSource.Personal));
+        using var schema = JsonDocument.Parse("""{"type":"object"}""");
+
+        var result = await provider.GenerateStructuredAsync(
+            PfbSettings() with { UsageDiagnosticsEnabled = true },
+            new AiStructuredGenerationRequest("Return JSON.", "Create it.", schema.RootElement.Clone()));
+
+        result.Usage.Should().BeNull();
+        result.UsageDiagnostics.Should().NotBeNull();
+        result.UsageDiagnostics!.HttpStatusCode.Should().Be(200);
+        result.UsageDiagnostics.ApiMode.Should().Be(PfbAiGatewayModelProvider.CommonChatMode);
+        result.UsageDiagnostics.CredentialSource.Should().Be("Personal");
+        result.UsageDiagnostics.ProviderRequestId.Should().Be("request-safe-1");
+        result.UsageDiagnostics.Summary.Should().Contain("not a TeamHub assigned-token-limit rejection");
+        result.UsageDiagnostics.ResponseShape.Should().Contain("choices").And.Contain("metadata");
+        result.UsageDiagnostics.ResponseShape.Should().NotContain("Sensitive generated content")
+            .And.NotContain("private-value")
+            .And.NotContain("secret-credential")
+            .And.NotContain("provider-secret-id");
+    }
+
+    [Fact]
+    public async Task Pfb_gateway_does_not_emit_usage_diagnostics_when_disabled()
+    {
+        var handler = new StubHttpMessageHandler(_ => JsonResponse(
+            """{"choices":[{"message":{"content":"{\"answer\":true}"}}]}"""));
+        var provider = new PfbAiGatewayModelProvider(
+            new StubHttpClientFactory(handler),
+            new TokenCredentialAccessor("test-jwt"));
+        using var schema = JsonDocument.Parse("""{"type":"object"}""");
+
+        var result = await provider.GenerateStructuredAsync(
+            PfbSettings(),
+            new AiStructuredGenerationRequest("Return JSON.", "Create it.", schema.RootElement.Clone()));
+
+        result.Usage.Should().BeNull();
+        result.UsageDiagnostics.Should().BeNull();
     }
 
     [Fact]
@@ -560,6 +667,20 @@ public sealed class AiModelProviderTests
         public ValueTask<string?> GetCredentialAsync(
             AiProviderSettings settings,
             CancellationToken cancellationToken = default) => ValueTask.FromResult<string?>(token);
+    }
+
+    private sealed class SourceAwareCredentialAccessor(
+        string token,
+        AiProviderCredentialSource source) : IAiProviderCredentialAccessor
+    {
+        public ValueTask<string?> GetCredentialAsync(
+            AiProviderSettings settings,
+            CancellationToken cancellationToken = default) => ValueTask.FromResult<string?>(token);
+
+        public ValueTask<AiProviderCredential?> ResolveCredentialAsync(
+            AiProviderSettings settings,
+            CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult<AiProviderCredential?>(new(token, source));
     }
 
     private sealed class StubHttpClientFactory(HttpMessageHandler handler) : IHttpClientFactory

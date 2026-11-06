@@ -60,6 +60,26 @@
         return { inputTokens, outputTokens, totalTokens };
     }
 
+    function normalizeUsageDiagnostics(value) {
+        if (!value || typeof value !== "object" || typeof value.summary !== "string") return null;
+        const httpStatusCode = Number(value.httpStatusCode);
+        if (!Number.isInteger(httpStatusCode) || httpStatusCode < 100 || httpStatusCode > 599) return null;
+        return {
+            summary: value.summary.slice(0, 500),
+            httpStatusCode,
+            apiMode: typeof value.apiMode === "string" ? value.apiMode.slice(0, 100) : "Unknown",
+            credentialSource: typeof value.credentialSource === "string"
+                ? value.credentialSource.slice(0, 100)
+                : "Unknown",
+            responseShape: typeof value.responseShape === "string"
+                ? value.responseShape.slice(0, 2000)
+                : "Unavailable",
+            providerRequestId: typeof value.providerRequestId === "string"
+                ? value.providerRequestId.slice(0, 256)
+                : null
+        };
+    }
+
     function formatTokenCount(value) {
         return new Intl.NumberFormat().format(value);
     }
@@ -111,7 +131,14 @@
                                 : [])
                         : [];
                     const usage = normalizeTokenUsage(item.usage);
-                    return [{ role: item.role, content: item.content.slice(0, 8000), citations, usage }];
+                    const usageDiagnostics = normalizeUsageDiagnostics(item.usageDiagnostics);
+                    return [{
+                        role: item.role,
+                        content: item.content.slice(0, 8000),
+                        citations,
+                        usage,
+                        usageDiagnostics
+                    }];
                 })
                 : [];
             return {
@@ -712,7 +739,7 @@
         }
     }
 
-    function addMessage(role, content, citations, usage) {
+    function addMessage(role, content, citations, usage, usageDiagnostics) {
         const empty = messagesElement.querySelector(".ai-chat-empty");
         if (empty) empty.remove();
         const row = document.createElement("div");
@@ -742,6 +769,28 @@
                 ? `Tokens: ${formatTokenUsage(normalizedUsage)}`
                 : "Tokens: not reported by provider";
             bubble.append(usageLine);
+            const diagnostics = normalizeUsageDiagnostics(usageDiagnostics);
+            if (diagnostics) {
+                const details = document.createElement("details");
+                details.className = "ai-chat-usage-diagnostics";
+                details.open = true;
+                const summary = document.createElement("summary");
+                summary.textContent = "Token-usage diagnostics";
+                const output = document.createElement("div");
+                output.className = "ai-chat-usage-diagnostics-content";
+                output.textContent = [
+                    diagnostics.summary,
+                    `HTTP status: ${diagnostics.httpStatusCode}`,
+                    `API route: ${diagnostics.apiMode}`,
+                    `Credential source: ${diagnostics.credentialSource}`,
+                    diagnostics.providerRequestId
+                        ? `Provider request ID: ${diagnostics.providerRequestId}`
+                        : "Provider request ID: not returned",
+                    `Response fields: ${diagnostics.responseShape}`
+                ].join("\n");
+                details.append(summary, output);
+                bubble.append(details);
+            }
         }
         if (role === "assistant") {
             const actions = document.createElement("div");
@@ -1225,11 +1274,17 @@
                 role: "assistant",
                 content: payload.answer,
                 citations: Array.isArray(payload.citations) ? payload.citations : [],
-                usage: normalizeTokenUsage(payload.usage)
+                usage: normalizeTokenUsage(payload.usage),
+                usageDiagnostics: normalizeUsageDiagnostics(payload.usageDiagnostics)
             };
             history = [...requestHistory, assistantMessage];
             thinkingMessage.remove();
-            addMessage("assistant", assistantMessage.content, assistantMessage.citations, assistantMessage.usage);
+            addMessage(
+                "assistant",
+                assistantMessage.content,
+                assistantMessage.citations,
+                assistantMessage.usage,
+                assistantMessage.usageDiagnostics);
             updateSessionUsage();
             meetingDraftDirty = false;
             closeMeetingEditor(false);
@@ -1262,7 +1317,9 @@
     updateMode(false);
     messagesElement.replaceChildren();
     if (history.length) {
-        for (const item of history) addMessage(item.role, item.content, item.citations, item.usage);
+        for (const item of history) {
+            addMessage(item.role, item.content, item.citations, item.usage, item.usageDiagnostics);
+        }
     } else {
         showEmptyConversation();
     }

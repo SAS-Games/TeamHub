@@ -155,6 +155,33 @@ public sealed class AiChatServiceTests
     }
 
     [Fact]
+    public async Task Chat_response_forwards_safe_usage_diagnostics_from_the_provider()
+    {
+        var diagnostics = new AiUsageDiagnostics(
+            "Successful response without usage telemetry.",
+            200,
+            "CommonChat",
+            "Personal",
+            "$: [choices]",
+            "request-1");
+        var provider = new RecordingProvider(
+            usageDiagnostics: diagnostics,
+            omitUsage: true);
+        await using var services = CreateServices(provider, new RecordingKnowledgeSource());
+        var chat = services.GetRequiredService<IAiChatService>();
+
+        var response = await chat.SendAsync(
+            User(),
+            new AiChatRequest(
+                AiChatMode.General,
+                "model-a",
+                [new AiChatMessage("user", "Hello")]));
+
+        response.Usage.Should().BeNull();
+        response.UsageDiagnostics.Should().Be(diagnostics);
+    }
+
+    [Fact]
     public async Task TeamHub_mode_executes_one_authorized_tool_and_then_answers_from_its_source()
     {
         var provider = new RecordingProvider(responses:
@@ -518,7 +545,9 @@ public sealed class AiChatServiceTests
         string? citation = null,
         string providerKey = AiModelProviderKeys.PfbAiGateway,
         bool failCatalog = false,
-        IReadOnlyList<string>? responses = null)
+        IReadOnlyList<string>? responses = null,
+        AiUsageDiagnostics? usageDiagnostics = null,
+        bool omitUsage = false)
         : IAiModelProvider, IAiModelCatalogProvider
     {
         public string Key => providerKey;
@@ -558,7 +587,8 @@ public sealed class AiChatServiceTests
                     ? responses[Requests.Count - 1]
                     : $$"""{"answer":"Safe answer","sourceIds":{{sourceIds}}}""",
                 "request-1",
-                new AiTokenUsage(80, 20, 100)));
+                omitUsage ? null : new AiTokenUsage(80, 20, 100),
+                usageDiagnostics));
         }
     }
 

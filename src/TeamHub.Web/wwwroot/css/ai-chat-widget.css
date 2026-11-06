@@ -299,6 +299,26 @@ html.teamhub-ai-chat-resizing * {
   margin-top: .4rem;
 }
 
+.teamhub-ai-chat-panel .ai-chat-usage-diagnostics {
+  margin-top: .45rem;
+  padding: .45rem .55rem;
+  color: var(--text-muted-color);
+  border: 1px solid var(--divider-color);
+  border-radius: 7px;
+  background: var(--surface-muted-color);
+  font-size: .7rem;
+}
+
+.teamhub-ai-chat-panel .ai-chat-usage-diagnostics summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.teamhub-ai-chat-panel .ai-chat-usage-diagnostics-content {
+  margin-top: .4rem;
+  white-space: pre-wrap;
+}
+
 .teamhub-ai-chat-panel .ai-chat-session-usage {
   margin-top: .35rem;
   text-align: right;
