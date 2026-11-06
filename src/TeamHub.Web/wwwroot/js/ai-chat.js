@@ -761,8 +761,13 @@
             sourceLine.textContent = `Sources: ${citations.map(item => item.title).join(", ")}`;
             bubble.append(sourceLine);
         }
+        const rawUsagePayload = JSON.stringify(usage ?? null);
         const normalizedUsage = normalizeTokenUsage(usage);
         if (role === "assistant") {
+            const rawUsageLine = document.createElement("div");
+            rawUsageLine.className = "ai-chat-token-usage";
+            rawUsageLine.textContent = `Raw usage payload: ${rawUsagePayload}`;
+            bubble.append(rawUsageLine);
             const usageLine = document.createElement("div");
             usageLine.className = "ai-chat-token-usage";
             usageLine.textContent = normalizedUsage
