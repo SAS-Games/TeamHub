@@ -39,6 +39,12 @@ Services > AI Usage Ledger**; the default view covers the last 30 UTC days and g
 feature and model. The active filters and grouping can be downloaded as a usage CSV, a tool-activity
 CSV, or one formatted Excel workbook with separate **Usage** and **Tool activity** worksheets.
 
+The top of the page always shows a per-user utilization table with measured tokens for today, the
+current Monday-based week, the current month and all retained history. Current-period boundaries use
+the configured daily-reset timezone. Active authorized users remain visible with zeroes before their
+first measured AI call, while historical users remain visible as long as retained usage exists. An
+**All users** row totals each period.
+
 Raw operations default to 12 months of retention. `AI:Usage:RetentionMonths` accepts 6 through 120;
 startup initialization prunes older operations, their provider invocations, tool activity and old
 threshold markers. A background maintenance service repeats this cleanup every 24 hours without

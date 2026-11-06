@@ -16,6 +16,8 @@ public sealed class AIUsageModel(
     IAiToolActivityLedger? toolActivities = null,
     IAiUsageReportExporter? exporter = null) : PageModel
 {
+    private IReadOnlyList<AuthorizedUserRecord> activeUsers = [];
+
     [BindProperty(SupportsGet = true)]
     public DateOnly? FromDate { get; set; }
 
@@ -65,6 +67,8 @@ public sealed class AIUsageModel(
         new(new AiToolActivityTotals(0, 0, 0, 0, 0, 0), []);
     public AiToolActivityFilterOptions ToolFilterOptions { get; private set; } = new([], []);
     public IReadOnlyList<TimeZoneOption> TimeZones { get; private set; } = [];
+    public IReadOnlyList<AiUsageUserConsumptionView> UserConsumption { get; private set; } = [];
+    public string ConsumptionTimeZoneId { get; private set; } = "Asia/Kolkata";
 
     [TempData]
     public string? StatusMessage { get; set; }
@@ -118,6 +122,7 @@ public sealed class AIUsageModel(
     public async Task OnGetAsync(CancellationToken cancellationToken)
     {
         await LoadLimitInputAsync(cancellationToken);
+        await LoadUserConsumptionAsync(cancellationToken);
         var today = DateOnly.FromDateTime(DateTime.UtcNow);
         FromDate ??= today.AddDays(-29);
         ToDate ??= today;
@@ -321,7 +326,13 @@ public sealed class AIUsageModel(
 
     private async Task LoadLimitInputAsync(CancellationToken cancellationToken)
     {
-        if (limits is null || users is null) return;
+        if (users is null) return;
+        activeUsers = (await users.ListUsersAsync(cancellationToken))
+            .Where(user => user.IsActive)
+            .OrderBy(user => user.DisplayName, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(user => user.UserId, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        if (limits is null) return;
         var settings = await limits.GetSettingsAsync(cancellationToken);
         var overrides = settings.UserLimits.ToDictionary(
             item => item.UserId,
@@ -333,10 +344,7 @@ public sealed class AIUsageModel(
             NotificationsEnabled = settings.NotificationsEnabled,
             NotificationThresholds = string.Join(", ",
                 settings.NotificationThresholdPercentages ?? [75, 90, 100]),
-            UserLimits = (await users.ListUsersAsync(cancellationToken))
-                .Where(user => user.IsActive)
-                .OrderBy(user => user.DisplayName, StringComparer.OrdinalIgnoreCase)
-                .ThenBy(user => user.UserId, StringComparer.OrdinalIgnoreCase)
+            UserLimits = activeUsers
                 .Select(user => new AiUsageUserLimitInput
                 {
                     UserId = user.UserId,
@@ -347,6 +355,35 @@ public sealed class AIUsageModel(
         };
         TimeZones = TimeZoneInfo.GetSystemTimeZones()
             .Select(timeZone => new TimeZoneOption(timeZone.Id, timeZone.DisplayName))
+            .ToList();
+    }
+
+    private async Task LoadUserConsumptionAsync(CancellationToken cancellationToken)
+    {
+        var summary = await ledger.GetUserConsumptionSummaryAsync(cancellationToken);
+        ConsumptionTimeZoneId = summary.TimeZoneId;
+        var recorded = summary.Users.ToDictionary(item => item.UserId, StringComparer.OrdinalIgnoreCase);
+        var rows = activeUsers.Select(user =>
+        {
+            recorded.Remove(user.UserId, out var consumption);
+            return new AiUsageUserConsumptionView(
+                user.DisplayName,
+                user.UserId,
+                consumption?.TodayTokens ?? 0,
+                consumption?.WeekTokens ?? 0,
+                consumption?.MonthTokens ?? 0,
+                consumption?.RetainedTotalTokens ?? 0);
+        }).ToList();
+        rows.AddRange(recorded.Values.Select(consumption => new AiUsageUserConsumptionView(
+            consumption.UserId,
+            consumption.UserId,
+            consumption.TodayTokens,
+            consumption.WeekTokens,
+            consumption.MonthTokens,
+            consumption.RetainedTotalTokens)));
+        UserConsumption = rows
+            .OrderByDescending(item => item.RetainedTotalTokens)
+            .ThenBy(item => item.DisplayName, StringComparer.OrdinalIgnoreCase)
             .ToList();
     }
 }
@@ -378,3 +415,11 @@ public sealed class AiUsageUserLimitInput
 }
 
 public sealed record TimeZoneOption(string Id, string DisplayName);
+
+public sealed record AiUsageUserConsumptionView(
+    string DisplayName,
+    string UserId,
+    long TodayTokens,
+    long WeekTokens,
+    long MonthTokens,
+    long RetainedTotalTokens);

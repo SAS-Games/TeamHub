@@ -168,6 +168,18 @@ public sealed record AiUsageFilterOptions(
     IReadOnlyList<string> Providers,
     IReadOnlyList<string> Models);
 
+public sealed record AiUsageUserConsumption(
+    string UserId,
+    long TodayTokens,
+    long WeekTokens,
+    long MonthTokens,
+    long RetainedTotalTokens);
+
+public sealed record AiUsageUserConsumptionSummary(
+    string TimeZoneId,
+    DateTimeOffset GeneratedAtUtc,
+    IReadOnlyList<AiUsageUserConsumption> Users);
+
 public sealed record AiUsageUserDailyLimit(string UserId, long DailyTokenLimit);
 
 public sealed record AiUsageLimitSettings(
@@ -232,6 +244,9 @@ public sealed class AiUsageLimitExceededException(
 
 public interface IAiUsageLedger
 {
+    Task<AiUsageUserConsumptionSummary> GetUserConsumptionSummaryAsync(
+        CancellationToken cancellationToken = default);
+
     Task<AiUsageFilterOptions> GetFilterOptionsAsync(
         DateTimeOffset fromUtc,
         DateTimeOffset toUtc,

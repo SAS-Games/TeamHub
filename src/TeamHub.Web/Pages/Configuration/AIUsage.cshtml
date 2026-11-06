@@ -19,6 +19,57 @@
 }
 
 <section class="content-section mb-4">
+    <div class="section-heading"><div><span>Current consumption</span><h2>Token utilization by user</h2></div></div>
+    <div class="p-4">
+        <p class="text-secondary small">
+            Today, this week, and this month use <strong>@Model.ConsumptionTimeZoneId</strong>. Weeks begin on Monday.
+            Retained total covers all usage still present under the configured retention policy. Only completed calls with measured token usage are included.
+        </p>
+        @if (Model.UserConsumption.Count == 0)
+        {
+            <div class="alert alert-secondary mb-0">No authorized users or measured AI token consumption are available.</div>
+        }
+        else
+        {
+            <div class="table-responsive">
+                <table class="table align-middle mb-0">
+                    <thead>
+                    <tr>
+                        <th>User</th>
+                        <th class="text-end">Today</th>
+                        <th class="text-end">This week</th>
+                        <th class="text-end">This month</th>
+                        <th class="text-end">Retained total</th>
+                    </tr>
+                    </thead>
+                    <tbody>
+                    @foreach (var user in Model.UserConsumption)
+                    {
+                        <tr>
+                            <td><strong>@user.DisplayName</strong><div class="small text-secondary">@user.UserId</div></td>
+                            <td class="text-end">@user.TodayTokens.ToString("N0")</td>
+                            <td class="text-end">@user.WeekTokens.ToString("N0")</td>
+                            <td class="text-end">@user.MonthTokens.ToString("N0")</td>
+                            <td class="text-end fw-semibold">@user.RetainedTotalTokens.ToString("N0")</td>
+                        </tr>
+                    }
+                    </tbody>
+                    <tfoot class="table-group-divider fw-semibold">
+                    <tr>
+                        <td>All users</td>
+                        <td class="text-end">@Model.UserConsumption.Sum(user => user.TodayTokens).ToString("N0")</td>
+                        <td class="text-end">@Model.UserConsumption.Sum(user => user.WeekTokens).ToString("N0")</td>
+                        <td class="text-end">@Model.UserConsumption.Sum(user => user.MonthTokens).ToString("N0")</td>
+                        <td class="text-end">@Model.UserConsumption.Sum(user => user.RetainedTotalTokens).ToString("N0")</td>
+                    </tr>
+                    </tfoot>
+                </table>
+            </div>
+        }
+    </div>
+</section>
+
+<section class="content-section mb-4">
     <div class="section-heading"><div><span>Controls</span><h2>Daily consumption limits</h2></div></div>
     <form method="post" asp-page-handler="SaveLimits" class="p-4 row g-3">
         <div class="col-12 col-lg-5">

@@ -18,7 +18,8 @@ retention is exposed through `IAiUsageLedger.DeleteBeforeAsync`; long-lived roll
 
 TeamHub.Web exposes the query API through the admin-only `/Configuration/AI/Usage` report page.
 The page exports the filtered usage or tool-activity view as CSV and both reports as a formatted
-two-sheet Excel workbook.
+two-sheet Excel workbook. It also displays an always-visible per-user summary for today, the current
+Monday-based week, the current month and retained history using the configured reset timezone.
 The same page configures hard daily token limits with an organization default, per-user overrides,
 and a local-midnight reset timezone. `IAiUsageLimitService` exposes settings and current user status;
 `IAiUsageTracker` enforces the effective limit immediately before each provider call.
