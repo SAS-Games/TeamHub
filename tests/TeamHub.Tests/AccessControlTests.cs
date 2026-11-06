@@ -237,6 +237,7 @@ public sealed class AccessControlTests
 
         (await users.GetAccessLevelAsync(TeamHubModules.Home, TeamHubUserTypes.Guest)).Should().Be(AccessLevel.ReadOnly);
         (await users.GetAccessLevelAsync(TeamHubModules.FlowDesigner, TeamHubUserTypes.Registered)).Should().Be(AccessLevel.Edit);
+        (await users.GetAccessLevelAsync(TeamHubModules.AiChat, TeamHubUserTypes.Registered)).Should().Be(AccessLevel.ReadOnly);
         (await users.GetAccessLevelAsync(TeamHubModules.AtlassianConnection, TeamHubUserTypes.Registered)).Should().Be(AccessLevel.Edit);
         (await users.GetAccessLevelAsync(TeamHubModules.SupportSummary, TeamHubUserTypes.Privileged)).Should().Be(AccessLevel.ReadOnly);
         (await users.GetAccessLevelAsync(TeamHubModules.MilestoneReview, TeamHubUserTypes.Registered)).Should().Be(AccessLevel.ReadOnly);
@@ -575,6 +576,9 @@ public sealed class AccessControlTests
     [InlineData("PUT", "/api/flows/published/id", "", AccessLevel.FullAccess)]
     [InlineData("GET", "/Notifications/Open/id", "", AccessLevel.ReadOnly)]
     [InlineData("POST", "/Notifications", "?handler=MarkAllRead", AccessLevel.ReadOnly)]
+    [InlineData("POST", "/AIChat", "?handler=Message", AccessLevel.ReadOnly)]
+    [InlineData("POST", "/AIChat", "?handler=PublishMeetingNotes", AccessLevel.ReadOnly)]
+    [InlineData("GET", "/AIChat", "?handler=Models", AccessLevel.ReadOnly)]
     [InlineData("GET", "/WorkCenter/StartNew", "", AccessLevel.Create)]
     [InlineData("POST", "/WorkCenter/StartNew", "", AccessLevel.Create)]
     [InlineData("GET", "/WorkCenter/Configuration", "?draftId=1", AccessLevel.Edit)]

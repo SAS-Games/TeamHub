@@ -180,6 +180,9 @@ public static class TeamHubAccessRoutes
         var handler = request.Query["handler"].ToString();
         if (path.StartsWith("/Notifications", StringComparison.OrdinalIgnoreCase))
             return AccessLevel.ReadOnly;
+        if (path.StartsWith("/AIChat", StringComparison.OrdinalIgnoreCase)
+            || path.StartsWith("/api/ai-chat", StringComparison.OrdinalIgnoreCase))
+            return AccessLevel.ReadOnly;
         if (path.StartsWith("/Team/Configuration", StringComparison.OrdinalIgnoreCase))
             return AccessLevel.FullAccess;
         if (path.StartsWith("/WorkCenter/Configuration", StringComparison.OrdinalIgnoreCase))

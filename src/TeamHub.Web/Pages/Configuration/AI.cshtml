@@ -50,13 +50,6 @@
                     <label asp-for="Settings.OfflineOnly" class="form-check-label">Offline-only: require the active endpoint to use localhost or another loopback address</label>
                 </div>
             </div>
-            <div class="col-12">
-                <div class="form-check">
-                    <input asp-for="Settings.UsageDiagnosticsEnabled" class="form-check-input" />
-                    <label asp-for="Settings.UsageDiagnosticsEnabled" class="form-check-label">Show safe token-usage diagnostics in AI responses</label>
-                </div>
-                <div class="form-text">Use temporarily when a successful provider response reports no token counts. Displays request metadata and JSON field names only; credentials, prompts, files, and generated content are never included.</div>
-            </div>
             <div class="col-12 d-flex flex-wrap justify-content-end gap-2 pt-2">
                 <button type="submit" asp-page-handler="TestConnection" formnovalidate class="btn btn-outline-primary">Test saved connection</button>
                 <button type="submit" asp-page-handler="SaveRuntime" formnovalidate class="btn btn-primary">Save runtime</button>

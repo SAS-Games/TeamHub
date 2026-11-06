@@ -16,7 +16,6 @@ public sealed class AiRuntimeOptions
     public Dictionary<string, AiProviderProfileOptions> Providers { get; set; } =
         new(StringComparer.OrdinalIgnoreCase);
     public bool OfflineOnly { get; set; } = true;
-    public bool UsageDiagnosticsEnabled { get; set; }
     public double Temperature { get; set; }
     public int TimeoutSeconds { get; set; } = 180;
     public string CredentialEnvironmentVariable { get; set; } = "TEAMHUB_AI_PROVIDER_API_KEY";
@@ -37,8 +36,7 @@ public sealed class AiRuntimeOptions
             Temperature,
             TimeSpan.FromSeconds(TimeoutSeconds),
             GetSelectedCredentialEnvironmentVariable().Trim(),
-            GetSelectedApiMode().Trim(),
-            UsageDiagnosticsEnabled);
+            GetSelectedApiMode().Trim());
     }
 
     internal string GetSelectedEndpoint()
@@ -177,5 +175,4 @@ public sealed record AiProviderSettings(
     double Temperature,
     TimeSpan Timeout,
     string CredentialEnvironmentVariable,
-    string ApiMode = "",
-    bool UsageDiagnosticsEnabled = false);
+    string ApiMode = "");

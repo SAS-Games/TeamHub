@@ -757,13 +757,7 @@ internal sealed class AiChatService(
                     citations.Add(new AiChatCitation(source.Id, source.Title));
             }
         }
-        return new AiChatResponse(
-            answer,
-            model,
-            citations,
-            result.RequestId,
-            result.Usage,
-            result.UsageDiagnostics);
+        return new AiChatResponse(answer, model, citations, result.RequestId, result.Usage);
     }
 
     private static void EnsureEnabled(AiChatOptions settings)
