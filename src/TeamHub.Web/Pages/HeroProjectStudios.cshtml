@@ -1,6 +1,7 @@
 @page "/HeroProjectStudios"
 @model TeamHub.Web.Pages.HeroProjectStudiosModel
 @using TeamHub.Authentication
+@using TeamHub.Studio
 @using TeamHub.Web.AccessControl
 @inject ICurrentAccessService CurrentAccess
 @{
@@ -73,7 +74,28 @@ else
                             <td class="hero-project-studio-details">
                                 <safe-markdown class="markdown-content hero-project-about-markdown" text="@(string.IsNullOrWhiteSpace(studio.AboutGame) ? "-" : studio.AboutGame)"></safe-markdown>
                             </td>
-                            <td class="text-nowrap">@(item.ReleaseDate?.ToString("dd MMM yyyy") ?? "-")</td>
+                            <td class="hero-project-release-cell">
+                                <span class="text-nowrap">@(item.ReleaseDate?.ToString("dd MMM yyyy") ?? "-")</span>
+                                @if (studio.PlatformLinks.Count > 0)
+                                {
+                                    <div class="hero-project-platform-links" aria-label="@studio.ProjectName platform links">
+                                        @foreach (var link in studio.PlatformLinks)
+                                        {
+                                            var platform = StudioPlatforms.Find(link.Platform);
+                                            if (platform is null) continue;
+                                            var linkDescription = string.IsNullOrWhiteSpace(link.Description)
+                                                ? $"Open {platform.DisplayName} for {studio.ProjectName}"
+                                                : $"{platform.DisplayName}: {link.Description}";
+                                            <a class="btn btn-sm btn-outline-primary hero-project-platform-link"
+                                               href="@link.Url"
+                                               target="_blank"
+                                               rel="noopener noreferrer"
+                                               title="@link.Description"
+                                               aria-label="@linkDescription">@platform.ButtonLabel</a>
+                                        }
+                                    </div>
+                                }
+                            </td>
                         </tr>
                     }
                     </tbody>

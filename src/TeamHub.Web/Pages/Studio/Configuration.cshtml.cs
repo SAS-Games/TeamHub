@@ -35,6 +35,7 @@ public class ConfigurationModel(
         .OrderBy(zone => zone.BaseUtcOffset)
         .ThenBy(zone => zone.DisplayName)
         .ToList();
+    public IReadOnlyList<StudioPlatformOption> Platforms => StudioPlatforms.All;
 
     [TempData]
     public string? StatusMessage { get; set; }
@@ -88,6 +89,7 @@ public class ConfigurationModel(
         {
             ModelState.AddModelError("Input.TimeZoneId", "Select a valid time zone.");
         }
+        ValidatePlatformLinks();
         ValidateLogoFile();
 
         if (!ModelState.IsValid)
@@ -126,6 +128,10 @@ public class ConfigurationModel(
         catch (IOException ex)
         {
             ModelState.AddModelError(nameof(LogoFile), $"Logo could not be saved: {ex.Message}");
+        }
+        catch (ArgumentException ex)
+        {
+            ModelState.AddModelError(string.Empty, ex.Message);
         }
 
         DeleteLogo(uploadedLogoFileName);
@@ -214,6 +220,12 @@ public class ConfigurationModel(
             .Where(tool => !tool.Remove)
             .Where(tool => !string.IsNullOrWhiteSpace(tool.Name) || !string.IsNullOrWhiteSpace(tool.Description))
             .ToList();
+        Input.PlatformLinks = (Input.PlatformLinks ?? [])
+            .Where(link => !link.Remove)
+            .Where(link => !string.IsNullOrWhiteSpace(link.Platform)
+                || !string.IsNullOrWhiteSpace(link.Url)
+                || !string.IsNullOrWhiteSpace(link.Description))
+            .ToList();
         Input.ImportantLinks = (Input.ImportantLinks ?? [])
             .Where(link => !link.Remove)
             .Where(link => !string.IsNullOrWhiteSpace(link.Label) || !string.IsNullOrWhiteSpace(link.Url) || !string.IsNullOrWhiteSpace(link.Description))
@@ -225,7 +237,46 @@ public class ConfigurationModel(
         Input.OurContacts.Add(new StudioContactInput());
         Input.TeamMembers.Add(new StudioTeamMemberInput());
         Input.DevelopmentTools.Add(new StudioDevelopmentToolInput());
+        Input.PlatformLinks.Add(new StudioPlatformLinkInput());
         Input.ImportantLinks.Add(new StudioImportantLinkInput());
+    }
+
+    private void ValidatePlatformLinks()
+    {
+        var usedPlatforms = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        for (var index = 0; index < Input.PlatformLinks.Count; index++)
+        {
+            var link = Input.PlatformLinks[index];
+            var platform = StudioPlatforms.Find(link.Platform);
+            if (platform is null)
+            {
+                ModelState.AddModelError(
+                    $"Input.PlatformLinks[{index}].Platform",
+                    "Select a supported platform.");
+            }
+            else if (!usedPlatforms.Add(platform.Id))
+            {
+                ModelState.AddModelError(
+                    $"Input.PlatformLinks[{index}].Platform",
+                    $"{platform.DisplayName} can be configured only once per studio.");
+            }
+
+            var url = link.Url?.Trim() ?? string.Empty;
+            if (url.Length > 2048
+                || !Uri.TryCreate(url, UriKind.Absolute, out var uri)
+                || (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps))
+            {
+                ModelState.AddModelError(
+                    $"Input.PlatformLinks[{index}].Url",
+                    "Enter an absolute HTTP or HTTPS URL.");
+            }
+            if ((link.Description?.Length ?? 0) > 500)
+            {
+                ModelState.AddModelError(
+                    $"Input.PlatformLinks[{index}].Description",
+                    "Description cannot exceed 500 characters.");
+            }
+        }
     }
 
     private static bool IsValidTimeZone(string? timeZoneId)
@@ -286,6 +337,7 @@ public class ConfigurationModel(
         public List<StudioContactInput> OurContacts { get; set; } = [];
         public List<StudioTeamMemberInput> TeamMembers { get; set; } = [];
         public List<StudioDevelopmentToolInput> DevelopmentTools { get; set; } = [];
+        public List<StudioPlatformLinkInput> PlatformLinks { get; set; } = [];
         public List<StudioImportantLinkInput> ImportantLinks { get; set; } = [];
 
         public static StudioInput FromStudio(StudioDetails studio)
@@ -318,6 +370,12 @@ public class ConfigurationModel(
                 {
                     Name = tool.Name,
                     Description = tool.Description
+                }).ToList(),
+                PlatformLinks = studio.PlatformLinks.Select(link => new StudioPlatformLinkInput
+                {
+                    Platform = link.Platform,
+                    Url = link.Url,
+                    Description = link.Description
                 }).ToList(),
                 ImportantLinks = studio.ImportantLinks.Select(link => new StudioImportantLinkInput
                 {
@@ -359,6 +417,12 @@ public class ConfigurationModel(
                     Name = tool.Name ?? string.Empty,
                     Description = tool.Description ?? string.Empty
                 }).ToList(),
+                PlatformLinks = PlatformLinks.Select(link => new StudioPlatformLink
+                {
+                    Platform = link.Platform ?? string.Empty,
+                    Url = link.Url ?? string.Empty,
+                    Description = link.Description ?? string.Empty
+                }).ToList(),
                 ImportantLinks = ImportantLinks.Select(link => new StudioImportantLink
                 {
                     Label = link.Label ?? string.Empty,
@@ -394,6 +458,14 @@ public class ConfigurationModel(
     public sealed class StudioImportantLinkInput
     {
         public string? Label { get; set; }
+        public string? Url { get; set; }
+        public string? Description { get; set; }
+        public bool Remove { get; set; }
+    }
+
+    public sealed class StudioPlatformLinkInput
+    {
+        public string? Platform { get; set; }
         public string? Url { get; set; }
         public string? Description { get; set; }
         public bool Remove { get; set; }

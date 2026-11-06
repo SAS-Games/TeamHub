@@ -21,7 +21,37 @@ public sealed class StudioDetails
     public List<StudioContact> OurContacts { get; set; } = [];
     public List<StudioTeamMember> TeamMembers { get; set; } = [];
     public List<StudioDevelopmentTool> DevelopmentTools { get; set; } = [];
+    public List<StudioPlatformLink> PlatformLinks { get; set; } = [];
     public List<StudioImportantLink> ImportantLinks { get; set; } = [];
+}
+
+public sealed record StudioPlatformOption(string Id, string DisplayName, string ButtonLabel);
+
+public static class StudioPlatforms
+{
+    public static IReadOnlyList<StudioPlatformOption> All { get; } =
+    [
+        new("PlayStation", "PlayStation", "PS"),
+        new("Steam", "Steam", "Steam"),
+        new("Xbox", "Xbox", "Xbox"),
+        new("NintendoSwitch", "Nintendo Switch", "Switch"),
+        new("iOS", "iOS", "iOS"),
+        new("Android", "Android", "Android"),
+        new("EpicGamesStore", "Epic Games Store", "Epic"),
+        new("MicrosoftStore", "Microsoft Store", "Microsoft Store"),
+        new("GOG", "GOG", "GOG"),
+        new("Website", "Official Website", "Website")
+    ];
+
+    public static StudioPlatformOption? Find(string? id) => All.FirstOrDefault(option =>
+        string.Equals(option.Id, id?.Trim(), StringComparison.OrdinalIgnoreCase));
+}
+
+public sealed class StudioPlatformLink
+{
+    public string Platform { get; set; } = string.Empty;
+    public string Url { get; set; } = string.Empty;
+    public string Description { get; set; } = string.Empty;
 }
 
 public sealed class StudioTeamMember
@@ -74,6 +104,7 @@ internal sealed class StudioRecord
     public ICollection<StudioTeamMemberRecord> TeamMembers { get; set; } = new List<StudioTeamMemberRecord>();
     public ICollection<StudioContactRecord> OurContacts { get; set; } = new List<StudioContactRecord>();
     public ICollection<StudioDevelopmentToolsRecord> DevelopmentTools { get; set; } = new List<StudioDevelopmentToolsRecord>();
+    public ICollection<StudioPlatformLinkRecord> PlatformLinks { get; set; } = new List<StudioPlatformLinkRecord>();
     public ICollection<StudioImportantLinkRecord> ImportantLinks { get; set; } = new List<StudioImportantLinkRecord>();
 }
 
@@ -112,6 +143,17 @@ internal sealed class StudioImportantLinkRecord
     public Guid StudioRecordId { get; set; }
     public int DisplayOrder { get; set; }
     public string Label { get; set; } = string.Empty;
+    public string Url { get; set; } = string.Empty;
+    public string Description { get; set; } = string.Empty;
+    public StudioRecord Studio { get; set; } = null!;
+}
+
+internal sealed class StudioPlatformLinkRecord
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public Guid StudioRecordId { get; set; }
+    public int DisplayOrder { get; set; }
+    public string Platform { get; set; } = string.Empty;
     public string Url { get; set; } = string.Empty;
     public string Description { get; set; } = string.Empty;
     public StudioRecord Studio { get; set; } = null!;
@@ -194,6 +236,7 @@ internal sealed class StudioDbContext(DbContextOptions<StudioDbContext> options)
     public DbSet<StudioContactRecord> StudioContacts => Set<StudioContactRecord>();
     public DbSet<StudioTeamMemberRecord> StudioTeamMembers => Set<StudioTeamMemberRecord>();
     public DbSet<StudioDevelopmentToolsRecord> StudioDevelopmentTools => Set<StudioDevelopmentToolsRecord>();
+    public DbSet<StudioPlatformLinkRecord> StudioPlatformLinks => Set<StudioPlatformLinkRecord>();
     public DbSet<StudioImportantLinkRecord> StudioImportantLinks => Set<StudioImportantLinkRecord>();
     public DbSet<AtlassianIntegrationSettingsRecord> AtlassianIntegrationSettings => Set<AtlassianIntegrationSettingsRecord>();
     public DbSet<ConfluenceBrowserTabRecord> ConfluenceBrowserTabs => Set<ConfluenceBrowserTabRecord>();
@@ -267,6 +310,20 @@ internal sealed class StudioDbContext(DbContextOptions<StudioDbContext> options)
             entity.HasIndex(x => new { x.StudioRecordId, x.DisplayOrder });
             entity.HasOne(x => x.Studio)
                 .WithMany(x => x.ImportantLinks)
+                .HasForeignKey(x => x.StudioRecordId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<StudioPlatformLinkRecord>(entity =>
+        {
+            entity.ToTable("StudioPlatformLinks");
+            entity.Property(x => x.Platform).HasMaxLength(64);
+            entity.Property(x => x.Url).HasMaxLength(2048);
+            entity.Property(x => x.Description).HasMaxLength(500);
+            entity.HasIndex(x => new { x.StudioRecordId, x.DisplayOrder });
+            entity.HasIndex(x => new { x.StudioRecordId, x.Platform }).IsUnique();
+            entity.HasOne(x => x.Studio)
+                .WithMany(x => x.PlatformLinks)
                 .HasForeignKey(x => x.StudioRecordId)
                 .OnDelete(DeleteBehavior.Cascade);
         });
@@ -482,6 +539,29 @@ internal sealed class SqliteStudioDatabaseInitializer(
             await dbContext.Database.ExecuteSqlRawAsync("""
                 CREATE INDEX IF NOT EXISTS IX_StudioImportantLinks_StudioRecordId_DisplayOrder
                 ON StudioImportantLinks (StudioRecordId, DisplayOrder);
+                """, cancellationToken);
+
+            await dbContext.Database.ExecuteSqlRawAsync("""
+                CREATE TABLE IF NOT EXISTS StudioPlatformLinks (
+                    Id TEXT NOT NULL CONSTRAINT PK_StudioPlatformLinks PRIMARY KEY,
+                    StudioRecordId TEXT NOT NULL,
+                    DisplayOrder INTEGER NOT NULL,
+                    Platform TEXT NOT NULL,
+                    Url TEXT NOT NULL,
+                    Description TEXT NOT NULL,
+                    CONSTRAINT FK_StudioPlatformLinks_Studios_StudioRecordId
+                        FOREIGN KEY (StudioRecordId) REFERENCES Studios (Id) ON DELETE CASCADE
+                );
+                """, cancellationToken);
+
+            await dbContext.Database.ExecuteSqlRawAsync("""
+                CREATE INDEX IF NOT EXISTS IX_StudioPlatformLinks_StudioRecordId_DisplayOrder
+                ON StudioPlatformLinks (StudioRecordId, DisplayOrder);
+                """, cancellationToken);
+
+            await dbContext.Database.ExecuteSqlRawAsync("""
+                CREATE UNIQUE INDEX IF NOT EXISTS IX_StudioPlatformLinks_StudioRecordId_Platform
+                ON StudioPlatformLinks (StudioRecordId, Platform);
                 """, cancellationToken);
 
             await dbContext.Database.ExecuteSqlRawAsync("""
@@ -756,7 +836,8 @@ internal sealed class SqliteStudioDatabaseInitializer(
                 new LegacyTable("StudioContacts", "Id, StudioRecordId, DisplayOrder, Name, Role"),
                 new LegacyTable("StudioTeamMembers", "Id, StudioRecordId, DisplayOrder, Name, RolesAndResponsibilities, EmailId"),
                 new LegacyTable("StudioDevelopmentTools", "Id, StudioRecordId, DisplayOrder, Name, Description"),
-                new LegacyTable("StudioImportantLinks", "Id, StudioRecordId, DisplayOrder, Label, Url, Description")
+                new LegacyTable("StudioImportantLinks", "Id, StudioRecordId, DisplayOrder, Label, Url, Description"),
+                new LegacyTable("StudioPlatformLinks", "Id, StudioRecordId, DisplayOrder, Platform, Url, Description")
             };
 
             var existingChildTables = new List<LegacyTable>();
@@ -937,6 +1018,7 @@ internal sealed class SqliteStudioDirectoryService(StudioDbContext dbContext) : 
             .Include(studio => studio.OurContacts)
             .Include(studio => studio.TeamMembers)
             .Include(studio => studio.DevelopmentTools)
+            .Include(studio => studio.PlatformLinks)
             .Include(studio => studio.ImportantLinks)
             .ToListAsync(cancellationToken);
         var groupOrders = await dbContext.StudioGroupOrders
@@ -971,6 +1053,7 @@ internal sealed class SqliteStudioDirectoryService(StudioDbContext dbContext) : 
             .Include(item => item.OurContacts)
             .Include(item => item.TeamMembers)
             .Include(item => item.DevelopmentTools)
+            .Include(item => item.PlatformLinks)
             .Include(item => item.ImportantLinks)
             .FirstOrDefaultAsync(item => item.Id == studioId, cancellationToken);
 
@@ -1045,6 +1128,9 @@ internal sealed class SqliteStudioDirectoryService(StudioDbContext dbContext) : 
         await dbContext.StudioDevelopmentTools
             .Where(tool => tool.StudioRecordId == record.Id)
             .ExecuteDeleteAsync(cancellationToken);
+        await dbContext.StudioPlatformLinks
+            .Where(link => link.StudioRecordId == record.Id)
+            .ExecuteDeleteAsync(cancellationToken);
         await dbContext.StudioImportantLinks
             .Where(link => link.StudioRecordId == record.Id)
             .ExecuteDeleteAsync(cancellationToken);
@@ -1052,6 +1138,7 @@ internal sealed class SqliteStudioDirectoryService(StudioDbContext dbContext) : 
         dbContext.StudioContacts.AddRange(CreateContactRecords(record.Id, studio.OurContacts));
         dbContext.StudioTeamMembers.AddRange(CreateTeamMemberRecords(record.Id, studio.TeamMembers));
         dbContext.StudioDevelopmentTools.AddRange(CreateDevelopmentToolsRecords(record.Id, studio.DevelopmentTools));
+        dbContext.StudioPlatformLinks.AddRange(CreatePlatformLinkRecords(record.Id, studio.PlatformLinks));
         dbContext.StudioImportantLinks.AddRange(CreateImportantLinkRecords(record.Id, studio.ImportantLinks));
         await dbContext.SaveChangesAsync(cancellationToken);
 
@@ -1116,6 +1203,15 @@ internal sealed class SqliteStudioDirectoryService(StudioDbContext dbContext) : 
                 {
                     Name = tool.Name,
                     Description = tool.Description
+                })
+                .ToList(),
+            PlatformLinks = studio.PlatformLinks
+                .OrderBy(link => link.DisplayOrder)
+                .Select(link => new StudioPlatformLink
+                {
+                    Platform = link.Platform,
+                    Url = link.Url,
+                    Description = link.Description
                 })
                 .ToList(),
             ImportantLinks = studio.ImportantLinks
@@ -1264,6 +1360,40 @@ internal sealed class SqliteStudioDirectoryService(StudioDbContext dbContext) : 
         }
     }
 
+    private static IEnumerable<StudioPlatformLinkRecord> CreatePlatformLinkRecords(
+        Guid studioRecordId,
+        IEnumerable<StudioPlatformLink> platformLinks)
+    {
+        var displayOrder = 0;
+        var usedPlatforms = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var link in platformLinks.Where(HasPlatformLinkValue))
+        {
+            var platform = StudioPlatforms.Find(link.Platform)
+                ?? throw new ArgumentException($"Unsupported studio platform '{link.Platform}'.");
+            if (!usedPlatforms.Add(platform.Id))
+                throw new ArgumentException($"The platform '{platform.DisplayName}' can be configured only once per studio.");
+            if (!TryGetHttpUrl(link.Url, out var url))
+                throw new ArgumentException($"The {platform.DisplayName} link must be an absolute HTTP or HTTPS URL.");
+
+            yield return new StudioPlatformLinkRecord
+            {
+                StudioRecordId = studioRecordId,
+                DisplayOrder = displayOrder,
+                Platform = platform.Id,
+                Url = url,
+                Description = link.Description.Trim()
+            };
+            displayOrder++;
+        }
+    }
+
+    private static bool TryGetHttpUrl(string? value, out string url)
+    {
+        url = value?.Trim() ?? string.Empty;
+        return Uri.TryCreate(url, UriKind.Absolute, out var uri)
+            && (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps);
+    }
+
     private static bool HasTeamMemberValue(StudioTeamMember member)
         => !string.IsNullOrWhiteSpace(member.Name)
             || !string.IsNullOrWhiteSpace(member.RolesAndResponsibilities)
@@ -1305,6 +1435,10 @@ internal sealed class SqliteStudioDirectoryService(StudioDbContext dbContext) : 
 
     private static bool HasImportantLinkValue(StudioImportantLink link)
         => !string.IsNullOrWhiteSpace(link.Label)
+            || !string.IsNullOrWhiteSpace(link.Url)
+            || !string.IsNullOrWhiteSpace(link.Description);
+    private static bool HasPlatformLinkValue(StudioPlatformLink link)
+        => !string.IsNullOrWhiteSpace(link.Platform)
             || !string.IsNullOrWhiteSpace(link.Url)
             || !string.IsNullOrWhiteSpace(link.Description);
     private static bool HasDevelopmentToolValue(StudioDevelopmentTool tool)

@@ -963,6 +963,7 @@ public sealed class StudioDirectoryTests
             saved.TimeZoneId.Should().Be(TimeZoneInfo.Utc.Id);
             saved.OurContacts.Should().BeEmpty();
             saved.TeamMembers.Should().BeEmpty();
+            saved.PlatformLinks.Should().BeEmpty();
             saved.ImportantLinks.Should().BeEmpty();
         }
         finally
@@ -1008,6 +1009,11 @@ public sealed class StudioDirectoryTests
                     new StudioTeamMember { Name = "Asha", RolesAndResponsibilities = "Producer", EmailId = "asha@example.com" },
                     new StudioTeamMember { Name = "Dev", RolesAndResponsibilities = "QA Lead" }
                 ],
+                PlatformLinks =
+                [
+                    new StudioPlatformLink { Platform = "PlayStation", Url = "https://example.com/playstation", Description = "PlayStation store page" },
+                    new StudioPlatformLink { Platform = "Steam", Url = "https://example.com/steam", Description = "Steam store page" }
+                ],
                 ImportantLinks =
                 [
                     new StudioImportantLink { Label = "Plan", Url = "https://example.com/plan", Description = "Delivery plan" },
@@ -1034,6 +1040,10 @@ public sealed class StudioDirectoryTests
                 [
                     new StudioTeamMember { Name = "Asha", RolesAndResponsibilities = "Production owner", EmailId = "asha@example.com" }
                 ],
+                PlatformLinks =
+                [
+                    new StudioPlatformLink { Platform = "Steam", Url = "https://example.com/steam-v2", Description = "Updated Steam page" }
+                ],
                 ImportantLinks =
                 [
                     new StudioImportantLink { Label = "Plan", Url = "https://example.com/plan-v2", Description = "Updated delivery plan" }
@@ -1050,6 +1060,13 @@ public sealed class StudioDirectoryTests
                 .Which.Role.Should().Be("PIC");
             updated.TeamMembers.Should().ContainSingle()
                 .Which.RolesAndResponsibilities.Should().Be("Production owner");
+            updated.PlatformLinks.Should().ContainSingle()
+                .Which.Should().BeEquivalentTo(new StudioPlatformLink
+                {
+                    Platform = "Steam",
+                    Url = "https://example.com/steam-v2",
+                    Description = "Updated Steam page"
+                });
             updated.ImportantLinks.Should().ContainSingle()
                 .Which.Url.Should().Be("https://example.com/plan-v2");
         }

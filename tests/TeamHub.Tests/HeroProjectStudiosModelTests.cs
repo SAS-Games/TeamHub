@@ -16,7 +16,16 @@ public sealed class HeroProjectStudiosModelTests
         };
         var active = new StudioDetails
         {
-            StudioName = "Zeta Studio", ProjectName = "New Game", AboutGame = "Current title", IsActive = true
+            StudioName = "Zeta Studio", ProjectName = "New Game", AboutGame = "Current title", IsActive = true,
+            PlatformLinks =
+            [
+                new StudioPlatformLink
+                {
+                    Platform = "Steam",
+                    Url = "https://store.example.com/new-game",
+                    Description = "New Game on Steam"
+                }
+            ]
         };
         var model = new HeroProjectStudiosModel(
             new StubStudioDirectoryService([inactive, active]),
@@ -31,6 +40,8 @@ public sealed class HeroProjectStudiosModelTests
         model.Studios.Select(item => item.Studio.StudioName)
             .Should().Equal("Zeta Studio", "Alpha Studio");
         model.Studios[0].ReleaseDate.Should().Be(new DateTime(2027, 2, 1));
+        model.Studios[0].Studio.PlatformLinks.Should().ContainSingle()
+            .Which.Platform.Should().Be("Steam");
         model.Studios[1].ReleaseDate.Should().Be(new DateTime(2025, 6, 15));
     }
 

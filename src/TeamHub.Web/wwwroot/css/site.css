@@ -209,7 +209,7 @@ body {
 
 .hero-project-studios-table { min-width: 760px; }
 .hero-project-studios-table th:first-child { width: 340px; }
-.hero-project-studios-table th:last-child { width: 160px; }
+.hero-project-studios-table th:last-child { width: 240px; }
 .hero-project-studio-identity-cell { min-width: 320px; }
 .hero-project-studio-identity {
   display: flex;
@@ -233,6 +233,15 @@ body {
 .hero-project-studio-identity .badge { margin-top: .25rem; }
 .hero-project-studio-status { min-width: 88px; margin-top: .25rem; }
 .hero-project-studio-details { min-width: 280px; max-width: 620px; text-align: center; }
+.hero-project-release-cell { min-width: 220px; text-align: center; }
+.hero-project-platform-links {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: .4rem;
+  margin-top: .65rem;
+}
+.hero-project-platform-link { min-width: 52px; }
 .hero-project-about-markdown { text-align: center; }
 .hero-project-about-markdown ul,
 .hero-project-about-markdown ol { display: inline-block; text-align: left; }
