@@ -18,6 +18,7 @@
     const filesLabel = root.querySelector("#aiChatFilesLabel");
     const meetingAdditionalInstructionsContext = root.querySelector("#aiChatMeetingAdditionalInstructionsContext");
     const meetingAdditionalInstructions = root.querySelector("#aiChatMeetingAdditionalInstructions");
+    const meetingInstructionApplication = root.querySelector("#aiChatMeetingInstructionApplication");
     const form = root.querySelector("#aiChatForm");
     const prompt = root.querySelector("#aiChatPrompt");
     const send = root.querySelector("#aiChatSend");
@@ -179,6 +180,7 @@
         history = [];
         if (files) files.value = "";
         if (meetingAdditionalInstructions) meetingAdditionalInstructions.value = "";
+        if (meetingInstructionApplication) meetingInstructionApplication.value = "append";
         prompt.value = "";
         showEmptyConversation();
         error.textContent = "";
@@ -217,6 +219,7 @@
         prompt.disabled = generating;
         if (files) files.disabled = generating;
         if (meetingAdditionalInstructions) meetingAdditionalInstructions.disabled = generating;
+        if (meetingInstructionApplication) meetingInstructionApplication.disabled = generating;
         if (publishNotes) publishNotes.disabled = generating || !meetingDestination?.value;
         send.disabled = false;
         send.textContent = generating ? "Cancel" : "Send";
@@ -1204,6 +1207,8 @@
                             ? meetingStudio?.value || null
                             : null,
                         meetingNotesAdditionalInstructions,
+                        replaceMeetingNotesFormattingInstructions:
+                            meetingInstructionApplication?.value === "replace",
                         externalAccessDecision,
                         approvedExternalSources
                     })

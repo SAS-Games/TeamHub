@@ -56,7 +56,7 @@
         <select id="aiChatMeetingStudio" class="form-select form-select-sm">
             <option value="">No studio-specific additions</option>
         </select>
-        <span class="form-text mt-0">Optional. The default instructions always apply; selecting a studio appends its configured Markdown instructions.</span>
+        <span class="form-text mt-0">Optional. Selecting a studio adds its configured Markdown instructions unless you replace the formatting below.</span>
     </div>
 
     <div id="aiChatMessages" class="ai-chat-messages" aria-live="polite">
@@ -78,7 +78,12 @@
             <label for="aiChatMeetingAdditionalInstructions" class="visually-hidden">Additional Meeting Notes formatting instructions</label>
             <input id="aiChatMeetingAdditionalInstructions" type="file" class="form-control form-control-sm mt-2" multiple
                    accept=".md,.markdown,text/markdown,text/plain" />
-            <span class="form-text">Optional. These files are appended after the default and selected studio instructions for this request.</span>
+            <label for="aiChatMeetingInstructionApplication" class="form-label small mt-2 mb-1">Apply uploaded instructions</label>
+            <select id="aiChatMeetingInstructionApplication" class="form-select form-select-sm">
+                <option value="append">Add to default and studio formatting</option>
+                <option value="replace">Replace default and studio formatting</option>
+            </select>
+            <span class="form-text">Replacement affects formatting only. Transcript-accuracy and security rules always remain active.</span>
         </details>
         <div class="d-flex gap-2 align-items-end">
             <div class="flex-grow-1">

@@ -65,8 +65,9 @@ generation and never posts automatically.
 
 Normal users do not upload the configured instructions. They select a studio and TeamHub resolves
 the saved additional instructions automatically. A collapsed, optional multi-file `.md` upload is
-available for one-off additional formatting guidance. These files are appended after the default and
-studio instructions for that request and cannot change transcript accuracy, source isolation, or security rules.
+available for one-off formatting guidance. Users can add these files after the default and studio
+instructions or replace that application-owned formatting for the request. Replacement never removes
+the built-in transcript-accuracy, source-isolation, or security rules.
 
 ## Token limits and usage
 

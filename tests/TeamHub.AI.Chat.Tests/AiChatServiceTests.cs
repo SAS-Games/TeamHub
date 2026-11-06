@@ -110,6 +110,52 @@ public sealed class AiChatServiceTests
     }
 
     [Fact]
+    public async Task Meeting_Notes_replacement_uses_user_format_without_default_or_studio_formatting()
+    {
+        var provider = new RecordingProvider();
+        await using var services = CreateServices(
+            provider,
+            new RecordingKnowledgeSource(),
+            meetingNotesInstructions: "Default Action, Owner, and Due date table.");
+        var chat = services.GetRequiredService<IAiChatService>();
+
+        await chat.SendAsync(
+            User(),
+            new AiChatRequest(
+                AiChatMode.MeetingNotes,
+                "model-a",
+                [new AiChatMessage("user", "Transcript: Mina agreed to send the build on Friday.")],
+                StudioId: "studio-a",
+                MeetingNotesAdditionalInstructions: "Use my compact Decisions and Follow-up sections.",
+                ReplaceMeetingNotesFormattingInstructions: true));
+
+        provider.LastRequest!.SystemPrompt.Should().Contain("only the conversation transcript");
+        provider.LastRequest.SystemPrompt.Should().NotContain("Default Action, Owner, and Due date table.");
+        provider.LastRequest.UserPrompt.Should().Contain("replacement Meeting Notes formatting instructions");
+        provider.LastRequest.UserPrompt.Should().Contain("Use my compact Decisions and Follow-up sections.");
+    }
+
+    [Fact]
+    public async Task Meeting_Notes_replacement_requires_user_instructions()
+    {
+        var provider = new RecordingProvider();
+        await using var services = CreateServices(provider, new RecordingKnowledgeSource());
+        var chat = services.GetRequiredService<IAiChatService>();
+
+        var action = () => chat.SendAsync(
+            User(),
+            new AiChatRequest(
+                AiChatMode.MeetingNotes,
+                "model-a",
+                [new AiChatMessage("user", "Transcript text")],
+                ReplaceMeetingNotesFormattingInstructions: true));
+
+        await action.Should().ThrowAsync<AiChatException>()
+            .WithMessage("*Upload a Meeting Notes instruction file*");
+        provider.LastRequest.Should().BeNull();
+    }
+
+    [Fact]
     public async Task Disabled_Meeting_Notes_mode_is_rejected_before_generation()
     {
         var provider = new RecordingProvider();
